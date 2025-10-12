@@ -211,10 +211,9 @@ def bech32_encode(data, hrp=''):
     ret = (hrp + '1' if hrp else '') + ''.join(CHARSET[d] for d in data)
     if hrp.lower() == hrp:
         return ret.lower()
-    elif hrp.upper() == hrp:
+    if hrp.upper() == hrp:
         return ret.upper()
-    else:
-        raise InvalidCase("in hrp")
+    raise InvalidCase("in hrp")
 
 
 def bech32_to_u5(bech=''):
