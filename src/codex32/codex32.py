@@ -280,7 +280,8 @@ def convertbits(data, frombits, tobits, pad=True, pad_val=-1, verify_pad=False):
         raise IncompleteGroup(f"{bits} bits left over")
     elif verify_pad:
         if data != convertbits(ret, tobits, frombits, True, pad_val):
-            raise InvalidChecksum(f"Padding bits do not match expected {str(pad_val) if pad_val >= 0 else "CRC"} padding.")
+            pad_str = "CRC" if pad_val < 0 else bin(pad_val)
+            raise InvalidChecksum(f"Padding bits do not match expected {pad_str} padding.")
     return ret
 
 
