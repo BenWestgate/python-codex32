@@ -1,3 +1,5 @@
+"""Setup module for python-codex32."""
+
 from setuptools import setup, find_packages
 
 setup(
@@ -11,7 +13,6 @@ setup(
     },
     author="Ben Westgate",
     description="A Python implementation of Codex32.",
-    long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/BenWestgate/python-codex32",
     classifiers=[
@@ -21,3 +22,5 @@ setup(
     ],
     python_requires=">=3.7",
 )
+with open("README.md", encoding="utf-8") as f:
+    long_description = f.read()
