@@ -1,8 +1,5 @@
 # python-codex32
 
-python-codex32
-===============
-
 Reference implementation of BIP-0093: codex32: Checksummed SSSS-aware BIP32 seeds
 
 
