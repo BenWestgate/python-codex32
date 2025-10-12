@@ -1,6 +1,9 @@
 """Setup module for python-codex32."""
 
-from setuptools import setup, find_packages
+with open("README.md", encoding="utf-8") as f:
+    long_description = f.read()
+
+from setuptools import setup, find_packages # pylint: disable=import-error
 
 setup(
     name="python-codex32",
@@ -20,7 +23,5 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.8",
 )
-with open("README.md", encoding="utf-8") as f:
-    long_description = f.read()
