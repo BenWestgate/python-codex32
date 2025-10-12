@@ -1,11 +1,12 @@
 # tests/data/bip93_vectors.py
+# pylint: disable=line-too-long
 """BIP-93 / codex32 canonical test vectors."""
 VECTOR_1 = {
     "secret_s": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
     "secret_hex": "318c6318c6318c6318c6318c6318c631",
     "hrp": "ms",
     "k": 0,
-    "id": "test",
+    "identifier": "test",
     "share_index": "s",
     "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxx",
     "checksum": "4nzvca9cmczlw",
