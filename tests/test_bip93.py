@@ -1,5 +1,5 @@
 # test_codex32.py
-import logging
+"""Tests for BIP-93 Codex32 implementation."""
 import pytest
 
 from data.bip93_vectors import (
@@ -28,25 +28,21 @@ from codex32.codex32 import (
     InvalidThreshold,
     InvalidCase,
 )
-# If the correct name is not Codex32, update it to match the actual exported symbol from src/codex32.py
-# For example, if the class is named Codex32String, ensure it is defined and exported in src/codex32.py
-
-
-def hexlify(data):
-    return bytes(data).hex()
 
 def test_parts():
+    """Test Vector 1: parse a codex32 string into parts"""
     c32 = Codex32String.from_string(VECTOR_1["secret_s"])
     parts = c32.parts()
     assert parts.hrp == VECTOR_1["hrp"]
     assert parts.k == VECTOR_1["k"]
     assert parts.share_index == VECTOR_1["share_index"]
-    assert parts.id == VECTOR_1["id"]
+    assert parts.ident == VECTOR_1["identifier"]
     assert parts.payload == VECTOR_1["payload"]
     assert parts.checksum == VECTOR_1["checksum"]
     assert parts.data().hex() == VECTOR_1["secret_hex"]
 
 def test_derive_and_recover():
+    """Test Vector 2: derive new share and recover the secret"""
     a = Codex32String.from_string(VECTOR_2["share_A"])
     c = Codex32String.from_string(VECTOR_2["share_C"])
     # interpolation target is 'D' (uppercase as inputs are uppercase)
@@ -57,11 +53,12 @@ def test_derive_and_recover():
     assert s.parts().data().hex() == VECTOR_2["secret_hex"]
 
 def test_from_seed_and_interpolate_3_of_5():
+    """Test Vector 3: encode secret share from seed and split 3-of-5"""
     seed = bytes.fromhex(VECTOR_3["secret_hex"])
     a = Codex32String.from_string(VECTOR_3["share_a"])
     c = Codex32String.from_string(VECTOR_3["share_c"])
     parts = a.parts()
-    s = Codex32String.from_seed(seed, parts.hrp, parts.k, parts.id, pad_val=0)
+    s = Codex32String.from_seed(seed, parts.ident, parts.hrp, parts.k,  pad_val=0)
     assert str(s) == VECTOR_3["secret_s"]
     d = Codex32String.interpolate_at([s, a, c], 'd')
     e = Codex32String.interpolate_at([s, a, c], 'e')
@@ -70,22 +67,25 @@ def test_from_seed_and_interpolate_3_of_5():
     assert str(e) == VECTOR_3["derived_e"]
     assert str(f) == VECTOR_3["derived_f"]
     for pad_val in range(4):
-        s = Codex32String.from_seed(seed, parts.hrp, parts.k, parts.id, pad_val=pad_val)
+        s = Codex32String.from_seed(seed, parts.ident, parts.hrp, parts.k,  pad_val=pad_val)
         assert str(s) == VECTOR_3["secret_s_alternates"][pad_val]
 
 def test_from_seed_and_alternates():
+    """Test Vector 4: encode secret share from seed"""
     seed = bytes.fromhex(VECTOR_4["secret_hex"])
-    for pad_val in range(0b1111):
-        s = Codex32String.from_seed(seed, hrp='ms', k=0, id='leet', share_idx='s', pad_val=pad_val)
-        assert str(s) == VECTOR_4["secret_s_alternates"][pad_val]
+    for pad_v in range(0b1111):
+        s = Codex32String.from_seed(seed, hrp='ms', k=0, ident='leet', share_idx='s', pad_val=pad_v)
+        assert str(s) == VECTOR_4["secret_s_alternates"][pad_v]
         assert s.parts().data() == list(seed) or s.parts().data() == seed
         # confirm all 16 encodings decode to same master data
 
 def test_long_string():
+    """Test Vector 5: decode long codex32 secret and confirm secret bytes."""
     long_str = VECTOR_5["secret_s"]
     long_seed = Codex32String.from_string(long_str)
     assert long_seed.parts().data().hex() == VECTOR_5["secret_hex"]
 
+# pylint: disable=missing-function-docstring
 def test_invalid_bad_checksums():
     for chk in BAD_CHECKSUMS:
         with pytest.raises(InvalidChecksum):
