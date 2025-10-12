@@ -6,7 +6,7 @@ with open("README.md", encoding="utf-8") as f:
 from setuptools import setup, find_packages # pylint: disable=import-error
 
 setup(
-    name="python-codex32",
+    name="codex32",
     version="0.1.0",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
