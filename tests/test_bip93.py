@@ -1,6 +1,6 @@
 # test_codex32.py
 """Tests for BIP-93 Codex32 implementation."""
-import pytest
+import pytest # pylint: disable=import-error
 
 from data.bip93_vectors import (
     VECTOR_1,
