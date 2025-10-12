@@ -1,76 +1,50 @@
 # python-codex32
 
-Reference implementation of BIP-0093: codex32: Checksummed SSSS-aware BIP32 seeds
+Python implementation of BIP-0093 (codex32): checksummed, SSSS-aware BIP32 seed strings.
 
+This repository implements the codex32 string format described by BIP-0093.
+It provides encoding/decoding, short/long ms32 checksums, CRC padding for convertbits,
+Shamir-share interpolation helpers and helpers to build codex32 strings from seed bytes.
 
-Abstract
---------
+## Features
+- Encode/decode codex32 data via `from_string` and `from_unchecksummed_string`.
+- Short checksum (13 chars) and long checksum (15 chars) support.
+- CRC-based default padding scheme for `convertbits`.
+- Construct codex32 strings from raw seed bytes via `from_seed`.
+- Parse codex32 strings and access parts via `Parts`.
+- Interpolate/recover shares via `interpolate_at`.
 
-This document describes a standard for backing up and restoring the master seed of a
-[https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki BIP-0032] hierarchical deterministic wallet, using Shamir's secret sharing.
-It includes an encoding format, a BCH error-correcting checksum, and algorithms for share generation and secret recovery.
-Secret data can be split into up to 31 shares.
-A minimum threshold of shares, which can be between 1 and 9, is needed to recover the secret, whereas without sufficient shares, no information about the secret is recoverable.
+## Installation
+```bash
+pip install codex32
+```
 
-BIP Paper
----------
+## Quick usage
+```python
+from codex32.codex32 import Codex32String as ms32
 
-See https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki
-for full specification
+# Create a codex32 string from seed bytes (16..64 bytes).
+s = ms32.from_seed(
+    data=bytes.fromhex('ffeeddccbbaa99887766554433221100'), # seed bytes, length 16..64
+    ident="cash",         # 4-character identifier
+    hrp="ms",             # human readable part, default 'ms'
+    k=3,                  # threshold 0 or 2..9 (0 special: share index must be 's')
+    share_idx='s',        # single-char share index (or 's' for k=0)
+    pad_val=0             # -1 -> CRC padding, otherwise integer padding value
+)
+print(c.s)                # codex32 string
 
-Installation
-------------
+# Parse & validate an existing codex32 string
+a = ms32.from_string("ms13casha320zyxwvutsrqpnmlkjhgfedca2a8d0zehn8a0t")
+parts = c2.parts()       # Parts object
+data_bytes = parts.data()  # encoded seed bytes
 
-To install this library and its dependencies use:
+# Create from unchecksummed data-part (will append checksum)
+c = ms32.from_unchecksummed_string("ms13cashcacdefghjklmnpqrstuvwxyz023")
 
- ``pip install codex32``
-
-Usage examples
---------------
-
-Import library into python project via:
-
-.. code-block:: python
-
-   from codex32.codex32 import Codex32String as c32
-
-Initialize class instance, picking from available:
-
-hrp:
-- "ms"
-- "cl"
-
-threshold:
-- 0
-- 2 through 9
-
-num_shares:
-
-- 1 through 31 (must be greater than or equal to threshold)
-
-identifier:
-- four bech32 characters to disambiguate backups (optional)
-
-.. code-block:: python
-
-   codex32 = Codex32(hrp, threshold, num_shares, identifier)
-   codex32 = Codex32("ms", 2, 3, "test")
-
-Generate string list given the strength (128 - 512):
-
-.. code-block:: python
-
-   strings = codex32.generate(strength=128)
-
-Given the string list and custom passphrase (empty in example), generate seed:
-
-.. code-block:: python
-
-   seed = codex32.to_seed(strings, passphrase="")
-
-Given the parameters, calculate original entropy:
-
-.. code-block:: python
-
-   entropy = codex32.to_entropy(strings)
-   
+# Interpolate shares to obtain target share index:
+# shares is a list of Codex32String objects containing compatible shares
+shares = [s, a, c]
+derived_share_d = ms32.interpolate_at(shares, target='d')
+print(derived_share_d.s)
+```
