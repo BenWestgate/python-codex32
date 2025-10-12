@@ -6,6 +6,9 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
+- name: pypi-publish
+  uses: pypa/gh-action-pypi-publish@v1.13.0
+
 name: Upload Python Package
 
 on:
@@ -55,7 +58,7 @@ jobs:
       #
       # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
       # ALTERNATIVE: exactly, uncomment the following line instead:
-      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+      url: https://pypi.org/project/codex32/${{ github.event.release.name }}
 
     steps:
       - name: Retrieve release distributions
