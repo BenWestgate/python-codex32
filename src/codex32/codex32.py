@@ -412,8 +412,8 @@ class Codex32String:
 
 class Parts:
     """Class representing parts of a Codex32 string."""
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(self, hrp, k, ident, share_index, payload, checksum):
-        # pylint: disable=too-many-arguments
         self.hrp = hrp
         self.k = k
         self.ident = ident
