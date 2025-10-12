@@ -3,10 +3,6 @@
 # License: BSD-3-Clause
 """Complete BIP-93 Codex32 implementation"""
 
-import hashlib
-import hmac
-import secrets
-
 CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 MS32_CONST = 0x10CE0795C2FD1E62A
 MS32_LONG_CONST = 0x43381E570BF4798AB26
@@ -17,7 +13,8 @@ bech32_inv = [
 
 
 def ms32_polymod(values):
-    GEN = [
+    """Compute the ms32 polymod."""
+    gen = [
         0x19DC500CE73FDE210,
         0x1BFAE00DEF77FE529,
         0x1FBD920FFFE7BEE52,
@@ -29,11 +26,12 @@ def ms32_polymod(values):
         b = residue >> 60
         residue = (residue & 0x0FFFFFFFFFFFFFFF) << 5 ^ v
         for i in range(5):
-            residue ^= GEN[i] if ((b >> i) & 1) else 0
+            residue ^= gen[i] if ((b >> i) & 1) else 0
     return residue
 
 
 def ms32_verify_checksum(data):
+    """Determine long or short checksum and verify it."""
     if len(data) >= 96:  # See Long codex32 Strings
         return ms32_verify_long_checksum(data)
     if len(data) <= 93:
@@ -42,6 +40,7 @@ def ms32_verify_checksum(data):
 
 
 def ms32_create_checksum(data):
+    """Determine long or short checksum, create and return it."""
     if len(data) > 80:  # See Long codex32 Strings
         return ms32_create_long_checksum(data)
     values = data
@@ -50,7 +49,8 @@ def ms32_create_checksum(data):
 
 
 def ms32_long_polymod(values):
-    GEN = [
+    """Compute the ms32 long polymod."""
+    gen = [
         0x3D59D273535EA62D897,
         0x7A9BECB6361C6C51507,
         0x543F9B7E6C38D8A2A0E,
@@ -62,21 +62,24 @@ def ms32_long_polymod(values):
         b = residue >> 70
         residue = (residue & 0x3FFFFFFFFFFFFFFFFF) << 5 ^ v
         for i in range(5):
-            residue ^= GEN[i] if ((b >> i) & 1) else 0
+            residue ^= gen[i] if ((b >> i) & 1) else 0
     return residue
 
 
 def ms32_verify_long_checksum(data):
+    """Verify the long codex32 checksum."""
     return ms32_long_polymod(data) == MS32_LONG_CONST
 
 
 def ms32_create_long_checksum(data):
+    """Create the long codex32 checksum."""
     values = data
     polymod = ms32_long_polymod(values + [0] * 15) ^ MS32_LONG_CONST
     return [(polymod >> 5 * (14 - i)) & 31 for i in range(15)]
 
 
 def bech32_mul(a, b):
+    """Multiply two bech32 values."""
     res = 0
     for i in range(5):
         res ^= a if ((b >> i) & 1) else 0
@@ -86,7 +89,8 @@ def bech32_mul(a, b):
 
 
 # noinspection PyPep8
-def bech32_lagrange(l, x):
+def bech32_lagrange(l, x):  # noqa: E741
+    """Compute bech32 lagrange."""
     n = 1
     c = []
     for i in l:
@@ -98,18 +102,20 @@ def bech32_lagrange(l, x):
     return [bech32_mul(n, bech32_inv[i]) for i in c]
 
 
-def ms32_interpolate(l, x):
+def ms32_interpolate(l, x):  # noqa: E741
+    """Interpolate codex32."""
     w = bech32_lagrange([s[5] for s in l], x)
     res = []
     for i in range(len(l[0])):
         n = 0
-        for j in range(len(l)):
-            n ^= bech32_mul(w[j], l[j][i])
+        for j, val in enumerate(l):
+            n ^= bech32_mul(w[j], val[i])
         res.append(n)
     return res
 
 
-def ms32_recover(l):
+def ms32_recover(l):  # noqa: E741
+    """Recover the codex32 secret."""
     return ms32_interpolate(l, 16)
 
 
@@ -133,8 +139,10 @@ def ms32_recover(l):
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+# pylint: disable=missing-class-docstring
 
 class Codex32Error(Exception):
+    msg = "Base Codex32 error class"
     def __init__(self, extra: str | None = None):
         self.extra = extra
         super().__init__(extra)
@@ -219,7 +227,7 @@ def bech32_to_u5(bech=''):
 
 
 def bech32_decode(bech='', hrp='ms'):
-    """Validate a Bech32/Bech32m string, and determine HRP and data."""
+    """Validate a Bech32/Codex32 string, and determine HRP and data."""
     for i, ch in enumerate(bech):
         if ord(ch) < 33 or ord(ch) > 126:
             raise InvalidChar(f"non-printable U+{ord(ch):04X} at pos={i}")
@@ -237,7 +245,7 @@ def bech32_decode(bech='', hrp='ms'):
     return hrp, data
 
 
-def crc(crc_len, values):
+def compute_crc(crc_len, values):
     """Internal function that computes a CRC checksum for padding."""
     if not 0 <= crc_len < 5: # Codex32 string CRC padding
         raise InvalidLength(f"{crc_len!r} (expected int in 0..4)")
@@ -253,7 +261,7 @@ def crc(crc_len, values):
     return crc & (2 ** crc_len - 1) # Return last crc_len bits as CRC
 
 
-def convertbits(data, frombits, tobits, pad=True, pad_val=-1, verify_pad=False):
+def convertbits(data, frombits, tobits, pad=True, pad_val=-1):
     """General power-of-2 base conversion with CRC padding."""
     acc = 0
     bits = 0
@@ -269,23 +277,25 @@ def convertbits(data, frombits, tobits, pad=True, pad_val=-1, verify_pad=False):
             bits -= tobits
             ret.append((acc >> bits) & maxv)
             acc = acc & ((1 << bits) - 1)
-    if verify_pad:
-        pad = False
     if pad and bits:
         if pad_val == -1:  # Use CRC padding
             data_bits = convertbits(ret, tobits, 1) + convertbits([acc], bits, 1)
-            pad_val = crc(tobits - bits, convertbits(data_bits, tobits, 1))
+            pad_val = compute_crc(tobits - bits, convertbits(data_bits, tobits, 1))
         ret.append(((acc << (tobits - bits)) + pad_val) & maxv)
     elif bits >= frombits:
         raise IncompleteGroup(f"{bits} bits left over")
-    elif verify_pad:
-        if data != convertbits(ret, tobits, frombits, True, pad_val):
-            pad_str = "CRC" if pad_val < 0 else bin(pad_val)
-            raise InvalidChecksum(f"Padding bits do not match expected {pad_str} padding.")
     return ret
+
+def verify_crc(data, pad_val):
+    """Verify the codex32 padding matches the specified type."""
+    unpadded = convertbits(data, 5, 8, False)
+    if data != convertbits(unpadded, 8, 5, pad_val=pad_val):
+        pad_str = "CRC" if pad_val < 0 else bin(pad_val)
+        raise InvalidChecksum(f"Padding bits do not match expected {pad_str} padding.")
 
 
 class Codex32String:
+    """Class representing a Codex32 string."""
     def __init__(self, s=''):
         self.s = s
 
@@ -301,6 +311,7 @@ class Codex32String:
         return hash(self.s)
 
     def sanity_check(self):
+        """Perform sanity check on the codex32 string."""
         parts = self.parts_inner()
         incomplete_group = (len(parts.payload) * 5) % 8
         if incomplete_group > 4:
@@ -308,6 +319,7 @@ class Codex32String:
 
     @classmethod
     def from_unchecksummed_string(cls, s, hrp="ms"):
+        """Create Codex32String from unchecksummed string."""
         hrp, data = bech32_decode(s, hrp=hrp)
         ret = cls(bech32_encode(data + ms32_create_checksum(data), hrp))
         ret.sanity_check()
@@ -315,6 +327,7 @@ class Codex32String:
 
     @classmethod
     def from_string(cls, s, hrp="ms"):
+        """Create Codex32String from a codex32 string."""
         _, data = bech32_decode(s, hrp=hrp)
         if not ms32_verify_checksum(data):
             raise InvalidChecksum(f"string={s}")
@@ -323,6 +336,7 @@ class Codex32String:
         return ret
 
     def parts_inner(self):
+        """Get inner parts of the codex32 string."""
         hrp, s = self.s.rsplit('1', 1) if '1' in self.s else ("", self.s)
         if len(s) < 94 and len(s) > 44:
             checksum_len = 13
@@ -338,7 +352,7 @@ class Codex32String:
         ret = Parts(
             hrp=hrp,
             k=k,
-            id=s[1:5],
+            ident=s[1:5],
             share_index=s[5],
             payload=s[6:len(s) - checksum_len],
             checksum=s[-checksum_len:],
@@ -348,10 +362,12 @@ class Codex32String:
         return ret
 
     def parts(self):
+        """Get parts of the codex32 string."""
         return self.parts_inner()
 
     @classmethod
     def interpolate_at(cls, shares, target):
+        """Interpolate to a specific target share index."""
         indices = []
         ms32_shares = []
         s0_parts = shares[0].parts()
@@ -365,43 +381,48 @@ class Codex32String:
                 raise MismatchedHrp(f"{s0_parts.hrp}, {parts.hrp}")
             if s0_parts.k != parts.k:
                 raise MismatchedThreshold(f"{s0_parts.k}, {parts.k}")
-            if s0_parts.id != parts.id:
-                raise MismatchedId(f"{s0_parts.id}, {parts.id}")
+            if s0_parts.ident != parts.ident:
+                raise MismatchedId(f"{s0_parts.ident}, {parts.ident}")
             if parts.share_index in indices:
                 raise RepeatedIndex(parts.share_index)
             indices.append(parts.share_index)
             ms32_shares.append(bech32_decode(share.s)[1])
-        for i in range(len(shares)):
+        for i, share in enumerate(shares):
             if indices[i] == target:
-                return shares[i]
+                return share
         result = ms32_interpolate(ms32_shares, CHARSET.index(target.lower()))
         ret = bech32_encode(result, s0_parts.hrp)
         return cls(ret)
 
     @classmethod
-    def from_seed(cls, data, hrp='ms', k=0, id='', share_idx='s', pad_val=-1):
+    # pylint: disable=too-many-positional-arguments,too-many-arguments
+    def from_seed(cls, data, ident, hrp='ms', k=0, share_idx='s', pad_val=-1):
+        """Create Codex32String from seed bytes."""
         if 16 > len(data) or len(data) > 64:
             raise InvalidLength(f"{len(data)} bytes data MUST be 16 to 64 bytes")
-        if len(id) != 4:
-            raise IdNotLength4(f"{len(id)}")
+        if len(ident) != 4:
+            raise IdNotLength4(f"{len(ident)}")
         if not (1 < k <= 9 or k == 0):
             raise InvalidThresholdN(str(k))
         payload = convertbits(data, 8, 5, pad_val=pad_val)
-        header = bech32_to_u5(str(k) + id + share_idx)
+        header = bech32_to_u5(str(k) + ident + share_idx)
         combined = header + payload
         ret = bech32_encode(combined + ms32_create_checksum(combined), hrp)
         return cls(ret)
 
 class Parts:
-    def __init__(self, hrp, k, id, share_index, payload, checksum):
+    """Class representing parts of a Codex32 string."""
+    def __init__(self, hrp, k, ident, share_index, payload, checksum):
+        # pylint: disable=too-many-arguments
         self.hrp = hrp
         self.k = k
-        self.id = id
+        self.ident = ident
         self.share_index = share_index
         self.payload = payload
         self.checksum = checksum
 
     def data(self):
+        """Get data from parts."""
         return bytes(convertbits(bech32_to_u5(self.payload), 5, 8, False))
 
     def __eq__(self, other):
@@ -409,10 +430,10 @@ class Parts:
             return False
         return (self.hrp == other.hrp and
                 self.k == other.k and
-                self.id == other.id and
+                self.ident == other.ident and
                 self.share_index == other.share_index and
                 self.payload == other.payload and
                 self.checksum == other.checksum)
 
     def __hash__(self):
-        return hash((self.hrp, self.k, self.id, self.share_index, self.payload, self.checksum))
+        return hash((self.hrp, self.k, self.ident, self.share_index, self.payload, self.checksum))
