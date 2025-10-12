@@ -9,11 +9,11 @@ setup(
     extras_require={
         "dev": ["pytest", "flake8"]
     },
-    author="",
-    description="A new Python project.",
+    author="Ben Westgate",
+    description="A Python implementation of Codex32.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="",
+    url="https://github.com/BenWestgate/python-codex32",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
