@@ -321,6 +321,31 @@ class Codex32String:
 
     def __init__(self, s=""):
         self.s = s
+        self.hrp, data = bech32_decode(self.s)
+        _, s = self.s.rsplit("1", 1)
+        if len(s) < 94 and len(s) > 44:
+            checksum_len = 13
+        elif len(s) >= 96 and len(s) < 125:
+            checksum_len = 15
+        else:
+            raise InvalidLength(f"{len(s)} must be 45-93 or 96 to 124")
+        threshold_char = s[0]
+        if threshold_char.isdigit() and threshold_char != "1":
+            k = int(threshold_char)
+        else:
+            raise InvalidThreshold(threshold_char)
+        self.k = k
+        self.ident = s[1:5]
+        self.share_index = s[5]
+        self.payload = s[6 : len(s) - checksum_len]
+        self.checksum = s[-checksum_len:]
+        if self.k == 0 and self.share_index.lower() != "s":
+            raise InvalidShareIndex(self.share_index + "must be 's' when k=0")
+        if not ms32_verify_checksum(data):
+            raise InvalidChecksum(f"string={s}")
+        incomplete_group = (len(self.payload) * 5) % 8
+        if incomplete_group > 4:
+            raise IncompleteGroup(str(incomplete_group))
 
     def __str__(self):
         return self.s
@@ -333,79 +358,44 @@ class Codex32String:
     def __hash__(self):
         return hash(self.s)
 
-    def sanity_check(self):
-        """Perform sanity check on the codex32 string."""
-        parts = self.parts
-        incomplete_group = (len(parts.payload) * 5) % 8
-        if incomplete_group > 4:
-            raise IncompleteGroup(str(incomplete_group))
+    @property
+    def data(self):
+        """Return the payload data bytes."""
+        return bytes(convertbits(bech32_to_u5(self.payload), 5, 8, False))
 
     @classmethod
     def from_unchecksummed_string(cls, s, hrp="ms"):
         """Create Codex32String from unchecksummed string."""
-        hrp, data = bech32_decode(s, hrp=hrp)
+        _, data = bech32_decode(s, hrp=hrp)
         ret = cls(bech32_encode(data + ms32_create_checksum(data), hrp))
-        ret.sanity_check()
         return ret
 
     @classmethod
     def from_string(cls, s, hrp="ms"):
         """Create Codex32String from a codex32 string."""
-        _, data = bech32_decode(s, hrp=hrp)
-        if not ms32_verify_checksum(data):
-            raise InvalidChecksum(f"string={s}")
         ret = cls(s)
-        ret.sanity_check()
-        return ret
-
-    @property
-    def parts(self):
-        """Get parts of the codex32 string."""
-        hrp, s = self.s.rsplit("1", 1) if "1" in self.s else ("", self.s)
-        if len(s) < 94 and len(s) > 44:
-            checksum_len = 13
-        elif len(s) >= 96 and len(s) < 125:
-            checksum_len = 15
-        else:
-            raise InvalidLength(f"{len(s)} must be 45-93 or 96 to 124")
-        threshold_char = s[0]
-        if threshold_char.isdigit() and threshold_char != "1":
-            k = int(threshold_char)
-        else:
-            raise InvalidThreshold(threshold_char)
-        ret = Parts(
-            hrp=hrp,
-            k=k,
-            ident=s[1:5],
-            share_index=s[5],
-            payload=s[6 : len(s) - checksum_len],
-            checksum=s[-checksum_len:],
-        )
-        if ret.k == 0 and ret.share_index.lower() != "s":
-            raise InvalidShareIndex(ret.share_index + "must be 's' when k=0")
         return ret
 
     @classmethod
-    def interpolate_at(cls, shares, target):
+    def interpolate_at(cls, shares, target="s"):
         """Interpolate to a specific target share index."""
         indices = []
         ms32_shares = []
-        s0_parts = shares[0].parts
+        s0_parts = shares[0]
         if s0_parts.k > len(shares):
             raise ThresholdNotPassed(f"threshold={s0_parts.k}, n_shares={len(shares)}")
         for share in shares:
-            parts = share.parts
             if len(shares[0].s) != len(share.s):
                 raise MismatchedLength(f"{len(shares[0].s)}, {len(share.s)}")
-            if s0_parts.hrp != parts.hrp:
-                raise MismatchedHrp(f"{s0_parts.hrp}, {parts.hrp}")
-            if s0_parts.k != parts.k:
-                raise MismatchedThreshold(f"{s0_parts.k}, {parts.k}")
-            if s0_parts.ident != parts.ident:
-                raise MismatchedId(f"{s0_parts.ident}, {parts.ident}")
-            if parts.share_index in indices:
-                raise RepeatedIndex(parts.share_index)
-            indices.append(parts.share_index)
+            if s0_parts.hrp != share.hrp:
+                raise MismatchedHrp(f"{s0_parts.hrp}, {share.hrp}")
+            if s0_parts.k != share.k:
+                raise MismatchedThreshold(f"{s0_parts.k}, {share.k}")
+            if s0_parts.ident != share.ident:
+                raise MismatchedId(f"{s0_parts.ident}, {share.ident}")
+            if share.share_index in indices:
+                raise RepeatedIndex(share.share_index)
+            indices.append(share.share_index)
             ms32_shares.append(bech32_decode(share.s)[1])
         for i, share in enumerate(shares):
             if indices[i] == target:
@@ -432,45 +422,3 @@ class Codex32String:
         combined = header + payload
         ret = bech32_encode(combined + ms32_create_checksum(combined), hrp)
         return cls(ret)
-
-
-class Parts:
-    """Class representing parts of a Codex32 string."""
-
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
-    def __init__(self, hrp, k, ident, share_index, payload, checksum):
-        self.hrp = hrp
-        self.k = k
-        self.ident = ident
-        self.share_index = share_index
-        self.payload = payload
-        self.checksum = checksum
-
-    @property
-    def data(self):
-        """Get data from payload."""
-        return bytes(convertbits(bech32_to_u5(self.payload), 5, 8, False))
-
-    def __eq__(self, other):
-        if not isinstance(other, Parts):
-            return False
-        return (
-            self.hrp == other.hrp
-            and self.k == other.k
-            and self.ident == other.ident
-            and self.share_index == other.share_index
-            and self.payload == other.payload
-            and self.checksum == other.checksum
-        )
-
-    def __hash__(self):
-        return hash(
-            (
-                self.hrp,
-                self.k,
-                self.ident,
-                self.share_index,
-                self.payload,
-                self.checksum,
-            )
-        )

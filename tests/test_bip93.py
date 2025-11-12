@@ -32,15 +32,14 @@ from codex32.codex32 import (
 
 def test_parts():
     """Test Vector 1: parse a codex32 string into parts"""
-    c32 = Codex32String.from_string(VECTOR_1["secret_s"])
-    parts = c32.parts
-    assert parts.hrp == VECTOR_1["hrp"]
-    assert parts.k == VECTOR_1["k"]
-    assert parts.share_index == VECTOR_1["share_index"]
-    assert parts.ident == VECTOR_1["identifier"]
-    assert parts.payload == VECTOR_1["payload"]
-    assert parts.checksum == VECTOR_1["checksum"]
-    assert parts.data.hex() == VECTOR_1["secret_hex"]
+    c32 = Codex32String(VECTOR_1["secret_s"])
+    assert c32.hrp == VECTOR_1["hrp"]
+    assert c32.k == VECTOR_1["k"]
+    assert c32.share_index == VECTOR_1["share_index"]
+    assert c32.ident == VECTOR_1["identifier"]
+    assert c32.payload == VECTOR_1["payload"]
+    assert c32.checksum == VECTOR_1["checksum"]
+    assert c32.data.hex() == VECTOR_1["secret_hex"]
 
 
 def test_derive_and_recover():
@@ -52,7 +51,7 @@ def test_derive_and_recover():
     assert str(d) == VECTOR_2["derived_D"]
     s = Codex32String.interpolate_at([a, c], "S")
     assert str(s) == VECTOR_2["secret_S"]
-    assert s.parts.data.hex() == VECTOR_2["secret_hex"]
+    assert s.data.hex() == VECTOR_2["secret_hex"]
 
 
 def test_from_seed_and_interpolate_3_of_5():
@@ -60,8 +59,7 @@ def test_from_seed_and_interpolate_3_of_5():
     seed = bytes.fromhex(VECTOR_3["secret_hex"])
     a = Codex32String.from_string(VECTOR_3["share_a"])
     c = Codex32String.from_string(VECTOR_3["share_c"])
-    parts = a.parts
-    s = Codex32String.from_seed(seed, parts.ident, parts.hrp, parts.k, pad_val=0)
+    s = Codex32String.from_seed(seed, a.ident, a.hrp, a.k, pad_val=0)
     assert str(s) == VECTOR_3["secret_s"]
     d = Codex32String.interpolate_at([s, a, c], "d")
     e = Codex32String.interpolate_at([s, a, c], "e")
@@ -70,9 +68,7 @@ def test_from_seed_and_interpolate_3_of_5():
     assert str(e) == VECTOR_3["derived_e"]
     assert str(f) == VECTOR_3["derived_f"]
     for pad_val in range(4):
-        s = Codex32String.from_seed(
-            seed, parts.ident, parts.hrp, parts.k, pad_val=pad_val
-        )
+        s = Codex32String.from_seed(seed, a.ident, a.hrp, a.k, pad_val=pad_val)
         assert str(s) == VECTOR_3["secret_s_alternates"][pad_val]
 
 
@@ -84,7 +80,7 @@ def test_from_seed_and_alternates():
             seed, hrp="ms", k=0, ident="leet", share_idx="s", pad_val=pad_v
         )
         assert str(s) == VECTOR_4["secret_s_alternates"][pad_v]
-        assert s.parts.data == list(seed) or s.parts.data == seed
+        assert s.data == list(seed) or s.data == seed
         # confirm all 16 encodings decode to same master data
 
 
@@ -92,7 +88,7 @@ def test_long_string():
     """Test Vector 5: decode long codex32 secret and confirm secret bytes."""
     long_str = VECTOR_5["secret_s"]
     long_seed = Codex32String.from_string(long_str)
-    assert long_seed.parts.data.hex() == VECTOR_5["secret_hex"]
+    assert long_seed.data.hex() == VECTOR_5["secret_hex"]
 
 
 # pylint: disable=missing-function-docstring
@@ -105,7 +101,7 @@ def test_invalid_bad_checksums():
 def test_wrong_checksums_or_length():
     for chk in WRONG_CHECKSUMS:
         with pytest.raises((InvalidChecksum, InvalidLength)):
-            Codex32String.from_string(chk)
+            Codex32String(chk)
 
 
 def test_invalid_improper_length():
@@ -129,7 +125,7 @@ def test_invalid_threshold():
 def test_invalid_prefix_or_separator():
     for chk in INVALID_PREFIX_OR_SEPARATOR:
         try:
-            Codex32String.from_string(chk)
+            Codex32String(chk)
             assert False, f"Accepted invalid HRP/separator in: {chk}"
         except (MismatchedHrp, SeparatorNotFound):
             pass

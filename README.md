@@ -11,7 +11,7 @@ Shamir-share interpolation helpers and helpers to build codex32 strings from see
 - Short checksum (13 chars) and long checksum (15 chars) support.
 - Construct codex32 strings from raw seed bytes via `from_seed`.
 - CRC-based default padding scheme for `from_seed`.
-- Parse codex32 strings and access parts via `Parts`.
+- Parse codex32 strings and access parts via properties.
 - Interpolate/recover shares via `interpolate_at`.
 - Default identifier is the bech32-encoded BIP32 fingerprint.
 
