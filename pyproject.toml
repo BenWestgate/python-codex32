@@ -1,26 +1,26 @@
 [build-system]
-requires = ["setuptools >= 77.0.3"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex32"
 version = "0.2.0"
 authors = [
-  { name="Ben Westgate", email="benwestgate@protonmail.com" },
+  { name = "Ben Westgate", email = "benwestgate@protonmail.com" },
 ]
 description = "A Python implementation of BIP93 (Codex32)"
 readme = "README.md"
 requires-python = ">=3.10"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
-]
-license = "MIT"
+license = { text = "MIT" }
 license-files = ["LICENSE*"]
-dependencies = ["bip32"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+dependencies = ["bip32>=3.4.0"]
 
 [project.optional-dependencies]
-dev = ["pytest","flake8"]
+dev = ["pytest", "flake8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
