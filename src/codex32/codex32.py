@@ -3,6 +3,9 @@
 # License: BSD-3-Clause
 """Complete BIP-93 Codex32 implementation"""
 
+from bip32 import BIP32
+
+
 CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 MS32_CONST = 0x10CE0795C2FD1E62A
 MS32_LONG_CONST = 0x43381E570BF4798AB26
@@ -36,7 +39,9 @@ def ms32_verify_checksum(data):
         return ms32_verify_long_checksum(data)
     if len(data) <= 93:
         return ms32_polymod(data) == MS32_CONST
-    raise InvalidLength(f"{len(data)} data characters must be 26-93 or 96-103 in length")
+    raise InvalidLength(
+        f"{len(data)} data characters must be 26-93 or 96-103 in length"
+    )
 
 
 def ms32_create_checksum(data):
@@ -141,8 +146,10 @@ def ms32_recover(l):  # noqa: E741
 
 # pylint: disable=missing-class-docstring
 
+
 class Codex32Error(Exception):
     msg = "Base Codex32 error class"
+
     def __init__(self, extra: str | None = None):
         self.extra = extra
         super().__init__(extra)
@@ -154,61 +161,77 @@ class Codex32Error(Exception):
 class IdNotLength4(Codex32Error):
     msg = "Identifier had wrong length"
 
+
 class IncompleteGroup(Codex32Error):
     msg = "Incomplete group (extraneous bits)"
+
 
 class InvalidDataValue(Codex32Error):
     msg = "Data must be list of integers"
 
+
 class SeparatorNotFound(Codex32Error):
     msg = "No separator character '1' found"
+
 
 class InvalidLength(Codex32Error):
     msg = "Illegal codex32 length"
 
+
 class InvalidChar(Codex32Error):
     msg = "Invalid character"
+
 
 class InvalidCase(Codex32Error):
     msg = "Mixed case"
 
+
 class InvalidChecksum(Codex32Error):
     msg = "Invalid checksum"
+
 
 class InvalidThreshold(Codex32Error):
     msg = "Invalid threshold"
 
+
 class InvalidThresholdN(Codex32Error):
     msg = "Invalid numeric threshold"
+
 
 class InvalidShareIndex(Codex32Error):
     msg = "Invalid share index"
 
+
 class MismatchedLength(Codex32Error):
     msg = "Mismatched share lengths"
+
 
 class MismatchedHrp(Codex32Error):
     msg = "Mismatched human-readable part"
 
+
 class MismatchedThreshold(Codex32Error):
     msg = "Mismatched threshold"
+
 
 class MismatchedId(Codex32Error):
     msg = "Mismatched identifier"
 
+
 class RepeatedIndex(Codex32Error):
     msg = "Repeated index"
+
 
 class ThresholdNotPassed(Codex32Error):
     msg = "Threshold not passed"
 
 
-def bech32_encode(data, hrp=''):
+def bech32_encode(data, hrp=""):
     """Compute a Bech32 string given HRP and data values."""
     for i, x in enumerate(data):
         if not 0 <= x < 32:
             raise InvalidDataValue(f"from 0 to 31 index={i} value={x}")
-    ret = (hrp + '1' if hrp else '') + ''.join(CHARSET[d] for d in data)
+    ret = (hrp + "1" if hrp else "") + "".join(CHARSET[d] for d in data)
     if hrp.lower() == hrp:
         return ret.lower()
     if hrp.upper() == hrp:
@@ -216,7 +239,7 @@ def bech32_encode(data, hrp=''):
     raise InvalidCase("in hrp")
 
 
-def bech32_to_u5(bech=''):
+def bech32_to_u5(bech=""):
     """Map bech32 data-part string -> list of 5-bit integers (0-31)."""
     bech = bech.lower()
     for i, ch in enumerate(bech):
@@ -225,7 +248,7 @@ def bech32_to_u5(bech=''):
     return [CHARSET.find(x) for x in bech]
 
 
-def bech32_decode(bech='', hrp='ms'):
+def bech32_decode(bech="", hrp="ms"):
     """Validate a Bech32/Codex32 string, and determine HRP and data."""
     for i, ch in enumerate(bech):
         if ord(ch) < 33 or ord(ch) > 126:
@@ -234,19 +257,19 @@ def bech32_decode(bech='', hrp='ms'):
         hrp = hrp.upper()
     elif bech.lower() != bech:
         raise InvalidCase
-    pos = bech.rfind('1')
+    pos = bech.rfind("1")
     if pos < 0:
         raise SeparatorNotFound
     hrpgot = bech[:pos]
     if hrpgot != hrp:
         raise MismatchedHrp(f"{hrpgot} expected {hrp}")
-    data = bech32_to_u5(bech[pos + 1:])
+    data = bech32_to_u5(bech[pos + 1 :])
     return hrp, data
 
 
 def compute_crc(crc_len, values):
     """Internal function that computes a CRC checksum for padding."""
-    if not 0 <= crc_len < 5: # Codex32 string CRC padding
+    if not 0 <= crc_len < 5:  # Codex32 string CRC padding
         raise InvalidLength(f"{crc_len!r} (expected int in 0..4)")
     # Define the CRC polynomial (x^crc_len + x + 1) optimal for 1-4
     polynomial = (1 << crc_len) | 3
@@ -257,10 +280,10 @@ def compute_crc(crc_len, values):
         crc = (crc << 1) | int(bit)
         if crc & (1 << crc_len):
             crc ^= polynomial
-    return crc & (2 ** crc_len - 1) # Return last crc_len bits as CRC
+    return crc & (2**crc_len - 1)  # Return last crc_len bits as CRC
 
 
-def convertbits(data, frombits, tobits, pad=True, pad_val=-1):
+def convertbits(data, frombits, tobits, pad=True, pad_val=None):
     """General power-of-2 base conversion with CRC padding."""
     acc = 0
     bits = 0
@@ -277,25 +300,26 @@ def convertbits(data, frombits, tobits, pad=True, pad_val=-1):
             ret.append((acc >> bits) & maxv)
             acc = acc & ((1 << bits) - 1)
     if pad and bits:
-        if pad_val == -1:  # Use CRC padding
-            data_bits = convertbits(ret, tobits, 1) + convertbits([acc], bits, 1)
-            pad_val = compute_crc(tobits - bits, convertbits(data_bits, tobits, 1))
+        if pad_val is None:  # Use CRC padding
+            pad_val = compute_crc(tobits - bits, convertbits(data, frombits, 1, False))
         ret.append(((acc << (tobits - bits)) + pad_val) & maxv)
     elif bits >= frombits:
         raise IncompleteGroup(f"{bits} bits left over")
     return ret
 
-def verify_crc(data, pad_val):
+
+def verify_crc(data, pad_val=None):
     """Verify the codex32 padding matches the specified type."""
     unpadded = convertbits(data, 5, 8, False)
     if data != convertbits(unpadded, 8, 5, pad_val=pad_val):
-        pad_str = "CRC" if pad_val < 0 else bin(pad_val)
+        pad_str = "CRC" if pad_val is None else bin(pad_val)
         raise InvalidChecksum(f"Padding bits do not match expected {pad_str} padding.")
 
 
 class Codex32String:
     """Class representing a Codex32 string."""
-    def __init__(self, s=''):
+
+    def __init__(self, s=""):
         self.s = s
 
     def __str__(self):
@@ -311,7 +335,7 @@ class Codex32String:
 
     def sanity_check(self):
         """Perform sanity check on the codex32 string."""
-        parts = self.parts_inner()
+        parts = self.parts
         incomplete_group = (len(parts.payload) * 5) % 8
         if incomplete_group > 4:
             raise IncompleteGroup(str(incomplete_group))
@@ -334,9 +358,10 @@ class Codex32String:
         ret.sanity_check()
         return ret
 
-    def parts_inner(self):
-        """Get inner parts of the codex32 string."""
-        hrp, s = self.s.rsplit('1', 1) if '1' in self.s else ("", self.s)
+    @property
+    def parts(self):
+        """Get parts of the codex32 string."""
+        hrp, s = self.s.rsplit("1", 1) if "1" in self.s else ("", self.s)
         if len(s) < 94 and len(s) > 44:
             checksum_len = 13
         elif len(s) >= 96 and len(s) < 125:
@@ -344,7 +369,7 @@ class Codex32String:
         else:
             raise InvalidLength(f"{len(s)} must be 45-93 or 96 to 124")
         threshold_char = s[0]
-        if threshold_char.isdigit() and threshold_char != '1':
+        if threshold_char.isdigit() and threshold_char != "1":
             k = int(threshold_char)
         else:
             raise InvalidThreshold(threshold_char)
@@ -353,27 +378,23 @@ class Codex32String:
             k=k,
             ident=s[1:5],
             share_index=s[5],
-            payload=s[6:len(s) - checksum_len],
+            payload=s[6 : len(s) - checksum_len],
             checksum=s[-checksum_len:],
         )
-        if ret.k == 0 and ret.share_index.lower() != 's':
+        if ret.k == 0 and ret.share_index.lower() != "s":
             raise InvalidShareIndex(ret.share_index + "must be 's' when k=0")
         return ret
-
-    def parts(self):
-        """Get parts of the codex32 string."""
-        return self.parts_inner()
 
     @classmethod
     def interpolate_at(cls, shares, target):
         """Interpolate to a specific target share index."""
         indices = []
         ms32_shares = []
-        s0_parts = shares[0].parts()
+        s0_parts = shares[0].parts
         if s0_parts.k > len(shares):
             raise ThresholdNotPassed(f"threshold={s0_parts.k}, n_shares={len(shares)}")
         for share in shares:
-            parts = share.parts()
+            parts = share.parts
             if len(shares[0].s) != len(share.s):
                 raise MismatchedLength(f"{len(shares[0].s)}, {len(share.s)}")
             if s0_parts.hrp != parts.hrp:
@@ -395,10 +416,13 @@ class Codex32String:
 
     @classmethod
     # pylint: disable=too-many-positional-arguments,too-many-arguments
-    def from_seed(cls, data, ident, hrp='ms', k=0, share_idx='s', pad_val=-1):
+    def from_seed(cls, data, ident="", hrp="ms", k=0, share_idx="s", pad_val=None):
         """Create Codex32String from seed bytes."""
         if 16 > len(data) or len(data) > 64:
             raise InvalidLength(f"{len(data)} bytes data MUST be 16 to 64 bytes")
+        if not ident and share_idx == "s":
+            bip32 = BIP32.from_seed(data)
+            ident = bech32_encode(convertbits(bip32.get_fingerprint(), 8, 5))[:4]
         if len(ident) != 4:
             raise IdNotLength4(f"{len(ident)}")
         if not (1 < k <= 9 or k == 0):
@@ -409,8 +433,10 @@ class Codex32String:
         ret = bech32_encode(combined + ms32_create_checksum(combined), hrp)
         return cls(ret)
 
+
 class Parts:
     """Class representing parts of a Codex32 string."""
+
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(self, hrp, k, ident, share_index, payload, checksum):
         self.hrp = hrp
@@ -420,19 +446,31 @@ class Parts:
         self.payload = payload
         self.checksum = checksum
 
+    @property
     def data(self):
-        """Get data from parts."""
+        """Get data from payload."""
         return bytes(convertbits(bech32_to_u5(self.payload), 5, 8, False))
 
     def __eq__(self, other):
         if not isinstance(other, Parts):
             return False
-        return (self.hrp == other.hrp and
-                self.k == other.k and
-                self.ident == other.ident and
-                self.share_index == other.share_index and
-                self.payload == other.payload and
-                self.checksum == other.checksum)
+        return (
+            self.hrp == other.hrp
+            and self.k == other.k
+            and self.ident == other.ident
+            and self.share_index == other.share_index
+            and self.payload == other.payload
+            and self.checksum == other.checksum
+        )
 
     def __hash__(self):
-        return hash((self.hrp, self.k, self.ident, self.share_index, self.payload, self.checksum))
+        return hash(
+            (
+                self.hrp,
+                self.k,
+                self.ident,
+                self.share_index,
+                self.payload,
+                self.checksum,
+            )
+        )

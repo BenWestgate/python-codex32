@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex32"
-version = "0.1.1"
+version = "0.2.0"
 authors = [
   { name="Ben Westgate", email="benwestgate@protonmail.com" },
 ]
@@ -16,7 +16,21 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 license = "MIT"
-license-files = ["LICEN[CS]E*"]
+license-files = ["LICENSE*"]
+dependencies = ["bip32"]
+
+[project.optional-dependencies]
+dev = ["pytest","flake8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.flake8]
+max-line-length = 80
+exclude = ".git,__pycache__,build,dist"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [project.urls]
 Homepage = "https://github.com/benwestgate/python-codex32"
