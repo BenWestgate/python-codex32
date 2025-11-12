@@ -367,14 +367,12 @@ class Codex32String:
     def from_unchecksummed_string(cls, s, hrp="ms"):
         """Create Codex32String from unchecksummed string."""
         _, data = bech32_decode(s, hrp=hrp)
-        ret = cls(bech32_encode(data + ms32_create_checksum(data), hrp))
-        return ret
+        return cls(bech32_encode(data + ms32_create_checksum(data), hrp))
 
     @classmethod
-    def from_string(cls, s, hrp="ms"):
+    def from_string(cls, s):
         """Create Codex32String from a codex32 string."""
-        ret = cls(s)
-        return ret
+        return cls(s)
 
     @classmethod
     def interpolate_at(cls, shares, target="s"):
