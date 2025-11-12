@@ -11,7 +11,7 @@ authors = [
 description = "A Python implementation of BIP93 (Codex32)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 license-files = ["LICENSE*"]
 classifiers = [
   "Programming Language :: Python :: 3",
