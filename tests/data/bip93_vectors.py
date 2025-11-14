@@ -5,7 +5,7 @@ VECTOR_1 = {
     "secret_s": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
     "secret_hex": "318c6318c6318c6318c6318c6318c631",
     "hrp": "ms",
-    "k": 0,
+    "k": "0",
     "identifier": "test",
     "share_index": "s",
     "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxx",

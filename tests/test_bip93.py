@@ -48,6 +48,7 @@ def test_derive_and_recover():
     a = Codex32String(VECTOR_2["share_A"])
     c = Codex32String(VECTOR_2["share_C"])
     # interpolation target is 'D' (uppercase as inputs are uppercase)
+    print(a.s, c.s)
     d = Codex32String.interpolate_at([a, c], "D")
     assert str(d) == VECTOR_2["derived_D"]
     s = Codex32String.interpolate_at([a, c], "S")
@@ -60,7 +61,7 @@ def test_from_seed_and_interpolate_3_of_5():
     seed = bytes.fromhex(VECTOR_3["secret_hex"])
     a = Codex32String(VECTOR_3["share_a"])
     c = Codex32String(VECTOR_3["share_c"])
-    s = Codex32String.from_seed(seed, a.ident, a.hrp, a.k, pad_val=0)
+    s = Codex32String.from_seed(seed, a.hrp + "1" + a.k + a.ident, pad_val=0)
     assert str(s) == VECTOR_3["secret_s"]
     d = Codex32String.interpolate_at([s, a, c], "d")
     e = Codex32String.interpolate_at([s, a, c], "e")
@@ -69,7 +70,7 @@ def test_from_seed_and_interpolate_3_of_5():
     assert str(e) == VECTOR_3["derived_e"]
     assert str(f) == VECTOR_3["derived_f"]
     for pad_val in range(0b11 + 1):
-        s = Codex32String.from_seed(seed, a.ident, a.hrp, a.k, pad_val=pad_val)
+        s = Codex32String.from_seed(seed, a.hrp + "1" + a.k + a.ident, pad_val=pad_val)
         assert str(s) == VECTOR_3["secret_s_alternates"][pad_val]
 
 
@@ -77,7 +78,7 @@ def test_from_seed_and_alternates():
     """Test Vector 4: encode secret share from seed"""
     seed = bytes.fromhex(VECTOR_4["secret_hex"])
     for pad_val in range(0b1111 + 1):
-        s = Codex32String.from_seed(seed, ident="leet", pad_val=pad_val)
+        s = Codex32String.from_seed(seed, header="ms10leet", pad_val=pad_val)
         assert str(s) == VECTOR_4["secret_s_alternates"][pad_val]
         assert s.data == list(seed) or s.data == seed
         # confirm all 16 encodings decode to same master data
