@@ -10,8 +10,38 @@ CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 MS32_CONST = 0x10CE0795C2FD1E62A
 MS32_LONG_CONST = 0x43381E570BF4798AB26
 bech32_inv = [
-    0, 1, 20, 24, 10, 8, 12, 29, 5, 11, 4, 9, 6, 28, 26, 31,
-    22, 18, 17, 23, 2, 25, 16, 19, 3, 21, 14, 30, 13, 7, 27, 15,
+    0,
+    1,
+    20,
+    24,
+    10,
+    8,
+    12,
+    29,
+    5,
+    11,
+    4,
+    9,
+    6,
+    28,
+    26,
+    31,
+    22,
+    18,
+    17,
+    23,
+    2,
+    25,
+    16,
+    19,
+    3,
+    21,
+    14,
+    30,
+    13,
+    7,
+    27,
+    15,
 ]
 
 
@@ -24,7 +54,7 @@ def ms32_polymod(values):
         0x1739640BDEEE3FDAD,
         0x07729A039CFC75F5A,
     ]
-    residue = 0x23181B3
+    residue = 1
     for v in values:
         b = residue >> 60
         residue = (residue & 0x0FFFFFFFFFFFFFFF) << 5 ^ v
@@ -33,22 +63,28 @@ def ms32_polymod(values):
     return residue
 
 
-def ms32_verify_checksum(data):
+def bech32_hrp_expand(hrp):
+    """Expand the HRP into values for checksum computation."""
+    return [ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp]
+
+
+def ms32_verify_checksum(data, hrp):
     """Determine long or short checksum and verify it."""
+    values = bech32_hrp_expand(hrp.lower()) + data
     if len(data) >= 96:  # See Long codex32 Strings
-        return ms32_verify_long_checksum(data)
+        return ms32_verify_long_checksum(values)
     if len(data) <= 93:
-        return ms32_polymod(data) == MS32_CONST
+        return ms32_polymod(values) == MS32_CONST
     raise InvalidLength(
         f"{len(data)} data characters must be 26-93 or 96-103 in length"
     )
 
 
-def ms32_create_checksum(data):
+def ms32_create_checksum(data, hrp):
     """Determine long or short checksum, create and return it."""
+    values = bech32_hrp_expand(hrp.lower()) + data
     if len(data) > 80:  # See Long codex32 Strings
-        return ms32_create_long_checksum(data)
-    values = data
+        return ms32_create_long_checksum(values)
     polymod = ms32_polymod(values + [0] * 13) ^ MS32_CONST
     return [(polymod >> 5 * (12 - i)) & 31 for i in range(13)]
 
@@ -62,7 +98,7 @@ def ms32_long_polymod(values):
         0x0C577EAECCF1990D13C,
         0x1887F74F8DC71B10651,
     ]
-    residue = 0x23181B3
+    residue = 1
     for v in values:
         b = residue >> 70
         residue = (residue & 0x3FFFFFFFFFFFFFFFFF) << 5 ^ v
@@ -226,7 +262,7 @@ class ThresholdNotPassed(Codex32Error):
     msg = "Threshold not passed"
 
 
-def bech32_encode(data, hrp=""):
+def bech32_encode(data, hrp):
     """Compute a Bech32 string given HRP and data values."""
     for i, x in enumerate(data):
         if not 0 <= x < 32:
@@ -248,21 +284,19 @@ def bech32_to_u5(bech=""):
     return [CHARSET.find(x) for x in bech]
 
 
-def bech32_decode(bech="", hrp="ms"):
+def bech32_decode(bech=""):
     """Validate a Bech32/Codex32 string, and determine HRP and data."""
     for i, ch in enumerate(bech):
         if ord(ch) < 33 or ord(ch) > 126:
             raise InvalidChar(f"non-printable U+{ord(ch):04X} at pos={i}")
-    if bech.upper() == bech:
-        hrp = hrp.upper()
-    elif bech.lower() != bech:
-        raise InvalidCase
     pos = bech.rfind("1")
     if pos < 0:
         raise SeparatorNotFound
-    hrpgot = bech[:pos]
-    if hrpgot != hrp:
-        raise MismatchedHrp(f"{hrpgot} expected {hrp}")
+    hrp = bech[:pos]
+    if not hrp:
+        raise MismatchedHrp("empty HRP")
+    if bech.upper() != bech and bech.lower() != bech:
+        raise InvalidCase
     data = bech32_to_u5(bech[pos + 1 :])
     return hrp, data
 
@@ -321,8 +355,8 @@ class Codex32String:
 
     def __init__(self, s=""):
         self.s = s
-        self.hrp, data = bech32_decode(self.s)
-        _, s = self.s.rsplit("1", 1)
+        self.hrp, data = bech32_decode(s)
+        _, s = s.rsplit("1", 1)
         if len(s) < 94 and len(s) > 44:
             checksum_len = 13
         elif len(s) >= 96 and len(s) < 125:
@@ -338,17 +372,18 @@ class Codex32String:
         self.ident = s[1:5]
         self.share_index = s[5]
         self.payload = s[6 : len(s) - checksum_len]
-        self.checksum = s[-checksum_len:]
-        if self.k == 0 and self.share_index.lower() != "s":
+        if not self.k and self.share_index.lower() != "s":
             raise InvalidShareIndex(self.share_index + "must be 's' when k=0")
-        if not ms32_verify_checksum(data):
-            raise InvalidChecksum(f"string={s}")
         incomplete_group = (len(self.payload) * 5) % 8
         if incomplete_group > 4:
             raise IncompleteGroup(str(incomplete_group))
+        if not ms32_verify_checksum(data, self.hrp):
+            raise InvalidChecksum(f"string={self.s}")
 
     def __str__(self):
-        return self.s
+        return self.from_unchecksummed_string(
+            self.hrp + "1" + str(self.k) + self.ident + self.share_index + self.payload
+        ).s
 
     def __eq__(self, other):
         if not isinstance(other, Codex32String):
@@ -359,19 +394,28 @@ class Codex32String:
         return hash(self.s)
 
     @property
+    def checksum(self):
+        """Calculate the checksum part of the Codex32 string."""
+        data = bech32_to_u5(str(self.k) + self.ident + self.share_index + self.payload)
+        return bech32_encode(ms32_create_checksum(data, self.hrp), "")
+
+    @property
     def data(self):
         """Return the payload data bytes."""
         return bytes(convertbits(bech32_to_u5(self.payload), 5, 8, False))
 
     @classmethod
-    def from_unchecksummed_string(cls, s, hrp="ms"):
+    def from_unchecksummed_string(cls, s):
         """Create Codex32String from unchecksummed string."""
-        _, data = bech32_decode(s, hrp=hrp)
-        return cls(bech32_encode(data + ms32_create_checksum(data), hrp))
+        hrp, data = bech32_decode(s)
+        return cls(bech32_encode(data + ms32_create_checksum(data, hrp), hrp))
 
     @classmethod
-    def from_string(cls, s):
+    def from_string(cls, s, hrp="ms"):
         """Create Codex32String from a codex32 string."""
+        hrpgot, _ = bech32_decode(s)
+        if hrpgot != hrp:
+            raise MismatchedHrp(f"{hrpgot} != {hrp}")
         return cls(s)
 
     @classmethod
@@ -410,7 +454,7 @@ class Codex32String:
             raise InvalidLength(f"{len(data)} bytes data MUST be 16 to 64 bytes")
         if not ident and share_idx == "s":
             bip32 = BIP32.from_seed(data)
-            ident = bech32_encode(convertbits(bip32.get_fingerprint(), 8, 5))[:4]
+            ident = bech32_encode(convertbits(bip32.get_fingerprint(), 8, 5), "")[:4]
         if len(ident) != 4:
             raise IdNotLength4(f"{len(ident)}")
         if not (1 < k <= 9 or k == 0):
@@ -418,5 +462,5 @@ class Codex32String:
         payload = convertbits(data, 8, 5, pad_val=pad_val)
         header = bech32_to_u5(str(k) + ident + share_idx)
         combined = header + payload
-        ret = bech32_encode(combined + ms32_create_checksum(combined), hrp)
+        ret = bech32_encode(combined + ms32_create_checksum(combined, hrp), hrp)
         return cls(ret)

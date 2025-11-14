@@ -36,7 +36,7 @@ s = ms32.from_seed(
 print(s.s)                # codex32 string
 
 # Parse & validate an existing codex32 string
-a = ms32.from_string("ms13casha320zyxwvutsrqpnmlkjhgfedca2a8d0zehn8a0t")
+a = ms32.from_string("ms13casha320zyxwvutsrqpnmlkjhgfedca2a8d0zehn8a0t", hrp="ms")
 parts = a.parts             # Parts object
 data_bytes = parts.data     # encoded seed bytes
 print(data_bytes.hex())     # hex encoding of seed bytes
@@ -49,4 +49,12 @@ c = ms32.from_unchecksummed_string("ms13cashcacdefghjklmnpqrstuvwxyz023")
 shares = [s, a, c]
 derived_share_d = ms32.interpolate_at(shares, target='d')
 print(derived_share_d.s)
+
+# Parse & validate an existing codex32 string with any hrp
+e = ms32("cl10lueasd35kw6r5de5kueedxyesqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqanvrktzhlhusz")
+print(e.s)
+
+# Relabel a codex32 string object
+e.ident = "cln2"
+print(str(e))
 ```
