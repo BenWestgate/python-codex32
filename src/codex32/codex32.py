@@ -411,6 +411,7 @@ class Codex32String:
 
     @property
     def s(self):
+        """Return the full Codex32 string."""
         return self.hrp + "1" + self.data_part_chars
 
     def __str__(self):
