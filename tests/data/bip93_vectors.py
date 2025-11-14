@@ -33,7 +33,7 @@ VECTOR_3 = {
         "ms13cashsllhdmn9m42vcsamx24zrxgs3qpte35dvzkjpt0r",
         "ms13cashsllhdmn9m42vcsamx24zrxgs3qzfatvdwq5692k6",
         "ms13cashsllhdmn9m42vcsamx24zrxgs3qrsx6ydhed97jx2",
-    ]
+    ],
 }
 
 VECTOR_4 = {
@@ -55,12 +55,19 @@ VECTOR_4 = {
         "ms10leetsllhdmn9m42vcsamx24zrxgs3qrl7ahwvhw4fnzrhve25gvezzyqd6hekpea5n0y5j",
         "ms10leetsllhdmn9m42vcsamx24zrxgs3qrl7ahwvhw4fnzrhve25gvezzyqwcnrwpmlkmt9dt",
         "ms10leetsllhdmn9m42vcsamx24zrxgs3qrl7ahwvhw4fnzrhve25gvezzyq0pgjxpzx0ysaam",
-    ]
+    ],
 }
 
 VECTOR_5 = {
     "secret_s": "MS100C8VSM32ZXFGUHPCHTLUPZRY9X8GF2TVDW0S3JN54KHCE6MUA7LQPZYGSFJD6AN074RXVCEMLH8WU3TK925ACDEFGHJKLMNPQRSTUVWXY06FHPV80UNDVARHRAK",
     "secret_hex": "dc5423251cb87175ff8110c8531d0952d8d73e1194e95b5f19d6f9df7c01111104c9baecdfea8cccc677fb9ddc8aec5553b86e528bcadfdcc201c17c638c47e9",
+}
+
+VECTOR_6 = {
+    "codex32_luea": "cl10lueasd35kw6r5de5kueedxyesqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqanvrktzhlhusz",
+    "ident_cln2": "cln2",
+    "codex32_cln2": "cl10cln2sd35kw6r5de5kueedxyesqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqn9lcvcu7cez4s",
+    "codex32_peev": "cl10peevst6cqh0wu7p5ssjyf4z4ez42ks9jlt3zneju9uuypr2hddak6tlqsjhsks4laxts8q",
 }
 
 BAD_CHECKSUMS = [
