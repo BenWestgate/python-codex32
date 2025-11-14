@@ -7,6 +7,11 @@ from bip32 import BIP32
 
 
 CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+HRP_CODES = {
+    "ms": 0,  # BIP-0032 master seed
+    "cl": 1,  # CLN HSM secret
+}  # Registry: https://github.com/satoshilabs/slips/blob/master/slip-0173.md#uses-of-codex32
+IDX_ORDER = "sacdefghjklmnpqrstuvwxyz023456789"  # Canonical BIP93 share indices alphabetical order
 MS32_CONST = 0x10CE0795C2FD1E62A
 MS32_LONG_CONST = 0x43381E570BF4798AB26
 bech32_inv = [
@@ -211,7 +216,7 @@ class SeparatorNotFound(Codex32Error):
 
 
 class InvalidLength(Codex32Error):
-    msg = "Illegal codex32 length"
+    msg = "Illegal codex32 data length"
 
 
 class InvalidChar(Codex32Error):
@@ -353,27 +358,35 @@ def verify_crc(data, pad_val=None):
 class Codex32String:
     """Class representing a Codex32 string."""
 
+    @staticmethod
+    def parse_header(header_str=""):
+        """Parse a codex32 header and return its properties."""
+        hrp = bech32_decode(header_str)[0] if "1" in header_str else header_str
+        try:
+            k = int(header_str[len(hrp) + 1 : len(hrp) + 2])
+        except ValueError as e:
+            raise InvalidThreshold(f"'{header_str[len(hrp)+1]}' must be a digit") from e
+        ident = header_str[len(hrp) + 2 : len(hrp) + 6]
+        if ident and len(ident) < 4:
+            raise IdNotLength4(f"{len(ident)}")
+        share_idx = header_str[len(hrp) + 6 : len(hrp) + 7]
+        if k == 0 and share_idx.lower() != "s":
+            raise InvalidShareIndex(f"'{share_idx}' must be 's' when k=0")
+        return hrp, k, ident, share_idx
+
     def __init__(self, s=""):
         self.s = s
         self.hrp, data = bech32_decode(s)
-        _, s = s.rsplit("1", 1)
-        if len(s) < 94 and len(s) > 44:
+        _, data_part = s.rsplit("1", 1)
+        if 44 < len(data_part) < 94:
             checksum_len = 13
-        elif len(s) >= 96 and len(s) < 125:
+        elif 95 < len(data_part) < 125:
             checksum_len = 15
         else:
-            raise InvalidLength(f"{len(s)} must be 45-93 or 96 to 124")
-        threshold_char = s[0]
-        if threshold_char.isdigit() and threshold_char != "1":
-            k = int(threshold_char)
-        else:
-            raise InvalidThreshold(threshold_char)
-        self.k = k
-        self.ident = s[1:5]
-        self.share_index = s[5]
-        self.payload = s[6 : len(s) - checksum_len]
-        if not self.k and self.share_index.lower() != "s":
-            raise InvalidShareIndex(self.share_index + "must be 's' when k=0")
+            raise InvalidLength(f"{len(data_part)} must be 45-93 or 96-124")
+        header_str = bech32_encode(data[:6], self.hrp)
+        _, self.k, self.ident, self.share_idx = self.parse_header(header_str)
+        self.payload = data_part[6:-checksum_len]
         incomplete_group = (len(self.payload) * 5) % 8
         if incomplete_group > 4:
             raise IncompleteGroup(str(incomplete_group))
@@ -382,7 +395,7 @@ class Codex32String:
 
     def __str__(self):
         return self.from_unchecksummed_string(
-            self.hrp + "1" + str(self.k) + self.ident + self.share_index + self.payload
+            self.hrp + "1" + str(self.k) + self.ident + self.share_idx + self.payload
         ).s
 
     def __eq__(self, other):
@@ -396,7 +409,7 @@ class Codex32String:
     @property
     def checksum(self):
         """Calculate the checksum part of the Codex32 string."""
-        data = bech32_to_u5(str(self.k) + self.ident + self.share_index + self.payload)
+        data = bech32_to_u5(str(self.k) + self.ident + self.share_idx + self.payload)
         return bech32_encode(ms32_create_checksum(data, self.hrp), "")
 
     @property
@@ -435,9 +448,9 @@ class Codex32String:
                 raise MismatchedThreshold(f"{s0_parts.k}, {share.k}")
             if s0_parts.ident != share.ident:
                 raise MismatchedId(f"{s0_parts.ident}, {share.ident}")
-            if share.share_index in indices:
-                raise RepeatedIndex(share.share_index)
-            indices.append(share.share_index)
+            if share.share_idx in indices:
+                raise RepeatedIndex(share.share_idx)
+            indices.append(share.share_idx)
             ms32_shares.append(bech32_decode(share.s)[1])
         for i, share in enumerate(shares):
             if indices[i] == target:

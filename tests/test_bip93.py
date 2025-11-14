@@ -36,7 +36,7 @@ def test_parts():
     c32 = Codex32String(VECTOR_1["secret_s"])
     assert c32.hrp == VECTOR_1["hrp"]
     assert c32.k == VECTOR_1["k"]
-    assert c32.share_index == VECTOR_1["share_index"]
+    assert c32.share_idx == VECTOR_1["share_index"]
     assert c32.ident == VECTOR_1["identifier"]
     assert c32.payload == VECTOR_1["payload"]
     assert c32.checksum == VECTOR_1["checksum"]
