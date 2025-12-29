@@ -5,7 +5,7 @@ from src.codex32.codex32 import Codex32String, IDX_ORDER
 def recover_with_bytes(hrp, header_str, share_idx_list, share_bytes_list, target="s"):
     """Recover codex32 secret from share bytes assuming default padding."""
     pad_len = (5 - (len(share_bytes_list[0]) * 8) % 5) % 5
-    default_padded_shares = IDX_ORDER[1 : 1 + len(share_idx_list)]
+    default_padded_shares = IDX_ORDER[: len(share_idx_list)]
     pad_candidates = product(range(1 << pad_len), repeat=len(share_idx_list))
     for pad_vals in pad_candidates:
         given_shares = []
