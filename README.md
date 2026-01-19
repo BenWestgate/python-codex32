@@ -45,29 +45,29 @@ from codex32 import Codex32String
 # Create from seed bytes
 s = Codex32String.from_seed(
     bytes.fromhex('ffeeddccbbaa99887766554433221100'),
-    "ms13cashs",     # prefix string, (HRP + '1' + header)
-    0               # padding value (default "CRC", otherwise integer)
+    "ms13cashs",        # prefix string, (HRP + '1' + header)
+    0                   # padding value (default "CRC", otherwise integer)
 )
-print(s.s)                  # codex32 string
+print(s.s)              # codex32 string
 
 # Parse an existing codex32 string and inspect parts
 a = Codex32String("ms13casha320zyxwvutsrqpnmlkjhgfedca2a8d0zehn8a0t")
-print(a.hrp)                # human-readable part
-print(a.k)                  # threshold parameter
-print(a.ident)              # 4 character identifier
-print(a.share_idx)          # share index character
-print(a.payload)            # payload part
-print(a.checksum)           # checksum part
-print(len(a))               # length of the codex32 string
-print(a.is_upper)           # case is upper True/False
-print(s.data.hex())         # raw seed bytes as hex
-print(a.pad_val)            # padding value integer, (MSB first)
+print(a.hrp)            # human-readable part
+print(a.k)              # threshold parameter
+print(a.ident)          # 4 character identifier
+print(a.share_idx)      # share index character
+print(a.payload)        # payload part
+print(a.checksum)       # checksum part
+print(len(a))           # length of the codex32 string
+print(a.is_upper)       # case is upper True/False
+print(s.data.hex())     # raw seed bytes as hex
+print(a.pad_val)        # padding value integer, (MSB first)
 
 
 
 # Create from unchecksummed string (will append checksum)
 c = Codex32String.from_unchecksummed_string("ms13cashcacdefghjklmnpqrstuvwxyz023")
-print(str(c))                  # equivalent to print(c.s)
+print(str(c))           # equivalent to print(c.s)
 
 # Interpolate shares to recover or derive target share index
 shares = [s, a, c]
