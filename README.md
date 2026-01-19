@@ -20,10 +20,10 @@ Shamir secret sharing scheme (SSSS) interpolation helpers and helpers to build c
 ## Security
 Caution: This is reference code. Verify carefully before using with real funds.
 
+## Installation
 **Compatibility:** Python 3.10–3.14
 
-## Installation
-Recommended: use a virtual environment
+**Recommended:** use a virtual environment
 ### Linux / macOS
 ```bash
 python -m venv .venv
