@@ -8,14 +8,13 @@ Shamir secret sharing scheme (SSSS) interpolation helpers and helpers to build c
 
 ## Features
 - Encode/decode codex32 data via `from_string` and `from_unchecksummed_string`.
-- Regular checksum (13 chars) and long checksum (15 chars) support.
+- Regular and long codex32 checksum support.
 - Construct codex32 strings from raw seed bytes via `from_seed`.
-- CRC-based default padding scheme for `from_seed`.
-- Default `from_seed` identifier is the bech32-encoded BIP32 fingerprint.
-- Interpolate/recover shares via `interpolate_at`.
+- `from_seed` uses default bech32-encoded BIP32 fingerprint identifier and CRC padding.
+- Interpolate shares recover secrets via `interpolate_at`.
 - Parse codex32 strings and access parts via properties.
 - Mutate codex32 strings by reassigning `is_upper`, `hrp`, `k`, `ident`, `share_idx`, `data`, and `pad_val`.
-- Contains module and tests for Bech32/Bech32m and segwit addresses.
+- Supports Bech32/Bech32m and segwit address format aswell.
 
 ## Security
 Caution: This is reference code. Verify carefully before using with real funds.
