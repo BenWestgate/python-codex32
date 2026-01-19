@@ -1,6 +1,6 @@
 # python-codex32
 
-Python reference implementation of BIP-0093 (codex32): checksummed, SSSS-aware BIP32 seed strings.
+Reference implementation of BIP-0093 (codex32): checksummed, SSSS-aware BIP32 seed strings.
 
 This repository implements the codex32 string format described by BIP-0093.
 It provides encoding/decoding, regular/long codex32 checksums, CRC padding for base conversions,
