@@ -20,7 +20,7 @@
 
 """codex32 package: bech32/codex32 helpers and encoders/decoders."""
 
-from .codex32 import Codex32String, encode, decode
+from .bip93 import Codex32String, encode, decode
 from .errors import CodexError
 
 
