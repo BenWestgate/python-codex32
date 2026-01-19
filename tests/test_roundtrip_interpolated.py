@@ -1,4 +1,7 @@
-from codex32 import Codex32String
+"""Test for round-trip encoding/decoding and recovery via interpolation."""
+
+from codex32 import Codex32String, decode
+
 
 def test_round_trip_recovery():
     """Test round-trip encoding/decoding and recovery via interpolation."""
