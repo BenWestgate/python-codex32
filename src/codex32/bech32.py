@@ -24,8 +24,8 @@
 
 """Internal bech32 and u5 helpers for Bech32/codex32 encoding and decoding."""
 
-from codex32.errors import CodexError
 from codex32.checksums import Checksum, crc_pad
+from codex32.errors import CodexError, InvalidChar, SeparatorNotFound, InvalidChecksum
 
 
 # pylint: disable=missing-class-docstring
@@ -38,22 +38,13 @@ class IncompleteGroup(CodexError): ...
 class InvalidLength(CodexError): ...
 
 
-class InvalidChar(CodexError): ...
-
-
 class InvalidCase(CodexError): ...
-
-
-class InvalidChecksum(CodexError): ...
 
 
 class InvalidPadding(CodexError): ...
 
 
 class MissingHrp(CodexError): ...
-
-
-class SeparatorNotFound(CodexError): ...
 
 
 class MissingChecksum(CodexError): ...
@@ -70,7 +61,7 @@ def bech32_hrp_expand(hrp: str) -> list[int]:
     return [ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp]
 
 
-def u5_to_chars(data: list[int]) -> str:
+def u5_to_bech32(data: list[int]) -> str:
     """Map list of 5-bit integers (0-31) -> Bech32 data-part string."""
     for i, x in enumerate(data):
         if not 0 <= x < 32:
@@ -81,18 +72,18 @@ def u5_to_chars(data: list[int]) -> str:
 def u5_encode(hrp: str, data: list[int], spec: Checksum) -> str:
     """Compute a Bech32 string given HRP and data values."""
     combined = data + spec.create(bech32_hrp_expand(hrp) + data)
-    return hrp + "1" + u5_to_chars(combined)
+    return hrp + "1" + u5_to_bech32(combined)
 
 
-def chars_to_u5(bech: str) -> list[int]:
+def bech32_to_u5(bech: str) -> list[int]:
     """Map Bech32 data-part string -> list of 5-bit integers (0-31)."""
     for i, ch in enumerate(bech):
         if ch not in CHARSET:
-            raise InvalidChar(f"'{ch!r}' at pos={i} in data part")
+            raise InvalidChar(f"non-bech32 character '{ch!r}' at pos={i} in data part")
     return [CHARSET.find(x) for x in bech]
 
 
-def u5_parse(bech: str) -> tuple[str, list[int]]:
+def bech32_parse(bech: str) -> tuple[str, list[int]]:
     """Parse a Bech32/Codex32 string, and return HRP and 5-bit data."""
     for i, ch in enumerate(bech):
         if ord(ch) < 33 or ord(ch) > 126:
@@ -102,13 +93,13 @@ def u5_parse(bech: str) -> tuple[str, list[int]]:
     if (pos := (bech := bech.lower()).rfind("1")) < 1:
         raise MissingHrp("empty HRP") if not pos else SeparatorNotFound("'1' not found")
     hrp = bech[:pos]
-    data = chars_to_u5(bech[pos + 1 :])
+    data = bech32_to_u5(bech[pos + 1 :])
     return hrp, data
 
 
 def u5_decode(bech: str, encodings: list[Checksum]) -> tuple[str, list[int], Checksum]:
     """Validate a Bech32/Codex32 string, and determine HRP and data."""
-    hrp, data = u5_parse(bech)
+    hrp, data = bech32_parse(bech)
     e = MissingEncoding("no encoding or encodings were passed")
     for spec in encodings:
         if len(hrp) <= (datlen := len(bech) - 1 - spec.cs_len):

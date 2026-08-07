@@ -31,12 +31,12 @@ from bip32 import BIP32
 
 from codex32.bech32 import (
     CHARSET,
-    chars_to_u5,
+    bech32_to_u5,
     convertbits,
-    u5_to_chars,
+    u5_to_bech32,
     u5_decode,
     u5_encode,
-    u5_parse,
+    bech32_parse,
 )
 from codex32.checksums import CODEX32, CODEX32_LONG
 from codex32.errors import CodexError
@@ -45,7 +45,7 @@ HRP_CODES = {
     "ms": 0,  # BIP-0032 master seed
     "cl": 1,  # CLN HSM secret
 }  # Registry: https://github.com/satoshilabs/slips/blob/master/slip-0173.md#uses-of-codex32
-IDX_ORDER = "sacdefghjklmnpqrstuvwxyz023456789"  # Canonical BIP93 share indices alphabetical order
+IDX_SORT = "sacdefghjklmnpqrtuvwxyz023456789"  # Canonical BIP93 share indices alphabetical order
 BECH32_INV = [
     0,
     1,
@@ -166,7 +166,7 @@ def decode(hrp: str, s: str, pad_val: int | str = "any"):
     hrpgot, data, _ = codex32_decode(s)
     if hrpgot != hrp:
         raise MismatchedHrp(f"{hrpgot} != {hrp}")
-    if len(header := u5_to_chars(data[:6])) < 6:
+    if len(header := u5_to_bech32(data[:6])) < 6:
         raise MismatchedLength(f"'{header}' header too short: {len(data)} < 6")
     if not (k := header[0]).isdigit():
         raise InvalidThreshold(f"threshold parameter '{k}' must be a digit")
@@ -182,7 +182,7 @@ def decode(hrp: str, s: str, pad_val: int | str = "any"):
 def encode(hrp: str, header: str, seed: bytes, pad_val: int | str = "CRC"):
     """Encode a codex32 string given HRP, header, seed, and padding."""
     u5_payload = convertbits(seed, 8, 5, True, pad_val)
-    ret = codex32_encode(hrp, chars_to_u5(header) + u5_payload)
+    ret = codex32_encode(hrp, bech32_to_u5(header) + u5_payload)
     if len(header) != 6 or (header, seed, pad_val) != decode(hrp, ret, pad_val):
         raise MismatchedLength(f"'{header}' header must be 6 chars, got {len(header)}")
     return ret
@@ -201,7 +201,7 @@ class Codex32String:
     @property
     def payload(self) -> str:
         """Return the payload part of the codex32 string."""
-        return u5_to_chars(convertbits(self.data, 8, 5, True, self.pad_val))
+        return u5_to_bech32(convertbits(self.data, 8, 5, True, self.pad_val))
 
     @property
     def s(self) -> str:
@@ -224,14 +224,13 @@ class Codex32String:
     @classmethod
     def from_unchecksummed_string(cls, s: str) -> "Codex32String":
         """Create Codex32String from unchecksummed string."""
-        ret = codex32_encode(*u5_parse(s))
+        ret = codex32_encode(*bech32_parse(s))
         return cls(ret.upper() if s.isupper() else ret)
 
     @classmethod
     def from_string(cls, hrp: str, s: str) -> "Codex32String":
         """Create Codex32String from a given codex32 string and HRP."""
-        if (hrpgot := u5_parse(s)[0]) != hrp:
-            raise MismatchedHrp(f"{hrpgot} != {hrp}")
+        decode(hrp, s)
         return cls(s)
 
     @classmethod
@@ -241,7 +240,9 @@ class Codex32String:
         """Interpolate a set of Codex32String objects to a specific target index."""
         if not all(isinstance(share, Codex32String) for share in shares):
             raise TypeError("All shares must be Codex32String instances")
-        if (threshold := int(shares[0].k) if shares else 1) > len(shares):
+        if len(target) != 1 or target.lower() not in CHARSET:
+            raise InvalidShareIndex(f"'{target}' must be a single char in {IDX_SORT!r}")
+        if (threshold := int(shares[0].k) if shares else 1) != len(shares):
             raise ThresholdNotPassed(f"threshold={threshold}, n_shares={len(shares)}")
         for share in shares:
             if len(shares[0]) != len(share):
@@ -257,7 +258,7 @@ class Codex32String:
         if ret := [share for share in shares if share.share_idx == target.lower()]:
             return ret.pop()
         u5_shares = [codex32_decode(share.s)[1] for share in shares]
-        data = codex32_interpolate(u5_shares, CHARSET.find(target.lower()))
+        data = codex32_interpolate(u5_shares, CHARSET.index(target.lower()))
         ret = codex32_encode(shares[0].hrp, data)
         return cls(ret.upper() if all(s.s.upper() == s.s for s in shares) else ret)
 
@@ -266,12 +267,12 @@ class Codex32String:
         cls, data: bytes, prefix: str = "ms10", pad_val: int | str = "CRC"
     ) -> "Codex32String":
         """Create Codex32String given prefix and bare seed data."""
-        hrp, data_part = u5_parse(prefix)
-        header = u5_to_chars(data_part)
+        hrp, data_part = bech32_parse(prefix)
+        header = u5_to_bech32(data_part)
         k = "0" if not header else header[:1]
         if not (ident := header[1 : max(5, len(header) - 1)]):
             bip32_fingerprint = BIP32.from_seed(data).get_fingerprint()
-            ident = u5_to_chars(convertbits(bip32_fingerprint, 8, 5)[:4])
+            ident = u5_to_bech32(convertbits(bip32_fingerprint, 8, 5)[:4])
         elif len(ident) != 4:
             raise IdNotLength4(f"identifier had wrong length {len(ident)}")
         share_idx = "s" if not header[5:] else header[5:6]

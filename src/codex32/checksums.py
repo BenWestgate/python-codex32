@@ -30,6 +30,7 @@
 
 # Generators are the reduction polynomials for polymod computations
 BECH32_GEN = [0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3]
+DESCSUM_GEN = [0xF5DEE51989, 0xA9FDCA3312, 0x1BAB10E32D, 0x3706B1677A, 0x644D626FFD]
 CODEX32_GEN = [
     0x19DC500CE73FDE210,
     0x1BFAE00DEF77FE529,
@@ -46,6 +47,7 @@ CODEX32_LONG_GEN = [
 ]
 BECH32_CONST = 1
 BECH32M_CONST = 0x2BC830A3
+DESCSUM_CONST = 1
 CODEX32_CONST = 0x10CE0795C2FD1E62A
 CODEX32_LONG_CONST = 0x43381E570BF4798AB26
 
@@ -60,7 +62,7 @@ class Checksum:
         self.shift = len(self.gen) * (self.cs_len - 1)
         self.mask = (1 << self.shift) - 1
 
-    def polymod(self, values, residue=1):
+    def polymod(self, values: list[int], residue: int = 1) -> int:
         """Internal function that computes the Bech32/Codex32/CRC checksums."""
         for value in values:
             top = residue >> self.shift
@@ -69,11 +71,11 @@ class Checksum:
                 residue ^= g if ((top >> i) & 1) else 0
         return residue
 
-    def verify(self, values):
+    def verify(self, values: list[int]) -> bool:
         """Verify a checksum given values."""
         return self.polymod(values) == self.const
 
-    def create(self, values):
+    def create(self, values: list[int]) -> list[int]:
         """Compute the checksum values given values."""
         polymod = self.polymod(values + [0] * self.cs_len) ^ self.const
         mask = (1 << (w := len(self.gen))) - 1
@@ -81,12 +83,13 @@ class Checksum:
         return [(polymod >> (w * (cs_len - 1 - i))) & mask for i in range(cs_len)]
 
 
+BECH32 = Checksum("Bech32", (BECH32_GEN, 6, BECH32_CONST), (0, 83))  # detects 4 errors
+BECH32M = Checksum("Bech32m", (BECH32_GEN, 6, BECH32M_CONST), (0, 83))
+DESCSUM = Checksum("Descriptor", (DESCSUM_GEN, 8, DESCSUM_CONST), (0, 507))  # detects 4
 codex32_long_spec = (CODEX32_LONG_GEN, 15, CODEX32_LONG_CONST)  # detects 8 errors
 CODEX32_LONG = Checksum("Long codex32", codex32_long_spec, (81, 1008))
 CODEX32 = Checksum("codex32", (CODEX32_GEN, 13, CODEX32_CONST), (0, 80))
-BECH32 = Checksum("Bech32", (BECH32_GEN, 6, BECH32_CONST), (0, 83))  # detects 4 errors
-BECH32M = Checksum("Bech32m", (BECH32_GEN, 6, BECH32M_CONST), (0, 83))
-CRC1 = Checksum("CRC1", ([1], 1, 0), (0, 0))
+CRC1 = Checksum("CRC1", ([1], 1, 0), (0, 0))  # detects 1 error
 CRC2 = Checksum("CRC2", ([3], 2, 0), (0, 1))  # detects 2 errors
 CRC3 = Checksum("CRC3", ([3], 3, 0), (0, 4))
 CRC4 = Checksum("CRC4", ([3], 4, 0), (0, 11))
