@@ -93,3 +93,13 @@ print(e.s)
 pip install -e .[dev]
 pytest
 ```
+
+## Command-line interface (CLI)
+
+### Commands
+codex32-cli offers four commands that work together:
+
+1. `create` creates codex32 backup
+1. `validate` validates codex32 strings and suggest error corrections
+1. `xprv` recovers secret and derives a BIP-32 extended private key
+1. `derive` interpolates fresh shares for a valid set
