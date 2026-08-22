@@ -35,6 +35,7 @@ from typing import Literal
 from codex32.bech32 import (
     CHARSET,
     _chars_to_u5,
+    _checksum_for_encoded_length,
     _hrp_expand,
     _u5_to_chars,
     _validate_single_case_ascii,
@@ -551,9 +552,9 @@ def _correct_fixed(
     body_text = damaged_text[len(prefix) :]
     body = [CHARSET.find(character.lower()) for character in body_text]
     try:
-        checksum = _profile_spec(suspected_profile).checksum_for_encoded_length(
-            len(body)
-        )
+        profile = _profile_spec(suspected_profile)
+        checksum = _checksum_for_encoded_length(suspected_profile.value, len(body))
+        profile.validate_payload_length(len(body) - checksum.length - 6)
     except CodexError as error:
         return _FixedCorrectionFailure("profile", str(error))
     spec = _spec_for_checksum(checksum)

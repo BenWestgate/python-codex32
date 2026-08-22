@@ -1,16 +1,19 @@
-"""Small, bounded internal Bech32/u5 codec used by codex32 profiles."""
+"""Bounded codex32 text and checksum codec."""
 
-from codex32.checksums import _Checksum
+from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import (
     InvalidCase,
     InvalidCharacter,
+    InvalidChecksum,
     InvalidLength,
     InvalidPadding,
+    InvalidShareIndex,
+    InvalidThreshold,
     MissingSeparator,
 )
 
 CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
-_MAX_CODEX32_LENGTH = 127
+_MAX_CODEX32_LENGTH = 1024
 
 
 def _hrp_expand(hrp: str) -> list[int]:
@@ -69,13 +72,57 @@ def _parse(value: str, *, max_length: int = _MAX_CODEX32_LENGTH) -> tuple[str, l
     return lowered[:separator], _chars_to_u5(lowered[separator + 1 :])
 
 
-def _encode(hrp: str, data: list[int] | tuple[int, ...], spec: _Checksum) -> str:
+def _checksum_for_body_length(hrp: str, body_length: int) -> _Checksum:
+    """Select the checksum from the future expanded codeword length."""
+    expanded_hrp_length = 2 * len(hrp) + 1
+    return _CODEX32 if expanded_hrp_length + body_length <= 80 else _CODEX32_LONG
+
+
+def _checksum_for_encoded_length(hrp: str, encoded_length: int) -> _Checksum:
+    """Select and bound the checksum covering an encoded data part."""
+    expanded_codeword_length = 2 * len(hrp) + 1 + encoded_length
+    if expanded_codeword_length <= 93:
+        return _CODEX32
+    if expanded_codeword_length < 96:
+        raise InvalidLength("expanded codex32 lengths 94 and 95 are invalid")
+    if expanded_codeword_length <= 1023:
+        return _CODEX32_LONG
+    raise InvalidLength("expanded codex32 codeword exceeds 1023 symbols")
+
+
+def _validate_header(data: list[int] | tuple[int, ...]) -> None:
+    """Validate the common six-symbol codex32 header."""
+    if len(data) < 6:
+        raise InvalidLength("codex32 data part is shorter than its six-symbol header")
+    header = _u5_to_chars(tuple(data[:6]))
+    if header[0] not in "023456789":
+        raise InvalidThreshold(f"invalid threshold symbol {header[0]!r}")
+    if header[0] == "0" and header[5] != "s":
+        raise InvalidShareIndex("threshold 0 requires share index S")
+
+
+def _encode(hrp: str, data: list[int] | tuple[int, ...]) -> str:
+    """Encode a common-header-valid body with the format-selected checksum."""
+    _validate_header(data)
+    spec = _checksum_for_body_length(hrp, len(data))
     checksum = spec.create(_hrp_expand(hrp) + list(data))
     return f"{hrp}1{_u5_to_chars([*data, *checksum])}"
 
 
 def _verify(hrp: str, data_with_checksum: list[int], spec: _Checksum) -> bool:
     return spec.verify(_hrp_expand(hrp) + data_with_checksum)
+
+
+def _decode(value: str) -> tuple[str, tuple[int, ...], _Checksum]:
+    """Validate codex32 format before any application-profile lookup."""
+    if len(value) < 21:
+        raise InvalidLength("codex32 string must contain at least 21 characters")
+    hrp, encoded = _parse(value)
+    checksum = _checksum_for_encoded_length(hrp, len(encoded))
+    _validate_header(encoded[: -checksum.length])
+    if not _verify(hrp, encoded, checksum):
+        raise InvalidChecksum(f"invalid {checksum.kind} checksum")
+    return hrp, tuple(encoded[: -checksum.length]), checksum
 
 
 def _convert_bits(

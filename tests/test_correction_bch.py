@@ -246,7 +246,7 @@ def test_bip39_outer_correction_must_reparse_embedded_checksum() -> None:
 @pytest.mark.parametrize(
     ("value", "profile"),
     (
-        ("ms1" + "q" * 133, Profile.MS),
+        ("ms1" + "q" * 1022, Profile.MS),
         ("ms10test\n" + "q" * 40, Profile.MS),
     ),
 )

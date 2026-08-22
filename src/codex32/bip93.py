@@ -7,19 +7,19 @@ from dataclasses import dataclass
 from codex32.bech32 import (
     CHARSET,
     _chars_to_u5,
+    _checksum_for_encoded_length,
     _convert_bits,
+    _decode,
     _encode,
     _parse,
     _payload_bytes,
     _u5_to_chars,
-    _verify,
 )
 from codex32.checksums import _crc_pad
 from codex32.errors import (
     DuplicateShareIndex,
     ExcludedTargetIndex,
     ExistingTargetIndex,
-    InvalidChecksum,
     InvalidIdentifier,
     InvalidLength,
     InvalidShareIndex,
@@ -218,9 +218,7 @@ class Bip39Secret(Secret):
 def _validate_payload(
     profile: Profile, header: Header, payload: tuple[int, ...]
 ) -> None:
-    spec = _profile_spec(profile)
-    if len(payload) not in spec.payload_lengths:
-        raise InvalidLength(f"invalid payload length for {profile}")
+    _profile_spec(profile).validate_payload_length(len(payload))
     if profile is Profile.MS:
         seed, _padding, _padding_bits = _payload_bytes(payload)
         if not 16 <= len(seed) <= 64:
@@ -253,12 +251,8 @@ def _artifact(
 
 def parse_codex32(text: str) -> Share | Secret:
     """Parse a registered profile into a validated immutable artifact."""
-    hrp, encoded = _parse(text)
+    hrp, body, _checksum = _decode(text)
     profile_spec = _profile_spec(hrp)
-    checksum = profile_spec.checksum_for_encoded_length(len(encoded))
-    if not _verify(hrp, encoded, checksum):
-        raise InvalidChecksum(f"invalid {checksum.kind} checksum for {hrp}")
-    body = tuple(encoded[: -checksum.length])
     header = Header._from_symbols(body[:6])
     payload = body[6:]
     _validate_payload(profile_spec.profile, header, payload)
@@ -272,11 +266,9 @@ def _from_parts(
     *,
     uppercase: bool = False,
 ) -> Share | Secret:
-    profile_spec = _profile_spec(profile)
     _validate_payload(profile, header, payload)
     body = (*header._symbols, *payload)
-    checksum = profile_spec.checksum_for_data_length(len(body))
-    text = _encode(profile.value, body, checksum)
+    text = _encode(profile.value, body)
     return parse_codex32(text.upper() if uppercase else text)
 
 
@@ -286,7 +278,7 @@ def complete_checksum(unchecksummed_text: str) -> Share | Secret:
     profile_spec = _profile_spec(hrp)
     profile_spec.require_completion()
     body = tuple(body_values)
-    profile_spec.checksum_for_data_length(len(body))
+    profile_spec.validate_payload_length(len(body) - 6)
     header = Header._from_symbols(body[:6])
     payload = body[6:]
     _validate_payload(profile_spec.profile, header, payload)
@@ -354,9 +346,7 @@ def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]
     hrp, encoded = _parse(artifact.text)
     if hrp != artifact.profile.value:
         raise InvalidShareSet("artifact text and authenticated profile disagree")
-    checksum = _profile_spec(artifact.profile).checksum_for_encoded_length(
-        len(encoded)
-    )
+    checksum = _checksum_for_encoded_length(hrp, len(encoded))
     return tuple(encoded[6:]), checksum.length, len(encoded)
 
 

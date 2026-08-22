@@ -10,6 +10,7 @@ kept outside the repository and are not vendored.
 | Source | Frozen revision | Role |
 |---|---|---|
 | [BIP93](https://github.com/bitcoin/bips/blob/ed4ffcb6a48d4dc4fdfc11cdba783c233db8c66e/bip-0093.mediawiki) | `bitcoin/bips@ed4ffcb6a48d4dc4fdfc11cdba783c233db8c66e` | Normative `ms` format, checksum, recovery, sharing, correction capacity, master-seed semantics, and official vectors |
+| [BIP93 checksum-boundary PR #2258](https://github.com/bitcoin/bips/pull/2258) | head `7c5251d29acc1446b1b7ed86cc1ab2327bf78271` | Accepted pending BIP93 update: checksum selection covers the expanded HRP, rejects expanded lengths 94/95, and bounds Long codex32 at 1023 symbols |
 
 BIP93 is Draft. This implementation freezes the cited text for reproducible
 review; later upstream changes require an explicit traceability review.

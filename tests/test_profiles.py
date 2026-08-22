@@ -4,6 +4,8 @@ import pytest
 from data.bip93_vectors import (
     INVALID_CODEX32,
     INVALID_CODEX32_LONG,
+    PR2258_BOUNDARY,
+    PR2258_LEGACY_SHORT,
     VALID_CODEX32,
     VALID_CODEX32_LONG,
     VECTOR_2,
@@ -17,11 +19,19 @@ from codex32 import (
     complete_checksum,
     parse_codex32,
 )
-from codex32.bech32 import CHARSET, _parse, _verify
+from codex32.bech32 import (
+    CHARSET,
+    _chars_to_u5,
+    _decode,
+    _hrp_expand,
+    _parse,
+    _verify,
+)
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import (
     InvalidCase,
     InvalidCharacter,
+    InvalidChecksum,
     InvalidLength,
     MissingSeparator,
     UnknownProfile,
@@ -58,7 +68,11 @@ def _polymod(values: list[int], generators: tuple[int, ...], length: int) -> int
 
 
 def _oracle_encode(hrp: str, body: str, *, force_long: bool | None = None) -> str:
-    use_long = len(body) > 80 if force_long is None else force_long
+    use_long = (
+        2 * len(hrp) + 1 + len(body) > 80
+        if force_long is None
+        else force_long
+    )
     generators = _LONG_GENERATORS if use_long else _SHORT_GENERATORS
     length = 15 if use_long else 13
     constant = 0x43381E570BF4798AB26 if use_long else 0x10CE0795C2FD1E62A
@@ -98,24 +112,77 @@ def test_every_ms_byte_length_and_legal_parsed_padding() -> None:
             assert secret.seed_bytes == data
 
 
-def test_ms_checksum_boundary_uses_only_data_part_length() -> None:
-    short = _oracle_encode("ms", "0tests" + "q" * 74)
-    long = _oracle_encode("ms", "0tests" + "q" * 76)
-    assert len("0tests" + "q" * 74) == 80
-    assert len("0tests" + "q" * 76) == 82
+def test_ms_checksum_boundary_covers_expanded_hrp() -> None:
+    short = _oracle_encode("ms", "0tests" + "q" * 69)
+    long = _oracle_encode("ms", "0tests" + "q" * 71)
+    assert 2 * len("ms") + 1 + 6 + 69 + 13 == 93
+    assert 2 * len("ms") + 1 + 6 + 71 + 15 == 97
     assert isinstance(parse_codex32(short), MasterSeed)
     assert isinstance(parse_codex32(long), MasterSeed)
     with pytest.raises(InvalidLength):
         parse_codex32(_oracle_encode("ms", "0tests" + "q" * 75))
 
 
-def test_46_and_47_byte_factories_choose_short_and_long() -> None:
-    short = MasterSeed.from_seed(bytes(46), identifier="test")
-    long = MasterSeed.from_seed(bytes(47), identifier="test")
-    assert len(short.payload_symbols) == 74
-    assert len(long.payload_symbols) == 76
-    assert len(short.text) == 2 + 1 + 80 + 13
-    assert len(long.text) == 2 + 1 + 82 + 15
+def test_43_and_44_byte_factories_choose_short_and_long() -> None:
+    short = MasterSeed.from_seed(bytes(43), identifier="test")
+    long = MasterSeed.from_seed(bytes(44), identifier="test")
+    assert len(short.payload_symbols) == 69
+    assert len(long.payload_symbols) == 71
+    assert len(short.text) == 2 + 1 + 75 + 13
+    assert len(long.text) == 2 + 1 + 77 + 15
+
+
+def test_46_and_47_byte_factories_both_use_long() -> None:
+    seed_46 = MasterSeed.from_seed(bytes(46), identifier="test")
+    seed_47 = MasterSeed.from_seed(bytes(47), identifier="test")
+    assert len(seed_46.payload_symbols) == 74
+    assert len(seed_47.payload_symbols) == 76
+    assert len(seed_46.text) == 2 + 1 + 80 + 15
+    assert len(seed_47.text) == 2 + 1 + 82 + 15
+
+
+@pytest.mark.parametrize(("byte_length", "text"), PR2258_BOUNDARY)
+def test_pr2258_boundary_vectors(byte_length: int, text: str) -> None:
+    artifact = parse_codex32(text)
+    assert isinstance(artifact, MasterSeed)
+    assert len(artifact.seed_bytes) == byte_length
+
+
+@pytest.mark.parametrize("text", PR2258_LEGACY_SHORT)
+def test_pr2258_rejects_legacy_short_encodings(text: str) -> None:
+    with pytest.raises((InvalidChecksum, InvalidLength)):
+        parse_codex32(text)
+
+
+def test_expanded_codeword_boundaries() -> None:
+    header = "0tests"
+    max_regular = _oracle_encode("ms", header + "q" * 69)
+    first_long = _oracle_encode("ms", header + "q" * 70)
+    assert len(_hrp_expand("ms")) + len(_parse(max_regular)[1]) == 93
+    assert len(_hrp_expand("ms")) + len(_parse(first_long)[1]) == 96
+    _decode(max_regular)
+    _decode(first_long)
+
+    for body_length in (74, 75):
+        body = _chars_to_u5(header + "q" * (body_length - len(header)))
+        checksum = _CODEX32_LONG.create(_hrp_expand("ms") + body)
+        invalid = "ms1" + "".join(CHARSET[value] for value in body + checksum)
+        with pytest.raises(InvalidLength):
+            _decode(invalid)
+
+
+def test_expanded_codeword_upper_bound() -> None:
+    max_body = _chars_to_u5("0tests" + "q" * 997)
+    max_text = _oracle_encode("ms", "".join(CHARSET[value] for value in max_body))
+    assert len(_hrp_expand("ms")) + len(_parse(max_text)[1]) == 1023
+    _decode(max_text)
+
+    oversized_body = _chars_to_u5("0tests" + "q" * 998)
+    oversized = _oracle_encode(
+        "ms", "".join(CHARSET[value] for value in oversized_body)
+    )
+    with pytest.raises(InvalidLength):
+        _decode(oversized)
 
 
 def test_unknown_hrp_is_rejected_before_checksum_interpretation() -> None:
@@ -162,9 +229,12 @@ def test_official_generic_checksum_vectors_at_codec_level(
     value: str, checksum: _Checksum, minimum: int, maximum: int
 ) -> None:
     hrp, encoded = _parse(value, max_length=2048)
-    covered_length = len(value) - 1 - checksum.length
-    assert minimum <= covered_length <= maximum
-    assert _verify(hrp, encoded, checksum)
+    expanded_length = len(_hrp_expand(hrp)) + len(encoded)
+    assert checksum.polymod(_hrp_expand(hrp) + encoded) == checksum.constant
+    assert _verify(hrp, encoded, checksum) is (
+        checksum.maximum_length is None
+        or expanded_length <= checksum.maximum_length
+    )
 
 
 @pytest.mark.parametrize(
@@ -183,7 +253,7 @@ def test_official_invalid_generic_checksum_vectors(
         # Lexical failure is one of the official invalid classes.
         assert error is not None
         return
-    covered_length = len(value) - 1 - checksum.length
+    expanded_length = len(_hrp_expand(hrp)) + len(encoded)
     assert not (
-        minimum <= covered_length <= maximum and _verify(hrp, encoded, checksum)
+        expanded_length <= maximum and _verify(hrp, encoded, checksum)
     )

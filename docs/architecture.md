@@ -7,9 +7,9 @@ or mutable authenticated metadata.
 ```text
 str
  └─ bounded lexical parser (bech32.py)
-     └─ fixed profile lookup (profiles.py)
-         └─ exact length + checksum selection (profiles.py)
-             └─ outer checksum (checksums.py)
+     └─ common header + format checksum selection (bech32.py)
+         └─ outer checksum (checksums.py)
+             └─ fixed profile lookup + exact payload length (profiles.py)
                  └─ immutable Header (bip93.py)
                      └─ profile S semantics
                          ├─ ms: MasterSeed
@@ -23,8 +23,8 @@ str
 | Specification concept | Authoritative code owner | Direct tests |
 |---|---|---|
 | Lexical ASCII, separator, case and data alphabet | `bech32._parse` | `test_bech32.py` |
-| Registered applications and exact lengths | `profiles._ProfileSpec` | `test_profiles.py` |
-| `ms` short/long boundary | `_ProfileSpec.checksum_for_data_length` | `test_ms_checksum_boundary_uses_only_data_part_length` |
+| Format checksum boundary | `bech32._checksum_for_encoded_length` | PR #2258 boundary tests in `test_profiles.py` |
+| Registered applications and exact payload lengths | `profiles._ProfileSpec` | `test_profiles.py` |
 | Outer checksum arithmetic | immutable `_Checksum` values | official generic vectors in `test_profiles.py` |
 | Header rules | `bip93.Header` | `test_public_api.py`, official invalid vectors |
 | `ms` S byte semantics | `bip93.MasterSeed` | official vectors and exhaustive length/padding test |
@@ -48,9 +48,11 @@ str
 
 ## Trust boundaries
 
-- Unknown HRPs stop at profile lookup and never select a checksum.
-- Header and profile payload semantics are interpreted only after the outer
-  checksum succeeds. Checksum completion is the explicit exception: it first
+- The format layer validates the common header and outer checksum before an
+  HRP selects one of the four supported application profiles. Unknown HRPs do
+  not acquire any application's payload semantics.
+- Profile payload semantics are interpreted only after the outer checksum
+  succeeds. Checksum completion is the explicit exception: it first
   validates all unchecksummed structure and is available only to `ms` and `cl`.
 - A share contains complete u5 payload symbols. It is never decoded to or
   constructed from bytes.
@@ -69,8 +71,8 @@ str
   never feeds back into basis generation.
 - Output selection follows basis acceptance. Explicit and CSPRNG sample order
   cross the API boundary unchanged.
-- Correction never edits the HRP or separator. A mandatory suspected profile
-  supplies its own checksum-selection rule, and every fixed candidate crosses
+- Correction never edits the HRP or separator. The format layer selects the
+  checksum from expanded length, and every fixed candidate crosses
   the normal parser boundary again.
 - Worksheet residues use native reverse coordinates and reveal only whether the
   residue selects regular or Long codex32. The adapter has no profile, HRP,

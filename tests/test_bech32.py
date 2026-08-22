@@ -42,7 +42,7 @@ def test_lexical_parser_preserves_no_semantics() -> None:
         ("1q", MissingSeparator),
         ("ms1i", InvalidCharacter),
         ("ms1q\n", InvalidCharacter),
-        ("m" * 128, InvalidLength),
+        ("m" * 1025, InvalidLength),
     ),
 )
 def test_lexical_rejections(value: str, error: type[Exception]) -> None:

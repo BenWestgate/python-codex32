@@ -1,9 +1,8 @@
-"""Fixed codex32 application registry and profile-owned length rules."""
+"""Fixed application profiles layered over validated codex32 strings."""
 
 from dataclasses import dataclass
 from enum import StrEnum
 
-from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import InvalidLength, UnknownProfile, UnsupportedOperation
 
 
@@ -23,9 +22,8 @@ class _ProfileSpec:
     completion_enabled: bool
     linear_sharing_enabled: bool
 
-    def checksum_for_data_length(self, data_length: int) -> _Checksum:
-        """Select solely from the unchecksummed data-part length."""
-        payload_length = data_length - 6
+    def validate_payload_length(self, payload_length: int) -> None:
+        """Apply only this application's exact payload-length rule."""
         if payload_length not in self.payload_lengths:
             expected = f"{min(self.payload_lengths)}..{max(self.payload_lengths)}"
             if len(self.payload_lengths) == 1:
@@ -33,26 +31,6 @@ class _ProfileSpec:
             raise InvalidLength(
                 f"{self.profile} payload has {payload_length} symbols; expected {expected}"
             )
-        if self.profile is Profile.MS and data_length > 80:
-            return _CODEX32_LONG
-        return _CODEX32
-
-    def checksum_for_encoded_length(self, encoded_data_length: int) -> _Checksum:
-        """Determine the unique checksum from total data symbols."""
-        matches = []
-        for checksum in (_CODEX32, _CODEX32_LONG):
-            data_length = encoded_data_length - checksum.length
-            try:
-                selected = self.checksum_for_data_length(data_length)
-            except InvalidLength:
-                continue
-            if selected is checksum:
-                matches.append(checksum)
-        if len(matches) != 1:
-            raise InvalidLength(
-                f"encoded {self.profile} data has no permitted payload/checksum length"
-            )
-        return matches[0]
 
     def require_completion(self) -> None:
         if not self.completion_enabled:
