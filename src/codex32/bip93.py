@@ -186,27 +186,6 @@ class CoreLightningSecret(Secret):
         secret, _padding, _padding_bits = _payload_bytes(self.payload_symbols)
         return secret
 
-    @classmethod
-    def from_secret_bytes(
-        cls,
-        secret_bytes: bytes,
-        *,
-        identifier: str,
-        threshold: int = 0,
-    ) -> "CoreLightningSecret":
-        if not isinstance(secret_bytes, bytes):
-            raise TypeError("secret_bytes must be bytes")
-        if len(secret_bytes) != 32:
-            raise InvalidLength("Core Lightning secrets must contain exactly 32 bytes")
-        header = Header(threshold, identifier, "s")
-        payload = tuple(
-            _convert_bits(secret_bytes, 8, 5, pad=True, pad_value=0)
-        )
-        artifact = _from_parts(Profile.CL, header, payload)
-        assert isinstance(artifact, CoreLightningSecret)
-        return artifact
-
-
 class Bip39Secret(Secret):
     """Migration-only BIP39 S artifact without entropy or mnemonic access."""
 

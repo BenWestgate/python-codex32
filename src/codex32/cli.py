@@ -18,7 +18,6 @@ from codex32 import (
     Share,
     complete_checksum,
     derive_share,
-    generate_core_lightning_secret,
     generate_master_seed,
     parse_codex32,
     recover_secret,
@@ -924,21 +923,20 @@ def create(
     )
     identifier = _validated_identifier(identifier)
     source = _creation_source_from_stdin(prefix)
+    if prefix == "cl":
+        raise click.UsageError(
+            "Fresh cl secrets are not generated; current Core Lightning uses mnemonics."
+        )
     if source is not None and byte_length is not None:
         raise click.UsageError("--bytes applies only when generating a fresh secret.")
-    if isinstance(source, (MasterSeed, CoreLightningSecret)) and threshold == 0:
+    if isinstance(source, MasterSeed) and threshold == 0:
         raise click.UsageError(
             "An existing codex32 secret is already complete; create can only "
             "split it at threshold 2 through 9."
         )
-    if prefix == "cl" and byte_length not in (None, 32):
+    if isinstance(source, MasterSeed) and identifier is None:
         raise click.BadParameter(
-            "The cl prefix always contains exactly 32 secret bytes.",
-            param_hint="--bytes",
-        )
-    if prefix == "cl" and identifier is None:
-        raise click.BadParameter(
-            "The cl prefix requires an explicit four-character identifier.",
+            "Re-sharing a secret requires a new explicit identifier.",
             param_hint="--identifier",
         )
     if isinstance(source, bytes) and prefix == "ms" and identifier is None:
@@ -948,7 +946,8 @@ def create(
         )
 
     try:
-        if isinstance(source, (MasterSeed, CoreLightningSecret)):
+        if isinstance(source, MasterSeed):
+            assert identifier is not None
             secret, generated_shares = split_secret(
                 source,
                 threshold,
@@ -965,20 +964,6 @@ def create(
                 share_count=shares,
                 indices=indices,
                 identifier=identifier,
-            )
-        else:
-            if identifier is None:  # Kept explicit for static type narrowing.
-                raise click.BadParameter(
-                    "The cl prefix requires an explicit four-character identifier.",
-                    param_hint="--identifier",
-                )
-            secret_bytes = source if isinstance(source, bytes) else None
-            secret, generated_shares = generate_core_lightning_secret(
-                secret_bytes,
-                identifier=identifier,
-                threshold=threshold,
-                share_count=shares,
-                indices=indices,
             )
     except HeaderCollision as error:
         raise click.ClickException(

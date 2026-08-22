@@ -67,7 +67,6 @@ from .errors import (
     WrongShareCount,
 )
 from .generation import (
-    generate_core_lightning_secret,
     generate_master_seed,
     split_secret,
 )
@@ -113,7 +112,6 @@ __all__ = [
     "complete_checksum",
     "correct_worksheet_residue",
     "derive_share",
-    "generate_core_lightning_secret",
     "generate_master_seed",
     "parse_codex32",
     "recover_secret",

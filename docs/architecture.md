@@ -39,7 +39,7 @@ str
 | Generation option/header validation | `generation` validation helpers | `test_generation.py` selection and collision cases |
 | Complete-mask entropy | `generation` batched `secrets.token_bytes` path | mapping/invariant tests plus independent source audit |
 | Fresh padding acceptance | `generation` basis loop + `bip93._has_generation_padding` | `test_generation.py`, `test_crc.py`, algebraic balance proof |
-| Identifier derivation/fallback | `generation` metadata helpers | frozen full-20/10+10 fixtures and payload-preservation collision test |
+| Identifier policy | `generation._fingerprint_identifier`, `_random_identifier` | frozen k=0 vectors and shared-generation invariants |
 | Output-index selection/order | `generation` fixed `ORDINARY_INDICES` and `SystemRandom.sample` | explicit-order, distinct-count, and all-31 tests plus source audit |
 | Canonical GF(32) arithmetic | `gf32._multiply`, `gf32._inverse` | official sharing vectors and correction corpus |
 | BCH errors and erasures | `correction` P70-derived algebra | `test_correction_bch.py`, frozen P70-derived corpus |
@@ -63,12 +63,11 @@ str
   production interpolation path and no checksum regeneration in sharing.
 - Sharing is limited to the four fixed applications. There is no runtime
   registration through which an unknown application can inherit it.
-- `generation.py` is the sole entropy owner. It accepts only `ms` and CL,
+- `generation.py` is the sole entropy owner. It accepts only `ms`,
   samples complete payload masks, and exposes no RNG, padding, or partial-basis
   control.
-- Set-header exclusions are bounded and snapshotted before entropy. An explicit
-  collision fails early; a derived collision reheaders unchanged payloads and
-  never feeds back into basis generation.
+- Re-sharing requires an explicit new set header. Fresh shared identifiers are
+  independent random metadata and cannot feed back into basis acceptance.
 - Output selection follows basis acceptance. Explicit and CSPRNG sample order
   cross the API boundary unchanged.
 - Correction never edits the HRP or separator. The format layer selects the

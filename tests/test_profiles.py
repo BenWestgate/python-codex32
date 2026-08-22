@@ -194,11 +194,8 @@ def test_unknown_hrp_is_rejected_before_checksum_interpretation() -> None:
 def test_core_lightning_constructor_and_parsed_padding() -> None:
     original = parse_codex32(VECTOR_6["codex32_peev"])
     assert isinstance(original, CoreLightningSecret)
-    generated = CoreLightningSecret.from_secret_bytes(
-        original.secret_bytes, identifier="peev"
-    )
-    assert generated.payload_symbols[-1] & 0xF == 0
-    payload = list(generated.payload_symbols)
+    assert original.payload_symbols[-1] & 0xF == 0
+    payload = list(original.payload_symbols)
     payload[-1] |= 0xF
     nonzero = _oracle_encode(
         "cl", "0peevs" + "".join(CHARSET[value] for value in payload)

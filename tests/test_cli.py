@@ -12,7 +12,6 @@ from data.sharing_vectors import SHARING_VECTORS
 from test_bip39 import BIP39_12W_ZERO
 
 from codex32 import (
-    CoreLightningSecret,
     MasterSeed,
     Share,
     parse_codex32,
@@ -288,35 +287,29 @@ def test_create_core_lightning_matrix() -> None:
         ],
         raw_secret.hex(),
     )
-    assert missing_identifier.exit_code != 0
-    assert "requires an explicit" in missing_identifier.output
-    assert wrong_length.exit_code != 0
-    assert "exactly 32" in wrong_length.output
-    unshared_artifacts = _created_artifacts(unshared, "cl")
-    assert unshared.exit_code == 0
-    assert len(unshared_artifacts) == 1
-    assert isinstance(unshared_artifacts[0], CoreLightningSecret)
-    raw_artifacts = _created_artifacts(raw, "cl")
-    assert raw.exit_code == 0
-    assert len(raw_artifacts) == 1
-    assert isinstance(raw_artifacts[0], CoreLightningSecret)
-    assert raw_artifacts[0].secret_bytes == raw_secret
-    shared_artifacts = _created_artifacts(shared, "cl")
-    assert shared.exit_code == 0
-    assert "".join(item.header.index for item in shared_artifacts) == "7a"
-    assert all(isinstance(item, Share) for item in shared_artifacts)
+    for result in (missing_identifier, wrong_length, unshared, shared, raw):
+        assert result.exit_code != 0
+        assert "Fresh cl secrets are not generated" in result.output
 
 
-def test_create_splits_one_existing_ms_secret_with_a_derived_identifier() -> None:
+def test_create_splits_one_existing_ms_secret_with_an_explicit_identifier() -> None:
     source = parse_codex32(VECTOR_4["secret_s"])
     assert isinstance(source, MasterSeed)
     result = _invoke(
-        ["create", "--threshold", "2", "--indices", "7a"],
+        [
+            "create",
+            "--threshold",
+            "2",
+            "--indices",
+            "7a",
+            "--identifier",
+            "name",
+        ],
         source.text,
     )
     shares = _created_artifacts(result, "ms")
     assert result.exit_code == 0
-    assert "Generated identifier:" in result.output
+    assert all(share.header.identifier == "name" for share in shares)
     assert len(shares) == 2
     assert all(isinstance(share, Share) for share in shares)
     assert "".join(share.header.index for share in shares) == "7a"
@@ -347,7 +340,7 @@ def test_create_source_header_collision_recommends_another_identifier() -> None:
         source.text,
     )
     assert result.exit_code != 0
-    assert "set header '2test' is excluded" in result.output
+    assert "new share set must use a different set header" in result.output
     assert "another --identifier" in result.output
 
 
