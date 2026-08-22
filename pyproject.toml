@@ -29,10 +29,10 @@ classifiers = [
   "Topic :: Security :: Cryptography",
   "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["bip32>=5.0.0"]
+dependencies = ["bip32>=5,<6", "click>=8,<9"]
 
 [project.optional-dependencies]
-dev = ["pytest", "flake8", "mypy", "black", "isort", "ruff"]
+dev = ["pytest", "hypothesis>=6,<7", "flake8", "mypy", "black", "isort", "ruff"]
 
 
 [tool.setuptools.packages.find]

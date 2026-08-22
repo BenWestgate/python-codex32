@@ -8,9 +8,16 @@
 """Descriptor checksum implementation."""
 
 from bip32 import BIP32
-from codex32.bech32 import InvalidLength, bech32_to_u5, u5_to_bech32
+
+from codex32.bech32 import _chars_to_u5, _u5_to_chars
 from codex32.checksums import DESCSUM
-from codex32.errors import CodexError, InvalidChar, SeparatorNotFound, InvalidChecksum
+from codex32.errors import (
+    CodexError,
+    InvalidChar,
+    InvalidChecksum,
+    InvalidLength,
+    SeparatorNotFound,
+)
 from codex32.wallet_policies import WalletPolicy
 
 # pylint: disable=line-too-long
@@ -47,14 +54,14 @@ def descsum_check(s):
             )
     except IndexError as exc:
         raise InvalidLength(f"String too short to be valid {len(s)}") from exc
-    if not DESCSUM.verify(descsum_expand(s[:-9]) + bech32_to_u5(s[-8:])):
+    if not DESCSUM.verify(descsum_expand(s[:-9]) + _chars_to_u5(s[-8:])):
         raise InvalidChecksum("descriptor checksum does not validate")
     return True
 
 
 def descsum_create(s):
     """Add a checksum to a descriptor without"""
-    return s + "#" + u5_to_bech32(DESCSUM.create(descsum_expand(s)))
+    return s + "#" + _u5_to_chars(DESCSUM.create(descsum_expand(s)))
 
 
 DESCRIPTOR_TEMPLATES = {
@@ -114,7 +121,7 @@ def make_private_descriptor(desc: str, xprv: str) -> str:
     new_desc = new_wp.to_descriptor()
     ret = descsum_create(new_desc)
     descsum_check(ret)  # validate output descriptor
-    return descsum_create(new_desc)
+    return str(ret)
 
 
 if __name__ == "__main__":
@@ -130,7 +137,7 @@ if __name__ == "__main__":
         "pkh(xprv9s21ZrQH143K36XBZLytgQidYwAu6371Q1fSaexsbx6GThYNMSWusNStaohb5GVW71JJX3opJs4E9ADkRnd9hQgP4DYDdR63wtpWNTEXnZZ/44h/0h/0h/<0;1>/*)",
         "sh(wpkh(xprv9s21ZrQH143K36XBZLytgQidYwAu6371Q1fSaexsbx6GThYNMSWusNStaohb5GVW71JJX3opJs4E9ADkRnd9hQgP4DYDdR63wtpWNTEXnZZ/49h/0h/0h/<0;1>/*))",
         "wpkh(xprv9s21ZrQH143K36XBZLytgQidYwAu6371Q1fSaexsbx6GThYNMSWusNStaohb5GVW71JJX3opJs4E9ADkRnd9hQgP4DYDdR63wtpWNTEXnZZ/84h/0h/0h/<0;1>/*)",
-        "wpkh([45fc8f4e/84h/0h/0h]xpub6BgDoiyNWC2BYVGc4pPxLcCyAHKLerP7V2kCA3zt7kF6ew6Ddge9ZTEgF1doic1kx5r7ppNsBzZSWPbvkUerVY8vZi9tgK8wGnagUJ8wqn3/<0;1>/*)"
+        "wpkh([45fc8f4e/84h/0h/0h]xpub6BgDoiyNWC2BYVGc4pPxLcCyAHKLerP7V2kCA3zt7kF6ew6Ddge9ZTEgF1doic1kx5r7ppNsBzZSWPbvkUerVY8vZi9tgK8wGnagUJ8wqn3/<0;1>/*)",
         "tr(xprv9s21ZrQH143K36XBZLytgQidYwAu6371Q1fSaexsbx6GThYNMSWusNStaohb5GVW71JJX3opJs4E9ADkRnd9hQgP4DYDdR63wtpWNTEXnZZ/86h/0h/0h/<0;1>/*)",
     ]
     desc_templates = ["pkh(@0/**)", "sh(wpkh(@0/**))", "wpkh(@0/**)", "tr(@0/**)"]

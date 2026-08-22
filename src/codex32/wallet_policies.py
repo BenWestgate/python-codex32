@@ -1,6 +1,8 @@
-#!/usr/bin/env python3
+from collections.abc import Generator, Iterable
 
-from typing import Iterable, Generator
+
+class DescriptorPolicyError(ValueError):
+    """The toy BIP388 policy adapter received an unsupported descriptor."""
 
 
 def find_all(text: str, pattern: str, start: int = 0) -> Generator[int, None, None]:
@@ -25,12 +27,14 @@ def find_key_end_position(desc: str, start_pos: int) -> int:
     of the key expression, excluding (if present) the final derivation steps after an xpub. This is the information
     that goes into an entry of the vector of key information of the wallet policy."""
 
-    has_orig_info = True if desc[start_pos] == "[" else False
+    has_orig_info = desc[start_pos] == "["
 
     if has_orig_info:
         closing_bracket_pos = desc.find("]", start_pos)
         if closing_bracket_pos == -1:
-            raise Exception("Invalid descriptor: could not find closing ']'")
+            raise DescriptorPolicyError(
+                "Invalid descriptor: could not find closing ']'"
+            )
         key_pos_start = closing_bracket_pos + 1
     else:
         key_pos_start = start_pos
@@ -38,12 +42,14 @@ def find_key_end_position(desc: str, start_pos: int) -> int:
     # find the earliest occurrence of ",", a ")" or a "/" (it must find at least 1)
     end_pos = find_first(desc, key_pos_start, [",", ")", "/"])
     if end_pos == -1:
-        raise Exception("Invalid descriptor: cannot find the end of key expression")
+        raise DescriptorPolicyError(
+            "Invalid descriptor: cannot find the end of key expression"
+        )
 
     return end_pos
 
 
-class WalletPolicy(object):
+class WalletPolicy:
     """Simple class to represent wallet policies. This is a toy implementation that does not parse the descriptor
     template. A more robust implementation would build the abstract syntax tree of the template and of the descriptor,
     allowing one to detect errors, and manipulate it semantically instead of relying on string manipulation.
@@ -68,7 +74,9 @@ class WalletPolicy(object):
 
         # there should not be any remaining "@" expressions
         if desc.find("@") != -1:
-            raise Exception("Invalid descriptor template: contains invalid key index")
+            raise DescriptorPolicyError(
+                "Invalid descriptor template: contains invalid key index"
+            )
 
         return desc
 
@@ -91,7 +99,7 @@ class WalletPolicy(object):
 
             nonlocal key_with_orig_pos_start
             if key_with_orig_pos_start is None:
-                raise Exception("Unexpected error")
+                raise DescriptorPolicyError("unexpected descriptor parser state")
 
             while True:
                 if handle_musig and descriptor[key_with_orig_pos_start:].startswith(
@@ -101,7 +109,7 @@ class WalletPolicy(object):
                         descriptor, key_with_orig_pos_start, [")"]
                     )
                     if closing_parenthesis_pos == -1:
-                        raise Exception(
+                        raise DescriptorPolicyError(
                             "Invalid descriptor: musig without closing parenthesis"
                         )
                     key_with_orig_pos_start = key_with_orig_pos_start + len("musig(")
@@ -118,7 +126,7 @@ class WalletPolicy(object):
                     # find the actual end (comma or closing parenthesis)
                     key_pos_end = find_first(descriptor, key_pos_end, [",", ")"])
                     if key_pos_end == -1:
-                        raise Exception(
+                        raise DescriptorPolicyError(
                             "Invalid descriptor: unterminated key expression"
                         )
 
@@ -151,7 +159,7 @@ class WalletPolicy(object):
                     # skip the first argument (we know it's not a KEY expression, so it does not have a comma)
                     first_comma_pos = descriptor.find(",", op_pos_start)
                     if first_comma_pos == -1:
-                        raise Exception(
+                        raise DescriptorPolicyError(
                             "Invalid descriptor: multi, sortedmulti, multi_a and sortedmulti_a must have at least two arguments"
                         )
                     key_with_orig_pos_start = 1 + first_comma_pos

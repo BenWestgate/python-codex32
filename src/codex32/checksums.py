@@ -1,102 +1,110 @@
-# Bech32/Bech32m constants in this file are derived from work by:
-#   Copyright (c) 2017, 2020 Pieter Wuille, MIT License
-# codex32 constants in this file are derived from work by:
-#   Author: Leon Olsson Curr and Pearlwort Sneed <pearlwort@wpsoftware.net>
-#   License: BSD-3-Clause
-#
-# Additional code:
-# Copyright (c) 2026 Ben Westgate <benwestgate@protonmail.com>, MIT License
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
+"""Immutable checksum specifications used by codex32 and descriptors."""
 
-"""Checksum specs and utilities for Bech32, codex32, and CRC variants."""
+from dataclasses import dataclass
 
-
-# Generators are the reduction polynomials for polymod computations
-BECH32_GEN = [0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3]
-DESCSUM_GEN = [0xF5DEE51989, 0xA9FDCA3312, 0x1BAB10E32D, 0x3706B1677A, 0x644D626FFD]
-CODEX32_GEN = [
+_CODEX32_GEN = (
     0x19DC500CE73FDE210,
     0x1BFAE00DEF77FE529,
     0x1FBD920FFFE7BEE52,
     0x1739640BDEEE3FDAD,
     0x07729A039CFC75F5A,
-]
-CODEX32_LONG_GEN = [
+)
+_CODEX32_LONG_GEN = (
     0x3D59D273535EA62D897,
     0x7A9BECB6361C6C51507,
     0x543F9B7E6C38D8A2A0E,
     0x0C577EAECCF1990D13C,
     0x1887F74F8DC71B10651,
-]
-BECH32_CONST = 1
-BECH32M_CONST = 0x2BC830A3
-DESCSUM_CONST = 1
-CODEX32_CONST = 0x10CE0795C2FD1E62A
-CODEX32_LONG_CONST = 0x43381E570BF4798AB26
+)
+_DESCSUM_GEN = (
+    0xF5DEE51989,
+    0xA9FDCA3312,
+    0x1BAB10E32D,
+    0x3706B1677A,
+    0x644D626FFD,
+)
 
 
-class Checksum:
-    """Checksum spec (polynomial gens, length, constant, coverage, create and verify)."""
+@dataclass(frozen=True, slots=True)
+class _Checksum:
+    """A fixed polymod checksum specification."""
 
-    def __init__(self, kind: str, specs, coverage):
-        self.kind = kind
-        self.gen, self.cs_len, self.const = specs
-        self.coverage = range(coverage[0], coverage[1] + 1)  # valid lengths
-        self.shift = len(self.gen) * (self.cs_len - 1)
-        self.mask = (1 << self.shift) - 1
+    kind: str
+    generators: tuple[int, ...]
+    length: int
+    constant: int
 
-    def polymod(self, values: list[int], residue: int = 1) -> int:
-        """Internal function that computes the Bech32/Codex32/CRC checksums."""
+    @property
+    def cs_len(self) -> int:
+        """Compatibility for descriptor and correction internals."""
+        return self.length
+
+    def polymod(self, values: list[int] | tuple[int, ...], residue: int = 1) -> int:
+        """Compute the polymod residue."""
+        shift = len(self.generators) * (self.length - 1)
+        mask = (1 << shift) - 1
         for value in values:
-            top = residue >> self.shift
-            residue = (residue & self.mask) << len(self.gen) ^ value
-            for i, g in enumerate(self.gen):
-                residue ^= g if ((top >> i) & 1) else 0
+            top = residue >> shift
+            residue = ((residue & mask) << len(self.generators)) ^ value
+            for index, generator in enumerate(self.generators):
+                if (top >> index) & 1:
+                    residue ^= generator
         return residue
 
-    def verify(self, values: list[int]) -> bool:
-        """Verify a checksum given values."""
-        return self.polymod(values) == self.const
+    def verify(self, values: list[int] | tuple[int, ...]) -> bool:
+        """Return whether values include this checksum."""
+        return self.polymod(values) == self.constant
 
-    def create(self, values: list[int]) -> list[int]:
-        """Compute the checksum values given values."""
-        polymod = self.polymod(values + [0] * self.cs_len) ^ self.const
-        mask = (1 << (w := len(self.gen))) - 1
-        cs_len = self.cs_len
-        return [(polymod >> (w * (cs_len - 1 - i))) & mask for i in range(cs_len)]
-
-
-BECH32 = Checksum("Bech32", (BECH32_GEN, 6, BECH32_CONST), (0, 83))  # detects 4 errors
-BECH32M = Checksum("Bech32m", (BECH32_GEN, 6, BECH32M_CONST), (0, 83))
-DESCSUM = Checksum("Descriptor", (DESCSUM_GEN, 8, DESCSUM_CONST), (0, 507))  # detects 4
-codex32_long_spec = (CODEX32_LONG_GEN, 15, CODEX32_LONG_CONST)  # detects 8 errors
-CODEX32_LONG = Checksum("Long codex32", codex32_long_spec, (81, 1008))
-CODEX32 = Checksum("codex32", (CODEX32_GEN, 13, CODEX32_CONST), (0, 80))
-CRC1 = Checksum("CRC1", ([1], 1, 0), (0, 0))  # detects 1 error
-CRC2 = Checksum("CRC2", ([3], 2, 0), (0, 1))  # detects 2 errors
-CRC3 = Checksum("CRC3", ([3], 3, 0), (0, 4))
-CRC4 = Checksum("CRC4", ([3], 4, 0), (0, 11))
+    def create(self, values: list[int] | tuple[int, ...]) -> list[int]:
+        """Create checksum symbols for values."""
+        residue = self.polymod([*values, *([0] * self.length)]) ^ self.constant
+        width = len(self.generators)
+        mask = (1 << width) - 1
+        return [
+            (residue >> (width * (self.length - 1 - index))) & mask
+            for index in range(self.length)
+        ]
 
 
-def crc_pad(bits: list[int]) -> int:
-    """Compute the CRC padding value given payload bits list."""
-    crc = [None, CRC1, CRC2, CRC3, CRC4][k := ((-len(bits) % 5) or (len(bits) % 8))]
-    crc_bits = crc.create(bits[: len(bits) // 8 * 8]) if crc else []
-    return sum(b << (k - 1 - i) for i, b in enumerate(crc_bits)) if k else 0
+_CODEX32 = _Checksum("codex32", _CODEX32_GEN, 13, 0x10CE0795C2FD1E62A)
+_CODEX32_LONG = _Checksum(
+    "Long codex32", _CODEX32_LONG_GEN, 15, 0x43381E570BF4798AB26
+)
+
+# Descriptor checksum remains an independently specified, non-codex32 helper.
+DESCSUM = _Checksum("Descriptor", _DESCSUM_GEN, 8, 1)
+
+_CRC = (
+    None,
+    # ``_Checksum`` consumes input bits most-significant bit first.  With its
+    # implicit leading term, these generator values spell x+1, x^2+x+1,
+    # x^3+x+1, and x^4+x+1 respectively.
+    _Checksum("CRC1", (1,), 1, 0),
+    _Checksum("CRC2", (3,), 2, 0),
+    _Checksum("CRC3", (3,), 3, 0),
+    _Checksum("CRC4", (3,), 4, 0),
+)
+
+
+def _crc_pad(data: bytes) -> int:
+    """Return the current generation-only CRC padding value.
+
+    The compact table uses the Koopman-catalogue polynomials x+1,
+    x^2+x+1, x^3+x+1, and x^4+x+1 for one through four discarded bits.
+    Catalogue rankings assume low, independent bit errors; they do not prove
+    optimality for damaged human transcription.  Keeping this helper private
+    prevents CRC padding from becoming validity or share semantics.
+    """
+    bit_length = len(data) * 8
+    padding_bits = (-bit_length) % 5
+    if not padding_bits:
+        return 0
+    bits = [
+        (byte >> bit) & 1
+        for byte in data
+        for bit in range(7, -1, -1)
+    ]
+    checksum = _CRC[padding_bits]
+    assert checksum is not None
+    crc_bits = checksum.create(bits)
+    return sum(bit << (padding_bits - 1 - index) for index, bit in enumerate(crc_bits))

@@ -1,0 +1,177 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.0",
+  "analysisId": "hardening_20260809_codex32_generation",
+  "sourceEvidence": {
+    "kind": "document_collection",
+    "label": "Gate 3 generation evidence inventory",
+    "collectionSha256": "22c9317653d8116a6812c6aea979e182542fbe38762c46c951e6082b32b5be00",
+    "artifactCount": 11,
+    "sourceDrift": "present"
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "summary": "Generation needs one bounded API owner with uniform basis sampling and metadata-only collision fallback."
+  },
+  "constraints": {
+    "profile": "security_critical_reference_implementation",
+    "changeHorizons": ["foundational"],
+    "nonNegotiables": [
+      "No injectable or replaceable entropy source",
+      "No partial-basis generation",
+      "No accepted basis is discarded because derived public metadata collides",
+      "Ordinary shares retain symbol-only semantics"
+    ],
+    "assumptions": [
+      "Supported runtimes are CPython 3.12 through 3.14 with a functioning operating-system CSPRNG.",
+      "Typed or parsed MasterSeed input is treated as securely generated; the artifact cannot prove provenance."
+    ]
+  },
+  "opportunities": [
+    {
+      "opportunityId": "generation-boundary",
+      "title": "Centralize and bound electronic generation",
+      "summary": "Move entropy, basis acceptance, identifier policy, and output selection behind one audited API boundary.",
+      "diagnosis": "The pre-Gate-3 CLI owns generation and mixes entropy, metadata, interpolation, and presentation, while public generation invariants are absent.",
+      "evidence": [
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "path": "src/codex32/cli.py",
+          "claim": "CLI helpers independently sample each payload character, build bases, derive identifiers, and select canonical outputs."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "G-E07",
+          "claim": "BIP93 defines fresh generation as k independent random shares and existing-secret generation as S plus k-1 random shares."
+        },
+        {
+          "claimType": "inferred",
+          "sourceKind": "threat_model",
+          "path": "docs/security/generation/threat-model.md",
+          "claim": "Rejecting accepted masks after a derived identifier collision conditions returned default outputs; changing only public metadata avoids that bias."
+        }
+      ],
+      "desiredInvariants": [
+        "Each attempted basis consumes one batch of uniform u5 mask symbols from the OS CSPRNG.",
+        "Fresh padding rejection preserves every sub-threshold share projection.",
+        "Explicit header collisions fail before entropy and derived collisions change metadata only.",
+        "Selectors and exclusions are bounded and validated before generation.",
+        "API and CLI return the requested or CSPRNG sample order unchanged."
+      ],
+      "proposalPath": "proposals/generation-boundary.md",
+      "options": [
+        {
+          "optionId": "independent-random-identifiers",
+          "title": "Use independent random identifiers",
+          "kind": "foundational",
+          "summary": "Generate all identifiers independently from the seed and masks.",
+          "diagramPaths": {
+            "before": "diagrams/generation-boundary-before.mmd",
+            "after": "diagrams/generation-boundary-independent-random-identifiers-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "G-E11",
+              "effect": "mitigates",
+              "tacticalFixRequired": false,
+              "rationale": "This removes fingerprint disclosure but gives up the selected deterministic disambiguation behavior."
+            }
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Independent identifiers reveal no seed-fingerprint predicate.", "validationPlan": "Audit every identifier call site for independence from S and shares."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "high", "basis": "source-derived", "assessment": "Four extra CSPRNG bytes are immaterial.", "validationPlan": "Exercise generation across all profiles and thresholds."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "high", "basis": "source-derived", "assessment": "Only four identifier symbols are retained.", "validationPlan": "Inspect object lifetimes."},
+            {"dimension": "reliability", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "Collision handling remains bounded but deterministic wallet/set recognition disappears.", "validationPlan": "Review backup-disambiguation workflows."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "medium", "basis": "hypothetical", "assessment": "Users lose the selected default metadata signal for recognizing wallet and set membership.", "validationPlan": "Conduct user testing before changing the accepted policy."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "It changes the accepted legacy identifier policy and frozen fixtures.", "validationPlan": "Compare generated headers with prior electronic generation behavior."}
+          ],
+          "residualRisks": ["Independent identifiers still disclose that strings share one public set header."],
+          "implementationReadiness": {
+            "affectedComponents": ["src/codex32/generation.py"],
+            "workPackages": ["Replace fingerprint helpers with four random u5 symbols."],
+            "acceptanceCriteria": ["No identifier value depends on secret or share payloads."],
+            "migrationNotes": ["Existing deterministic defaults would no longer be reproduced."],
+            "rollback": "Restore the reviewed deterministic metadata policy."
+          }
+        },
+        {
+          "optionId": "regenerate-on-collision",
+          "title": "Fail or regenerate on a default collision",
+          "kind": "incremental",
+          "summary": "Keep deterministic defaults but discard a colliding attempt or ask the user to rerun.",
+          "diagramPaths": {
+            "before": "diagrams/generation-boundary-before.mmd",
+            "after": "diagrams/generation-boundary-regenerate-on-collision-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "G-E11",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "It handles the visible collision but conditions which default bases are returned."
+            }
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Successful default outputs are conditioned on the identifier predicate and the collision branch leaks that predicate.", "validationPlan": "Formally compare unconditional and collision-conditioned output distributions."},
+            {"dimension": "performance", "direction": "regresses", "confidence": "medium", "basis": "source-derived", "assessment": "A collision repeats full basis generation or a complete user workflow.", "validationPlan": "Count discarded basis attempts."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "A retry need not retain the prior basis.", "validationPlan": "Inspect retry state."},
+            {"dimension": "reliability", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "TTY and non-TTY retries can diverge and interrupted workflows discard accepted secrets.", "validationPlan": "Exercise collision behavior in interactive and piped modes."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "The user must understand and resolve a metadata collision after secret generation.", "validationPlan": "Review CLI diagnostics and interrupted flows."},
+            {"dimension": "migration", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "Normal noncollision headers retain the legacy default.", "validationPlan": "Compare frozen identifier fixtures."}
+          ],
+          "residualRisks": ["Conditioned default outputs", "Discarded secret material", "TTY-dependent behavior"],
+          "implementationReadiness": {
+            "affectedComponents": ["src/codex32/generation.py", "src/codex32/cli.py"],
+            "workPackages": ["Add collision failure and retry guidance."],
+            "acceptanceCriteria": ["Collision behavior is explicit."],
+            "migrationNotes": [],
+            "rollback": "Remove the retry branch."
+          }
+        },
+        {
+          "optionId": "metadata-fallback",
+          "title": "Retain the basis and replace colliding metadata",
+          "kind": "foundational",
+          "summary": "Centralize generation, keep the reviewed deterministic default, and randomize only a colliding identifier.",
+          "diagramPaths": {
+            "before": "diagrams/generation-boundary-before.mmd",
+            "after": "diagrams/generation-boundary-metadata-fallback-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "G-E11",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "This implements the selected API while avoiding basis conditioning and unbounded collision retries."
+            }
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "One owner enforces uniform masks and metadata-only fallback, though deterministic identifiers retain an accepted 20-bit disclosure.", "validationPlan": "Independently audit every CSPRNG, padding, identifier, and reheader path."},
+            {"dimension": "performance", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Batch mask sampling reduces calls; padding rejection remains bounded in expectation.", "validationPlan": "Exercise worst padding width and 31-output generation without timing claims."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "One complete hidden basis is held while output shares are selected.", "validationPlan": "Inspect that rejected and returned bases are not persisted."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Collision handling is noninteractive and never loses the accepted basis.", "validationPlan": "Force default collision through fixed metadata fixtures and verify payload preservation."},
+            {"dimension": "operability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "API and CLI return one complete ordered result without continuation state.", "validationPlan": "Run the complete CLI create matrix."},
+            {"dimension": "migration", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Normal defaults preserve the full-20 and legacy 10+10 fixtures while unsafe helpers are removed.", "validationPlan": "Run frozen identifier and existing CLI regression fixtures."}
+          ],
+          "residualRisks": [
+            "Fingerprint identifiers leak a public seed predicate.",
+            "The implementation trusts CPython and operating-system entropy.",
+            "Typed MasterSeed provenance cannot be proven."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": ["src/codex32/generation.py", "src/codex32/cli.py", "src/codex32/errors.py", "src/codex32/__init__.py", "src/codex32/checksums.py", "pyproject.toml"],
+            "workPackages": ["Implement bounded validation.", "Implement uniform hidden bases and padding rejection.", "Implement identifiers and metadata-only fallback.", "Route CLI create through the API.", "Add direct tests and independent implementation audit."],
+            "acceptanceCriteria": ["All Gate 3 verification passes.", "No medium-or-higher unaccepted implementation finding remains."],
+            "migrationNotes": ["split_secret accepts thresholds 2 through 9 only.", "Raw byte seeds require an explicit identifier."],
+            "rollback": "Revert Gate 3 as one unit; do not restore unsafe public factories."
+          }
+        }
+      ],
+      "recommendedOptionId": "metadata-fallback",
+      "recommendation": "Use metadata-only fallback under the accepted usability policy; choose independent random identifiers if eliminating the 20-bit disclosure becomes more important than deterministic disambiguation."
+    }
+  ],
+  "openQuestions": []
+}

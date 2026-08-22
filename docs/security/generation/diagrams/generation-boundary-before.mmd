@@ -1,0 +1,8 @@
+flowchart LR
+    CLI[CLI create] --> RNG1[secrets.choice per symbol]
+    CLI --> BASIS[CLI basis helpers]
+    CLI --> ID[CLI fingerprint identifiers]
+    BASIS --> B93[bip93 interpolation]
+    ID --> MUTATE[reheader via checksum completion]
+    MUTATE --> B93
+    CLI --> OUT[ordered canonical output]

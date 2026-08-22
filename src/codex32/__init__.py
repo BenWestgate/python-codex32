@@ -18,10 +18,106 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-"""codex32 package: bech32/codex32 helpers and encoders/decoders."""
+"""Safe, profile-aware codex32 artifacts and correction helpers."""
 
-from .bip93 import Codex32String, encode, decode
-from .errors import CodexError
+from .bip93 import (
+    Bip39Secret,
+    CoreLightningSecret,
+    Header,
+    MasterSeed,
+    Secret,
+    Share,
+    complete_checksum,
+    derive_share,
+    parse_codex32,
+    recover_secret,
+)
+from .correction import (
+    WorksheetCorrection,
+    correct_worksheet_residue,
+)
+from .errors import (
+    CodexError,
+    DuplicateShareIndex,
+    ExcludedTargetIndex,
+    ExistingTargetIndex,
+    HeaderCollision,
+    InvalidBip39Checksum,
+    InvalidCase,
+    InvalidCharacter,
+    InvalidChecksum,
+    InvalidCorrectionInput,
+    InvalidHeader,
+    InvalidIdentifier,
+    InvalidLength,
+    InvalidPadding,
+    InvalidPayload,
+    InvalidShareIndex,
+    InvalidShareSelection,
+    InvalidShareSet,
+    InvalidTargetIndex,
+    InvalidThreshold,
+    MismatchedIdentifier,
+    MismatchedPayloadLength,
+    MismatchedProfile,
+    MismatchedThreshold,
+    MissingSeparator,
+    SecretInRecoverySet,
+    UnknownProfile,
+    UnsupportedOperation,
+    WrongShareCount,
+)
+from .generation import (
+    generate_core_lightning_secret,
+    generate_master_seed,
+    split_secret,
+)
+from .profiles import Profile
 
-
-__all__ = ["CodexError", "Codex32String", "encode", "decode"]
+__all__ = [
+    "Bip39Secret",
+    "CodexError",
+    "CoreLightningSecret",
+    "DuplicateShareIndex",
+    "ExcludedTargetIndex",
+    "ExistingTargetIndex",
+    "Header",
+    "HeaderCollision",
+    "InvalidBip39Checksum",
+    "InvalidCase",
+    "InvalidCharacter",
+    "InvalidChecksum",
+    "InvalidCorrectionInput",
+    "InvalidHeader",
+    "InvalidIdentifier",
+    "InvalidLength",
+    "InvalidPadding",
+    "InvalidPayload",
+    "InvalidShareIndex",
+    "InvalidShareSelection",
+    "InvalidShareSet",
+    "InvalidTargetIndex",
+    "InvalidThreshold",
+    "MasterSeed",
+    "MismatchedIdentifier",
+    "MismatchedPayloadLength",
+    "MismatchedProfile",
+    "MismatchedThreshold",
+    "MissingSeparator",
+    "Profile",
+    "Secret",
+    "SecretInRecoverySet",
+    "Share",
+    "UnknownProfile",
+    "UnsupportedOperation",
+    "WorksheetCorrection",
+    "WrongShareCount",
+    "complete_checksum",
+    "correct_worksheet_residue",
+    "derive_share",
+    "generate_core_lightning_secret",
+    "generate_master_seed",
+    "parse_codex32",
+    "recover_secret",
+    "split_secret",
+]
