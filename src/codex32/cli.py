@@ -1,5 +1,6 @@
 """Small command-line adapter for codex32-native workflows."""
 
+import json
 import sys
 
 import click
@@ -13,8 +14,11 @@ from codex32 import (
     Secret,
     Share,
     complete_checksum,
+    core_descriptors,
     derive_share,
     generate_master_seed,
+    master_xprv,
+    multisig_account_xpub,
     parse_codex32,
     recover_secret,
     split_secret,
@@ -87,6 +91,13 @@ def _secret(artifacts: list[Artifact]) -> Secret:
         return recover_secret([item for item in artifacts if isinstance(item, Share)])
     except CodexError as error:
         raise click.BadParameter(str(error), param_hint="stdin") from error
+
+
+def _master_seed() -> MasterSeed:
+    value = _secret(_artifacts(sequential=True))
+    if not isinstance(value, MasterSeed):
+        raise click.UsageError("Wallet commands accept only ms secrets.")
+    return value
 
 
 def _group(text: str) -> str:
@@ -339,3 +350,46 @@ def correct(
     )
     _emit(fixed.artifact, pretty, err=True)
     ctx.exit(1)
+
+
+@cli.command()
+@click.option("--testnet", is_flag=True)
+def xprv(testnet: bool) -> None:
+    """Print the BIP32 master extended private key for ms S."""
+    click.echo(master_xprv(_master_seed(), testnet=testnet))
+
+
+@cli.command()
+@click.option("--account", type=click.IntRange(0, 2**31 - 1), default=0)
+@click.option("--testnet", is_flag=True)
+def xpub(account: int, testnet: bool) -> None:
+    """Print a BIP48 native-SegWit coordinator account xpub."""
+    click.echo(
+        multisig_account_xpub(
+            _master_seed(),
+            account=account,
+            testnet=testnet,
+        )
+    )
+
+
+@cli.command()
+@click.option("--account", type=click.IntRange(0, 2**31 - 1), default=0)
+@click.option("--timestamp", type=click.IntRange(min=0), default=0)
+@click.option("--testnet", is_flag=True)
+@click.option("--private", is_flag=True, help="Include the root xprv.")
+def descriptors(account: int, timestamp: int, testnet: bool, private: bool) -> None:
+    """Print fixed Bitcoin Core single-key descriptor records as JSON."""
+    if private:
+        click.echo(
+            "Warning: private descriptors contain the root xprv and grant root authority.",
+            err=True,
+        )
+    records = core_descriptors(
+        _master_seed(),
+        account=account,
+        testnet=testnet,
+        private=private,
+        timestamp=timestamp,
+    )
+    click.echo(json.dumps(records, indent=2))

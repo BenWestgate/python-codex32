@@ -71,6 +71,11 @@ from .generation import (
     split_secret,
 )
 from .profiles import Profile
+from .wallet import (
+    core_descriptors,
+    master_xprv,
+    multisig_account_xpub,
+)
 
 __all__ = [
     "Bip39Secret",
@@ -110,9 +115,12 @@ __all__ = [
     "WorksheetCorrection",
     "WrongShareCount",
     "complete_checksum",
+    "core_descriptors",
     "correct_worksheet_residue",
     "derive_share",
     "generate_master_seed",
+    "master_xprv",
+    "multisig_account_xpub",
     "parse_codex32",
     "recover_secret",
     "split_secret",

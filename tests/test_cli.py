@@ -1,4 +1,6 @@
-"""End-to-end tests for the small codex32-native CLI."""
+"""End-to-end tests for the small codex32 CLI."""
+
+import json
 
 from click.testing import CliRunner
 from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_4
@@ -185,11 +187,42 @@ def test_fixed_correction_supports_cl_and_residue_reverse_positions() -> None:
     assert "Add x to reverse position 38." in residue.stdout
 
 
-def test_help_exposes_only_v1_nonwallet_commands() -> None:
+def test_wallet_commands_are_thin_master_seed_adapters() -> None:
+    xprv = _invoke(["xprv"], VECTOR_1["secret_s"])
+    xpub = _invoke(["xpub", "--account", "0"], VECTOR_1["secret_s"])
+    public = _invoke(["descriptors"], VECTOR_1["secret_s"])
+    private = _invoke(["descriptors", "--private"], VECTOR_1["secret_s"])
+
+    assert xprv.exit_code == xpub.exit_code == public.exit_code == private.exit_code == 0
+    assert xprv.stdout.strip() == VECTOR_1["xprv"]
+    assert xpub.stdout.startswith("[3f3521a6/48h/0h/0h/2h]xpub")
+    assert len(json.loads(public.stdout)) == 4
+    assert all("xprv" not in record["desc"] for record in json.loads(public.stdout))
+    assert all("xprv" in record["desc"] for record in json.loads(private.stdout))
+    assert "root authority" in private.stderr
+
+
+def test_wallet_cli_rejects_non_ms_profiles() -> None:
+    for command in ("xprv", "xpub", "descriptors"):
+        result = _invoke([command], SHARING_VECTORS["cl"]["S"])
+        assert result.exit_code != 0
+        assert "only ms secrets" in result.stderr
+
+
+def test_help_exposes_only_v1_commands() -> None:
     result = _invoke(["--help"])
 
     assert result.exit_code == 0
-    for command in ("verify", "secret", "share", "create", "checksum", "correct"):
+    for command in (
+        "verify",
+        "secret",
+        "share",
+        "create",
+        "checksum",
+        "correct",
+        "descriptors",
+        "xprv",
+        "xpub",
+    ):
         assert command in result.stdout
-    for removed in ("descriptors", "xprv", "xpub", "--pretty"):
-        assert removed not in result.stdout
+    assert "--pretty" not in result.stdout
