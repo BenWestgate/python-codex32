@@ -38,6 +38,55 @@ python -m ruff check .
 
 The installed command is `codex32`.
 
+## CLI usage
+
+Secret inputs are read from a terminal prompt or stdin, not command arguments.
+Avoid shell commands containing literal secrets because shell history and
+process inspection may retain them.
+
+```bash
+codex32 verify
+codex32 secret
+codex32 share d
+codex32 create 3cash --shares 5
+codex32 correct
+codex32 wallet multisig-xpub --account 0
+```
+
+On a terminal, recovery commands request one secret or the required shares in
+sequence. Redirected stdin may instead contain bounded whitespace-separated
+inputs for automation.
+
+`correct` prints a checksum-valid suggestion to stderr and exits nonzero.
+Correction is not authentication; always compare the result with the physical
+backup.
+
+See [docs/cli.md](docs/cli.md) for the complete command/profile matrix.
+
+## Create a Bitcoin Core watch-only wallet
+
+This example creates a wallet that can find balances but cannot sign
+transactions:
+
+```bash
+bitcoin-cli -named createwallet \
+  wallet_name=codex32-watchonly \
+  disable_private_keys=true \
+  blank=true \
+  descriptors=true \
+  load_on_startup=true
+
+codex32 wallet bitcoin-core watch-only |
+  bitcoin-cli -rpcwallet=codex32-watchonly -stdin importdescriptors
+```
+
+Codex32 prompts for the backup on the terminal. Its stdout goes directly to
+Bitcoin Core as one `importdescriptors` argument; prompts and status remain on
+stderr.
+
+Private restoration has additional security requirements; see the
+[CLI documentation](docs/cli.md#private-bitcoin-core-restoration).
+
 ## API example
 
 ```python
@@ -52,32 +101,24 @@ assert isinstance(secret, MasterSeed)
 additional = derive_share([a, c], "d")
 ```
 
-Ordinary shares expose canonical text and u5 payload symbols, never bytes.
-Only profile-specific secret types expose semantic bytes. Public construction,
-sharing, correction, generation, and wallet functions are listed in
-[docs/api-migration.md](docs/api-migration.md).
+Worksheet residue correction is also available without disclosing the backup's
+profile or length:
 
-## CLI safety
+```python
+from codex32 import correct_worksheet_residue
 
-Secret inputs are read from a terminal prompt or stdin, not command arguments.
-Avoid shell commands containing literal secrets because shell history and
-process inspection may retain them.
+corrections = correct_worksheet_residue("2ppjkw73qdjvc")
+if corrections is None:
+    raise ValueError("no unique correction")
 
-```bash
-codex32 verify < backup.txt
-codex32 secret < shares.txt
-codex32 share d < shares.txt
-codex32 create 3cash --shares 5
-codex32 correct < damaged.txt
-codex32 xpub --account 0 < shares.txt
+for correction in corrections:
+    print(correction.reverse_index + 1, correction.addend)
 ```
 
-`correct` prints a checksum-valid suggestion to stderr and exits nonzero.
-Correction is not authentication; always compare the result with the physical
-backup. `descriptors --private` outputs the root xprv and therefore grants root
-authority.
-
-See [docs/cli.md](docs/cli.md) for the complete command/profile matrix.
+Ordinary shares expose canonical text and u5 payload symbols, never bytes.
+Only profile-specific secret types expose semantic bytes. Public construction,
+sharing, correction, generation, and wallet functions are listed in the
+authoritative [package exports](src/codex32/__init__.py).
 
 ## Review map
 
@@ -91,12 +132,13 @@ Start with these small, one-owner modules:
 | generation and OS entropy | `generation.py` |
 | fixed BCH correction | `correction.py`, `gf32.py` |
 | typed BIP32 boundary and wallet interoperability | `_bip32.py`, `wallet.py` |
-| presentation only | `cli.py` |
+| bounded stdin and TTY entry | `_cli_input.py` |
+| options and presentation only | `cli.py` |
 
-The production package is under 3,000 physical Python lines; no production
-module exceeds 650 lines. Tests use official vectors, frozen external fixtures,
-negative boundary cases, and property checks without replacing production
-entropy.
+The installed package is under 3,000 physical Python lines, excluding tests; no
+production module exceeds 650 lines. Tests use official vectors, frozen external
+fixtures, negative boundary cases, and property checks without replacing
+production entropy.
 
 The reviewed runtime dependency boundary is recorded in
 [docs/dependencies.md](docs/dependencies.md).

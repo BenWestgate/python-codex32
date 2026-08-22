@@ -26,6 +26,9 @@ from codex32 import (
     split_secret,
 )
 from codex32._bip32 import fingerprint_from_seed
+from codex32._cli_input import InputError as _UsageError
+from codex32._cli_input import read_artifacts as _artifacts
+from codex32._cli_input import read_text as _text
 from codex32.correction import (
     _correct_fixed,
     _FixedCorrectionSuccess,
@@ -34,11 +37,6 @@ from codex32.correction import (
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 
 Artifact = Share | Secret
-_MAX_INPUT = 9 * 1025
-
-
-class _UsageError(Exception):
-    pass
 
 
 class _CommandError(Exception):
@@ -47,54 +45,6 @@ class _CommandError(Exception):
 
 def _print(text: str, *, err: bool = False) -> None:
     print(text, file=sys.stderr if err else sys.stdout)
-
-
-def _stdin(limit: int = _MAX_INPUT) -> str:
-    value = sys.stdin.read(limit + 1)
-    if len(value) > limit:
-        raise _UsageError("stdin: input is too long")
-    return value
-
-
-def _prompt(label: str) -> str:
-    return input(f"{label}: ")
-
-
-def _text(prompt: str, *, optional: bool = False) -> str:
-    value = _prompt(prompt) if sys.stdin.isatty() else _stdin()
-    value = "".join(value.split())
-    if not value and not optional:
-        raise _UsageError("stdin: input must not be empty")
-    return value
-
-
-def _parse(value: str) -> Artifact:
-    try:
-        return parse_codex32(value)
-    except CodexError as error:
-        raise _UsageError(f"stdin: {error}") from error
-
-
-def _artifacts(*, sequential: bool) -> list[Artifact]:
-    if not sys.stdin.isatty():
-        tokens = _stdin().split()
-        if not tokens:
-            raise _UsageError("stdin: input must not be empty")
-        if len(tokens) > 9:
-            raise _UsageError("stdin: at most nine artifacts are accepted")
-        return [_parse(token) for token in tokens]
-
-    first = _parse(_prompt("codex32 string"))
-    if not sequential or isinstance(first, Secret):
-        return [first]
-    prefix = f"{first.profile.value}1{first.header.threshold}{first.header.identifier}"
-    if first.text == first.text.upper():
-        prefix = prefix.upper()
-    result: list[Artifact] = [first]
-    for number in range(2, first.header.threshold + 1):
-        entered = _prompt(f"share {number}/{first.header.threshold} after {prefix}")
-        result.append(_parse(entered if "1" in entered else prefix + entered))
-    return result
 
 
 def _secret(artifacts: list[Artifact]) -> Secret:
@@ -111,7 +61,7 @@ def _secret(artifacts: list[Artifact]) -> Secret:
 
 
 def _master_seed() -> MasterSeed:
-    value = _secret(_artifacts(sequential=True))
+    value = _secret(_artifacts(profiles=(Profile.MS,)))
     if not isinstance(value, MasterSeed):
         raise _UsageError("wallet commands accept only ms secrets")
     return value
@@ -141,9 +91,7 @@ def _emit(artifact: Artifact, pretty: bool, *, err: bool = False) -> None:
 
 
 def _share_command(index: str, pretty: bool) -> int:
-    artifacts = _artifacts(sequential=True)
-    if artifacts[0].profile in (Profile.BIP39_12W, Profile.BIP39_24W):
-        raise _UsageError("BIP39 share derivation is API-only")
+    artifacts = _artifacts(basis=True, profiles=(Profile.MS, Profile.CL))
     try:
         derived = derive_share(artifacts, index)
     except CodexError as error:
@@ -181,7 +129,10 @@ def _creation_source() -> bytes | Artifact | None:
     try:
         return bytes.fromhex(value)
     except ValueError:
-        return _parse(value)
+        try:
+            return parse_codex32(value)
+        except CodexError as error:
+            raise _UsageError(str(error)) from error
 
 
 def _create(
@@ -320,7 +271,7 @@ def _xpub(account: int, testnet: bool) -> int:
     return 0
 
 
-def _descriptors(account: int, timestamp: int, testnet: bool, private: bool) -> int:
+def _bitcoin_core(account: int, timestamp: int, testnet: bool, private: bool) -> int:
     if private:
         warning = (
             "Warning: private descriptors contain the root xprv and grant "
@@ -334,7 +285,7 @@ def _descriptors(account: int, timestamp: int, testnet: bool, private: bool) -> 
         private=private,
         timestamp=timestamp,
     )
-    _print(json.dumps(records, indent=2))
+    _print(json.dumps(records, separators=(",", ":")))
     return 0
 
 
@@ -362,6 +313,13 @@ def _command(
     return subparsers.add_parser(
         name, help=help_text, description=help_text, allow_abbrev=False
     )
+
+
+def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None:
+    parser.add_argument("--account", type=_integer("account", 0, 2**31 - 1), default=0)
+    if timestamp:
+        parser.add_argument("--timestamp", type=_integer("timestamp", 0), default=0)
+    parser.add_argument("--testnet", action="store_true")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -414,33 +372,35 @@ def _parser() -> argparse.ArgumentParser:
     xprv = _command(commands, "xprv", "Print the BIP32 master xprv.")
     xprv.add_argument("--testnet", action="store_true")
 
-    xpub = _command(commands, "xpub", "Print a BIP48 coordinator xpub.")
-    xpub.add_argument("--account", type=_integer("account", 0, 2**31 - 1), default=0)
-    xpub.add_argument("--testnet", action="store_true")
+    wallet = _command(commands, "wallet", "Emit wallet interoperability data.")
+    wallet_commands = wallet.add_subparsers(dest="wallet_command", required=True)
+    multisig = _command(
+        wallet_commands, "multisig-xpub", "Print a BIP48 coordinator xpub."
+    )
+    _wallet_options(multisig, timestamp=False)
 
-    descriptors = _command(
-        commands, "descriptors", "Print fixed Bitcoin Core descriptors as JSON."
+    bitcoin_core = _command(
+        wallet_commands, "bitcoin-core", "Emit Bitcoin Core descriptor JSON."
     )
-    descriptors.add_argument(
-        "--account", type=_integer("account", 0, 2**31 - 1), default=0
-    )
-    descriptors.add_argument("--timestamp", type=_integer("timestamp", 0), default=0)
-    descriptors.add_argument("--testnet", action="store_true")
-    descriptors.add_argument(
-        "--private", action="store_true", help="include the root xprv"
-    )
+    core_modes = bitcoin_core.add_subparsers(dest="core_mode", required=True)
+    for name, help_text in (
+        ("restore", "Emit private descriptors with signing capability."),
+        ("watch-only", "Emit public descriptors without private keys."),
+    ):
+        mode = _command(core_modes, name, help_text)
+        _wallet_options(mode, timestamp=True)
     return parser
 
 
 def _dispatch(arguments: argparse.Namespace) -> int:
     command = cast(str, arguments.command)
     if command == "verify":
-        for artifact in _artifacts(sequential=False):
+        for artifact in _artifacts(one=True):
             kind = "secret" if isinstance(artifact, Secret) else "share"
             _print(f"valid {artifact.profile.value} {kind}: {artifact.header}")
         return 0
     if command == "secret":
-        _emit(_secret(_artifacts(sequential=True)), bool(arguments.pretty))
+        _emit(_secret(_artifacts()), bool(arguments.pretty))
         return 0
     if command == "share":
         return _share_command(cast(str, arguments.index), bool(arguments.pretty))
@@ -465,16 +425,17 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             bool(arguments.pretty),
         )
     if command == "xprv":
+        _print("Warning: xprv grants secret root signing authority.", err=True)
         _print(master_xprv(_master_seed(), testnet=bool(arguments.testnet)))
         return 0
-    if command == "xpub":
+    if command == "wallet" and arguments.wallet_command == "multisig-xpub":
         return _xpub(int(arguments.account), bool(arguments.testnet))
-    if command == "descriptors":
-        return _descriptors(
+    if command == "wallet" and arguments.wallet_command == "bitcoin-core":
+        return _bitcoin_core(
             int(arguments.account),
             int(arguments.timestamp),
             bool(arguments.testnet),
-            bool(arguments.private),
+            arguments.core_mode == "restore",
         )
     raise AssertionError(f"unhandled command {command!r}")
 
@@ -493,6 +454,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (_CommandError, CodexError) as error:
         _print(f"codex32: {error}", err=True)
         return 1
+    except EOFError:
+        _print("codex32: error: input ended before recovery completed", err=True)
+        return 2
+    except KeyboardInterrupt:
+        _print("codex32: interrupted", err=True)
+        return 130
 
 
 if __name__ == "__main__":

@@ -30,7 +30,8 @@ exact payload length and S-only semantics; it does not replace format validity.
 | fixed BCH and worksheet correction | `correction.py` | `test_correction_bch.py` |
 | typed BIP32 dependency boundary | `_bip32.py` | BIP32 and wallet vectors |
 | fixed wallet derivation and descriptors | `wallet.py` | `test_wallet.py` |
-| stdin/options/presentation | `cli.py` | `test_cli.py` |
+| bounded stdin and fixed-prefix TTY entry | `_cli_input.py` | `test_cli.py` |
+| options, commands, and presentation | `cli.py` | `test_cli.py` |
 
 ## Boundaries
 
@@ -41,6 +42,8 @@ exact payload length and S-only semantics; it does not replace format validity.
 - `generation.py` is the only entropy owner and accepts only `ms`.
 - Correction never edits the HRP or separator and reparses every candidate.
 - `wallet.py` accepts only `MasterSeed` and has no state or generic parser.
+- `_cli_input.py` retains at most nine artifacts and delegates partial-set
+  compatibility to `bip93.py`; it has no terminal editing or history layer.
 - `cli.py` contains no domain algorithm or hidden state.
 
 Private Python names are convention rather than access control. The supported

@@ -332,14 +332,16 @@ def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]
     return tuple(encoded[6:]), checksum.length, len(encoded)
 
 
-def _validate_share_set(artifacts: Sequence[Share | Secret]) -> _ShareSet:
-    """Validate the common interpolation domain and exact threshold."""
+def _validate_share_set(
+    artifacts: Sequence[Share | Secret], *, require_exact: bool = True
+) -> _ShareSet:
+    """Validate one compatible interpolation domain."""
     copied = _bounded_artifacts(artifacts)
     first = copied[0]
     threshold = first.header.threshold
     if threshold not in range(2, 10):
         raise MismatchedThreshold("linear sharing requires threshold 2 through 9")
-    if len(copied) != threshold:
+    if len(copied) > threshold or (require_exact and len(copied) != threshold):
         raise WrongShareCount(
             f"threshold is {threshold}, but {len(copied)} artifacts were supplied"
         )
@@ -374,6 +376,18 @@ def _validate_share_set(artifacts: Sequence[Share | Secret]) -> _ShareSet:
         tuple(tails),
         all(item.text.isupper() for item in copied),
     )
+
+
+def _validate_recovery_prefix(shares: Sequence[Share | Secret]) -> None:
+    """Validate a nonempty, not-yet-complete recovery share sequence."""
+    share_set = _validate_share_set(shares, require_exact=False)
+    if any(isinstance(item, Secret) for item in share_set.artifacts):
+        raise SecretInRecoverySet("recovery accepts ordinary shares only")
+
+
+def _validate_basis_prefix(basis: Sequence[Share | Secret]) -> None:
+    """Validate a nonempty, not-yet-complete derivation basis."""
+    _validate_share_set(basis, require_exact=False)
 
 
 def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:

@@ -22,3 +22,21 @@ not only the selected account. The CLI warns before printing them.
 Account, network, private/public mode, and timestamp are explicit inputs. The
 timestamp defaults to `0` so recovery scans from genesis. There is no account
 database, descriptor parser, policy language, RPC, or network access.
+
+The CLI makes the public/private choice a mandatory goal rather than a default:
+
+```text
+codex32 wallet bitcoin-core watch-only
+codex32 wallet bitcoin-core restore
+```
+
+Both commands print exactly one compact JSON line suitable for Bitcoin Core's
+`-stdin importdescriptors` input. Prompts stay on stderr. `watch-only` is safe to
+pipe into a blank wallet created with `disable_private_keys=true`. `restore`
+must be used only with a loaded, blank, encrypted descriptor wallet; it warns
+before emitting root-xprv descriptors. Bitcoin Core remains responsible for
+wallet creation, encryption, unlocking, locking, and storage.
+
+`codex32 wallet multisig-xpub` emits the BIP48 coordinator string. The direct
+`codex32 xprv` primitive remains top-level and carries an explicit secret-root
+warning.

@@ -17,7 +17,7 @@ Every implemented claim identifies one code owner and direct evidence.
 | R10 | splitting S uses S plus k−1 masks | `split_secret` | exact recovery and threshold properties | Implemented for `ms` |
 | R11 | four errors, `2e+v≤8`, eight erasures, bursts | `correction.py` | P70 corpus and Hypothesis positions | Implemented fixed-length only |
 | R12 | correction is an untrusted suggestion | CLI `correct` | stderr/nonzero and no-correction tests | Implemented |
-| R13 | subsequent share input uses known prefix/header | CLI `_artifacts` | sequential TTY and duplicate/set validation | Implemented |
+| R13 | subsequent share input uses known prefix/header | `_cli_input.read_artifacts`, BIP93 prefix validators | suffix/full paste, retry, duplicate/mismatch and stream tests | Implemented |
 | R14 | structural correction/timeout UX | none | explicit scope assertions/docs | Deliberately omitted |
 | R15 | only `ms` S enters wallet workflows | `wallet._master` | all non-`MasterSeed` types rejected | Implemented |
 | R16 | electronic generation defaults to 128 bits | generation API and CLI `create` | default and complete creation matrix | Implemented |
@@ -29,8 +29,8 @@ Every implemented claim identifies one code owner and direct evidence.
 | R22 | generated S uses CRC padding; parsed S need not | private `_crc_pad` | frozen CRC and arbitrary parsed-pad tests | Accepted divergence |
 | R23 | electronic sets use random distinct output indices | generation selector | order, uniqueness, all-31 tests | Accepted divergence |
 | R24 | partial-basis completion | none | absence from API/CLI | Deliberately omitted |
-| R25 | xprv, coordinator xpub, descriptors in reusable API | `wallet.py` | official xprv, frozen BIP48/descriptor tests | Implemented |
-| R26 | explicit account/timestamp and root-xprv warning | wallet API and CLI | deterministic records and warning tests | Implemented |
+| R25 | xprv, coordinator xpub, descriptors in reusable API | `wallet.py`; goal-oriented CLI tree | official xprv, frozen BIP48/descriptor and nested-command tests | Implemented |
+| R26 | explicit account/timestamp, mandatory Core mode, root-xprv warning | wallet API and CLI | deterministic records, public/private separation and warning tests | Implemented |
 | R27 | no arbitrary security parser for descriptors | fixed templates in `wallet.py` | module/API absence and template fixtures | Implemented by removal |
 | R28 | safe typed installable reference surface | 19-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
 
