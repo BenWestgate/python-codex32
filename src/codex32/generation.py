@@ -80,7 +80,9 @@ def _selection(
 ) -> tuple[int | None, tuple[str, ...] | None]:
     if threshold == 0:
         if share_count is not None or indices is not None:
-            raise InvalidShareSelection("threshold zero does not accept share selectors")
+            raise InvalidShareSelection(
+                "threshold zero does not accept share selectors"
+            )
         return None, None
     if (share_count is None) == (indices is None):
         raise InvalidShareSelection("choose exactly one of share_count or indices")
@@ -189,7 +191,11 @@ def _seed_input(
             raise InvalidLength("master seed must contain 16 through 64 bytes")
         return seed_bytes, len(seed_bytes)
     length = 16 if byte_length is None else byte_length
-    if isinstance(length, bool) or not isinstance(length, int) or not 16 <= length <= 64:
+    if (
+        isinstance(length, bool)
+        or not isinstance(length, int)
+        or not 16 <= length <= 64
+    ):
         raise InvalidLength("byte_length must be an integer from 16 through 64")
     return None, length
 
@@ -213,10 +219,14 @@ def generate_master_seed(
     if supplied is not None:
         _fingerprint_identifier(supplied)
         identifier = _identifier(identifier)
-        secret = MasterSeed.from_seed(supplied, identifier=identifier, threshold=threshold)
+        secret = MasterSeed.from_seed(
+            supplied, identifier=identifier, threshold=threshold
+        )
         if threshold == 0:
             return secret, ()
-        return _finish(secret, _basis(secret, threshold, identifier), share_count, explicit)
+        return _finish(
+            secret, _basis(secret, threshold, identifier), share_count, explicit
+        )
 
     if threshold == 0:
         while True:
@@ -225,7 +235,9 @@ def generate_master_seed(
                 default_identifier = _fingerprint_identifier(fresh)
             except CodexError:
                 continue
-            identifier = default_identifier if identifier is None else _identifier(identifier)
+            identifier = (
+                default_identifier if identifier is None else _identifier(identifier)
+            )
             return MasterSeed.from_seed(fresh, identifier=identifier), ()
 
     identifier = _random_identifier() if identifier is None else _identifier(identifier)

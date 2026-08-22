@@ -44,7 +44,8 @@ def _ms_basis(byte_length: int = 16, threshold: int = 2):
     secret = MasterSeed.from_seed(seed, identifier="test", threshold=threshold)
     masks = [
         complete_checksum(
-            f"ms1{threshold}test{index}" + CHARSET[offset + 1] * len(secret.payload_symbols)
+            f"ms1{threshold}test{index}"
+            + CHARSET[offset + 1] * len(secret.payload_symbols)
         )
         for offset, index in enumerate(IDX_SORT[1:threshold])
     ]
@@ -79,7 +80,9 @@ def test_official_vector_3_recovers_and_derives() -> None:
         assert derive_share([secret, a, c], index).text == VECTOR_3[f"derived_{index}"]
 
 
-def test_interpolation_does_not_create_a_checksum(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_interpolation_does_not_create_a_checksum(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     a = parse_codex32(VECTOR_2["share_A"])
     c = parse_codex32(VECTOR_2["share_C"])
 
@@ -119,16 +122,12 @@ def test_share_set_mismatches_have_distinct_errors() -> None:
     with pytest.raises(MismatchedThreshold):
         derive_share([ms_secret, threshold_three], "d")  # type: ignore[list-item]
 
-    other_id = complete_checksum(
-        "ms12namec" + "q" * len(ms_secret.payload_symbols)
-    )
+    other_id = complete_checksum("ms12namec" + "q" * len(ms_secret.payload_symbols))
     with pytest.raises(MismatchedIdentifier):
         derive_share([ms_secret, other_id], "d")  # type: ignore[list-item]
 
     longer = MasterSeed.from_seed(bytes(17), identifier="test", threshold=2)
-    longer_mask = complete_checksum(
-        "ms12testc" + "q" * len(longer.payload_symbols)
-    )
+    longer_mask = complete_checksum("ms12testc" + "q" * len(longer.payload_symbols))
     with pytest.raises(MismatchedPayloadLength):
         derive_share([ms_secret, longer_mask], "d")  # type: ignore[list-item]
 
@@ -207,7 +206,10 @@ def test_invalid_implied_bip39_secret_rejects_recovery_and_derivation() -> None:
     a = parse_codex32(INVALID_BIP39_IMPLIED_SECRET["A"])
     c = parse_codex32(INVALID_BIP39_IMPLIED_SECRET["C"])
     assert isinstance(a, Share) and isinstance(c, Share)
-    for operation in (lambda: recover_secret([a, c]), lambda: derive_share([a, c], "d")):
+    for operation in (
+        lambda: recover_secret([a, c]),
+        lambda: derive_share([a, c], "d"),
+    ):
         with pytest.raises((InvalidPadding, InvalidBip39Checksum)):
             operation()
 
@@ -216,7 +218,9 @@ def test_invalid_implied_bip39_secret_rejects_recovery_and_derivation() -> None:
 @settings(max_examples=35, deadline=None)
 def test_order_and_case_properties(byte_length: int, uppercase: bool) -> None:
     shares = _ordinary_set(byte_length)
-    rendered = [parse_codex32(item.text.upper() if uppercase else item.text) for item in shares]
+    rendered = [
+        parse_codex32(item.text.upper() if uppercase else item.text) for item in shares
+    ]
     outputs = [recover_secret(list(order)).text for order in permutations(rendered)]
     assert len(set(outputs)) == 1
     assert outputs[0].isupper() is uppercase

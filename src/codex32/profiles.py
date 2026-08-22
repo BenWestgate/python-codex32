@@ -37,7 +37,10 @@ class _ProfileSpec:
                 f"checksum completion is not available for {self.profile}"
             )
 
-_MS_PAYLOAD_LENGTHS = tuple(sorted({(byte_length * 8 + 4) // 5 for byte_length in range(16, 65)}))
+
+_MS_PAYLOAD_LENGTHS = tuple(
+    sorted({(byte_length * 8 + 4) // 5 for byte_length in range(16, 65)})
+)
 
 _SPECS = {
     Profile.MS: _ProfileSpec(Profile.MS, _MS_PAYLOAD_LENGTHS, True),

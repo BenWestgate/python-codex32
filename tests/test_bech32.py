@@ -53,8 +53,8 @@ def test_lexical_rejections(value: str, error: type[Exception]) -> None:
 def test_convert_bits_requires_explicit_integer_padding() -> None:
     data = bytes.fromhex("ffeedd")
     symbols = _convert_bits(data, 8, 5, pad=True, pad_value=1)
-    assert bytes(
-        _convert_bits(symbols, 5, 8, pad=False, accept_any_padding=True)
-    ) == data
+    assert (
+        bytes(_convert_bits(symbols, 5, 8, pad=False, accept_any_padding=True)) == data
+    )
     with pytest.raises(InvalidPadding):
         _convert_bits(data, 8, 5, pad=True, pad_value=2)

@@ -76,7 +76,8 @@ def test_padding_acceptance_is_balanced_for_every_nonzero_lagrange_weight() -> N
         for coefficient in range(1, 32):
             for fixed_value in range(32):
                 counts = Counter(
-                    (fixed_value ^ _gf32_multiply(coefficient, free_value)) & suffix_mask
+                    (fixed_value ^ _gf32_multiply(coefficient, free_value))
+                    & suffix_mask
                     for free_value in range(32)
                 )
                 assert counts == Counter(

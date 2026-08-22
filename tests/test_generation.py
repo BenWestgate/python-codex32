@@ -38,7 +38,9 @@ def _indices(shares: tuple[Share, ...]) -> str:
 
 
 def _seed(byte_length: int) -> bytes:
-    return bytes((position * 109 + byte_length) % 256 for position in range(byte_length))
+    return bytes(
+        (position * 109 + byte_length) % 256 for position in range(byte_length)
+    )
 
 
 def test_entropy_mapping_and_index_population_are_exact() -> None:
@@ -173,7 +175,10 @@ def test_invalid_share_selections(arguments: dict[str, object]) -> None:
 def test_unordered_indices_and_invalid_thresholds_are_rejected() -> None:
     with pytest.raises(TypeError):
         generate_master_seed(
-            bytes(range(16)), threshold=2, indices={"a", "c"}, identifier="test"  # type: ignore[arg-type]
+            bytes(range(16)),
+            threshold=2,
+            indices={"a", "c"},
+            identifier="test",  # type: ignore[arg-type]
         )
     for threshold in (1, 10, True, "2"):
         with pytest.raises(InvalidThreshold):

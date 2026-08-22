@@ -65,7 +65,9 @@ def _artifacts(*, sequential: bool) -> list[Artifact]:
         if not tokens:
             raise click.BadParameter("Input must not be empty.", param_hint="stdin")
         if len(tokens) > 9:
-            raise click.BadParameter("At most nine artifacts are accepted.", param_hint="stdin")
+            raise click.BadParameter(
+                "At most nine artifacts are accepted.", param_hint="stdin"
+            )
         return [_parse(token) for token in tokens]
 
     first = _parse(click.prompt("codex32 string"))
@@ -87,7 +89,9 @@ def _secret(artifacts: list[Artifact]) -> Secret:
     if len(artifacts) == 1 and isinstance(artifacts[0], Secret):
         return artifacts[0]
     if not all(isinstance(artifact, Share) for artifact in artifacts):
-        raise click.BadParameter("Recovery accepts ordinary shares only.", param_hint="stdin")
+        raise click.BadParameter(
+            "Recovery accepts ordinary shares only.", param_hint="stdin"
+        )
     try:
         return recover_secret([item for item in artifacts if isinstance(item, Share)])
     except CodexError as error:

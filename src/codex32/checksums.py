@@ -102,11 +102,7 @@ def _crc_pad(data: bytes) -> int:
     padding_bits = (-bit_length) % 5
     if not padding_bits:
         return 0
-    bits = [
-        (byte >> bit) & 1
-        for byte in data
-        for bit in range(7, -1, -1)
-    ]
+    bits = [(byte >> bit) & 1 for byte in data for bit in range(7, -1, -1)]
     checksum = _CRC[padding_bits]
     assert checksum is not None
     crc_bits = checksum.create(bits)

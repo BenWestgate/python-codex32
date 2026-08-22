@@ -15,11 +15,7 @@ def _validate_bip39_secret(profile: Profile, symbols: tuple[int, ...]) -> None:
     else:
         raise InvalidPayload(f"{profile} is not a BIP39 migration profile")
 
-    bits = [
-        (symbol >> bit) & 1
-        for symbol in symbols
-        for bit in range(4, -1, -1)
-    ]
+    bits = [(symbol >> bit) & 1 for symbol in symbols for bit in range(4, -1, -1)]
     if any(bits[-outer_padding:]):
         raise InvalidPadding("BIP39 S requires zero outer u5 padding")
     semantic = bits[:-outer_padding]

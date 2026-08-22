@@ -17,15 +17,19 @@ _MAX_CODEX32_LENGTH = 1024
 
 
 def _hrp_expand(hrp: str) -> list[int]:
-    return [ord(character) >> 5 for character in hrp] + [0] + [
-        ord(character) & 31 for character in hrp
-    ]
+    return (
+        [ord(character) >> 5 for character in hrp]
+        + [0]
+        + [ord(character) & 31 for character in hrp]
+    )
 
 
 def _u5_to_chars(values: list[int] | tuple[int, ...]) -> str:
     for index, value in enumerate(values):
         if not 0 <= value < 32:
-            raise InvalidCharacter(f"u5 value {value} at index {index} is outside 0..31")
+            raise InvalidCharacter(
+                f"u5 value {value} at index {index} is outside 0..31"
+            )
     return "".join(CHARSET[value] for value in values)
 
 
@@ -60,7 +64,9 @@ def _validate_single_case_ascii(
     return value.isupper()
 
 
-def _parse(value: str, *, max_length: int = _MAX_CODEX32_LENGTH) -> tuple[str, list[int]]:
+def _parse(
+    value: str, *, max_length: int = _MAX_CODEX32_LENGTH
+) -> tuple[str, list[int]]:
     """Perform bounded lexical parsing without interpreting a profile."""
     _validate_single_case_ascii(value, max_length=max_length)
     separator = value.rfind("1")
@@ -174,8 +180,6 @@ def _payload_bytes(symbols: tuple[int, ...]) -> tuple[bytes, int, int]:
     padding_bits = (len(symbols) * 5) % 8
     if padding_bits > 4:
         raise InvalidLength("payload leaves more than four discarded bits")
-    decoded = bytes(
-        _convert_bits(symbols, 5, 8, pad=False, accept_any_padding=True)
-    )
+    decoded = bytes(_convert_bits(symbols, 5, 8, pad=False, accept_any_padding=True))
     padding = symbols[-1] & ((1 << padding_bits) - 1) if padding_bits else 0
     return decoded, padding, padding_bits

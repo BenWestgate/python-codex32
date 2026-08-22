@@ -68,11 +68,7 @@ def _polymod(values: list[int], generators: tuple[int, ...], length: int) -> int
 
 
 def _oracle_encode(hrp: str, body: str, *, force_long: bool | None = None) -> str:
-    use_long = (
-        2 * len(hrp) + 1 + len(body) > 80
-        if force_long is None
-        else force_long
-    )
+    use_long = 2 * len(hrp) + 1 + len(body) > 80 if force_long is None else force_long
     generators = _LONG_GENERATORS if use_long else _SHORT_GENERATORS
     length = 15 if use_long else 13
     constant = 0x43381E570BF4798AB26 if use_long else 0x10CE0795C2FD1E62A
@@ -84,8 +80,7 @@ def _oracle_encode(hrp: str, body: str, *, force_long: bool | None = None) -> st
     )
     residue = _polymod(values + [0] * length, generators, length) ^ constant
     checksum = "".join(
-        CHARSET[(residue >> (5 * (length - 1 - index))) & 31]
-        for index in range(length)
+        CHARSET[(residue >> (5 * (length - 1 - index))) & 31] for index in range(length)
     )
     return f"{hrp}1{body}{checksum}"
 
@@ -96,8 +91,7 @@ def _payload(data: bytes, padding: int) -> str:
     combined = (accumulator << padding_bits) | padding
     count = (len(data) * 8 + 4) // 5
     return "".join(
-        CHARSET[(combined >> (5 * (count - 1 - index))) & 31]
-        for index in range(count)
+        CHARSET[(combined >> (5 * (count - 1 - index))) & 31] for index in range(count)
     )
 
 
@@ -229,8 +223,7 @@ def test_official_generic_checksum_vectors_at_codec_level(
     expanded_length = len(_hrp_expand(hrp)) + len(encoded)
     assert checksum.polymod(_hrp_expand(hrp) + encoded) == checksum.constant
     assert _verify(hrp, encoded, checksum) is (
-        checksum.maximum_length is None
-        or expanded_length <= checksum.maximum_length
+        checksum.maximum_length is None or expanded_length <= checksum.maximum_length
     )
 
 
@@ -251,6 +244,4 @@ def test_official_invalid_generic_checksum_vectors(
         assert error is not None
         return
     expanded_length = len(_hrp_expand(hrp)) + len(encoded)
-    assert not (
-        expanded_length <= maximum and _verify(hrp, encoded, checksum)
-    )
+    assert not (expanded_length <= maximum and _verify(hrp, encoded, checksum))

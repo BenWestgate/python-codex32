@@ -1,6 +1,7 @@
 # tests/data/bip93_vectors.py
 # pylint: disable=line-too-long
 """BIP-93 / codex32 canonical test vectors."""
+
 VECTOR_1 = {
     "secret_s": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
     "secret_hex": "318c6318c6318c6318c6318c6318c631",
@@ -212,11 +213,26 @@ WRONG_CHECKSUMS = [
 
 # BIP93 PR #2258 checksum-boundary replacements, commit 3531824.
 PR2258_BOUNDARY = (
-    (43, "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxt2gjsqpuwvc6p"),
-    (44, "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwgll4xcjyjke0wv"),
-    (45, "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyc57nnpvpcnhggt"),
-    (46, "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxdpu39xl2lkru3g4"),
-    (47, "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx307qvc427fmdl9a"),
+    (
+        43,
+        "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxt2gjsqpuwvc6p",
+    ),
+    (
+        44,
+        "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwgll4xcjyjke0wv",
+    ),
+    (
+        45,
+        "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyc57nnpvpcnhggt",
+    ),
+    (
+        46,
+        "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxdpu39xl2lkru3g4",
+    ),
+    (
+        47,
+        "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx307qvc427fmdl9a",
+    ),
 )
 
 PR2258_LEGACY_SHORT = (

@@ -82,6 +82,8 @@ def test_master_seed_factory_can_only_construct_index_s() -> None:
         ((0, "test", "a"), InvalidShareIndex),
     ),
 )
-def test_header_invariants(arguments: tuple[object, ...], error: type[Exception]) -> None:
+def test_header_invariants(
+    arguments: tuple[object, ...], error: type[Exception]
+) -> None:
     with pytest.raises(error):
         Header(*arguments)  # type: ignore[arg-type]

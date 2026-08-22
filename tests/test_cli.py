@@ -13,9 +13,7 @@ from codex32.cli import cli
 
 
 def _invoke(args: list[str], *lines: str):
-    return CliRunner(mix_stderr=False).invoke(
-        cli, args, input="\n".join(lines) + "\n"
-    )
+    return CliRunner(mix_stderr=False).invoke(cli, args, input="\n".join(lines) + "\n")
 
 
 def _output_artifacts(result, profile: str = "ms"):
@@ -144,9 +142,7 @@ def test_create_rejects_cl_bip39_partial_basis_and_selector_conflicts() -> None:
     cl = _invoke(["create", "cl10cln2"])
     bip39 = _invoke(["create", "bip39_12w10test"])
     partial = _invoke(["create", "2test", "--indices", "ac"], VECTOR_2["share_A"])
-    conflict = _invoke(
-        ["create", "2test", "--shares", "2", "--indices", "ac"]
-    )
+    conflict = _invoke(["create", "2test", "--shares", "2", "--indices", "ac"])
 
     for result in (cl, bip39, partial, conflict):
         assert result.exit_code != 0
@@ -221,7 +217,9 @@ def test_wallet_commands_are_thin_master_seed_adapters() -> None:
     public = _invoke(["descriptors"], VECTOR_1["secret_s"])
     private = _invoke(["descriptors", "--private"], VECTOR_1["secret_s"])
 
-    assert xprv.exit_code == xpub.exit_code == public.exit_code == private.exit_code == 0
+    assert (
+        xprv.exit_code == xpub.exit_code == public.exit_code == private.exit_code == 0
+    )
     assert xprv.stdout.strip() == VECTOR_1["xprv"]
     assert xpub.stdout.startswith("[3f3521a6/48h/0h/0h/2h]xpub")
     assert len(json.loads(public.stdout)) == 4

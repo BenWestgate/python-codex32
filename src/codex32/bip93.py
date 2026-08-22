@@ -53,7 +53,9 @@ class Header:
         if not isinstance(self.identifier, str):
             raise InvalidIdentifier("identifier must be str")
         identifier = self.identifier.lower()
-        if len(identifier) != 4 or any(character not in CHARSET for character in identifier):
+        if len(identifier) != 4 or any(
+            character not in CHARSET for character in identifier
+        ):
             raise InvalidIdentifier("identifier must be exactly four Bech32 symbols")
         if not isinstance(self.index, str):
             raise InvalidShareIndex("share index must be str")
@@ -186,6 +188,7 @@ class CoreLightningSecret(Secret):
         secret, _padding, _padding_bits = _payload_bytes(self.payload_symbols)
         return secret
 
+
 class Bip39Secret(Secret):
     """Migration-only BIP39 S artifact without entropy or mnemonic access."""
 
@@ -313,7 +316,9 @@ def _bounded_artifacts(
     try:
         copied = tuple(artifacts[position] for position in range(count))
     except IndexError as error:
-        raise TypeError("share input Sequence changed length while being read") from error
+        raise TypeError(
+            "share input Sequence changed length while being read"
+        ) from error
     if not all(isinstance(item, _Artifact) for item in copied):
         raise TypeError("all share inputs must be validated codex32 artifacts")
     return copied
@@ -382,10 +387,7 @@ def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
             value ^= _gf32_multiply(weight, row[column])
         result.append(value)
     header = Header(share_set.threshold, share_set.identifier, target)
-    text = (
-        f"{share_set.profile.value}1"
-        f"{_u5_to_chars((*header._symbols, *result))}"
-    )
+    text = f"{share_set.profile.value}1{_u5_to_chars((*header._symbols, *result))}"
     return parse_codex32(text.upper() if share_set.uppercase else text)
 
 

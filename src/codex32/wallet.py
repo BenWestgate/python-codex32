@@ -50,7 +50,9 @@ def _descriptor_symbols(text: str) -> list[int]:
 
 
 def _with_checksum(descriptor: str) -> str:
-    return descriptor + "#" + _u5_to_chars(DESCSUM.create(_descriptor_symbols(descriptor)))
+    return (
+        descriptor + "#" + _u5_to_chars(DESCSUM.create(_descriptor_symbols(descriptor)))
+    )
 
 
 def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:

@@ -6,12 +6,9 @@ from test_profiles import _oracle_encode
 from codex32 import Bip39Secret, Profile, Share, parse_codex32
 from codex32.errors import InvalidBip39Checksum, InvalidLength, InvalidPadding
 
-BIP39_12W_ZERO = (
-    "bip39_12w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqcwa5plrxrewp27"
-)
+BIP39_12W_ZERO = "bip39_12w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqcwa5plrxrewp27"
 BIP39_24W_ZERO = (
-    "bip39_24w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
-    "xv5hjvxqkrlt8cg"
+    "bip39_24w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqxv5hjvxqkrlt8cg"
 )
 
 
@@ -53,9 +50,7 @@ def test_bip39_secret_requires_zero_outer_padding() -> None:
 
 
 def test_bip39_share_is_only_a_uniform_symbol_mask() -> None:
-    share = parse_codex32(
-        _oracle_encode("bip39_12w", "2testa" + "q" * 27)
-    )
+    share = parse_codex32(_oracle_encode("bip39_12w", "2testa" + "q" * 27))
     assert isinstance(share, Share)
     assert not hasattr(share, "seed_bytes")
     assert not hasattr(share, "entropy")
