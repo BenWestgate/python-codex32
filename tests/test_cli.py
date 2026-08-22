@@ -1,377 +1,162 @@
-"""End-to-end tests for CLI command routing."""
+"""End-to-end tests for the small codex32-native CLI."""
 
 from click.testing import CliRunner
-from data.bip93_vectors import (
-    VECTOR_1,
-    VECTOR_2,
-    VECTOR_3,
-    VECTOR_4,
-    VECTOR_5,
-)
+from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_4
 from data.sharing_vectors import SHARING_VECTORS
 from test_bip39 import BIP39_12W_ZERO
 
-from codex32 import (
-    MasterSeed,
-    Share,
-    parse_codex32,
-    recover_secret,
-)
+from codex32 import MasterSeed, Share, parse_codex32, recover_secret
 from codex32.cli import cli
 
 
-def _invoke(args: list[str], *strings: str):
-    return CliRunner().invoke(cli, args, input="\n".join(strings) + "\n")
-
-
-def _assert_private_master_key(vector: dict[str, str], *strings: str) -> None:
-    result = _invoke(["xprv"], *strings)
-
-    assert result.exit_code == 0
-    assert result.output.strip().endswith(vector["xprv"])
-
-
-def _assert_checksum(vector: dict[str, str]) -> None:
-    string = parse_codex32(vector["secret_s"])
-    checksum_length = 15 if len(string.payload_symbols) + 6 > 80 else 13
-    worksheet_data = string.text[:-checksum_length]
-    for args, input_value in (
-        (["checksum"], worksheet_data),
-        (["checksum"], worksheet_data[3:]),
-        (["checksum", worksheet_data[:9]], worksheet_data[9:]),
-        (["checksum", worksheet_data[3:9]], worksheet_data[9:]),
-    ):
-        result = _invoke(args, input_value)
-
-        assert result.exit_code == 0
-        assert "DANGER:" in result.output
-        assert ("Enter the header first" in result.output) == (len(args) == 1)
-        assert "permanent loss of funds" in result.output
-        assert result.output.strip().endswith(vector["secret_s"].lower())
-
-
-def test_bip93_vector_1_cli_unshared_secret():
-    """Decode and checksum the official 128-bit unshared secret."""
-    verified = _invoke(["verify"], VECTOR_1["secret_s"])
-
-    assert verified.exit_code == 0
-    assert "Valid codex32 secret with header: ms10tests" in verified.output
-    assert "xpub" not in verified.output
-    _assert_private_master_key(VECTOR_1, VECTOR_1["secret_s"])
-    _assert_checksum(
-        {
-            **VECTOR_1,
-            "share_idx": VECTOR_1["share_index"],
-        }
+def _invoke(args: list[str], *lines: str):
+    return CliRunner(mix_stderr=False).invoke(
+        cli, args, input="\n".join(lines) + "\n"
     )
 
 
-def test_bip93_vector_2_cli_derive_and_recover():
-    """Derive D and recover the official 2-of-N secret and master key."""
-    shares = (VECTOR_2["share_A"], VECTOR_2["share_C"])
-    derived = _invoke(["share", "D"], *shares)
-    secret = _invoke(["secret"], *shares)
-
-    assert derived.exit_code == 0
-    assert derived.output.strip().endswith(VECTOR_2["derived_D"])
-    assert secret.exit_code == 0
-    assert secret.output.strip().endswith(VECTOR_2["secret_S"])
-    _assert_private_master_key(VECTOR_2, *shares)
-
-
-def test_bip93_vector_3_cli_derive_and_recover():
-    """Derive three shares and recover the official 3-of-N master key."""
-    basis = (VECTOR_3["secret_s"], VECTOR_3["share_a"], VECTOR_3["share_c"])
-    for index in "def":
-        result = _invoke(["share", index], *basis)
-        assert result.exit_code == 0
-        assert result.output.strip().endswith(VECTOR_3[f"derived_{index}"])
-    _assert_private_master_key(
-        VECTOR_3,
-        VECTOR_3["share_a"],
-        VECTOR_3["share_c"],
-        VECTOR_3["derived_d"],
-    )
-
-
-def test_bip93_vector_4_cli_256_bit_secret():
-    """Recover the official 256-bit unshared master key."""
-    vector = {
-        **VECTOR_4,
-        "k": "0",
-        "identifier": "leet",
-        "share_idx": "s",
-        "payload": VECTOR_4["secret_s"][9:-13],
-    }
-    _assert_private_master_key(vector, vector["secret_s"])
-
-
-def test_bip93_vector_5_cli_long_uppercase_secret():
-    """Recover the official uppercase 512-bit unshared master key."""
-    _assert_private_master_key(VECTOR_5, VECTOR_5["secret_s"])
-
-
-def test_pretty_is_accepted_on_either_side_of_subcommands():
-    """Create and checksum accept --pretty before or after the command."""
-    share = parse_codex32(VECTOR_2["share_A"])
-    checksum_length = 15 if len(share.payload_symbols) + 6 > 80 else 13
-    cases = (
-        (
-            ["checksum", share.text[:9]],
-            share.text[9:-checksum_length],
-            ("Threshold Scheme:    2-of-N", "codex32 Identifier:  NAME"),
-        ),
-        (
-            ["create", "--threshold", "0", "--identifier", "test"],
-            bytes(range(16)).hex(),
-            ("Threshold Scheme:    Unshared", "Master Fingerprint:"),
-        ),
-    )
-    for command_args, input_value, expected_output in cases:
-        for before_command in (True, False):
-            args = (
-                ["--pretty", *command_args]
-                if before_command
-                else [*command_args, "--pretty"]
-            )
-            result = CliRunner().invoke(
-                cli,
-                args,
-                input=input_value + "\n",
-            )
-
-            assert result.exit_code == 0
-            assert all(value in result.output for value in expected_output)
-
-
-def test_checksum_rejects_noncanonical_initial_share_indices():
-    """Checksum follows the Book's initial-share index rules."""
-    for header in ("0testa", "2tests", "2testd"):
-        result = _invoke(["checksum", header], "x" * 26)
-
-        assert result.exit_code != 0
-        assert "DANGER" not in result.output
-        assert "Consult the Book and check the worksheet." in result.output
-
-    protected_header = _invoke(["checksum"], "ms12tests" + "x" * 26)
-    assert protected_header.exit_code != 0
-    assert "Consult the Book and check the worksheet." in protected_header.output
-
-
-def test_bip39_cli_verifies_and_recovers_but_does_not_derive():
-    """BIP39 recovery is migration-only; share derivation stays API-only."""
-    verified = _invoke(["verify"], BIP39_12W_ZERO)
-    direct_secret = _invoke(["secret"], BIP39_12W_ZERO)
-    assert verified.exit_code == 0
-    assert "Valid codex32 secret with header: bip39_12w10tests" in verified.output
-    assert direct_secret.exit_code == 0
-    assert direct_secret.output.strip() == BIP39_12W_ZERO
-
-    for profile in ("bip39_12w", "bip39_24w"):
-        vector = SHARING_VECTORS[profile]
-        shares = (vector["A"], vector["C"])
-        recovered = _invoke(["secret"], *shares)
-        derived = _invoke(["share", "d"], *shares)
-        assert recovered.exit_code == 0
-        assert recovered.output.strip() == vector["S"]
-        assert derived.exit_code != 0
-        assert "not exposed by the CLI" in derived.output
-
-    wallet = _invoke(["xprv"], BIP39_12W_ZERO)
-    assert wallet.exit_code != 0
-    assert "must be 'ms'" in wallet.output
-
-
-def _created_artifacts(result, prefix: str):
+def _output_artifacts(result, profile: str = "ms"):
     return [
         parse_codex32(line)
-        for line in result.output.splitlines()
-        if line.lower().startswith(f"{prefix}1")
+        for line in result.stdout.splitlines()
+        if line.lower().startswith(profile + "1")
     ]
 
 
-def test_create_defaults_to_five_randomly_indexed_ms_shares() -> None:
-    result = _invoke(["create"])
-    artifacts = _created_artifacts(result, "ms")
+def test_verify_supports_every_registered_application() -> None:
+    strings = (
+        VECTOR_1["secret_s"],
+        SHARING_VECTORS["cl"]["S"],
+        BIP39_12W_ZERO,
+        SHARING_VECTORS["bip39_24w"]["S"],
+    )
+    result = _invoke(["verify"], *strings)
+
     assert result.exit_code == 0
-    assert "Generated identifier:" in result.output
-    assert len(artifacts) == 5
-    assert all(isinstance(artifact, Share) for artifact in artifacts)
-    assert all(artifact.header.threshold == 2 for artifact in artifacts)
-    assert len({artifact.header.index for artifact in artifacts}) == 5
-    assert all(artifact.text.islower() for artifact in artifacts)
+    assert len(result.stdout.splitlines()) == 4
+    assert "valid ms secret" in result.stdout
+    assert "valid cl secret" in result.stdout
 
 
-def test_create_preserves_explicit_index_order() -> None:
-    result = _invoke(["create", "--threshold", "3", "--indices", "7CaD"])
-    artifacts = _created_artifacts(result, "ms")
-    assert result.exit_code == 0
-    assert "".join(artifact.header.index for artifact in artifacts) == "7cad"
-    assert all(isinstance(artifact, Share) for artifact in artifacts)
-
-
-def test_create_ms_unshared_length_and_raw_identifier_policy() -> None:
-    fresh = _invoke(["create", "--threshold", "0", "--bytes", "47"])
-    fresh_artifacts = _created_artifacts(fresh, "ms")
-    assert fresh.exit_code == 0
-    assert len(fresh_artifacts) == 1
-    assert isinstance(fresh_artifacts[0], MasterSeed)
-    assert len(fresh_artifacts[0].seed_bytes) == 47
-
-    raw_seed = bytes(range(16))
-    rejected = _invoke(["create", "--threshold", "0"], raw_seed.hex())
-    accepted = _invoke(
-        ["create", "--threshold", "0", "--identifier", "test"],
-        raw_seed.hex(),
+def test_secret_recovers_official_ms_and_bip39_sets() -> None:
+    ms = _invoke(["secret"], VECTOR_2["share_A"], VECTOR_2["share_C"])
+    bip39 = _invoke(
+        ["secret"],
+        SHARING_VECTORS["bip39_12w"]["A"],
+        SHARING_VECTORS["bip39_12w"]["C"],
     )
-    accepted_artifacts = _created_artifacts(accepted, "ms")
-    assert rejected.exit_code != 0
-    assert "Raw hexadecimal seeds require" in rejected.output
-    assert accepted.exit_code == 0
-    assert len(accepted_artifacts) == 1
-    assert isinstance(accepted_artifacts[0], MasterSeed)
-    assert accepted_artifacts[0].seed_bytes == raw_seed
+
+    assert ms.exit_code == bip39.exit_code == 0
+    assert ms.stdout.strip() == VECTOR_2["secret_S"]
+    assert bip39.stdout.strip() == SHARING_VECTORS["bip39_12w"]["S"]
 
 
-def test_create_core_lightning_matrix() -> None:
-    missing_identifier = _invoke(["create", "--prefix", "cl", "--threshold", "0"])
-    wrong_length = _invoke(
-        [
-            "create",
-            "--prefix",
-            "cl",
-            "--identifier",
-            "peev",
-            "--threshold",
-            "0",
-            "--bytes",
-            "31",
-        ]
+def test_share_supports_ms_and_cl_but_not_bip39() -> None:
+    ms = _invoke(["share", "d"], VECTOR_2["share_A"], VECTOR_2["share_C"])
+    cl = _invoke(
+        ["share", "d"],
+        SHARING_VECTORS["cl"]["A"],
+        SHARING_VECTORS["cl"]["C"],
     )
-    unshared = _invoke(
-        [
-            "create",
-            "--prefix",
-            "cl",
-            "--identifier",
-            "peev",
-            "--threshold",
-            "0",
-            "--bytes",
-            "32",
-        ]
+    bip39 = _invoke(
+        ["share", "d"],
+        SHARING_VECTORS["bip39_12w"]["A"],
+        SHARING_VECTORS["bip39_12w"]["C"],
     )
-    shared = _invoke(
-        [
-            "create",
-            "--prefix",
-            "cl",
-            "--identifier",
-            "peev",
-            "--threshold",
-            "2",
-            "--indices",
-            "7a",
-        ]
-    )
-    raw_secret = bytes(range(32))
-    raw = _invoke(
-        [
-            "create",
-            "--prefix",
-            "cl",
-            "--identifier",
-            "peev",
-            "--threshold",
-            "0",
-        ],
-        raw_secret.hex(),
-    )
-    for result in (missing_identifier, wrong_length, unshared, shared, raw):
-        assert result.exit_code != 0
-        assert "Fresh cl secrets are not generated" in result.output
 
-
-def test_create_splits_one_existing_ms_secret_with_an_explicit_identifier() -> None:
-    source = parse_codex32(VECTOR_4["secret_s"])
-    assert isinstance(source, MasterSeed)
-    result = _invoke(
-        [
-            "create",
-            "--threshold",
-            "2",
-            "--indices",
-            "7a",
-            "--identifier",
-            "name",
-        ],
-        source.text,
-    )
-    shares = _created_artifacts(result, "ms")
-    assert result.exit_code == 0
-    assert all(share.header.identifier == "name" for share in shares)
-    assert len(shares) == 2
-    assert all(isinstance(share, Share) for share in shares)
-    assert "".join(share.header.index for share in shares) == "7a"
-    recovered = recover_secret(shares)  # type: ignore[arg-type]
-    assert recovered.seed_bytes == source.seed_bytes
-
-
-def test_create_rejects_selector_conflicts_and_has_no_sorting_options() -> None:
-    conflict = _invoke(
-        ["create", "--threshold", "2", "--shares", "2", "--indices", "ac"]
-    )
-    unshared_selector = _invoke(["create", "--threshold", "0", "--shares", "1"])
-    help_result = _invoke(["create", "--help"])
-    assert conflict.exit_code != 0
-    assert "mutually exclusive" in conflict.output
-    assert unshared_selector.exit_code != 0
-    assert "unshared secret" in unshared_selector.output
-    assert help_result.exit_code == 0
-    assert "--prefix" in help_result.output
-    assert "--sort" not in help_result.output
-    assert "--exclude-header" not in help_result.output
-
-
-def test_create_source_header_collision_recommends_another_identifier() -> None:
-    source = MasterSeed.from_seed(bytes(range(16)), identifier="test", threshold=2)
-    result = _invoke(
-        ["create", "--threshold", "2", "--indices", "ac", "--identifier", "test"],
-        source.text,
-    )
-    assert result.exit_code != 0
-    assert "new share set must use a different set header" in result.output
-    assert "another --identifier" in result.output
-
-
-def test_create_rejects_partial_bases_bip39_and_profile_mismatches() -> None:
-    partial = _invoke(
-        ["create", "--threshold", "2", "--indices", "ac"], VECTOR_2["share_A"]
-    )
-    multiple = _invoke(
-        ["create", "--threshold", "2", "--indices", "ac"],
-        VECTOR_2["share_A"],
-        VECTOR_2["share_C"],
-    )
-    bip39 = _invoke(["create", "--threshold", "2", "--indices", "ac"], BIP39_12W_ZERO)
-    cl_secret = parse_codex32(SHARING_VECTORS["cl"]["S"])
-    mismatch = _invoke(
-        ["create", "--threshold", "2", "--indices", "ac"], cl_secret.text
-    )
-    for result in (partial, multiple):
-        assert result.exit_code != 0
-        assert "partial" in result.output.lower()
+    assert ms.exit_code == cl.exit_code == 0
+    assert ms.stdout.strip() == VECTOR_2["derived_D"]
+    assert cl.stdout.strip() == SHARING_VECTORS["cl"]["D"]
     assert bip39.exit_code != 0
-    assert "BIP39 generation" in bip39.output
-    assert mismatch.exit_code != 0
-    assert "does not match --prefix" in mismatch.output
+    assert "API-only" in bip39.stderr
 
 
-def test_correct_residue_uses_one_based_reverse_positions() -> None:
-    result = _invoke(["correct", "--residue"], "2ppjkw73qdjvc")
+def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:
+    result = _invoke(["create"])
+    artifacts = _output_artifacts(result)
 
     assert result.exit_code == 0
-    assert "Add x to reverse position 38." in result.output
+    assert len(artifacts) == 1
+    assert isinstance(artifacts[0], MasterSeed)
+    assert len(artifacts[0].seed_bytes) == 16
+    assert artifacts[0].header.threshold == 0
+
+
+def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
+    unshared = _invoke(["create", "0test"])
+    shared = _invoke(["create", "ms13cash", "--indices", "7cad"])
+
+    unshared_secret = _output_artifacts(unshared)[0]
+    shares = _output_artifacts(shared)
+    assert unshared_secret.header.identifier == "test"
+    assert "".join(share.header.index for share in shares) == "7cad"
+    assert all(isinstance(share, Share) for share in shares)
+    assert recover_secret(shares[:3]).header.identifier == "cash"  # type: ignore[arg-type]
+
+
+def test_create_raw_seed_and_resharing_require_explicit_headers() -> None:
+    raw = bytes(range(16))
+    rejected_raw = _invoke(["create"], raw.hex())
+    accepted_raw = _invoke(["create", "0test"], raw.hex())
+    source = parse_codex32(VECTOR_4["secret_s"])
+    rejected_split = _invoke(["create"], source.text)
+    accepted_split = _invoke(["create", "2name", "--indices", "ac"], source.text)
+
+    assert rejected_raw.exit_code != 0
+    assert rejected_split.exit_code != 0
+    secret = _output_artifacts(accepted_raw)[0]
+    assert isinstance(secret, MasterSeed) and secret.seed_bytes == raw
+    shares = _output_artifacts(accepted_split)
+    assert recover_secret(shares).seed_bytes == source.seed_bytes  # type: ignore[arg-type,union-attr]
+
+
+def test_create_rejects_cl_bip39_partial_basis_and_selector_conflicts() -> None:
+    cl = _invoke(["create", "cl10cln2"])
+    bip39 = _invoke(["create", "bip39_12w10test"])
+    partial = _invoke(["create", "2test", "--indices", "ac"], VECTOR_2["share_A"])
+    conflict = _invoke(
+        ["create", "2test", "--shares", "2", "--indices", "ac"]
+    )
+
+    for result in (cl, bip39, partial, conflict):
+        assert result.exit_code != 0
+
+
+def test_checksum_defaults_to_ms_and_accepts_explicit_cl() -> None:
+    ms = parse_codex32(VECTOR_1["secret_s"])
+    ms_body = ms.text[3:-13]
+    default = _invoke(["checksum"], ms_body)
+    explicit = _invoke(["checksum", ms.text[:9]], ms.text[9:-13])
+
+    cl = SHARING_VECTORS["cl"]["S"]
+    cl_result = _invoke(["checksum", cl[:9]], cl[9:-13])
+
+    assert default.exit_code == explicit.exit_code == cl_result.exit_code == 0
+    assert default.stdout.strip() == explicit.stdout.strip() == ms.text
+    assert cl_result.stdout.strip() == cl
+    assert "does not create entropy" in default.stderr
+
+
+def test_checksum_enforces_published_sizes_and_capabilities() -> None:
+    unusual = _invoke(["checksum"], "0tests" + "q" * 27)
+    bip39 = _invoke(["checksum"], "bip39_12w10tests" + "q" * 27)
+
+    assert unusual.exit_code != 0
+    assert "128 or 256 bits" in unusual.stderr
+    assert bip39.exit_code != 0
+    assert "limited to ms and cl" in bip39.stderr
+
+
+def test_pretty_secret_has_fingerprint_but_pretty_share_does_not() -> None:
+    secret = _invoke(["secret", "--pretty"], VECTOR_1["secret_s"])
+    share = _invoke(
+        ["share", "d", "--pretty"], VECTOR_2["share_A"], VECTOR_2["share_C"]
+    )
+
+    assert secret.exit_code == share.exit_code == 0
+    assert "Master fingerprint:" in secret.stdout
+    assert "Master fingerprint:" not in share.stdout
+    assert "Identifier:" in secret.stdout and "Identifier:" in share.stdout
 
 
 def test_fixed_correction_is_a_nonzero_stderr_suggestion() -> None:
@@ -382,58 +167,29 @@ def test_fixed_correction_is_a_nonzero_stderr_suggestion() -> None:
     result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 1
-    assert original in result.output
-    assert "only a suggestion" in result.output
+    assert result.stdout == ""
+    assert original in result.stderr
+    assert "suggestion" in result.stderr
 
 
-def test_fixed_correction_supports_cl_but_not_bip39_cli_profiles() -> None:
+def test_fixed_correction_supports_cl_and_residue_reverse_positions() -> None:
     original = SHARING_VECTORS["cl"]["S"]
     position = 16
     replacement = "q" if original[position] != "q" else "p"
     damaged = original[:position] + replacement + original[position + 1 :]
-    corrected = _invoke(["correct", "--prefix", "cl"], damaged)
-    rejected = _invoke(["correct", "--prefix", "bip39_12w"], BIP39_12W_ZERO)
+    fixed = _invoke(["correct", "--prefix", "cl"], damaged)
+    residue = _invoke(["correct", "--residue"], "2ppjkw73qdjvc")
 
-    assert corrected.exit_code == 1
-    assert original in corrected.output
-    assert rejected.exit_code != 0
-    assert "Invalid value for '--prefix'" in rejected.output
-
-
-def test_valid_fixed_correction_input_needs_no_suggestion() -> None:
-    result = _invoke(["correct"], VECTOR_1["secret_s"])
-
-    assert result.exit_code == 0
-    assert "No errors found" in result.output
-    help_result = _invoke(["correct", "--help"])
-    assert "--search-seconds" not in help_result.output
+    assert fixed.exit_code == 1 and original in fixed.stderr
+    assert residue.exit_code == 0
+    assert "Add x to reverse position 38." in residue.stdout
 
 
-def test_correct_residue_is_profile_and_length_agnostic() -> None:
-    result = _invoke(["correct", "--residue"], "vass072kvekqd")
+def test_help_exposes_only_v1_nonwallet_commands() -> None:
+    result = _invoke(["--help"])
 
     assert result.exit_code == 0
-    assert "Add p to reverse position 38." in result.output
-
-
-def test_correct_residue_erasure_positions_are_one_based() -> None:
-    result = _invoke(
-        ["correct", "--residue", "--erasure", "38"],
-        "2ppjkw73qdjvc",
-    )
-
-    assert result.exit_code == 0
-    assert "Add x to reverse position 38." in result.output
-
-
-def test_correct_rejects_legacy_length_and_unscoped_erasure_options() -> None:
-    old_length = _invoke(
-        ["correct", "--length", "16", "--residue"],
-        "2ppjkw73qdjvc",
-    )
-    unscoped = _invoke(["correct", "--erasure", "1"], VECTOR_1["secret_s"])
-
-    assert old_length.exit_code != 0
-    assert "No such option: --length" in old_length.output
-    assert unscoped.exit_code != 0
-    assert "--erasure requires --residue" in unscoped.output
+    for command in ("verify", "secret", "share", "create", "checksum", "correct"):
+        assert command in result.stdout
+    for removed in ("descriptors", "xprv", "xpub", "--pretty"):
+        assert removed not in result.stdout

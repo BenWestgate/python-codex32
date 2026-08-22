@@ -77,6 +77,8 @@ str
   residue selects regular or Long codex32. The adapter has no profile, HRP,
   payload-length, or shortened-string-length input.
 - Structural insertion/deletion search is not part of v1.
+- `cli.py` is a bounded presentation adapter. It owns no domain algorithm,
+  hidden state, memory-lock claim, or global formatting mode.
 
 Python cannot make underscore-prefixed internals inaccessible to a determined
 caller. The supported boundary is the package export list and documented

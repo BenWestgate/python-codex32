@@ -31,6 +31,9 @@ classifiers = [
 ]
 dependencies = ["bip32>=5,<6", "click>=8,<9"]
 
+[project.scripts]
+codex32 = "codex32.cli:cli"
+
 [project.optional-dependencies]
 dev = ["pytest", "hypothesis>=6,<7", "flake8", "mypy", "black", "isort", "ruff"]
 

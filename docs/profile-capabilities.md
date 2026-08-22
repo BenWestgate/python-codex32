@@ -16,7 +16,7 @@ There is no unknown-profile fallback and no runtime profile registration.
 | Fresh generation API/CLI | Yes | No | No | No |
 | Typed-S splitting API/CLI | Yes | No | No | No |
 | Fixed BCH correction API | Yes | Yes | Yes | Yes |
-| Full-string correction CLI | Transitional `ms` only | No | No | No |
+| Full-string correction CLI | Yes | Yes | No | No |
 | Default identifier | Fingerprint for k=0; random for shared | Never | No | No |
 | Generation padding | Private CRC hint | No generation | No | No |
 | Wallet-key boundary | `MasterSeed` only | No | No | No |
