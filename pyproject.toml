@@ -29,10 +29,10 @@ classifiers = [
   "Topic :: Security :: Cryptography",
   "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["bip32>=5,<6", "click>=8,<9"]
+dependencies = ["bip32>=5,<6"]
 
 [project.scripts]
-codex32 = "codex32.cli:cli"
+codex32 = "codex32.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -48,15 +48,18 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.flake8]
-max-line-length = 80
-exclude = ".git,__pycache__,build,dist"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["bip32", "bip32.*"]
+ignore_missing_imports = true
 
 [project.urls]
 Homepage = "https://github.com/benwestgate/python-codex32"
 Repository = "https://github.com/benwestgate/python-codex32"
 Issues = "https://github.com/benwestgate/python-codex32/issues"
-Changelog = "https://github.com/benwestgate/python-codex32/tree/master/CHANGELOG.md"

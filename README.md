@@ -1,26 +1,31 @@
 # python-codex32
 
-A small, typed reference implementation of [BIP93 codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki) for Python 3.12–3.14.
+[Codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki)
+helps you write down a Bitcoin wallet seed in a form designed to detect common
+copying mistakes. It can also split the backup into shares, so only a chosen
+number of shares together can recover the seed.
 
-The project deliberately does less so its security boundary can be reviewed:
+This project provides a command-line tool and Python library for:
 
-- immutable parsing for `ms`, legacy Core Lightning `cl`, and the two
-  migration-only BIP39 worksheet profiles;
-- exact-threshold BIP93 recovery and fresh-share derivation;
-- reviewed `ms` generation and splitting with no injectable entropy source;
-- fixed-length BCH correction and private worksheet-residue correction;
-- a small stdin-oriented CLI; and
-- a stateless `MasterSeed`-only Bitcoin wallet adapter.
+- creating and checking codex32 master-seed backups;
+- splitting a backup into shares and recovering it;
+- suggesting corrections for damaged backup text;
+- checking or recovering supported older Core Lightning and BIP39 worksheet
+  backups; and
+- producing Bitcoin wallet import information from a recovered master seed.
 
-It does not provide a GUI, networking, RPC, a wallet database, arbitrary
-descriptor parsing, runtime profile registration, structural insertion/deletion
-search, partial-basis generation, BIP39 mnemonics, or Core Lightning generation.
+This is not a Bitcoin wallet and it does not store your backup. It has no
+graphical interface, does not connect to the Bitcoin network, cannot show
+balances or send bitcoin, and does not produce BIP39 mnemonic words.
 
-This is security-critical reference software. Review it and its dependencies
-before using it with funds. See [SECURITY.md](SECURITY.md) and the direct
+This is security-critical reference software. Use it offline and have it
+reviewed by someone you trust before relying on it with funds. See
+[SECURITY.md](SECURITY.md) and the direct
 [specification-to-code map](docs/traceability.md).
 
 ## Install and test
+
+Supported Python versions are 3.12 through 3.14.
 
 ```bash
 python -m venv .venv
@@ -85,10 +90,13 @@ Start with these small, one-owner modules:
 | immutable artifacts and BIP93 interpolation | `bip93.py` |
 | generation and OS entropy | `generation.py` |
 | fixed BCH correction | `correction.py`, `gf32.py` |
-| wallet interoperability | `wallet.py` |
+| typed BIP32 boundary and wallet interoperability | `_bip32.py`, `wallet.py` |
 | presentation only | `cli.py` |
 
 The production package is under 3,000 physical Python lines; no production
 module exceeds 650 lines. Tests use official vectors, frozen external fixtures,
 negative boundary cases, and property checks without replacing production
 entropy.
+
+The reviewed runtime dependency boundary is recorded in
+[docs/dependencies.md](docs/dependencies.md).

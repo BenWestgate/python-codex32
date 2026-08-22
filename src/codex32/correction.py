@@ -26,7 +26,7 @@ otherwise. Correction locations are zero-based indices counted from the final
 data/checksum symbol. Structural insertion/deletion search is out of scope.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import reduce
 from typing import Literal
@@ -102,7 +102,9 @@ def _gf1024_mul(left: int, right: int) -> int:
     )
 
 
-def _field_pow(value: int, exponent: int, multiply) -> int:
+def _field_pow(
+    value: int, exponent: int, multiply: Callable[[int, int], int]
+) -> int:
     result = 1
     while exponent:
         if exponent & 1:
@@ -135,7 +137,9 @@ def _poly_sum(left: list[int], right: list[int]) -> list[int]:
     ]
 
 
-def _poly_mul(left: list[int], right: list[int], multiply) -> list[int]:
+def _poly_mul(
+    left: list[int], right: list[int], multiply: Callable[[int, int], int]
+) -> list[int]:
     if not left or not right:
         return []
     result = [0] * (len(left) + len(right) - 1)
@@ -148,7 +152,7 @@ def _poly_mul(left: list[int], right: list[int], multiply) -> list[int]:
 def _horner(
     polynomial: list[int] | tuple[int, ...],
     value: int,
-    multiply,
+    multiply: Callable[[int, int], int],
 ) -> int:
     result = 0
     for coefficient in reversed(polynomial):

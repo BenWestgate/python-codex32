@@ -1,22 +1,45 @@
 """End-to-end tests for the small codex32 CLI."""
 
+import contextlib
 import importlib
+import io
 import json
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from unittest.mock import patch
 
-from click.testing import CliRunner
+import pytest
 from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_4
 from data.sharing_vectors import SHARING_VECTORS
 from test_bip39 import BIP39_12W_ZERO
 
 from codex32 import MasterSeed, Share, parse_codex32, recover_secret
-from codex32.cli import cli
+from codex32.cli import main
 
 
-def _invoke(args: list[str], *lines: str):
-    return CliRunner(mix_stderr=False).invoke(cli, args, input="\n".join(lines) + "\n")
+@dataclass(frozen=True)
+class _Result:
+    exit_code: int
+    stdout: str
+    stderr: str
 
 
-def _output_artifacts(result, profile: str = "ms"):
+def _invoke(args: list[str], *lines: str) -> _Result:
+    stdin = io.StringIO("\n".join(lines) + "\n")
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with (
+        patch.object(sys, "stdin", stdin),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        status = main(args)
+    return _Result(status, stdout.getvalue(), stderr.getvalue())
+
+
+def _output_artifacts(result: _Result, profile: str = "ms"):
     return [
         parse_codex32(line)
         for line in result.stdout.splitlines()
@@ -63,12 +86,12 @@ def test_tty_recovery_prefills_the_authenticated_prefix(monkeypatch) -> None:
     answers = iter((VECTOR_2["share_A"], VECTOR_2["share_C"][-40:]))
     prompts: list[str] = []
 
-    def prompt(label: str, **_options: object) -> str:
+    def prompt(label: str) -> str:
         prompts.append(label)
         return next(answers)
 
     monkeypatch.setattr(cli_module.sys, "stdin", Terminal())
-    monkeypatch.setattr(cli_module.click, "prompt", prompt)
+    monkeypatch.setattr(cli_module, "_prompt", prompt)
 
     artifacts = cli_module._artifacts(sequential=True)
 
@@ -252,3 +275,54 @@ def test_help_exposes_only_v1_commands() -> None:
     ):
         assert command in result.stdout
     assert "--pretty" not in result.stdout
+
+
+def test_long_options_must_not_be_abbreviated() -> None:
+    result = _invoke(["descriptors", "--priv"], VECTOR_1["secret_s"])
+
+    assert result.exit_code == 2
+    assert "unrecognized arguments: --priv" in result.stderr
+
+
+def test_version_and_installed_entry_point() -> None:
+    direct = _invoke(["--version"])
+    executable = Path(sys.executable).with_name("codex32")
+    installed = subprocess.run(
+        [str(executable), "--version"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert direct.exit_code == installed.returncode == 0
+    assert direct.stdout == installed.stdout
+    assert direct.stderr == installed.stderr == ""
+    assert direct.stdout.startswith("codex32 ")
+
+
+@pytest.mark.parametrize(
+    "command",
+    (
+        "verify",
+        "secret",
+        "share",
+        "create",
+        "checksum",
+        "correct",
+        "xprv",
+        "xpub",
+        "descriptors",
+    ),
+)
+def test_every_installed_command_has_help(command: str) -> None:
+    executable = Path(sys.executable).with_name("codex32")
+    result = subprocess.run(
+        [str(executable), command, "--help"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.startswith(f"usage: codex32 {command}")
+    assert result.stderr == ""

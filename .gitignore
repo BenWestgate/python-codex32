@@ -1,12 +1,13 @@
-# .gitignore
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 .env/
+.venv/
+.vscode/
 build/
 dist/
 .eggs/
 *.egg-info/
-.venv/
-.vscode/*

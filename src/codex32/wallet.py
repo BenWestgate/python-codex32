@@ -1,7 +1,6 @@
 """Stateless Bitcoin wallet interoperability for validated master seeds."""
 
-from bip32 import BIP32
-
+from codex32._bip32 import Bip32Node
 from codex32.bech32 import _u5_to_chars
 from codex32.bip93 import MasterSeed
 from codex32.checksums import DESCSUM
@@ -18,12 +17,12 @@ _TEMPLATES = (
 )
 
 
-def _master(secret: MasterSeed, testnet: bool) -> BIP32:
+def _master(secret: MasterSeed, testnet: bool) -> Bip32Node:
     if not isinstance(secret, MasterSeed):
         raise TypeError("wallet operations accept only MasterSeed")
     if not isinstance(testnet, bool):
         raise TypeError("testnet must be bool")
-    return BIP32.from_seed(secret.seed_bytes, "test" if testnet else "main")
+    return Bip32Node.from_seed(secret.seed_bytes, testnet=testnet)
 
 
 def _account(value: int) -> int:
@@ -57,7 +56,7 @@ def _with_checksum(descriptor: str) -> str:
 
 def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:
     """Return the BIP32 master extended private key."""
-    return str(_master(secret, testnet).get_xpriv())
+    return _master(secret, testnet).xpriv()
 
 
 def multisig_account_xpub(
@@ -71,8 +70,8 @@ def multisig_account_xpub(
     account = _account(account)
     coin_type = int(testnet)
     path = f"m/48h/{coin_type}h/{account}h/2h"
-    origin = f"{node.get_fingerprint().hex()}{path[1:]}"
-    return f"[{origin}]{node.get_xpub_from_path(path)}"
+    origin = f"{node.fingerprint().hex()}{path[1:]}"
+    return f"[{origin}]{node.xpub_from_path(path)}"
 
 
 def core_descriptors(
@@ -91,15 +90,15 @@ def core_descriptors(
     if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
         raise ValueError("timestamp must be a nonnegative integer")
     coin_type = int(testnet)
-    fingerprint = node.get_fingerprint().hex()
+    fingerprint = node.fingerprint().hex()
     records = []
     for template, purpose in _TEMPLATES:
         path = f"m/{purpose}h/{coin_type}h/{account}h"
         if private:
-            key = node.get_xpriv() + path[1:] + "/<0;1>/*"
+            key = node.xpriv() + path[1:] + "/<0;1>/*"
         else:
             origin = f"{fingerprint}{path[1:]}"
-            key = f"[{origin}]{node.get_xpub_from_path(path)}/<0;1>/*"
+            key = f"[{origin}]{node.xpub_from_path(path)}/<0;1>/*"
         descriptor = template.format(key=key)
         records.append(
             {

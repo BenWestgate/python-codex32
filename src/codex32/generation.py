@@ -4,8 +4,7 @@ import secrets
 from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
 
-from bip32 import BIP32, InvalidInputError
-
+from codex32._bip32 import fingerprint_from_seed
 from codex32.bech32 import CHARSET, _convert_bits, _u5_to_chars
 from codex32.bip93 import (
     IDX_SORT,
@@ -106,10 +105,7 @@ def _random_identifier() -> str:
 
 
 def _fingerprint_identifier(seed: bytes) -> str:
-    try:
-        fingerprint = BIP32.from_seed(seed).get_fingerprint()
-    except InvalidInputError as error:
-        raise CodexError("master seed does not form a valid BIP32 root") from error
+    fingerprint = fingerprint_from_seed(seed)
     symbols = _convert_bits(fingerprint, 8, 5, pad=True)
     return _u5_to_chars(tuple(symbols[:4]))
 

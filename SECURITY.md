@@ -30,13 +30,13 @@ or wallet.
   narrowly and verifies BIP93 BIP32 vectors, but does not independently audit
   its cryptographic implementation.
 - Fresh unshared `ms` identifiers expose 20 bits of the BIP32 fingerprint.
-  Shared sets use random identifiers; raw seeds and re-sharing require an
-  explicit identifier.
+  Shared sets use random or explicit identifiers; raw seeds and re-sharing
+  require an explicit identifier.
 - Generation-only CRC padding is a small recovery hint, not authentication or
   a codex32 validity requirement.
 - BCH correction detects/corrects bounded symbol errors but cannot establish
   that a candidate was intended. The HRP and separator are never corrected.
-- Private descriptors contain the root xprv by design.
+- Private descriptors contain the root xprv by design (like Bitcoin Core).
 
 ## Out of scope
 

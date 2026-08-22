@@ -1,6 +1,8 @@
 """Abuse-path tests for the safe public package boundary."""
 
 from dataclasses import FrozenInstanceError
+from importlib.metadata import requires
+from pathlib import Path
 
 import pytest
 from data.bip93_vectors import VECTOR_2
@@ -41,6 +43,28 @@ def test_root_api_is_deliberately_small() -> None:
         "recover_secret",
         "split_secret",
     }
+
+
+def test_untyped_bip32_import_is_isolated() -> None:
+    package = Path(codex32.__file__).parent
+    importers = [
+        path.name
+        for path in package.glob("*.py")
+        if "from bip32 import" in path.read_text()
+    ]
+
+    assert importers == ["_bip32.py"]
+
+
+def test_bip32_is_the_only_runtime_dependency() -> None:
+    runtime = [
+        requirement
+        for requirement in requires("codex32") or ()
+        if "extra ==" not in requirement
+    ]
+
+    assert len(runtime) == 1
+    assert runtime[0].lower().startswith("bip32")
 
 
 def test_share_has_symbols_but_no_byte_or_padding_api() -> None:
