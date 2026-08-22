@@ -55,10 +55,6 @@ testpaths = ["tests"]
 python_version = "3.12"
 strict = true
 
-[[tool.mypy.overrides]]
-module = ["bip32", "bip32.*"]
-ignore_missing_imports = true
-
 [project.urls]
 Homepage = "https://github.com/benwestgate/python-codex32"
 Repository = "https://github.com/benwestgate/python-codex32"

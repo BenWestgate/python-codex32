@@ -2,7 +2,7 @@
 
 from typing import Protocol, Self, cast
 
-from bip32 import BIP32, InvalidInputError
+from bip32 import BIP32, InvalidInputError  # type: ignore[import-untyped]
 
 from codex32.errors import CodexError
 
