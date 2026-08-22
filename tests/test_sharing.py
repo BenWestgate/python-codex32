@@ -22,7 +22,6 @@ from codex32.bip93 import IDX_SORT
 from codex32.checksums import _Checksum
 from codex32.errors import (
     DuplicateShareIndex,
-    ExcludedTargetIndex,
     ExistingTargetIndex,
     InvalidBip39Checksum,
     InvalidPadding,
@@ -164,15 +163,10 @@ def test_invalid_targets_are_rejected(target: object) -> None:
         derive_share([secret, *masks], target)  # type: ignore[arg-type]
 
 
-def test_existing_and_excluded_targets_are_rejected_case_insensitively() -> None:
+def test_existing_targets_are_rejected_case_insensitively() -> None:
     secret, masks = _ms_basis()
     with pytest.raises(ExistingTargetIndex):
-        derive_share([secret, *masks], "A", excluded_indices={"a"})
-    with pytest.raises(ExcludedTargetIndex):
-        derive_share([secret, *masks], "C", excluded_indices={"c"})
-    for exclusions in ({"s"}, {"i"}, ["a"] * 32):
-        with pytest.raises(InvalidTargetIndex):
-            derive_share([secret, *masks], "c", excluded_indices=exclusions)
+        derive_share([secret, *masks], "A")
 
 
 def test_every_ms_length_recovers_with_short_and_long_checksums() -> None:

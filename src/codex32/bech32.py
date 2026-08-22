@@ -122,7 +122,7 @@ def _decode(value: str) -> tuple[str, tuple[int, ...], _Checksum]:
     _validate_header(encoded[: -checksum.length])
     if not _verify(hrp, encoded, checksum):
         raise InvalidChecksum(f"invalid {checksum.kind} checksum")
-    return hrp, tuple(encoded[: -checksum.length]), checksum
+    return hrp, tuple(encoded), checksum
 
 
 def _convert_bits(

@@ -39,7 +39,6 @@ from .correction import (
 from .errors import (
     CodexError,
     DuplicateShareIndex,
-    ExcludedTargetIndex,
     ExistingTargetIndex,
     HeaderCollision,
     InvalidBip39Checksum,
@@ -79,7 +78,6 @@ __all__ = [
     "CodexError",
     "CoreLightningSecret",
     "DuplicateShareIndex",
-    "ExcludedTargetIndex",
     "ExistingTargetIndex",
     "Header",
     "HeaderCollision",

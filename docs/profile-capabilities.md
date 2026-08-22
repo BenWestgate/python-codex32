@@ -34,7 +34,7 @@ Ordinary BIP39 shares are uniform symbol masks. Their payloads must have the
 profile's exact length but must not be interpreted as BIP39 entropy or checked
 against the embedded S checksum.
 
-All current profiles explicitly opt into linear sharing. BIP39 recovery and
+All four fixed profiles support linear sharing in the API. BIP39 recovery and
 derivation validate the implied S; BIP39 derivation remains API-only as a
 migration aid. No profile gains generation, checksum completion, or wallet
 features merely by enabling linear sharing.

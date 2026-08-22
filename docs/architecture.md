@@ -61,8 +61,8 @@ str
 - Sharing interpolates payload and outer-checksum symbols together, constructs
   the target header explicitly, and reparses the result. There is no second
   production interpolation path and no checksum regeneration in sharing.
-- Profiles must explicitly opt into linear sharing. Unknown or future profiles
-  cannot inherit this behavior accidentally.
+- Sharing is limited to the four fixed applications. There is no runtime
+  registration through which an unknown application can inherit it.
 - `generation.py` is the sole entropy owner. It accepts only `ms` and CL,
   samples complete payload masks, and exposes no RNG, padding, or partial-basis
   control.

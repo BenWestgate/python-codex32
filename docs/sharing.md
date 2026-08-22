@@ -1,8 +1,7 @@
 # Recovery and additional-share derivation
 
-Gate 2 implements BIP93 interpolation once, in `bip93.py`, for every profile
-that explicitly opts into linear sharing. The four fixed profiles currently do
-so. No unknown HRP can reach this code.
+Gate 2 implements BIP93 interpolation once, in `bip93.py`, for the four fixed
+applications. No unknown HRP can reach this code.
 
 ## Public operations
 
@@ -12,15 +11,12 @@ recover_secret(shares: Sequence[Share]) -> Secret
 derive_share(
     basis: Sequence[Share | Secret],
     fresh_index: str,
-    *,
-    excluded_indices: Collection[str] = (),
 ) -> Share
 ```
 
 Recovery accepts exactly `k` ordinary shares. Derivation accepts exactly `k`
-artifacts and may include S, but its target must be an unused, non-excluded
-ordinary index. Input collections are bounded before at most nine artifacts are
-copied.
+artifacts and may include S, but its target must be an unused ordinary index.
+Input collections are bounded before at most nine artifacts are copied.
 
 ## Validation and interpolation order
 
@@ -28,9 +24,8 @@ copied.
 2. Require threshold 2–9 and exactly `k` inputs.
 3. Require one profile, threshold, identifier, encoded length, payload length,
    and checksum length.
-4. Require distinct input indices and an opted-in linear profile.
-5. For derivation, normalize and validate the target, reject an existing target,
-   validate exclusions, then reject an excluded target.
+4. Require distinct input indices.
+5. For derivation, normalize and validate the target and reject an existing target.
 6. Extract the complete payload-plus-checksum tail from each artifact.
 7. Interpolate the tail in GF(32) at S or the fresh target.
 8. Construct the target header explicitly and reparse the complete string.

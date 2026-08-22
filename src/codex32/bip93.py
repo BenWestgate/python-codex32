@@ -1,13 +1,12 @@
 # Portions of interpolation arithmetic are derived from rust-codex32 (BSD-3-Clause).
 """Immutable BIP93 artifacts, parsing, recovery, and share derivation."""
 
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from codex32.bech32 import (
     CHARSET,
     _chars_to_u5,
-    _checksum_for_encoded_length,
     _convert_bits,
     _decode,
     _encode,
@@ -18,7 +17,6 @@ from codex32.bech32 import (
 from codex32.checksums import _crc_pad
 from codex32.errors import (
     DuplicateShareIndex,
-    ExcludedTargetIndex,
     ExistingTargetIndex,
     InvalidIdentifier,
     InvalidLength,
@@ -251,8 +249,9 @@ def _artifact(
 
 def parse_codex32(text: str) -> Share | Secret:
     """Parse a registered profile into a validated immutable artifact."""
-    hrp, body, _checksum = _decode(text)
+    hrp, encoded, checksum = _decode(text)
     profile_spec = _profile_spec(hrp)
+    body = encoded[: -checksum.length]
     header = Header._from_symbols(body[:6])
     payload = body[6:]
     _validate_payload(profile_spec.profile, header, payload)
@@ -343,10 +342,9 @@ def _bounded_artifacts(
 
 def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]:
     """Return payload plus checksum, checksum length, and encoded length."""
-    hrp, encoded = _parse(artifact.text)
+    hrp, encoded, checksum = _decode(artifact.text)
     if hrp != artifact.profile.value:
         raise InvalidShareSet("artifact text and authenticated profile disagree")
-    checksum = _checksum_for_encoded_length(hrp, len(encoded))
     return tuple(encoded[6:]), checksum.length, len(encoded)
 
 
@@ -361,8 +359,6 @@ def _validate_share_set(artifacts: Sequence[Share | Secret]) -> _ShareSet:
         raise WrongShareCount(
             f"threshold is {threshold}, but {len(copied)} artifacts were supplied"
         )
-    spec = _profile_spec(first.profile)
-    spec.require_linear_sharing()
     first_tail, checksum_length, encoded_length = _artifact_tail(first)
     tails = [first_tail]
     indices = [first.header.index]
@@ -434,41 +430,15 @@ def _normalize_target(value: object, *, label: str) -> str:
     return normalized
 
 
-def _normalized_exclusions(excluded_indices: Collection[str]) -> frozenset[str]:
-    try:
-        count = len(excluded_indices)
-    except TypeError as error:
-        raise TypeError("excluded_indices must be a Collection") from error
-    if count > 31:
-        raise InvalidTargetIndex("excluded_indices cannot contain more than 31 items")
-    iterator = iter(excluded_indices)
-    items = []
-    for _position in range(count):
-        try:
-            items.append(next(iterator))
-        except StopIteration as error:
-            raise TypeError("excluded_indices changed size while being read") from error
-    sentinel = object()
-    if next(iterator, sentinel) is not sentinel:
-        raise TypeError("excluded_indices changed size while being read")
-    return frozenset(
-        _normalize_target(index, label="excluded index") for index in items
-    )
-
-
 def derive_share(
     basis: Sequence[Share | Secret],
     fresh_index: str,
-    *,
-    excluded_indices: Collection[str] = (),
 ) -> Share:
-    """Derive a new ordinary share at a fresh, non-excluded index."""
+    """Derive a new ordinary share at a fresh index."""
     share_set = _validate_share_set(basis)
     target = _normalize_target(fresh_index, label="fresh_index")
     if target in share_set.indices:
         raise ExistingTargetIndex(f"index {target.upper()} is already in the basis")
-    if target in _normalized_exclusions(excluded_indices):
-        raise ExcludedTargetIndex(f"index {target.upper()} is excluded")
     if share_set.profile in (Profile.BIP39_12W, Profile.BIP39_24W):
         implied_secret = _interpolate_tail(share_set, "s")
         if not isinstance(implied_secret, Bip39Secret):

@@ -20,7 +20,6 @@ class _ProfileSpec:
     profile: Profile
     payload_lengths: tuple[int, ...]
     completion_enabled: bool
-    linear_sharing_enabled: bool
 
     def validate_payload_length(self, payload_length: int) -> None:
         """Apply only this application's exact payload-length rule."""
@@ -38,21 +37,13 @@ class _ProfileSpec:
                 f"checksum completion is not available for {self.profile}"
             )
 
-    def require_linear_sharing(self) -> None:
-        """Reject profiles whose checksum/payload is not approved for sharing."""
-        if not self.linear_sharing_enabled:
-            raise UnsupportedOperation(
-                f"linear sharing is not available for {self.profile}"
-            )
-
-
 _MS_PAYLOAD_LENGTHS = tuple(sorted({(byte_length * 8 + 4) // 5 for byte_length in range(16, 65)}))
 
 _SPECS = {
-    Profile.MS: _ProfileSpec(Profile.MS, _MS_PAYLOAD_LENGTHS, True, True),
-    Profile.CL: _ProfileSpec(Profile.CL, (52,), True, True),
-    Profile.BIP39_12W: _ProfileSpec(Profile.BIP39_12W, (27,), False, True),
-    Profile.BIP39_24W: _ProfileSpec(Profile.BIP39_24W, (53,), False, True),
+    Profile.MS: _ProfileSpec(Profile.MS, _MS_PAYLOAD_LENGTHS, True),
+    Profile.CL: _ProfileSpec(Profile.CL, (52,), True),
+    Profile.BIP39_12W: _ProfileSpec(Profile.BIP39_12W, (27,), False),
+    Profile.BIP39_24W: _ProfileSpec(Profile.BIP39_24W, (53,), False),
 }
 
 

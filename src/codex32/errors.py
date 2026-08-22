@@ -109,10 +109,6 @@ class ExistingTargetIndex(InvalidTargetIndex):
     """A derivation target repeats an interpolation input index."""
 
 
-class ExcludedTargetIndex(InvalidTargetIndex):
-    """A derivation target is explicitly excluded."""
-
-
 class InvalidShareSelection(CodexError):
     """Generation output indices or set-header exclusions are invalid."""
 
