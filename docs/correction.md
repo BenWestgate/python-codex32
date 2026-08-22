@@ -1,8 +1,7 @@
 # Fixed-length BCH correction
 
-Gate 4 implements only the algebraic, fixed-length correction boundary. Product
-search, deadlines, and ranking are isolated in internal `indel.py` and remain
-transitional until Gate 5.
+V1 implements only the algebraic, fixed-length correction boundary. Structural
+insertion/deletion search, deadlines, ranking, and concurrency are out of scope.
 
 ## Coordinates and trust boundary
 
@@ -13,7 +12,7 @@ separator, payload length, or complete-string length.
 Full-string correction requires a `suspected_profile`. The adapter accepts the
 exact registered HRP and its separator as an immutable prefix. Printable
 non-Bech32 characters after that boundary are erasures, including a later `1`.
-The profile owns checksum selection. A correction outside the visible body is
+The format layer owns checksum selection. A correction outside the visible body is
 rejected, and every candidate must pass the ordinary `parse_codex32` boundary.
 This means a BIP39 S must also satisfy its embedded SHA-256 checksum and outer
 padding, while an ordinary BIP39 share retains mask semantics.

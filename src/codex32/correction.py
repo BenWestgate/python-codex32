@@ -23,8 +23,7 @@
 
 Polynomial coefficients are least-significant first unless a helper says
 otherwise. Correction locations are zero-based indices counted from the final
-data/checksum symbol. Product-level indel search lives separately in
-:mod:`codex32.indel`.
+data/checksum symbol. Structural insertion/deletion search is out of scope.
 """
 
 from collections.abc import Sequence

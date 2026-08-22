@@ -76,8 +76,7 @@ str
 - Worksheet residues use native reverse coordinates and reveal only whether the
   residue selects regular or Long codex32. The adapter has no profile, HRP,
   payload-length, or shortened-string-length input.
-- Structural search is isolated in internal `indel.py`; it consumes the fixed
-  decoder but cannot change its algebra or profile validation.
+- Structural insertion/deletion search is not part of v1.
 
 Python cannot make underscore-prefixed internals inaccessible to a determined
 caller. The supported boundary is the package export list and documented

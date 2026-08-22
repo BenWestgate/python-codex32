@@ -374,6 +374,41 @@ def test_correct_residue_uses_one_based_reverse_positions() -> None:
     assert "Add x to reverse position 38." in result.output
 
 
+def test_fixed_correction_is_a_nonzero_stderr_suggestion() -> None:
+    original = VECTOR_1["secret_s"]
+    position = 15
+    replacement = "q" if original[position] != "q" else "p"
+    damaged = original[:position] + replacement + original[position + 1 :]
+    result = _invoke(["correct"], damaged)
+
+    assert result.exit_code == 1
+    assert original in result.output
+    assert "only a suggestion" in result.output
+
+
+def test_fixed_correction_supports_cl_but_not_bip39_cli_profiles() -> None:
+    original = SHARING_VECTORS["cl"]["S"]
+    position = 16
+    replacement = "q" if original[position] != "q" else "p"
+    damaged = original[:position] + replacement + original[position + 1 :]
+    corrected = _invoke(["correct", "--prefix", "cl"], damaged)
+    rejected = _invoke(["correct", "--prefix", "bip39_12w"], BIP39_12W_ZERO)
+
+    assert corrected.exit_code == 1
+    assert original in corrected.output
+    assert rejected.exit_code != 0
+    assert "Invalid value for '--prefix'" in rejected.output
+
+
+def test_valid_fixed_correction_input_needs_no_suggestion() -> None:
+    result = _invoke(["correct"], VECTOR_1["secret_s"])
+
+    assert result.exit_code == 0
+    assert "No errors found" in result.output
+    help_result = _invoke(["correct", "--help"])
+    assert "--search-seconds" not in help_result.output
+
+
 def test_correct_residue_is_profile_and_length_agnostic() -> None:
     result = _invoke(["correct", "--residue"], "vass072kvekqd")
 
