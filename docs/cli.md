@@ -1,41 +1,38 @@
 # Command-line interface
 
-The CLI is a thin adapter over the public artifact, sharing, generation, and
-fixed-correction APIs. It has no wallet state, descriptor parser, entropy
-implementation, or correction search.
+The installed `codex32` command reads protected material from a terminal prompt
+or stdin. Secret material is never a command argument.
 
-| Command | `ms` | `cl` | BIP39 profiles |
+| Command | `ms` | `cl` | `bip39_12w/24w` |
 |---|---:|---:|---:|
-| `verify` | Yes | Yes | Yes |
-| `secret` | Yes | Yes | Yes |
-| `share` | Yes | Yes | No |
-| `create` | Yes | No | No |
-| `checksum` | 128/256-bit worksheets | 32-byte payload | No |
-| `correct` | Fixed BCH | Fixed BCH | No |
-| `correct --residue` | 13/15-symbol application-agnostic residue |
-| `xprv` | Root BIP32 private key | No | No |
-| `xpub` | BIP48 coordinator account key | No | No |
-| `descriptors` | Fixed Bitcoin Core templates | No | No |
+| `verify` | yes | yes | yes |
+| `secret` | yes | yes | yes |
+| `share` | yes | yes | no |
+| `create` | yes | no | no |
+| `checksum` | 128/256-bit worksheet | fixed 32-byte payload | no |
+| `correct` | fixed BCH | fixed BCH | no |
+| `xprv`, `xpub`, `descriptors` | S only | no | no |
 
-`create` accepts an optional positional five-character set header. `0test` and
-`ms10test` both select an unshared `ms` secret with identifier `test`;
-`3cash` selects a 3-of-N set. `--indices 7cad` preserves that exact order,
-while `--shares N` samples distinct indices and preserves sample order. A raw
-hexadecimal seed and a re-sharing operation require an explicit header.
+`correct --residue` is application-agnostic: 13 symbols select regular codex32
+and 15 select Long codex32.
 
-On a terminal, recovery asks for one share at a time and shows the already
-known `hrp1` plus threshold and identifier. Redirected input accepts at most
-nine whitespace-separated artifacts and is bounded before parsing.
+`create` accepts a positional set header. `0test` and `ms10test` are equivalent;
+`3cash` requests a 3-of-N set. `--indices 7cad` preserves exact order.
+`--shares N` samples distinct indices and preserves sample order. Raw seeds and
+re-sharing require an explicit new header.
 
-Canonical output is suitable for piping only for operations that intentionally
-produce an artifact. `correct` writes a checksum-valid suggestion to stderr and
-returns nonzero. A valid input needing no correction returns zero. Worksheet
-residue positions are displayed one-based from the end.
+TTY recovery asks for one share at a time and prefills the known HRP, threshold,
+and identifier. Redirected input accepts at most nine whitespace-separated
+artifacts and is bounded before parsing.
 
-`--pretty` is command-local on artifact-producing commands. It groups uppercase
-text for transcription and displays public header fields. Pretty `MasterSeed`
-secrets include their BIP32 master fingerprint; shares never do.
+`--pretty` is local to commands producing a codex32 artifact. It groups uppercase
+text and public header fields. Pretty `ms` S may show its BIP32 fingerprint;
+shares never do.
 
-Wallet commands accept only `ms` S. They have explicit account, network, and
-timestamp options and no hidden state. Private descriptors contain the root
-xprv and produce a root-authority warning on stderr.
+A fixed correction suggestion goes only to stderr and exits nonzero. A valid
+input needing no correction exits zero. Always verify a suggestion against the
+physical backup.
+
+Wallet commands are stateless. `--account`, `--testnet`, and descriptor
+`--timestamp` are explicit; timestamp defaults to zero. `descriptors --private`
+warns that the output contains the root xprv.

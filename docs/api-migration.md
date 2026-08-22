@@ -1,68 +1,35 @@
-# Public API migration through Gate 4
+# Public API
 
-Gate 1 intentionally removes unsafe APIs without compatibility shims.
+The package root exports 19 names:
 
-| Removed pattern | Safe replacement |
+- types: `Profile`, `Header`, `Share`, `Secret`, `MasterSeed`,
+  `CoreLightningSecret`, `Bip39Secret`, and `WorksheetCorrection`;
+- format/sharing: `parse_codex32`, `complete_checksum`, `recover_secret`, and
+  `derive_share`;
+- generation: `generate_master_seed` and `split_secret`;
+- correction: `correct_worksheet_residue`;
+- wallet: `master_xprv`, `multisig_account_xpub`, and `core_descriptors`; and
+- the base `CodexError`.
+
+Focused exception types remain in `codex32.errors` rather than expanding the
+package root.
+
+Unsafe earlier interfaces have no compatibility shim:
+
+| Removed | Replacement |
 |---|---|
-| `Codex32String(text)` | `parse_codex32(text)` |
-| `Codex32String.from_unchecksummed_string(text)` | `complete_checksum(text)` for registered `ms` or `cl` only |
-| `Codex32String.from_seed(bytes, prefix, padding)` | `MasterSeed.from_seed(bytes, identifier=..., threshold=...)` |
-| CL bytes through generic `from_seed` | No v1 replacement; parse legacy CL codex32 backups |
-| `.s`, `.hrp`, `.k`, `.ident`, `.share_idx` | `.text`, `.profile`, and immutable `.header` |
-| `.data` on every string | `.seed_bytes` on `MasterSeed` or `.secret_bytes` on `CoreLightningSecret` |
-| `.payload` and `.pad_val` | `.payload_symbols` on all artifacts; no public padding value |
-| mutation followed by automatic rechecksumming | construct a new validated artifact through an allowed factory |
-| private `_interpolate_at(items, "s")` | `recover_secret(shares)`; ordinary shares only and exactly `k` |
-| private `_interpolate_at(items, index)` | `derive_share(basis, index)`; fresh ordinary target only |
-| CLI/private `_basis_for_fresh_seed` | `generate_master_seed(...)` |
-| CLI/private `_basis_for_seed` | `split_secret(secret, threshold, identifier=...)` for authenticated `MasterSeed` only |
-| canonical first-N electronic outputs | `share_count=N` for a random ordered sample, or `indices="7cad"` for exact order |
-| `corrections_from_residue(residue, length=...)` | `correct_worksheet_residue(residue, erasure_indices=...)`; reverse index 0 is final |
-| root-exported correction search/result records | no Gate 4 replacement; structural search is internal pending Gate 5 |
+| mutable `Codex32String` | immutable result from `parse_codex32` |
+| generic encode/decode and arbitrary HRPs | four fixed profiles |
+| byte construction/access on shares | `Share.payload_symbols` only |
+| generic `from_seed` and padding control | `MasterSeed.from_seed` |
+| `_interpolate_at` | `recover_secret`, `derive_share` |
+| CLI-owned generation | `generate_master_seed`, `split_secret` |
+| correction search/result framework | fixed BCH adapter and residue API |
+| generic descriptor/policy parser | three fixed wallet functions |
 
-Example:
+`recover_secret` requires exactly k ordinary shares. `derive_share` accepts an
+exact basis, including S, but rejects S or an existing target. Generation
+returns `(secret, shares)` and never sorts requested or sampled output order.
 
-```python
-from codex32 import MasterSeed, Share, parse_codex32
-
-artifact = parse_codex32(recorded_text)
-if isinstance(artifact, MasterSeed):
-    bip32_seed = artifact.seed_bytes
-elif isinstance(artifact, Share):
-    symbols = artifact.payload_symbols
-```
-
-Parsed text preserves a valid uppercase or lowercase representation. New
-factories emit lowercase. BIP39 migration artifacts deliberately have no raw
-entropy, mnemonic, checksum-completion, generation, or wallet API.
-
-`recover_secret` and `derive_share` accept authenticated artifacts, not strings.
-Parse each input first. Legacy interpolation exception names are removed; the
-public errors distinguish count, compatibility, duplicate, recovery-S, and
-target failures. Existing targets are errors rather than idempotent lookups.
-
-Generation functions return `(secret, shares)`. `generate_master_seed` permits threshold
-zero and then rejects either share selector. `split_secret` is deliberately a
-threshold-2–9 operation. Shared generation requires exactly one of
-`share_count` or `indices`; neither result path is sorted.
-
-`generate_master_seed(seed_bytes=...)` requires an explicit identifier because
-raw entropy provenance is unknown. `split_secret(MasterSeed, ...)` also requires
-a new explicit identifier. Fresh shared sets use a random identifier; only
-fresh threshold-zero secrets use the BIP32 fingerprint default.
-`byte_length` applies only to fresh generation and cannot accompany supplied
-bytes.
-
-`InvalidShareSelection` reports selector and unsupported-generation shape
-errors. `HeaderCollision` reports re-sharing under the identical set header.
-
-`correct_worksheet_residue` accepts only a 13-symbol regular or 15-symbol Long
-codex32 residue. It deliberately accepts neither profile nor string length.
-Results are immutable `(reverse_index, addend)` records; `()` means already
-correct and `None` means there is no unique correction. Invalid residue shapes
-and erasure coordinates raise `InvalidCorrectionInput`.
-
-Full-string fixed correction is internal until Gate 5 defines the complete
-candidate API. Its mandatory `suspected_profile` is not inferred, its failure
-record identifies the validation/decoder stage, and a success contains a
-normally parsed immutable artifact.
+Errors from malformed external input derive from `CodexError`. Supplying raw
+strings to typed domain APIs is programmer misuse and raises `TypeError`.

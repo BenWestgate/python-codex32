@@ -1,55 +1,38 @@
-# BIP93 reference implementation traceability
+# Requirements traceability
 
-This matrix tracks the assessed dirty worktree through implemented Gate 4. Status is
-one of **Implemented**, **Accepted divergence**, **Partial**, **Noncompliant**,
-**Missing**, or **Deliberately deferred**. A similarly named function is not evidence of
-compliance; evidence means an observed behavior and, where present, a test.
+Source abbreviations are defined in [source-manifest.md](source-manifest.md).
+Every implemented claim identifies one code owner and direct evidence.
 
-Source revisions and abbreviations are frozen in
-[source-manifest.md](source-manifest.md): B93 (BIP93), W (wallet guidance), B
-(booklet), S (website), P70 (PR #70), RR (Rust reference), CL (Core Lightning),
-and B388 (BIP388).
+| ID | Source requirement | Code owner | Direct tests/evidence | Status |
+|---|---|---|---|---|
+| R01 | B93 lexical format and header | `bech32._parse`, `Header` | official valid/invalid corpus, case/header tests | Implemented |
+| R02 | common short/long checksum selection | `bech32._checksum_for_encoded_length` | PR #2258 43–47-byte boundaries | Implemented pending upstream PR |
+| R03 | regular ≤93, gap 94/95, Long ≤1023 expanded symbols | same format helper, checksum specs | generic vectors and exact endpoints | Implemented pending upstream PR |
+| R04 | `ms` accepts every 16–64-byte seed and legal pad | `MasterSeed` | all 49 lengths and every pad value | Implemented |
+| R05 | k=0/S; k=2–9/S or ordinary index | `Header` | header abuse and B93 invalid vectors | Implemented |
+| R06 | invalid checksum cannot enter domain APIs | `parse_codex32` artifact boundary | negative parser/public API tests | Implemented |
+| R07 | recover from exactly k compatible distinct shares | `recover_secret` | B93 vectors 2/3, k=2–9, mismatch properties | Implemented |
+| R08 | derive only a fresh ordinary share | `derive_share` | every target and existing/S rejection | Implemented |
+| R09 | fresh shared S uses k uniform u5 masks | `generation._masks` and basis loop | mask invariants, recovery, no entropy injection | Implemented |
+| R10 | splitting S uses S plus k−1 masks | `split_secret` | exact recovery and threshold properties | Implemented for `ms` |
+| R11 | four errors, `2e+v≤8`, eight erasures, bursts | `correction.py` | P70 corpus and Hypothesis positions | Implemented fixed-length only |
+| R12 | correction is an untrusted suggestion | CLI `correct` | stderr/nonzero and no-correction tests | Implemented |
+| R13 | subsequent share input uses known prefix/header | CLI `_artifacts` | sequential TTY and duplicate/set validation | Implemented |
+| R14 | structural correction/timeout UX | none | explicit scope assertions/docs | Deliberately omitted |
+| R15 | only `ms` S enters wallet workflows | `wallet._master` | all non-`MasterSeed` types rejected | Implemented |
+| R16 | electronic generation defaults to 128 bits | generation API and CLI `create` | default and complete creation matrix | Implemented |
+| R17 | worksheet checksum sizes and private residue correction | CLI `checksum`, residue API | ms/cl sizes, short/long and BIP39 residues | Implemented |
+| R18 | identifier selection is explicit public metadata | `generation` identifier helpers | k=0 fixture, shared random, raw/re-share rules | Accepted divergence |
+| R19 | legacy `cl` custom ID and 32-byte payload | `Profile.CL`, `CoreLightningSecret` | three published examples and length/pad tests | Implemented; no generation |
+| R20 | BIP39 fixed migration profiles | isolated `bip39.py` | 12/24 fixtures and invalid implied-S tests | Implemented migration subset |
+| R21 | unknown HRPs receive no application semantics | fixed `Profile` lookup after checksum | valid generic unknown-HRP rejection | Implemented |
+| R22 | generated S uses CRC padding; parsed S need not | private `_crc_pad` | frozen CRC and arbitrary parsed-pad tests | Accepted divergence |
+| R23 | electronic sets use random distinct output indices | generation selector | order, uniqueness, all-31 tests | Accepted divergence |
+| R24 | partial-basis completion | none | absence from API/CLI | Deliberately omitted |
+| R25 | xprv, coordinator xpub, descriptors in reusable API | `wallet.py` | official xprv, frozen BIP48/descriptor tests | Implemented |
+| R26 | explicit account/timestamp and root-xprv warning | wallet API and CLI | deterministic records and warning tests | Implemented |
+| R27 | no arbitrary security parser for descriptors | fixed templates in `wallet.py` | module/API absence and template fixtures | Implemented by removal |
+| R28 | safe typed installable reference surface | 19-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
 
-| ID | Source section | Normative / functional requirement | Current code owner | Current tests | Status and evidence | Remaining work / planned owner |
-|---|---|---|---|---|---|---|
-| R01 | B93 §codex32 | Single-case Bech32 text with registered HRP, separator, threshold, four-character identifier, index, payload, and checksum | `bech32._parse`, `bip93.parse_codex32`, immutable artifacts | Lexical tests, complete official valid/invalid corpus, uppercase tests | **Implemented.** Lexical parsing is bounded and the authenticated result is immutable. | Gate 8 independent remapping |
-| R02 | B93 §Checksum, §Long codex32 | For `ms`, select short/long checksum solely from unchecksummed data-part length | `profiles._ProfileSpec.checksum_for_data_length` | Data 80/81, payload 74/75/76, seed 46/47 | **Implemented.** HRP length is absent from the selector. | Gate 8 independent verification |
-| R03 | B93 §Long codex32 | Short payload at most 74 symbols; long payload 75–103; long checksum has 15 symbols | `profiles._ProfileSpec`, immutable checksum specs | Official generic arithmetic plus exact `ms` boundaries | **Implemented.** Profile-valid payload lengths, rather than broad generic checksum coverage, govern artifacts. | Gate 4 preserves correction behavior |
-| R04 | B93 §Unshared Secret, §Master seed format | `ms` supports every byte length 16–64; final incomplete group may contain arbitrary bits | `MasterSeed`, `_payload_bytes` | All 49 lengths and every legal padding value; official alternates | **Implemented.** Only `MasterSeed` exposes decoded seed bytes; shares remain symbols. | Gate 8 independent remapping |
-| R05 | B93 header rules | `k=0` requires `S`; `k=2…9` supports `S` or ordinary indices; `k=1` invalid | immutable `Header` | Header abuse tests and official invalid header corpus | **Implemented.** One constructor owns normalized header validity. | Gate 2 adds fresh-target rules |
-| R06 | B93 §Checksum; W §Error Detection | Invalid-checksum strings cannot enter sharing, recovery, or wallets | `parse_codex32`; typed CLI/wallet adapter checks | Bad-checksum corpus, public-boundary and CLI tests | **Implemented.** Domain paths accept validated artifacts and authenticated fields cannot mutate. | Gate 7 moves wallet adapter into public API |
-| R07 | B93 §Recovering Secret | Recover from exactly `k` compatible, distinct shares | `bip93._validate_share_set`, `_interpolate_tail`, `recover_secret` | Official vectors 2/3; k=2…9; mismatch, permutation, subset and replacement tests | **Implemented.** Recovery accepts authenticated ordinary shares only, enforces exactly `k`, interpolates payload+checksum and reparses S. | Gate 8 independent remapping |
-| R08 | B93 §Generating Shares | Additional share uses a fresh target index | `bip93.derive_share` | Every ordinary target; existing/excluded/S/invalid rejection; all-profile fixtures | **Implemented.** The domain API rejects non-fresh targets and has no existing-target shortcut. | Gate 8 independent remapping |
-| R09 | B93 fresh generation; B generation | Fresh sets use independent uniform u5 masks; shares have no byte semantics | `generation._masks`, immutable `Share` | All 49 `ms` lengths; thresholds 2–9; public-surface negatives | **Implemented.** One direct batched OS-CSPRNG call supplies complete u5 masks; shares remain symbol-only and generation exposes no entropy adapter. | Final independent remapping |
-| R10 | B93 existing-secret generation | Splitting `S` uses `S` plus `k−1` independent uniform masks | `generation.split_secret`, `derive_share` | Exact-threshold recovery, raw/parsed S, selector/order and property tests | **Implemented for `ms`.** S-only splitting samples `k−1` complete masks and derives requested fresh indices through the one sharing implementation. | Final independent remapping |
-| R11 | B93 §Error Correction; W §ECW; P70 | Correct four substitutions, mixed errors/erasures, eight erasures, and specified bursts | 645-line `correction.py`; shared `gf32.py` | Frozen P70-derived corpus; every `2e+v <= 8` distribution; arbitrary/consecutive erasures; all-profile reparse; locator-subgroup regression | **Implemented for fixed-length BCH.** P70-derived algebra uses native reverse coordinates, verifies legal locator positions and the exact target, imports shared primitives, and reparses every full-string candidate. Structural search is an explicit non-goal. | Final independent remapping |
-| R12 | B93/W correction trust | Correction is an untrusted suggestion and never silently enters a wallet | CLI `correct`; `CorrectionSearchResult` | Warning and candidate tests | **Noncompliant.** Current command can emit successful stdout; API exposes one/timed result rather than complete best ties. | Gates 5–6: proof-state API and stderr/nonzero CLI contract |
-| R13 | W §Import Support | Later shares use known profile, length, threshold, identifier, and a fresh index | CLI `_secret_strings_from_input` | None | **Missing.** Current stdin flow collects an undifferentiated token set. | Gate 6: sequential TTY prompt with `hrp1` + five-character expected header |
-| R14 | W §Import Support | Uppercase windows, `?`, ten-second UI limit, explicit confirmation/provisional status | CLI pretty/correct helpers; correction timed search | Presentation and timeout tests | **Partial.** Some UI/search pieces exist; deadline/completeness/acceptance semantics do not match the contract. | Gates 5–6: end-to-end deadline and proof-aware result states |
-| R15 | W final import; B93 §Not BIP39 Entropy | Only `ms` `S` enters wallet workflows; bytes are direct BIP32 seed | typed CLI `_master_node` boundary | Official xprv vectors in CLI tests; non-`MasterSeed` rejections | **Partial.** Only `MasterSeed` exposes seed bytes and current wallet commands enforce that type; reusable wallet ownership remains CLI-adjacent. | Gate 7: `MasterSeed`-only wallet API |
-| R16 | B generation/verification | Electronic generation defaults to 128 bits; manual verification ceremony is for hand arithmetic | `generation.generate_master_seed`; CLI `create` adapter | Default/fresh/raw/parsed/threshold-zero/shared CLI and API matrix | **Implemented.** API generation is reviewed and the CLI defaults to 16 bytes without imposing a redundant computer-verification ceremony. | Gate 6 finalizes installed help and warnings |
-| R17 | B worksheets; CLI contract | `checksum` accepts only worksheet `ms` 128/256 or fixed `cl`; residue correction supports regular/Long codex32 privately | profile-owned checksum rules; `correct_worksheet_residue`; transitional CLI worksheet adapters | Short/long residues, periods, both BIP39 worksheets; existing checksum CLI tests | **Partial.** Gate 4 completes profile-agnostic residue correction; checksum construction sizes/defaults remain a Gate 6 CLI contract. | Gate 6: profile-aware completion and strict CLI matrix |
-| R18 | B93 identifier freedom; electronic-generation discussions | Identifier is public metadata; fingerprint defaults and re-share separation are explicit | `generation._fingerprint_identifier`, `_random_identifier` | Frozen k=0 fixtures; shared-generation and explicit re-share tests | **Accepted divergence.** Threshold-zero generation uses a 20-bit fingerprint; shared generation uses random metadata and re-sharing requires an explicit new identifier. | Final risk review |
-| R19 | CL docs/implementation | `cl` has custom identifier and exactly 32 payload bytes | `Profile.CL`, `CoreLightningSecret` | Published CL examples, exact length and parsed-padding test | **Implemented for legacy import and sharing.** Current Core Lightning uses mnemonics for new nodes, so v1 does not generate CL secrets. | Final CLI contract |
-| R20 | BIP39 worksheets/website | Fixed 132/264-bit migration profiles; UI verification and `S` recovery only; API may derive additional shares | fixed profiles, isolated `bip39.py`, `recover_secret`, `derive_share`; CLI capability check | Frozen 12/24-word sharing fixtures, invalid implied-S tests, CLI recovery/derivation denial | **Implemented for API and current CLI.** Recovery and API derivation validate implied S without exposing entropy or mnemonic material. | Gate 6 installed CLI contract; Gate 8 independent remapping |
-| R21 | Locked profile policy | Unknown HRPs are rejected; no fallback to `ms` rules | common format decoder, fixed `Profile` enum and `_profile_spec` | valid generic `zz` checksum rejection | **Implemented.** The common checksum is verified before supported-application lookup. | Final independent verification |
-| R22 | Generation invariant | Machine-generated `ms` `S` uses selected CRC padding; parsed strings accept arbitrary legal padding | private `_crc_pad`, `MasterSeed.from_seed`, generation rejection | Frozen 0–4-bit CRC values; all-length integration; arbitrary parsed padding; balanced-rejection proof | **Implemented.** CRC is private generation-only padding with a frozen bit convention; it is neither BIP93 validity nor share semantics. | Gate 8 independent verification |
-| R23 | Electronic generation | Machine-created shared sets default to random distinct output indices | `generation._select_output_indices`; thin CLI `create` | explicit order, random distinct count, all-31 permutation, CLI order matrix | **Accepted divergence.** `SystemRandom.sample` selects an ordered subset without replacement; explicit and sampled order are preserved and never sorted. | Gate 8 independent verification |
-| R24 | Speculation only | Partial-basis completion is not required for production v1 | None | None | **Deliberately deferred.** No authoritative contract. | Research backlog only |
-| R25 | Wallet functionality | `xprv`, coordinator BIP48 xpub with origin, and descriptors live in reusable API | CLI `xprv`, `descriptors`; `descriptor.py`; detached xpub helpers absent | xprv vectors; descriptor checksum | **Partial.** No xpub command; wallet logic is CLI-owned. | Gate 7: stateless `wallet.py`, `xpub --account`, thin routing |
-| R26 | Bitcoin Core descriptors | Private descriptors may contain root xprv plus path; account/timestamp are explicit | `descriptor.descriptors_from_node`; CLI hidden JSON account DB | No behavioral wallet tests | **Partial.** Root behavior matches Core rationale; hidden state is racy and timestamp `now` is unsafe for recovery. | Gate 7: remove DB, timestamp 0 default, golden fixtures and warning |
-| R27 | B388 | Only trusted templates use BIP388 rendering; toy parser is not a general security parser | `wallet_policies.py`, `descriptor.make_private_descriptor` | Descriptor checksum only | **Partial.** Arbitrary conversion relies on the BIP388 toy parser. | Gate 7: narrow trusted renderer and remove arbitrary rewriting |
-| R28 | RR; packaging/auditability | Public API is safe, typed, installable, and directly traceable | safe `__init__` exports, `py.typed`, architecture/profile maps | public abuse-path tests and mypy | **Partial.** Gate 1 removes unsafe exports and establishes direct mapping; console packaging and final CLI/CI remain. | Gates 6 and 8 |
-
-## Gate ownership summary
-
-- Gate 1 owns R01–R06 and profile foundations for R19–R22/R28.
-- Gate 2 implements R07–R08, the interpolation slice of R10, and the recovery/derivation slice of R20.
-- Gate 3 owns secure generation R09–R10/R16/R18/R22–R24.
-- Gate 4 owns fixed BCH correction in R11 and residue correction in R17; Gate 5 owns structural R12–R14.
-- Gate 6 owns the non-wallet CLI slice R12–R23/R28.
-- Gate 7 owns R15/R18/R25–R27.
-- Gate 8 independently re-verifies every non-deferred row.
-
-Gate completion requires both the implementation owner and its direct tests to
-pass. Documentation status alone never advances a row to Implemented.
+The expanded checksum rule from PR #2258 is the only pending-upstream behavior.
+It has direct boundary fixtures and is isolated in one format-layer function.

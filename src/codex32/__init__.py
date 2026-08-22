@@ -1,24 +1,4 @@
-# Copyright (c) 2026 Ben Westgate <benwestgate@protonmail.com>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-
-"""Safe, profile-aware codex32 artifacts and correction helpers."""
+"""Small, typed BIP93 and codex32 reference API."""
 
 from .bip93 import (
     Bip39Secret,
@@ -36,36 +16,7 @@ from .correction import (
     WorksheetCorrection,
     correct_worksheet_residue,
 )
-from .errors import (
-    CodexError,
-    DuplicateShareIndex,
-    ExistingTargetIndex,
-    HeaderCollision,
-    InvalidBip39Checksum,
-    InvalidCase,
-    InvalidCharacter,
-    InvalidChecksum,
-    InvalidCorrectionInput,
-    InvalidHeader,
-    InvalidIdentifier,
-    InvalidLength,
-    InvalidPadding,
-    InvalidPayload,
-    InvalidShareIndex,
-    InvalidShareSelection,
-    InvalidShareSet,
-    InvalidTargetIndex,
-    InvalidThreshold,
-    MismatchedIdentifier,
-    MismatchedPayloadLength,
-    MismatchedProfile,
-    MismatchedThreshold,
-    MissingSeparator,
-    SecretInRecoverySet,
-    UnknownProfile,
-    UnsupportedOperation,
-    WrongShareCount,
-)
+from .errors import CodexError
 from .generation import (
     generate_master_seed,
     split_secret,
@@ -81,39 +32,12 @@ __all__ = [
     "Bip39Secret",
     "CodexError",
     "CoreLightningSecret",
-    "DuplicateShareIndex",
-    "ExistingTargetIndex",
     "Header",
-    "HeaderCollision",
-    "InvalidBip39Checksum",
-    "InvalidCase",
-    "InvalidCharacter",
-    "InvalidChecksum",
-    "InvalidCorrectionInput",
-    "InvalidHeader",
-    "InvalidIdentifier",
-    "InvalidLength",
-    "InvalidPadding",
-    "InvalidPayload",
-    "InvalidShareIndex",
-    "InvalidShareSelection",
-    "InvalidShareSet",
-    "InvalidTargetIndex",
-    "InvalidThreshold",
     "MasterSeed",
-    "MismatchedIdentifier",
-    "MismatchedPayloadLength",
-    "MismatchedProfile",
-    "MismatchedThreshold",
-    "MissingSeparator",
     "Profile",
     "Secret",
-    "SecretInRecoverySet",
     "Share",
-    "UnknownProfile",
-    "UnsupportedOperation",
     "WorksheetCorrection",
-    "WrongShareCount",
     "complete_checksum",
     "core_descriptors",
     "correct_worksheet_residue",

@@ -9,16 +9,8 @@ class InvalidCharacter(CodexError):
     """Input contains a character that is invalid in its context."""
 
 
-# Descriptor code historically used this shorter name.  It is an internal
-# spelling compatibility, not an unsafe codex32 API compatibility shim.
-InvalidChar = InvalidCharacter
-
-
 class MissingSeparator(CodexError):
     """Input does not contain a Bech32 separator."""
-
-
-SeparatorNotFound = MissingSeparator
 
 
 class InvalidCase(CodexError):

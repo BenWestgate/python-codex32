@@ -8,7 +8,6 @@ from bip32 import BIP32
 
 from codex32 import (
     Header,
-    HeaderCollision,
     MasterSeed,
     Profile,
     Secret,
@@ -28,7 +27,7 @@ from codex32.correction import (
     _FixedCorrectionSuccess,
     correct_worksheet_residue,
 )
-from codex32.errors import CodexError, InvalidCorrectionInput
+from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
@@ -73,6 +72,8 @@ def _artifacts(*, sequential: bool) -> list[Artifact]:
     if not sequential or isinstance(first, Secret):
         return [first]
     prefix = f"{first.profile.value}1{first.header.threshold}{first.header.identifier}"
+    if first.text == first.text.upper():
+        prefix = prefix.upper()
     result: list[Artifact] = [first]
     for number in range(2, first.header.threshold + 1):
         entered = click.prompt(
@@ -129,7 +130,7 @@ def _emit(artifact: Artifact, pretty: bool, *, err: bool = False) -> None:
 @click.group()
 @click.version_option(package_name="codex32", prog_name="codex32")
 def cli() -> None:
-    """Verify, share, recover, generate, and correct codex32 backups."""
+    """BIP93 backup and narrow Bitcoin interoperability tools."""
 
 
 @cli.command()

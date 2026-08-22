@@ -1,6 +1,6 @@
 # Recovery and additional-share derivation
 
-Gate 2 implements BIP93 interpolation once, in `bip93.py`, for the four fixed
+BIP93 interpolation has one implementation in `bip93.py` for the four fixed
 applications. No unknown HRP can reach this code.
 
 ## Public operations

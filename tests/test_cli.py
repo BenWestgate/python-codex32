@@ -1,5 +1,6 @@
 """End-to-end tests for the small codex32 CLI."""
 
+import importlib
 import json
 
 from click.testing import CliRunner
@@ -51,6 +52,33 @@ def test_secret_recovers_official_ms_and_bip39_sets() -> None:
     assert ms.exit_code == bip39.exit_code == 0
     assert ms.stdout.strip() == VECTOR_2["secret_S"]
     assert bip39.stdout.strip() == SHARING_VECTORS["bip39_12w"]["S"]
+
+
+def test_tty_recovery_prefills_the_authenticated_prefix(monkeypatch) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    answers = iter((VECTOR_2["share_A"], VECTOR_2["share_C"][-40:]))
+    prompts: list[str] = []
+
+    def prompt(label: str, **_options: object) -> str:
+        prompts.append(label)
+        return next(answers)
+
+    monkeypatch.setattr(cli_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(cli_module.click, "prompt", prompt)
+
+    artifacts = cli_module._artifacts(sequential=True)
+
+    assert [artifact.text for artifact in artifacts] == [
+        VECTOR_2["share_A"],
+        VECTOR_2["share_C"],
+    ]
+    assert "MS12NAME" in prompts[1].upper()
 
 
 def test_share_supports_ms_and_cl_but_not_bip39() -> None:

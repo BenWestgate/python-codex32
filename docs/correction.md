@@ -82,8 +82,8 @@ into a plausible partial correction.
 The two checks above are deliberate hardening beyond literal PR #70 behavior.
 The direct P70 routine checked the number of roots in GF(1024), but not whether
 every regular-code root belonged to the shortened code's order-93 position
-subgroup. The Gate 4 review found and remediated that gap; see
-`security/correction/audit-record.md`.
+subgroup. This implementation adds that check explicitly and the frozen
+regression corpus exercises it.
 
 ## Evidence and provenance
 

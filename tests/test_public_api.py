@@ -18,6 +18,31 @@ def test_unsafe_legacy_surface_is_absent() -> None:
         assert not hasattr(checksums, name)
 
 
+def test_root_api_is_deliberately_small() -> None:
+    assert len(codex32.__all__) <= 24
+    assert set(codex32.__all__) == {
+        "Bip39Secret",
+        "CodexError",
+        "CoreLightningSecret",
+        "Header",
+        "MasterSeed",
+        "Profile",
+        "Secret",
+        "Share",
+        "WorksheetCorrection",
+        "complete_checksum",
+        "core_descriptors",
+        "correct_worksheet_residue",
+        "derive_share",
+        "generate_master_seed",
+        "master_xprv",
+        "multisig_account_xpub",
+        "parse_codex32",
+        "recover_secret",
+        "split_secret",
+    }
+
+
 def test_share_has_symbols_but_no_byte_or_padding_api() -> None:
     share = parse_codex32(VECTOR_2["share_A"])
     assert isinstance(share, Share)

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=80", "setuptools-scm>=8"]
+requires = ["setuptools>=80"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -35,7 +35,14 @@ dependencies = ["bip32>=5,<6", "click>=8,<9"]
 codex32 = "codex32.cli:cli"
 
 [project.optional-dependencies]
-dev = ["pytest", "hypothesis>=6,<7", "flake8", "mypy", "black", "isort", "ruff"]
+dev = [
+  "build>=1,<2",
+  "hypothesis>=6,<7",
+  "mypy",
+  "pytest",
+  "ruff",
+  "twine>=5,<7",
+]
 
 
 [tool.setuptools.packages.find]
