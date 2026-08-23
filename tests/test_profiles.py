@@ -25,7 +25,6 @@ from codex32.bech32 import (
     _decode,
     _hrp_expand,
     _parse,
-    _verify,
 )
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import (
@@ -183,6 +182,32 @@ def test_unknown_hrp_is_rejected_before_checksum_interpretation() -> None:
     valid_generic = _oracle_encode("zz", "0tests" + "q" * 26)
     with pytest.raises(UnknownProfile):
         parse_codex32(valid_generic)
+    with pytest.raises(UnknownProfile):
+        parse_codex32("zz10tests" + "q" * 39)
+
+
+@pytest.mark.parametrize(
+    ("hrp", "payload_length"),
+    (("ms", 26), ("cl", 52), ("bip39_12w", 27), ("bip39_24w", 53)),
+)
+def test_profile_length_precedes_checksum(hrp: str, payload_length: int) -> None:
+    valid = _oracle_encode(hrp, "0tests" + "q" * payload_length)
+    with pytest.raises(InvalidLength):
+        parse_codex32(valid[:-1])
+
+
+def test_ms_length_precedence_covers_extremes_and_alignment() -> None:
+    with pytest.raises(InvalidLength, match="needs at least 48"):
+        parse_codex32("ms1")
+    with pytest.raises(InvalidLength, match="whole number"):
+        parse_codex32("ms10tests" + "q" * 40)
+
+
+def test_valid_profile_length_still_reports_checksum_failure() -> None:
+    valid = _oracle_encode("ms", "0tests" + "q" * 26)
+    damaged = valid[:-1] + ("q" if valid[-1] != "q" else "p")
+    with pytest.raises(InvalidChecksum):
+        parse_codex32(damaged)
 
 
 def test_core_lightning_constructor_and_parsed_padding() -> None:
@@ -222,7 +247,7 @@ def test_official_generic_checksum_vectors_at_codec_level(
     hrp, encoded = _parse(value, max_length=2048)
     expanded_length = len(_hrp_expand(hrp)) + len(encoded)
     assert checksum.polymod(_hrp_expand(hrp) + encoded) == checksum.constant
-    assert _verify(hrp, encoded, checksum) is (
+    assert checksum.verify(_hrp_expand(hrp) + encoded) is (
         checksum.maximum_length is None or expanded_length <= checksum.maximum_length
     )
 
@@ -244,4 +269,6 @@ def test_official_invalid_generic_checksum_vectors(
         assert error is not None
         return
     expanded_length = len(_hrp_expand(hrp)) + len(encoded)
-    assert not (expanded_length <= maximum and _verify(hrp, encoded, checksum))
+    assert not (
+        expanded_length <= maximum and checksum.verify(_hrp_expand(hrp) + encoded)
+    )

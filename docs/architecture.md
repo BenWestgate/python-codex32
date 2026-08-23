@@ -12,10 +12,11 @@ text -> bounded format/checksum -> fixed profile -> immutable artifact
 CLI -> public APIs above
 ```
 
-The format layer validates ASCII, case, separator, common header shape, total
-length, and the checksum selected from total string length plus HRP length. Only
-then does the HRP select one of four fixed application profiles. A profile adds
-exact payload length and S-only semantics; it does not replace format validity.
+The format layer first validates ASCII, case, separator, characters, and the
+absolute size bound. The application parser uses the literal registered HRP
+only to reject impossible total and payload lengths before checking the outer
+checksum. It then validates the common header, checksum, and S-only application
+semantics. No artifact crosses the parsing boundary until every stage passes.
 
 ## Specification-to-code map
 

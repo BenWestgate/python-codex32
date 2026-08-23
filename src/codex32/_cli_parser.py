@@ -35,7 +35,8 @@ def _command(
 
 def _pretty(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--pretty", action="store_true", help="Group output for writing by hand."
+        "--pretty", action=argparse.BooleanOptionalAction, default=None,
+        help="Group output for writing by hand (default: on at a terminal).",
     )
 
 
@@ -82,7 +83,7 @@ def parser() -> argparse.ArgumentParser:
         dest="command", required=True, title="commands", metavar="COMMAND"
     )
 
-    check = _command(commands, "check", "Check a secret or share for copying errors.")
+    check = _command(commands, "check", "Check whether a secret or share is intact.")
     check.description = (
         "Checks format, checksum, and application rules. A valid string is not "
         "proof that it belongs to the intended wallet."

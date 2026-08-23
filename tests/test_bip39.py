@@ -4,7 +4,12 @@ import pytest
 from test_profiles import _oracle_encode
 
 from codex32 import Bip39Secret, Profile, Share, parse_codex32
-from codex32.errors import InvalidBip39Checksum, InvalidLength, InvalidPadding
+from codex32.errors import (
+    InvalidBip39Checksum,
+    InvalidChecksum,
+    InvalidLength,
+    InvalidPadding,
+)
 
 BIP39_12W_ZERO = "bip39_12w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqcwa5plrxrewp27"
 BIP39_24W_ZERO = (
@@ -38,6 +43,13 @@ def test_valid_outer_checksum_does_not_mask_bad_bip39_checksum(
 ) -> None:
     with pytest.raises(InvalidBip39Checksum):
         parse_codex32(_oracle_encode(hrp, "0tests" + payload))
+
+
+def test_outer_checksum_precedes_bip39_secret_semantics() -> None:
+    invalid_bip39 = _oracle_encode("bip39_12w", "0tests" + "q" * 27)
+    damaged = invalid_bip39[:-1] + ("q" if invalid_bip39[-1] != "q" else "p")
+    with pytest.raises(InvalidChecksum):
+        parse_codex32(damaged)
 
 
 def test_bip39_secret_requires_zero_outer_padding() -> None:

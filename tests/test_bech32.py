@@ -34,6 +34,15 @@ def test_lexical_parser_preserves_no_semantics() -> None:
     assert _parse("MS10TESTS") == ("ms", _chars_to_u5("0tests"))
 
 
+def test_invalid_data_character_uses_complete_one_based_position() -> None:
+    with pytest.raises(InvalidCharacter) as raised:
+        _parse("MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW'")
+
+    assert str(raised.value) == (
+        "Apostrophe (') is not allowed in a codex32 string (position 49)."
+    )
+
+
 @pytest.mark.parametrize(
     ("value", "error"),
     (

@@ -33,13 +33,15 @@ def _u5_to_chars(values: list[int] | tuple[int, ...]) -> str:
     return "".join(CHARSET[value] for value in values)
 
 
-def _chars_to_u5(value: str) -> list[int]:
+def _chars_to_u5(value: str, first_position: int = 1) -> list[int]:
     result: list[int] = []
     for index, character in enumerate(value.lower()):
         position = CHARSET.find(character)
         if position < 0:
+            label = "Apostrophe (')" if character == "'" else f"The character {character!r}"
             raise InvalidCharacter(
-                f"non-Bech32 character {character!r} at data position {index}"
+                f"{label} is not allowed in a codex32 string "
+                f"(position {first_position + index})."
             )
         result.append(position)
     return result
@@ -48,7 +50,6 @@ def _chars_to_u5(value: str) -> list[int]:
 def _validate_single_case_ascii(
     value: str, *, max_length: int = _MAX_CODEX32_LENGTH
 ) -> bool:
-    """Validate the shared bounded lexical envelope and report uppercase."""
     if not isinstance(value, str):
         raise TypeError("codex32 input must be str")
     if len(value) > max_length:
@@ -60,7 +61,7 @@ def _validate_single_case_ascii(
                 f"non-printable U+{codepoint:04X} at position {index}"
             )
     if value.upper() != value and value.lower() != value:
-        raise InvalidCase("mixed upper/lower case codex32 string")
+        raise InvalidCase("Use either all uppercase or all lowercase letters.")
     return value.isupper()
 
 
@@ -71,11 +72,11 @@ def _parse(
     _validate_single_case_ascii(value, max_length=max_length)
     separator = value.rfind("1")
     if separator < 0:
-        raise MissingSeparator("'1' separator not found")
+        raise MissingSeparator("No separator (1) was found.")
     if separator == 0:
-        raise MissingSeparator("empty HRP")
+        raise MissingSeparator("The application prefix before 1 is missing.")
     lowered = value.lower()
-    return lowered[:separator], _chars_to_u5(lowered[separator + 1 :])
+    return lowered[:separator], _chars_to_u5(lowered[separator + 1 :], separator + 2)
 
 
 def _checksum_for_body_length(hrp: str, body_length: int) -> _Checksum:
@@ -97,37 +98,39 @@ def _checksum_for_encoded_length(hrp: str, encoded_length: int) -> _Checksum:
 
 
 def _validate_header(data: list[int] | tuple[int, ...]) -> None:
-    """Validate the common six-symbol codex32 header."""
     if len(data) < 6:
         raise InvalidLength("codex32 data part is shorter than its six-symbol header")
     header = _u5_to_chars(tuple(data[:6]))
     if header[0] not in "023456789":
-        raise InvalidThreshold(f"invalid threshold symbol {header[0]!r}")
+        raise InvalidThreshold(f"The threshold must be 0 or a number from 2 through 9; found {header[0]!r}.")
     if header[0] == "0" and header[5] != "s":
-        raise InvalidShareIndex("threshold 0 requires share index S")
+        raise InvalidShareIndex("An unshared secret (threshold 0) must use S as its index.")
 
 
 def _encode(hrp: str, data: list[int] | tuple[int, ...]) -> str:
-    """Encode a common-header-valid body with the format-selected checksum."""
     _validate_header(data)
     spec = _checksum_for_body_length(hrp, len(data))
     checksum = spec.create(_hrp_expand(hrp) + list(data))
     return f"{hrp}1{_u5_to_chars([*data, *checksum])}"
 
 
-def _verify(hrp: str, data_with_checksum: list[int], spec: _Checksum) -> bool:
-    return spec.verify(_hrp_expand(hrp) + data_with_checksum)
+def _validate_shape(hrp: str, encoded: list[int]) -> _Checksum:
+    if len(hrp) + 1 + len(encoded) < 21:
+        raise InvalidLength("codex32 string must contain at least 21 characters")
+    checksum = _checksum_for_encoded_length(hrp, len(encoded))
+    _validate_header(encoded[: -checksum.length])
+    return checksum
+
+
+def _require_checksum(hrp: str, encoded: list[int], checksum: _Checksum) -> None:
+    if not checksum.verify(_hrp_expand(hrp) + encoded):
+        raise InvalidChecksum(f"invalid {checksum.kind} checksum")
 
 
 def _decode(value: str) -> tuple[str, tuple[int, ...], _Checksum]:
-    """Validate codex32 format before any application-profile lookup."""
-    if len(value) < 21:
-        raise InvalidLength("codex32 string must contain at least 21 characters")
     hrp, encoded = _parse(value)
-    checksum = _checksum_for_encoded_length(hrp, len(encoded))
-    _validate_header(encoded[: -checksum.length])
-    if not _verify(hrp, encoded, checksum):
-        raise InvalidChecksum(f"invalid {checksum.kind} checksum")
+    checksum = _validate_shape(hrp, encoded)
+    _require_checksum(hrp, encoded, checksum)
     return hrp, tuple(encoded), checksum
 
 

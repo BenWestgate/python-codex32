@@ -94,7 +94,8 @@ def _render(artifact: Artifact, pretty: bool) -> str:
     return "\n".join(lines)
 
 
-def _emit(artifact: Artifact, pretty: bool, *, err: bool = False) -> None:
+def _emit(artifact: Artifact, pretty: bool | None, *, err: bool = False) -> None:
+    pretty = (sys.stderr if err else sys.stdout).isatty() if pretty is None else pretty
     _print(_render(artifact, pretty), err=err)
 
 
@@ -120,7 +121,7 @@ def _check(artifacts: list[Artifact]) -> int:
     return 0
 
 
-def _share_command(index: str, pretty: bool) -> int:
+def _share_command(index: str, pretty: bool | None) -> int:
     artifacts = _artifacts(basis=True, profiles=(Profile.MS, Profile.CL))
     try:
         derived = derive_share(artifacts, index)
@@ -177,7 +178,7 @@ def _create(
     byte_length: int | None,
     shares: int | None,
     indices: str | None,
-    pretty: bool,
+    pretty: bool | None,
 ) -> int:
     profile, parsed_header = _creation_header(header)
     if profile is not Profile.MS:
@@ -259,7 +260,7 @@ def _unchecksummed(header: str | None, payload: str) -> str:
     return text
 
 
-def _checksum(header: str | None, pretty: bool) -> int:
+def _checksum(header: str | None, pretty: bool | None) -> int:
     text = _unchecksummed(header, _text("Enter the worksheet text before its checksum"))
     warning = (
         "Warning: This command only adds a checksum. Use the Codex32 Book "
@@ -277,7 +278,7 @@ def _checksum(header: str | None, pretty: bool) -> int:
 def _correct(
     residue: bool,
     erasures: tuple[int, ...],
-    pretty: bool,
+    pretty: bool | None,
 ) -> int:
     prompt = "Enter the worksheet residue" if residue else "Enter the damaged codex32 string"
     value = _text(prompt)
@@ -363,28 +364,29 @@ def _bitcoin_core(account: int, timestamp: int, testnet: bool, private: bool) ->
 
 def _dispatch(arguments: argparse.Namespace) -> int:
     command = cast(str, arguments.command)
+    pretty = cast(bool | None, getattr(arguments, "pretty", None))
     if command == "check":
         return _check(_artifacts(one=True))
     if command == "secret":
-        _emit(_secret(_artifacts()), bool(arguments.pretty))
+        _emit(_secret(_artifacts()), pretty)
         return 0
     if command == "share":
-        return _share_command(cast(str, arguments.index), bool(arguments.pretty))
+        return _share_command(cast(str, arguments.index), pretty)
     if command == "create":
         return _create(
             cast(str | None, arguments.header),
             cast(int | None, arguments.byte_length),
             cast(int | None, arguments.shares),
             cast(str | None, arguments.indices),
-            bool(arguments.pretty),
+            pretty,
         )
     if command == "checksum":
-        return _checksum(cast(str | None, arguments.header), bool(arguments.pretty))
+        return _checksum(cast(str | None, arguments.header), pretty)
     if command == "correct":
         return _correct(
             bool(arguments.residue),
             tuple(cast(list[int], arguments.erasures)),
-            bool(arguments.pretty),
+            pretty,
         )
     if command == "xprv":
         secret = _master_seed()

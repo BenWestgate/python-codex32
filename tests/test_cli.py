@@ -49,6 +49,11 @@ class _FakeLineEditor:
             self.hook()
 
 
+class _TTYOutput(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
 def _invoke(args: list[str], *lines: str) -> _Result:
     stdin = io.StringIO("\n".join(lines) + "\n")
     stdout = io.StringIO()
@@ -147,48 +152,48 @@ def test_check_help_explains_validation_scope() -> None:
             "ms",
             25,
             (
-                "This input is too short for a Bitcoin master-seed backup; "
-                "expected 48 characters or more."
+                "This input has 47 characters. A Bitcoin master-seed backup "
+                "needs at least 48."
             ),
         ),
         (
             "ms",
             104,
             (
-                "This input is too long for a Bitcoin master-seed backup; "
-                "expected 127 characters or fewer."
+                "This input has 128 characters. A Bitcoin master-seed backup "
+                "can have at most 127."
             ),
         ),
         (
             "ms",
             27,
             (
-                "This input does not encode a whole number of Bitcoin "
-                "master-seed bytes."
+                "This input does not encode a whole number of Bitcoin master-seed "
+                "bytes."
             ),
         ),
         (
             "cl",
             51,
             (
-                "This input has the wrong length for a Core Lightning HSM-secret "
-                "backup; expected a 74-character codex32 string."
+                "This input has 73 characters. A Core Lightning HSM secret backup "
+                "must have exactly 74."
             ),
         ),
         (
             "bip39_12w",
             26,
             (
-                "This input has the wrong length for a 12-word BIP39 worksheet "
-                "backup; expected a 56-character codex32 string."
+                "This input has 55 characters. A 12-word BIP39 worksheet backup "
+                "must have exactly 56."
             ),
         ),
         (
             "bip39_24w",
             52,
             (
-                "This input has the wrong length for a 24-word BIP39 worksheet "
-                "backup; expected an 82-character codex32 string."
+                "This input has 81 characters. A 24-word BIP39 worksheet backup "
+                "must have exactly 82."
             ),
         ),
     ),
@@ -239,7 +244,98 @@ def test_tty_check_prefills_rejected_entry_without_history(
     assert sys.stdout is not sys.stderr
     assert prompts == ["Enter a codex32 string: "] * 2
     assert rejected not in captured.out
-    assert "mixed upper/lower case codex32 string" in captured.err
+    assert "Rejected: Use either all uppercase or all lowercase letters." in captured.err
+
+
+def test_tty_check_reports_truncated_ms_length_before_checksum(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    truncated = (
+        "ms13cashsllhdmn9m42vcsamx24zrxgs3qqjzqud4m0d6nl",
+        "ms13cashsllhdmn9m42vcsamx24zrxgs3qqjzqud4m0d6n",
+        "ms13cashsllhdmn9m42vcsamx24zrxgs3qqjzqud4m0d6",
+    )
+    answers = iter((*truncated, VECTOR_1["secret_s"]))
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module, "_line_editor", None)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert main(["check"]) == 0
+    captured = capsys.readouterr()
+    for length in (45, 46, 47):
+        message = (
+            f"Rejected: This input has {length} characters. A Bitcoin master-seed "
+            "backup needs at least 48."
+        )
+        assert captured.err.count(message) == 1
+    assert "checksum" not in captured.err
+
+
+def test_tty_check_names_an_invalid_character_and_position(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    invalid = "MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW'"
+    answers = iter((invalid, VECTOR_1["secret_s"]))
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module, "_line_editor", None)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert main(["check"]) == 0
+    assert (
+        "Rejected: Apostrophe (') is not allowed in a codex32 string "
+        "(position 49)."
+    ) in capsys.readouterr().err
+
+
+def test_tty_check_explains_header_and_prefix_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    invalid = (
+        "ms10fauxxxxxxxxxxxxxxxxxxxxxxxxxxxx0z26tfn0ulw3p",
+        "ms1fauxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg",
+        "0fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2",
+        "10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2",
+        "m10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2",
+        "s10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2",
+    )
+    answers = iter((*invalid, VECTOR_1["secret_s"]))
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module, "_line_editor", None)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert main(["check"]) == 0
+    rejected = [
+        line for line in capsys.readouterr().err.splitlines() if line.startswith("Rejected:")
+    ]
+    assert rejected == [
+        "Rejected: An unshared secret (threshold 0) must use S as its index.",
+        "Rejected: The threshold must be 0 or a number from 2 through 9; found 'f'.",
+        "Rejected: No separator (1) was found.",
+        "Rejected: The application prefix before 1 is missing.",
+        "Rejected: The application prefix 'm' is not supported.",
+        "Rejected: The application prefix 's' is not supported.",
+    ]
 
 
 def test_tty_retry_replaces_only_the_editable_suffix(
@@ -254,8 +350,10 @@ def test_tty_retry_replaces_only_the_editable_suffix(
 
     prefix = "ms12name"
     suffix = VECTOR_2["share_C"][len(prefix) :]
-    bad_one = suffix[:-1] + ("q" if suffix[-1] != "q" else "p")
-    bad_two = suffix[:-2] + ("q" if suffix[-2] != "q" else "p") + suffix[-1]
+    first, second = ("Q", "P") if suffix.isupper() else ("q", "p")
+    bad_one = suffix[:-1] + (first if suffix[-1] != first else second)
+    replacement = first if suffix[-2] != first else second
+    bad_two = suffix[:-2] + replacement + suffix[-1]
     answers = iter((VECTOR_2["share_A"], bad_one, bad_two, suffix))
     editor = _FakeLineEditor()
 
@@ -273,6 +371,16 @@ def test_tty_retry_replaces_only_the_editable_suffix(
     assert editor.inserted == [bad_one, bad_two]
     assert editor.hook is None
     assert editor.auto_history == [False, False, False, False]
+    assert captured.err.count("Rejected: The checksum does not match.") == 2
+
+
+def test_redirected_check_uses_friendly_checksum_message() -> None:
+    valid = VECTOR_1["secret_s"]
+    damaged = valid[:-1] + ("q" if valid[-1] != "q" else "p")
+    result = _invoke(["check"], damaged)
+
+    assert result.exit_code == 2
+    assert result.stderr == "codex32: error: The checksum does not match.\n"
 
 
 def test_tty_retry_without_line_editor_uses_an_empty_prompt(
@@ -356,6 +464,50 @@ def test_secret_recovers_official_ms_and_bip39_sets() -> None:
     assert bip39.stdout.strip() == SHARING_VECTORS["bip39_12w"]["S"]
 
 
+def test_artifact_output_is_pretty_only_at_a_terminal() -> None:
+    stdout, stderr = _TTYOutput(), io.StringIO()
+    with (
+        patch.object(sys, "stdin", io.StringIO(VECTOR_1["secret_s"])),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        status = main(["secret"])
+
+    assert status == 0 and stderr.getvalue() == ""
+    assert stdout.getvalue().startswith("Unshared secret.\n")
+    assert "Master fingerprint:" in stdout.getvalue()
+
+    canonical = _TTYOutput()
+    with (
+        patch.object(sys, "stdin", io.StringIO(VECTOR_1["secret_s"])),
+        contextlib.redirect_stdout(canonical),
+        contextlib.redirect_stderr(io.StringIO()),
+    ):
+        assert main(["secret", "--no-pretty"]) == 0
+
+    assert canonical.getvalue().strip() == VECTOR_1["secret_s"]
+    assert "--pretty | --no-pretty" in _invoke(["secret", "-h"]).stdout
+
+
+def test_tty_direct_secret_has_specific_acceptance_status(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(builtins, "input", lambda _prompt: VECTOR_1["secret_s"])
+
+    assert main(["secret"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == VECTOR_1["secret_s"]
+    assert captured.err == "Secret accepted.\n"
+
+
 def test_tty_recovery_accepts_suffix_after_fixed_prefix(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -382,7 +534,8 @@ def test_tty_recovery_accepts_suffix_after_fixed_prefix(
 
     assert status == 0
     assert captured.out.strip() == VECTOR_2["secret_S"]
-    assert "String 1 of 2 accepted." in captured.err
+    assert "Share 1 of 2 accepted." in captured.err
+    assert "Share 2 of 2 accepted." in captured.err
     assert prompts == ["Enter a codex32 string: ", "Enter string 2 of 2: MS12NAME"]
 
 
@@ -726,7 +879,7 @@ def test_help_exposes_only_v1_commands() -> None:
     assert result.stdout.startswith("usage: codex32 [-h] [--version] COMMAND ...")
     assert "Create, check, recover, and use codex32 Bitcoin seed backups." in result.stdout
     descriptions = (
-        "check     Check a secret or share for copying errors.",
+        "check     Check whether a secret or share is intact.",
         "secret    Recover a secret from multiple shares.",
         "share     Derive an additional share.",
         "correct   Suggest repairs for damaged backup text.",

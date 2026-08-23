@@ -18,6 +18,7 @@ from codex32.bip93 import (
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
+    InvalidChecksum,
     MismatchedIdentifier,
     MismatchedPayloadLength,
     MismatchedProfile,
@@ -119,7 +120,8 @@ def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
     try:
         artifact = parse_codex32(value)
     except CodexError as error:
-        raise InputError(str(error)) from error
+        message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
+        raise InputError(message) from error
     if artifact.profile not in profiles:
         allowed = " or ".join(_profile_label(profile) for profile in profiles)
         raise InputError(f"This command accepts only {allowed} input.")
@@ -148,6 +150,7 @@ def _redirected(profiles: tuple[Profile, ...]) -> list[Artifact]:
 
 
 _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
+    InvalidChecksum: "The checksum does not match.",
     MismatchedProfile: "These strings are for different applications.",
     MismatchedThreshold: "These strings require different numbers of shares.",
     MismatchedIdentifier: "These strings have different identifiers.",
@@ -165,17 +168,14 @@ def _interactive(
     while len(accepted) < required:
         number = len(accepted) + 1
         label = (
-            "Enter a codex32 string"
-            if not accepted
-            else f"Enter string {number} of {required}"
+            "Enter a codex32 string" if not accepted else f"Enter string {number} of {required}"
         )
         try:
             value = _prompt_entry(label, prefix, prefill)
             artifact = _parse(value if "1" in value else prefix + value, profiles)
-            candidate = [*accepted, artifact]
             if not one and (accepted or isinstance(artifact, Share) or basis):
                 validator = _validate_basis_prefix if basis else _validate_recovery_prefix
-                validator(candidate)
+                validator([*accepted, artifact])
         except (CodexError, InputError) as error:
             message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
             _stderr(f"Rejected: {message}")
@@ -185,7 +185,7 @@ def _interactive(
         if one:
             return [artifact]
         if not accepted and isinstance(artifact, Secret) and not basis:
-            _stderr("String accepted.")
+            _stderr("Secret accepted.")
             return [artifact]
         if not accepted:
             required = artifact.header.threshold
@@ -193,7 +193,7 @@ def _interactive(
             if artifact.text.isupper():
                 prefix = prefix.upper()
         accepted.append(artifact)
-        _stderr(f"String {len(accepted)} of {required} accepted.")
+        _stderr(f"{'String' if basis else 'Share'} {len(accepted)} of {required} accepted.")
     return accepted
 
 
@@ -203,7 +203,6 @@ def read_artifacts(
     one: bool = False,
     profiles: tuple[Profile, ...] = tuple(Profile),
 ) -> list[Artifact]:
-    """Read validated artifacts from bounded stdin or simple TTY prompts."""
     if not sys.stdin.isatty():
         return _redirected(profiles)
     return _interactive(basis=basis, one=one, profiles=profiles)

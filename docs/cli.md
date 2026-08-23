@@ -41,8 +41,9 @@ input is never written to a history file. Ctrl-D exits 2 and Ctrl-C exits 130
 without a traceback. “Accepted” means checksum-valid and compatible with the
 entries collected so far; it does not prove that they belong to the intended
 wallet.
-Accepted entries are reported as `String 1 of 3 accepted.` so the same wording
-works for both recovery shares and a derivation basis.
+Direct secrets are reported as `Secret accepted.` Recovery sets use
+`Share 1 of 3 accepted.` A derivation basis may contain a secret or ordinary
+shares, so the neutral `String 1 of 3 accepted.` is used there.
 
 Interactive editor display goes to stderr, including when stdout is piped to
 another program. A rejected entry remains temporarily visible in terminal
@@ -56,7 +57,9 @@ human interaction, and stdout is only the requested result.
 Recovery commands stop immediately on a direct S. `share` instead collects an
 exact interpolation basis and may include S plus compatible ordinary shares.
 
-`--pretty` is local to commands producing a codex32 artifact. It groups uppercase
+Commands producing a codex32 artifact use human-readable `--pretty` output when
+that output goes to a terminal and canonical text when it is redirected.
+`--pretty` and `--no-pretty` override that choice. Pretty output groups uppercase
 text and public header fields. Pretty `ms` S may show its BIP32 fingerprint;
 shares never do.
 

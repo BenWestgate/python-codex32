@@ -12,7 +12,9 @@ from codex32.bech32 import (
     _encode,
     _parse,
     _payload_bytes,
+    _require_checksum,
     _u5_to_chars,
+    _validate_shape,
 )
 from codex32.checksums import _crc_pad
 from codex32.errors import (
@@ -63,7 +65,7 @@ class Header:
         if len(index) != 1 or index not in CHARSET:
             raise InvalidShareIndex("share index must be one Bech32 symbol")
         if self.threshold == 0 and index != "s":
-            raise InvalidShareIndex("threshold 0 requires share index S")
+            raise InvalidShareIndex("An unshared secret (threshold 0) must use S as its index.")
         object.__setattr__(self, "identifier", identifier)
         object.__setattr__(self, "index", index)
 
@@ -73,7 +75,7 @@ class Header:
             raise InvalidLength("codex32 header must contain six symbols")
         text = _u5_to_chars(symbols)
         if text[0] not in "023456789":
-            raise InvalidThreshold(f"invalid threshold symbol {text[0]!r}")
+            raise InvalidThreshold(f"The threshold must be 0 or a number from 2 through 9; found {text[0]!r}.")
         return cls(int(text[0]), text[1:5], text[5])
 
     @property
@@ -237,9 +239,13 @@ def _artifact(
 
 def parse_codex32(text: str) -> Share | Secret:
     """Validate one registered codex32 string and return an immutable artifact."""
-    hrp, encoded, checksum = _decode(text)
+    hrp, encoded = _parse(text)
     profile_spec = _profile_spec(hrp)
-    body = encoded[: -checksum.length]
+    profile_spec.validate_text_length(len(text))
+    checksum = _validate_shape(hrp, encoded)
+    body = tuple(encoded[: -checksum.length])
+    profile_spec.validate_payload_length(len(body) - 6)
+    _require_checksum(hrp, encoded, checksum)
     header = Header._from_symbols(body[:6])
     payload = body[6:]
     _validate_payload(profile_spec.profile, header, payload)
@@ -335,7 +341,6 @@ def _bounded_artifacts(
 
 
 def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]:
-    """Return payload plus checksum, checksum length, and encoded length."""
     hrp, encoded, checksum = _decode(artifact.text)
     if hrp != artifact.profile.value:
         raise InvalidShareSet("artifact text and validated profile disagree")
@@ -389,14 +394,12 @@ def _validate_share_set(
 
 
 def _validate_recovery_prefix(shares: Sequence[Share | Secret]) -> None:
-    """Validate a nonempty, not-yet-complete recovery share sequence."""
     share_set = _validate_share_set(shares, require_exact=False)
     if any(isinstance(item, Secret) for item in share_set.artifacts):
         raise SecretInRecoverySet("recovery accepts ordinary shares only")
 
 
 def _validate_basis_prefix(basis: Sequence[Share | Secret]) -> None:
-    """Validate a nonempty, not-yet-complete derivation basis."""
     _validate_share_set(basis, require_exact=False)
 
 
