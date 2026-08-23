@@ -79,7 +79,7 @@ def _parse(
 
 
 def _checksum_for_body_length(hrp: str, body_length: int) -> _Checksum:
-    """Select the checksum from the future expanded codeword length."""
+    """Select the checksum from the expanded codeword before its checksum."""
     expanded_hrp_length = 2 * len(hrp) + 1
     return _CODEX32 if expanded_hrp_length + body_length <= 80 else _CODEX32_LONG
 

@@ -205,7 +205,11 @@ def generate_master_seed(
     indices: Sequence[str] | str | None = None,
     identifier: str | None = None,
 ) -> tuple[MasterSeed, tuple[Share, ...]]:
-    """Create a master seed or a fresh BIP93 share set."""
+    """Generate an ``ms`` secret and, for k > 0, the selected fresh shares.
+
+    Entropy always comes directly from :mod:`secrets`; callers cannot replace
+    the generator or choose payload padding.
+    """
     supplied, length = _seed_input(seed_bytes, byte_length)
     threshold = _threshold(threshold)
     share_count, explicit = _selection(threshold, share_count, indices)
@@ -259,7 +263,7 @@ def split_secret(
     share_count: int | None = None,
     indices: Sequence[str] | str | None = None,
 ) -> tuple[MasterSeed, tuple[Share, ...]]:
-    """Split one parsed master seed under a new explicit set header."""
+    """Split one validated master seed under a new explicit set header."""
     if not isinstance(secret, MasterSeed):
         raise TypeError("split_secret accepts only MasterSeed")
     threshold = _threshold(threshold, allow_zero=False)

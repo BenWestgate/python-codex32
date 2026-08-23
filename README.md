@@ -48,7 +48,7 @@ process inspection may retain them.
 codex32 check
 codex32 secret
 codex32 share d
-codex32 create 3cash --shares 5
+codex32 create 3cash
 codex32 correct
 codex32 wallet multisig-xpub --account 0
 ```
@@ -57,9 +57,9 @@ On a terminal, recovery commands request one secret or the required shares in
 sequence. Redirected stdin may instead contain bounded whitespace-separated
 inputs for automation.
 
-`correct` prints a checksum-valid suggestion to stderr and exits nonzero.
-Correction is not authentication; always compare the result with the physical
-backup.
+`correct` prints its suggestion to stderr and exits nonzero. A correction is not
+proof that the result belongs to your wallet; always compare it with the
+physical backup.
 
 See [docs/cli.md](docs/cli.md) for the complete command/profile matrix.
 
@@ -133,12 +133,11 @@ Start with these small, one-owner modules:
 | fixed BCH correction | `correction.py`, `gf32.py` |
 | typed BIP32 boundary and wallet interoperability | `_bip32.py`, `wallet.py` |
 | bounded stdin and TTY entry | `_cli_input.py` |
-| options and presentation only | `cli.py` |
+| command grammar and presentation only | `_cli_parser.py`, `cli.py` |
 
-The installed package is under 3,000 physical Python lines, excluding tests; no
-production module exceeds 650 lines. Tests use official vectors, frozen external
-fixtures, negative boundary cases, and property checks without replacing
-production entropy.
+The installed package is under 3,000 physical Python lines, excluding tests.
+Tests use official vectors, frozen external fixtures, negative boundary cases,
+and property checks without replacing production entropy.
 
 The reviewed runtime dependency boundary is recorded in
 [docs/dependencies.md](docs/dependencies.md).

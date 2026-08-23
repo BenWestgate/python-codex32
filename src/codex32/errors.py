@@ -62,7 +62,7 @@ class InvalidBip39Checksum(InvalidPayload):
 
 
 class InvalidShareSet(CodexError):
-    """A set of authenticated artifacts cannot be used for interpolation."""
+    """A set of validated artifacts cannot be used for interpolation."""
 
 
 class WrongShareCount(InvalidShareSet):
@@ -94,7 +94,7 @@ class SecretInRecoverySet(InvalidShareSet):
 
 
 class InvalidTargetIndex(InvalidShareSet):
-    """A derivation target or exclusion is not an ordinary index."""
+    """A derivation target is not an ordinary share index."""
 
 
 class ExistingTargetIndex(InvalidTargetIndex):
@@ -102,11 +102,11 @@ class ExistingTargetIndex(InvalidTargetIndex):
 
 
 class InvalidShareSelection(CodexError):
-    """Generation output indices or set-header exclusions are invalid."""
+    """Generation output indices or their requested count are invalid."""
 
 
 class HeaderCollision(InvalidShareSelection):
-    """An explicitly selected set header collides with an exclusion."""
+    """A new share set reuses its source set header."""
 
 
 class InvalidCorrectionInput(CodexError):

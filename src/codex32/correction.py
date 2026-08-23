@@ -171,7 +171,7 @@ def _monic_mul(
     left: tuple[int, ...],
     right: tuple[int, ...],
 ) -> tuple[int, ...]:
-    """Multiply big-endian monic GF(32) polynomials sans their leading one."""
+    """Multiply big-endian monic polynomials without their leading coefficients."""
     result = [0] * (len(left) + len(right) + 1)
     for left_index, left_value in enumerate((1,) + left):
         for right_index, right_value in enumerate((1,) + right):
@@ -608,7 +608,10 @@ def correct_worksheet_residue(
     *,
     erasure_indices: Sequence[int] = (),
 ) -> tuple[WorksheetCorrection, ...] | None:
-    """Correct a final worksheet residue without learning its source length."""
+    """Correct a 13- or 15-symbol residue using zero-based indices from the end.
+    Return ``()`` when correct and
+    ``None`` when no unique correction exists.
+    """
     try:
         _validate_single_case_ascii(residue, max_length=15)
         values = list(reversed(_chars_to_u5(residue)))
@@ -639,8 +642,6 @@ def correct_worksheet_residue(
         raise InvalidCorrectionInput(
             f"erasure indices must be between 0 and {spec.period - 1}"
         )
-    if len(indices) > spec.degree:
-        return None
     result = _error_corrections(spec, indices, values)
     if isinstance(result, _AlgebraFailure):
         return None

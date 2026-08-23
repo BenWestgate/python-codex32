@@ -55,7 +55,7 @@ def _with_checksum(descriptor: str) -> str:
 
 
 def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:
-    """Return the BIP32 master extended private key."""
+    """Return the root BIP32 extended private key with authority over all children."""
     return _master(secret, testnet).xpriv()
 
 
@@ -65,7 +65,7 @@ def multisig_account_xpub(
     account: int = 0,
     testnet: bool = False,
 ) -> str:
-    """Return a BIP48 native-SegWit account xpub with key origin."""
+    """Return a public BIP48 native-SegWit account key with its key origin."""
     node = _master(secret, testnet)
     account = _account(account)
     coin_type = int(testnet)
@@ -82,7 +82,11 @@ def core_descriptors(
     private: bool = False,
     timestamp: int = 0,
 ) -> tuple[dict[str, object], ...]:
-    """Return fixed single-key Bitcoin Core importdescriptors records."""
+    """Return fixed single-key Bitcoin Core ``importdescriptors`` records.
+
+    With ``private=True``, each descriptor contains the root xprv followed by
+    its derivation path and therefore grants signing authority.
+    """
     node = _master(secret, testnet)
     account = _account(account)
     if not isinstance(private, bool):

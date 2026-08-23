@@ -31,7 +31,7 @@ exact payload length and S-only semantics; it does not replace format validity.
 | typed BIP32 dependency boundary | `_bip32.py` | BIP32 and wallet vectors |
 | fixed wallet derivation and descriptors | `wallet.py` | `test_wallet.py` |
 | bounded stdin and fixed-prefix TTY entry | `_cli_input.py` | `test_cli.py` |
-| options, commands, and presentation | `cli.py` | `test_cli.py` |
+| command grammar, dispatch, and presentation | `_cli_parser.py`, `cli.py` | `test_cli.py` |
 
 ## Boundaries
 
@@ -48,7 +48,9 @@ exact payload length and S-only semantics; it does not replace format validity.
   attempt. While reading, stdout's file descriptor is synchronously redirected
   to the stderr terminal and restored in `finally`, keeping piped results clean.
   There is no persistent history or raw-terminal layer.
-- `cli.py` contains no domain algorithm or hidden state.
+- `_cli_parser.py` owns the complete non-abbreviating command grammar.
+- `cli.py` contains presentation and dispatch, with no domain algorithm or
+  hidden state.
 
 Private Python names are convention rather than access control. The supported
 surface is the 19-name package `__all__`; direct use of private helpers is
@@ -56,7 +58,5 @@ unsupported but remains in the review scope.
 
 ## Size budget
 
-V1 keeps production Python below 3,000 physical lines. No module may exceed 650
-lines; the generation, CLI, and wallet owners stay below 350, 500, and 250
-lines respectively. Exceeding a budget requires removing or splitting scope,
-not merely updating the number.
+V1 keeps the installed package below 3,000 physical Python lines. Exceeding the
+budget requires removing or splitting scope, not merely updating the number.

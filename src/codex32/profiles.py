@@ -23,13 +23,40 @@ class _ProfileSpec:
 
     def validate_payload_length(self, payload_length: int) -> None:
         """Apply only this application's exact payload-length rule."""
-        if payload_length not in self.payload_lengths:
-            expected = f"{min(self.payload_lengths)}..{max(self.payload_lengths)}"
-            if len(self.payload_lengths) == 1:
-                expected = str(self.payload_lengths[0])
-            raise InvalidLength(
-                f"{self.profile} payload has {payload_length} symbols; expected {expected}"
+        if payload_length in self.payload_lengths:
+            return
+        if self.profile is Profile.MS:
+            if payload_length < self.payload_lengths[0]:
+                message = (
+                    "This input is too short for a Bitcoin master-seed backup; "
+                    "expected 48 characters or more."
+                )
+            elif payload_length > self.payload_lengths[-1]:
+                message = (
+                    "This input is too long for a Bitcoin master-seed backup; "
+                    "expected 127 characters or fewer."
+                )
+            else:
+                message = (
+                    "This input does not encode a whole number of Bitcoin "
+                    "master-seed bytes."
+                )
+        elif self.profile is Profile.CL:
+            message = (
+                "This input has the wrong length for a Core Lightning HSM-secret "
+                "backup; expected a 74-character codex32 string."
             )
+        elif self.profile is Profile.BIP39_12W:
+            message = (
+                "This input has the wrong length for a 12-word BIP39 worksheet "
+                "backup; expected a 56-character codex32 string."
+            )
+        else:
+            message = (
+                "This input has the wrong length for a 24-word BIP39 worksheet "
+                "backup; expected an 82-character codex32 string."
+            )
+        raise InvalidLength(message)
 
     def require_completion(self) -> None:
         if not self.completion_enabled:
@@ -61,7 +88,7 @@ def _profile_spec(hrp: str | Profile) -> _ProfileSpec:
 def _profile_label(profile: Profile) -> str:
     return {
         Profile.MS: "Bitcoin master seed",
-        Profile.CL: "Core Lightning",
+        Profile.CL: "Core Lightning HSM secret",
         Profile.BIP39_12W: "12-word BIP39 worksheet",
         Profile.BIP39_24W: "24-word BIP39 worksheet",
     }[profile]

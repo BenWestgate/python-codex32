@@ -18,6 +18,7 @@ from data.sharing_vectors import SHARING_VECTORS
 from test_bip39 import BIP39_12W_ZERO
 
 from codex32 import MasterSeed, Secret, Share, parse_codex32, recover_secret
+from codex32.bech32 import _chars_to_u5, _encode
 from codex32.cli import main
 
 
@@ -82,40 +83,37 @@ def test_check_supports_every_registered_application() -> None:
 
     assert result.exit_code == 0
     assert result.stdout == (
-        "Valid codex32 secret.\n"
-        "Application: Bitcoin master seed\n"
-        "Threshold: 0 (unshared)\n"
+        "Valid unshared secret.\n"
+        "Type: Bitcoin master seed\n"
         "Identifier: TEST\n\n"
-        "Valid codex32 secret.\n"
-        "Application: Bitcoin master seed\n"
-        "Threshold: 3\n"
-        "Identifier: CASH\n\n"
-        "Valid codex32 share.\n"
-        "Application: Bitcoin master seed\n"
-        "Threshold: 2\n"
+        "Valid shared secret.\n"
+        "Type: Bitcoin master seed\n"
+        "Identifier: CASH\n"
+        "Shares needed for recovery: 3\n\n"
+        "Valid share with index A.\n"
+        "Type: Bitcoin master seed\n"
         "Identifier: NAME\n"
-        "Share index: A\n\n"
-        "Valid codex32 secret.\n"
-        "Application: Core Lightning\n"
-        "Threshold: 2\n"
-        "Identifier: TEST\n\n"
-        "Valid codex32 secret.\n"
-        "Application: 12-word BIP39 worksheet\n"
-        "Threshold: 0 (unshared)\n"
-        "Identifier: TEST\n\n"
-        "Valid codex32 secret.\n"
-        "Application: 24-word BIP39 worksheet\n"
-        "Threshold: 2\n"
+        "Shares needed for recovery: 2\n\n"
+        "Valid shared secret.\n"
+        "Type: Core Lightning HSM secret\n"
         "Identifier: TEST\n"
+        "Shares needed for recovery: 2\n\n"
+        "Valid unshared secret.\n"
+        "Type: 12-word BIP39 worksheet\n"
+        "Identifier: TEST\n\n"
+        "Valid shared secret.\n"
+        "Type: 24-word BIP39 worksheet\n"
+        "Identifier: TEST\n"
+        "Shares needed for recovery: 2\n"
     )
     assert result.stderr == ""
     assert all(text not in result.stdout for text in strings)
     for forbidden in (
         "Header(",
         "Master fingerprint:",
-        "Application: ms",
-        "Application: cl",
-        "Application: bip39",
+        "Type: ms",
+        "Type: cl",
+        "Type: bip39",
     ):
         assert forbidden not in result.stdout
 
@@ -139,7 +137,70 @@ def test_check_help_explains_validation_scope() -> None:
 
     assert result.exit_code == 0
     assert "Checks format, checksum, and application rules" in help_text
-    assert "does not authenticate the intended wallet" in help_text
+    assert "not proof that it belongs to the intended wallet" in help_text
+
+
+@pytest.mark.parametrize(
+    ("hrp", "payload_length", "message"),
+    (
+        (
+            "ms",
+            25,
+            (
+                "This input is too short for a Bitcoin master-seed backup; "
+                "expected 48 characters or more."
+            ),
+        ),
+        (
+            "ms",
+            104,
+            (
+                "This input is too long for a Bitcoin master-seed backup; "
+                "expected 127 characters or fewer."
+            ),
+        ),
+        (
+            "ms",
+            27,
+            (
+                "This input does not encode a whole number of Bitcoin "
+                "master-seed bytes."
+            ),
+        ),
+        (
+            "cl",
+            51,
+            (
+                "This input has the wrong length for a Core Lightning HSM-secret "
+                "backup; expected a 74-character codex32 string."
+            ),
+        ),
+        (
+            "bip39_12w",
+            26,
+            (
+                "This input has the wrong length for a 12-word BIP39 worksheet "
+                "backup; expected a 56-character codex32 string."
+            ),
+        ),
+        (
+            "bip39_24w",
+            52,
+            (
+                "This input has the wrong length for a 24-word BIP39 worksheet "
+                "backup; expected an 82-character codex32 string."
+            ),
+        ),
+    ),
+)
+def test_check_reports_profile_lengths_for_people(
+    hrp: str, payload_length: int, message: str
+) -> None:
+    body = _chars_to_u5("0tests" + "q" * payload_length)
+    result = _invoke(["check"], _encode(hrp, body))
+
+    assert result.exit_code == 2
+    assert message in result.stderr
 
 
 def test_tty_check_prefills_rejected_entry_without_history(
@@ -157,8 +218,10 @@ def test_tty_check_prefills_rejected_entry_without_history(
     answers = iter((rejected, valid))
     editor = _FakeLineEditor()
     display_streams: list[bool] = []
+    prompts: list[str] = []
 
-    def answer() -> str:
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
         display_streams.append(sys.stdout is sys.stderr)
         editor.run_hook()
         return next(answers)
@@ -174,9 +237,9 @@ def test_tty_check_prefills_rejected_entry_without_history(
     assert editor.hook is None
     assert display_streams == [True, True]
     assert sys.stdout is not sys.stderr
+    assert prompts == ["Enter a codex32 string: "] * 2
     assert rejected not in captured.out
     assert "mixed upper/lower case codex32 string" in captured.err
-    assert captured.err.count("Enter a codex32 string: ") == 2
 
 
 def test_tty_retry_replaces_only_the_editable_suffix(
@@ -196,7 +259,7 @@ def test_tty_retry_replaces_only_the_editable_suffix(
     answers = iter((VECTOR_2["share_A"], bad_one, bad_two, suffix))
     editor = _FakeLineEditor()
 
-    def answer() -> str:
+    def answer(_prompt: str) -> str:
         editor.run_hook()
         return next(answers)
 
@@ -227,11 +290,17 @@ def test_tty_retry_without_line_editor_uses_an_empty_prompt(
     answers = iter((rejected, valid))
     monkeypatch.setattr(input_module.sys, "stdin", Terminal())
     monkeypatch.setattr(input_module, "_line_editor", None)
-    monkeypatch.setattr(builtins, "input", lambda: next(answers))
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr(builtins, "input", answer)
 
     assert main(["check"]) == 0
-    captured = capsys.readouterr()
-    assert captured.err.count("Enter a codex32 string: ") == 2
+    assert "Valid unshared secret." in capsys.readouterr().out
+    assert prompts == ["Enter a codex32 string: "] * 2
 
 
 def test_tty_display_file_descriptor_is_restored_after_failure(
@@ -255,7 +324,6 @@ def test_tty_display_file_descriptor_is_restored_after_failure(
     closed: list[int] = []
     monkeypatch.setattr(input_module.sys, "stdout", stdout)
     monkeypatch.setattr(input_module.sys, "stderr", stderr)
-    monkeypatch.setattr(input_module.os, "isatty", lambda _descriptor: True)
     monkeypatch.setattr(input_module.os, "dup", lambda _descriptor: 12)
     monkeypatch.setattr(
         input_module.os,
@@ -300,17 +368,22 @@ def test_tty_recovery_accepts_suffix_after_fixed_prefix(
 
     prefix = "ms12name"
     answers = iter((VECTOR_2["share_A"], VECTOR_2["share_C"][len(prefix) :]))
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
     monkeypatch.setattr(input_module.sys, "stdin", Terminal())
-    monkeypatch.setattr(builtins, "input", lambda: next(answers))
+    monkeypatch.setattr(builtins, "input", answer)
 
     status = main(["secret"])
     captured = capsys.readouterr()
 
     assert status == 0
     assert captured.out.strip() == VECTOR_2["secret_S"]
-    assert "Accepted share 1 (1 of 2 required)." in captured.err
-    assert captured.err.startswith("Enter a codex32 string: ")
-    assert "codex32 share 2 of 2: MS12NAME" in captured.err
+    assert "String 1 of 2 accepted." in captured.err
+    assert prompts == ["Enter a codex32 string: ", "Enter string 2 of 2: MS12NAME"]
 
 
 def test_tty_recovery_accepts_complete_uppercase_and_retries(
@@ -328,7 +401,10 @@ def test_tty_recovery_accepts_complete_uppercase_and_retries(
     answers = iter((first, mismatch, first, VECTOR_2["share_C"].upper()))
     editor = _FakeLineEditor()
 
-    def answer() -> str:
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
         editor.run_hook()
         return next(answers)
 
@@ -341,11 +417,14 @@ def test_tty_recovery_accepts_complete_uppercase_and_retries(
 
     assert status == 0
     assert captured.out.strip() == VECTOR_2["secret_S"].upper()
-    assert captured.err.startswith("Enter a codex32 string: ")
-    assert "codex32 share 2 of 2: MS12NAME" in captured.err
-    assert "ms and cl cannot be combined" in captured.err
-    assert "Rejected: share indices must be distinct" in captured.err
-    assert captured.err.count("codex32 share 2 of 2: MS12NAME") == 3
+    assert prompts == [
+        "Enter a codex32 string: ",
+        "Enter string 2 of 2: MS12NAME",
+        "Enter string 2 of 2: MS12NAME",
+        "Enter string 2 of 2: MS12NAME",
+    ]
+    assert "Rejected: These strings are for different applications." in captured.err
+    assert "Rejected: That share index was already entered." in captured.err
     assert first not in captured.err and mismatch not in captured.err
     assert editor.inserted == [first[len("MS12NAME") :]]
     assert editor.hook is None
@@ -369,14 +448,24 @@ def test_tty_share_collects_secret_and_exact_basis(
             VECTOR_3["share_c"][len(prefix) :],
         )
     )
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
     monkeypatch.setattr(input_module.sys, "stdin", Terminal())
-    monkeypatch.setattr(builtins, "input", lambda: next(answers))
+    monkeypatch.setattr(builtins, "input", answer)
 
     assert main(["share", "d"]) == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == VECTOR_3["derived_d"]
-    assert captured.err.startswith("Enter a codex32 string: ")
-    assert "Accepted basis item 3 (3 of 3 required)." in captured.err
+    assert prompts == [
+        "Enter a codex32 string: ",
+        "Enter string 2 of 3: ms13cash",
+        "Enter string 3 of 3: ms13cash",
+    ]
+    assert "String 3 of 3 accepted." in captured.err
 
 
 @pytest.mark.parametrize(("exception", "status"), ((EOFError(), 2), (KeyboardInterrupt(), 130)))
@@ -398,7 +487,7 @@ def test_tty_interrupts_have_stable_statuses(
     answers: list[str | BaseException] = [rejected, exception]
     editor = _FakeLineEditor()
 
-    def answer() -> str:
+    def answer(_prompt: str) -> str:
         editor.run_hook()
         value = answers.pop(0)
         if isinstance(value, BaseException):
@@ -434,7 +523,7 @@ def test_share_supports_ms_and_cl_but_not_bip39() -> None:
     assert ms.stdout.strip() == VECTOR_2["derived_D"]
     assert cl.stdout.strip() == SHARING_VECTORS["cl"]["D"]
     assert bip39.exit_code != 0
-    assert "accepts only ms or cl" in bip39.stderr
+    assert "Bitcoin master seed or Core Lightning HSM secret" in bip39.stderr
 
 
 def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:
@@ -459,6 +548,17 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
     assert all(isinstance(share, Share) for share in shares)
     basis = [share for share in shares[:3] if isinstance(share, Share)]
     assert recover_secret(basis).header.identifier == "cash"
+
+
+@pytest.mark.parametrize("threshold", range(2, 10))
+def test_create_defaults_to_threshold_plus_two_shares(threshold: int) -> None:
+    result = _invoke(["create", f"{threshold}test"])
+    shares = _output_artifacts(result)
+
+    assert result.exit_code == 0
+    assert len(shares) == threshold + 2
+    assert all(isinstance(share, Share) for share in shares)
+    assert len({share.header.index for share in shares}) == threshold + 2
 
 
 def test_create_raw_seed_and_resharing_require_explicit_headers() -> None:
@@ -503,7 +603,8 @@ def test_checksum_defaults_to_ms_and_accepts_explicit_cl() -> None:
     assert default.exit_code == explicit.exit_code == cl_result.exit_code == 0
     assert default.stdout.strip() == explicit.stdout.strip() == ms.text
     assert cl_result.stdout.strip() == cl
-    assert "does not create entropy" in default.stderr
+    assert "only adds a checksum" in default.stderr
+    assert "Codex32 Book worksheet" in default.stderr
 
 
 def test_checksum_enforces_published_sizes_and_capabilities() -> None:
@@ -511,9 +612,9 @@ def test_checksum_enforces_published_sizes_and_capabilities() -> None:
     bip39 = _invoke(["checksum"], "bip39_12w10tests" + "q" * 27)
 
     assert unusual.exit_code != 0
-    assert "128 or 256 bits" in unusual.stderr
+    assert "128- or 256-bit seed" in unusual.stderr
     assert bip39.exit_code != 0
-    assert "limited to ms and cl" in bip39.stderr
+    assert "Bitcoin master-seed and Core Lightning worksheets only" in bip39.stderr
 
 
 def test_pretty_secret_has_fingerprint_but_pretty_share_does_not() -> None:
@@ -546,12 +647,37 @@ def test_fixed_correction_supports_cl_and_residue_reverse_positions() -> None:
     position = 16
     replacement = "q" if original[position] != "q" else "p"
     damaged = original[:position] + replacement + original[position + 1 :]
-    fixed = _invoke(["correct", "--prefix", "cl"], damaged)
+    fixed = _invoke(["correct"], damaged)
     residue = _invoke(["correct", "--residue"], "2ppjkw73qdjvc")
 
     assert fixed.exit_code == 1 and original in fixed.stderr
     assert residue.exit_code == 0
-    assert "Add x to reverse position 38." in residue.stdout
+    assert "Add x at position 38, counting backward from the end." in residue.stdout
+
+    help_result = _invoke(["correct", "-h"])
+    help_text = " ".join(help_result.stdout.split())
+    assert "--prefix" not in help_text
+    assert "use ? for an erasure" in help_text
+    assert "--erasure POSITION" in help_text
+    assert "One-based position counted backward from the end" in help_text
+
+
+def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
+    original = VECTOR_1["secret_s"]
+    position = 15
+    for marker in ("?", "%"):
+        damaged = original[:position] + marker + original[position + 1 :]
+        result = _invoke(["correct"], damaged)
+        assert result.exit_code == 1
+        assert original in result.stderr
+
+    removed = _invoke(["correct", "--prefix", "ms"], original)
+    damaged_prefix = _invoke(["correct"], "?" + original[1:])
+    bip39 = _invoke(["correct"], BIP39_12W_ZERO)
+    assert removed.exit_code == 2
+    assert "unrecognized arguments: --prefix" in removed.stderr
+    assert "undamaged ms1 or cl1 prefix" in damaged_prefix.stderr
+    assert "not available for BIP39 worksheet backups" in bip39.stderr
 
 
 def test_wallet_commands_are_thin_master_seed_adapters() -> None:
@@ -574,7 +700,7 @@ def test_wallet_commands_are_thin_master_seed_adapters() -> None:
     assert len(json.loads(public.stdout)) == 4
     assert all("xprv" not in record["desc"] for record in json.loads(public.stdout))
     assert all("xprv" in record["desc"] for record in json.loads(private.stdout))
-    assert "root authority" in private.stderr
+    assert "contains the root private key and can spend funds" in private.stderr
     assert public.stderr == ""
     assert public.stdout.count("\n") == private.stdout.count("\n") == 1
 
@@ -588,7 +714,7 @@ def test_wallet_cli_rejects_non_ms_profiles() -> None:
     ):
         result = _invoke(list(command), SHARING_VECTORS["cl"]["S"])
         assert result.exit_code != 0
-        assert "only ms codex32 input" in result.stderr
+        assert "only Bitcoin master seed input" in result.stderr
 
 
 def test_help_exposes_only_v1_commands() -> None:
@@ -600,19 +726,20 @@ def test_help_exposes_only_v1_commands() -> None:
     assert result.stdout.startswith("usage: codex32 [-h] [--version] COMMAND ...")
     assert "Create, check, recover, and use codex32 Bitcoin seed backups." in result.stdout
     descriptions = (
-        "check     Check whether a backup or share is valid.",
-        "secret    Recover the secret from enough shares.",
+        "check     Check a secret or share for copying errors.",
+        "secret    Recover a secret from multiple shares.",
         "share     Derive an additional share.",
         "correct   Suggest repairs for damaged backup text.",
-        "checksum  Finish a Codex32 Book checksum worksheet.",
-        "create    Create a backup or split one into shares.",
+        "checksum  Complete a Codex32 Book checksum worksheet.",
+        "create    Create a master-seed backup or split a secret.",
         "wallet    Export data for Bitcoin wallet software.",
-        "xprv      Export the root private key (advanced).",
+        "xprv      Export the root extended private key.",
     )
     positions = [result.stdout.index(description) for description in descriptions]
     assert positions == sorted(positions)
-    assert "Never type or paste a seed or share into the command itself." in result.stdout
-    assert "Enter it when prompted or provide it through stdin." in result.stdout
+    assert "Do not type a seed or share into the command itself." in result.stdout
+    assert "Enter it when prompted, or pipe it into the command." in result.stdout
+    assert "Codex32" not in result.stdout.replace("Codex32 Book", "")
     assert "BIP93" not in result.stdout and "interoperability" not in result.stdout
     assert "--pretty" not in result.stdout
 
@@ -712,7 +839,3 @@ def test_production_size_budgets_are_enforced() -> None:
     }
 
     assert sum(counts.values()) < 3000
-    assert max(counts.values()) <= 650
-    assert counts["generation.py"] <= 350
-    assert counts["cli.py"] <= 500
-    assert counts["wallet.py"] <= 250

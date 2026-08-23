@@ -15,8 +15,16 @@ from codex32.bip93 import (
     _validate_recovery_prefix,
     parse_codex32,
 )
-from codex32.errors import CodexError
-from codex32.profiles import Profile
+from codex32.errors import (
+    CodexError,
+    DuplicateShareIndex,
+    MismatchedIdentifier,
+    MismatchedPayloadLength,
+    MismatchedProfile,
+    MismatchedThreshold,
+    SecretInRecoverySet,
+)
+from codex32.profiles import Profile, _profile_label
 
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
@@ -50,26 +58,26 @@ def _stderr(text: str, *, end: str = "\n") -> None:
 def _stdin() -> str:
     value = sys.stdin.read(_MAX_INPUT + 1)
     if len(value) > _MAX_INPUT:
-        raise InputError("stdin: input is too long")
+        raise InputError("The supplied input is too long.")
     return value
 
 
-def _editable_input(prefill: str = "") -> str:
+def _editable_input(prompt: str, prefill: str = "") -> str:
     editor = _line_editor
-    if editor is None:
-        return input()
-    editor.set_auto_history(False)
+    if editor is not None:
+        editor.set_auto_history(False)
 
     def insert() -> None:
+        assert editor is not None
         editor.insert_text(prefill)
 
-    if prefill:
+    if editor is not None and prefill:
         editor.set_startup_hook(insert)
     try:
         with _input_display():
-            return input()
+            return input(prompt)
     finally:
-        if prefill:
+        if editor is not None:
             editor.set_startup_hook(None)
 
 
@@ -80,9 +88,6 @@ def _input_display() -> Iterator[None]:
     except (AttributeError, OSError):
         with contextlib.redirect_stdout(sys.stderr):
             yield
-        return
-    if not os.isatty(stderr_fd):
-        yield
         return
     sys.stdout.flush()
     saved_stdout = os.dup(stdout_fd)
@@ -101,13 +106,12 @@ def _input_display() -> Iterator[None]:
 
 def read_text(prompt: str, *, optional: bool = False) -> str:
     if sys.stdin.isatty():
-        _stderr(f"{prompt}: ", end="")
-        value = _editable_input()
+        value = _editable_input(f"{prompt}: ")
     else:
         value = _stdin()
     value = "".join(value.split())
     if not value and not optional:
-        raise InputError("stdin: input must not be empty")
+        raise InputError("No input was provided.")
     return value
 
 
@@ -117,14 +121,13 @@ def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
     except CodexError as error:
         raise InputError(str(error)) from error
     if artifact.profile not in profiles:
-        allowed = " or ".join(profile.value for profile in profiles)
-        raise InputError(f"this command accepts only {allowed} codex32 input")
+        allowed = " or ".join(_profile_label(profile) for profile in profiles)
+        raise InputError(f"This command accepts only {allowed} input.")
     return artifact
 
 
 def _prompt_entry(label: str, prefix: str, prefill: str) -> str:
-    _stderr(f"{label}: {prefix}", end="")
-    return "".join(_editable_input(prefill).split())
+    return "".join(_editable_input(f"{label}: {prefix}", prefill).split())
 
 
 def _retry_text(value: str, prefix: str) -> str:
@@ -138,10 +141,20 @@ def _retry_text(value: str, prefix: str) -> str:
 def _redirected(profiles: tuple[Profile, ...]) -> list[Artifact]:
     tokens = _stdin().split()
     if not tokens:
-        raise InputError("stdin: input must not be empty")
+        raise InputError("No input was provided.")
     if len(tokens) > 9:
-        raise InputError("stdin: at most nine artifacts are accepted")
+        raise InputError("At most nine codex32 strings may be provided at once.")
     return [_parse(token, profiles) for token in tokens]
+
+
+_FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
+    MismatchedProfile: "These strings are for different applications.",
+    MismatchedThreshold: "These strings require different numbers of shares.",
+    MismatchedIdentifier: "These strings have different identifiers.",
+    MismatchedPayloadLength: "These strings have different lengths.",
+    DuplicateShareIndex: "That share index was already entered.",
+    SecretInRecoverySet: "Enter ordinary shares rather than the shared secret.",
+}
 
 
 def _interactive(
@@ -154,7 +167,7 @@ def _interactive(
         label = (
             "Enter a codex32 string"
             if not accepted
-            else f"codex32 share {number} of {required}"
+            else f"Enter string {number} of {required}"
         )
         try:
             value = _prompt_entry(label, prefix, prefill)
@@ -164,14 +177,15 @@ def _interactive(
                 validator = _validate_basis_prefix if basis else _validate_recovery_prefix
                 validator(candidate)
         except (CodexError, InputError) as error:
-            _stderr(f"Rejected: {error}")
+            message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
+            _stderr(f"Rejected: {message}")
             prefill = _retry_text(value, prefix)
             continue
         prefill = ""
         if one:
             return [artifact]
         if not accepted and isinstance(artifact, Secret) and not basis:
-            _stderr("Accepted secret.")
+            _stderr("String accepted.")
             return [artifact]
         if not accepted:
             required = artifact.header.threshold
@@ -179,11 +193,7 @@ def _interactive(
             if artifact.text.isupper():
                 prefix = prefix.upper()
         accepted.append(artifact)
-        noun = "basis item" if basis else "share"
-        _stderr(
-            f"Accepted {noun} {len(accepted)} "
-            f"({len(accepted)} of {required} required)."
-        )
+        _stderr(f"String {len(accepted)} of {required} accepted.")
     return accepted
 
 

@@ -112,14 +112,17 @@ class _Artifact:
 
     @property
     def header(self) -> Header:
+        """Return the normalized threshold, identifier, and share index."""
         return self._header
 
     @property
     def profile(self) -> Profile:
+        """Return the registered application profile selected by the HRP."""
         return self._profile
 
     @property
     def payload_symbols(self) -> tuple[int, ...]:
+        """Return the immutable u5 payload without its header or checksum."""
         return self._payload_symbols
 
     def __str__(self) -> str:
@@ -148,6 +151,7 @@ class MasterSeed(Secret):
 
     @property
     def seed_bytes(self) -> bytes:
+        """Return the BIP32 master-seed bytes represented by S."""
         seed, _padding, _padding_bits = _payload_bytes(self.payload_symbols)
         return seed
 
@@ -159,6 +163,7 @@ class MasterSeed(Secret):
         identifier: str,
         threshold: int = 0,
     ) -> "MasterSeed":
+        """Encode 16 through 64 seed bytes as S with generation-only CRC padding."""
         if not isinstance(seed_bytes, bytes):
             raise TypeError("seed_bytes must be bytes")
         if not 16 <= len(seed_bytes) <= 64:
@@ -185,6 +190,7 @@ class CoreLightningSecret(Secret):
 
     @property
     def secret_bytes(self) -> bytes:
+        """Return the 32-byte Core Lightning HSM secret represented by S."""
         secret, _padding, _padding_bits = _payload_bytes(self.payload_symbols)
         return secret
 
@@ -230,7 +236,7 @@ def _artifact(
 
 
 def parse_codex32(text: str) -> Share | Secret:
-    """Parse a registered profile into a validated immutable artifact."""
+    """Validate one registered codex32 string and return an immutable artifact."""
     hrp, encoded, checksum = _decode(text)
     profile_spec = _profile_spec(hrp)
     body = encoded[: -checksum.length]
@@ -254,7 +260,11 @@ def _from_parts(
 
 
 def complete_checksum(unchecksummed_text: str) -> Share | Secret:
-    """Complete a validated ``ms`` or ``cl`` symbol string."""
+    """Add the outer checksum to valid ``ms`` or ``cl`` symbols.
+
+    Checksum completion provides no entropy and does not make a chosen payload
+    suitable for a wallet seed.
+    """
     hrp, body_values = _parse(unchecksummed_text)
     profile_spec = _profile_spec(hrp)
     profile_spec.require_completion()
@@ -306,7 +316,7 @@ def _bounded_artifacts(
 ) -> tuple[Share | Secret, ...]:
     """Check the public Sequence boundary before copying at most nine items."""
     if isinstance(artifacts, (str, bytes, bytearray)):
-        raise TypeError("share inputs must be authenticated artifacts, not text")
+        raise TypeError("share inputs must be validated artifacts, not text")
     try:
         count = len(artifacts)
     except TypeError as error:
@@ -328,7 +338,7 @@ def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]
     """Return payload plus checksum, checksum length, and encoded length."""
     hrp, encoded, checksum = _decode(artifact.text)
     if hrp != artifact.profile.value:
-        raise InvalidShareSet("artifact text and authenticated profile disagree")
+        raise InvalidShareSet("artifact text and validated profile disagree")
     return tuple(encoded[6:]), checksum.length, len(encoded)
 
 
@@ -406,7 +416,7 @@ def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
 
 
 def recover_secret(shares: Sequence[Share]) -> Secret:
-    """Recover S from exactly the declared threshold of ordinary shares."""
+    """Recover S from exactly k compatible, distinct ordinary shares."""
     share_set = _validate_share_set(shares)
     if any(isinstance(item, Secret) for item in share_set.artifacts):
         raise SecretInRecoverySet("recovery accepts ordinary shares only")
@@ -429,7 +439,7 @@ def derive_share(
     basis: Sequence[Share | Secret],
     fresh_index: str,
 ) -> Share:
-    """Derive a new ordinary share at a fresh index."""
+    """Interpolate one additional ordinary share at a previously unused index."""
     share_set = _validate_share_set(basis)
     target = _normalize_target(fresh_index, label="fresh_index")
     if target in share_set.indices:

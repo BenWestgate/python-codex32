@@ -17,8 +17,13 @@ rejected, and every candidate must pass the ordinary `parse_codex32` boundary.
 This means a BIP39 S must also satisfy its embedded SHA-256 checksum and outer
 padding, while an ordinary BIP39 share retains mask semantics.
 
-Corrections are checksum-valid suggestions, not authenticated recovery results.
+Corrections are checksum-valid suggestions, not proof of the intended wallet.
 They must be compared with the physical backup before use.
+
+The CLI infers `ms` or `cl` only from the literal undamaged prefix of a complete
+string. It does not expose a profile option, guess another prefix, or correct the
+HRP. BIP39 full-string correction remains available to API code but is not
+offered by the CLI.
 
 ## Worksheet residue API
 

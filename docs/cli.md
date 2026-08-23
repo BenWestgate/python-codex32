@@ -17,12 +17,17 @@ or stdin. Secret material is never a command argument.
 It does not prove that a string belongs to the intended wallet.
 
 `correct --residue` is application-agnostic: 13 symbols select regular codex32
-and 15 select Long codex32.
+and 15 select Long codex32. Its repeatable `--erasure` positions are one-based
+and counted backward from the end. For a complete string, use `?` for an
+erasure; any other invalid data character is treated as an erasure as well.
+The complete-string command recognizes an undamaged `ms1` or `cl1` prefix and
+never guesses or corrects the prefix.
 
 `create` accepts a positional set header. `0test` and `ms10test` are equivalent;
 `3cash` requests a 3-of-N set. `--indices 7cad` preserves exact order.
 `--shares N` samples distinct indices and preserves sample order. Raw seeds and
-re-sharing require an explicit new header.
+re-sharing require an explicit new header. Without either selector, a shared
+set contains the threshold plus two shares; threshold zero remains unshared.
 
 TTY recovery asks first for a complete secret or share. After the first ordinary
 share, it displays the immutable `hrp1` plus threshold and identifier inline.
@@ -34,7 +39,10 @@ conflicting prefix is not restored. Platforms without Readline repeat an empty
 prompt. The temporary editor hook is removed after every attempt, and protected
 input is never written to a history file. Ctrl-D exits 2 and Ctrl-C exits 130
 without a traceback. “Accepted” means checksum-valid and compatible with the
-entries collected so far; it does not authenticate the intended wallet.
+entries collected so far; it does not prove that they belong to the intended
+wallet.
+Accepted entries are reported as `String 1 of 3 accepted.` so the same wording
+works for both recovery shares and a derivation basis.
 
 Interactive editor display goes to stderr, including when stdout is piped to
 another program. A rejected entry remains temporarily visible in terminal
@@ -53,8 +61,9 @@ text and public header fields. Pretty `ms` S may show its BIP32 fingerprint;
 shares never do.
 
 A fixed correction suggestion goes only to stderr and exits nonzero. A valid
-input needing no correction exits zero. Always verify a suggestion against the
-physical backup.
+input needing no correction exits zero. A suggestion is not proof that the
+result belongs to the intended wallet; always compare it with the physical
+backup.
 
 Wallet commands are deliberately goal-oriented:
 
@@ -74,10 +83,10 @@ aliases.
 
 ## Private Bitcoin Core restoration
 
-Private restoration emits descriptors containing the root xprv and therefore
-grants secret root authority. First create and load a blank, encrypted descriptor
-wallet named `recovery`. Bitcoin Core is responsible for wallet creation,
-encryption, passphrase handling, and persistent storage.
+Private restoration emits descriptors containing the root private key, which
+can spend funds from every wallet derived from the seed. First create and load a
+blank, encrypted descriptor wallet named `recovery`. Bitcoin Core is responsible
+for wallet creation, encryption, passphrase handling, and persistent storage.
 
 Unlock the wallet, pipe the private descriptors directly into Bitcoin Core, and
 immediately relock it:
