@@ -26,6 +26,9 @@ or wallet.
 - Python cannot guarantee secret zeroization, constant-time execution, locked
   memory, or absence of copies in the runtime, operating system, terminal, or
   caller.
+- On supported terminals, a rejected entry is temporarily retained for editing.
+  Automatic Readline history is disabled and this project never writes a history
+  file, but terminal scrollback and Python or native editor memory may retain it.
 - `bip32>=5,<6` is a security-sensitive dependency. This project wraps it
   narrowly and verifies BIP93 BIP32 vectors, but does not independently audit
   its cryptographic implementation.

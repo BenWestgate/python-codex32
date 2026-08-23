@@ -43,7 +43,11 @@ exact payload length and S-only semantics; it does not replace format validity.
 - Correction never edits the HRP or separator and reparses every candidate.
 - `wallet.py` accepts only `MasterSeed` and has no state or generic parser.
 - `_cli_input.py` retains at most nine artifacts and delegates partial-set
-  compatibility to `bip93.py`; it has no terminal editing or history layer.
+  compatibility to `bip93.py`. Its optional Readline hook restores only the
+  latest rejected entry, disables automatic history, and is removed after each
+  attempt. While reading, stdout's file descriptor is synchronously redirected
+  to the stderr terminal and restored in `finally`, keeping piped results clean.
+  There is no persistent history or raw-terminal layer.
 - `cli.py` contains no domain algorithm or hidden state.
 
 Private Python names are convention rather than access control. The supported

@@ -35,6 +35,7 @@ from codex32.correction import (
     correct_worksheet_residue,
 )
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
+from codex32.profiles import _profile_label
 
 Artifact = Share | Secret
 
@@ -88,6 +89,24 @@ def _render(artifact: Artifact, pretty: bool) -> str:
 
 def _emit(artifact: Artifact, pretty: bool, *, err: bool = False) -> None:
     _print(_render(artifact, pretty), err=err)
+
+
+def _check(artifacts: list[Artifact]) -> int:
+    blocks: list[str] = []
+    for artifact in artifacts:
+        header = artifact.header
+        threshold = "0 (unshared)" if header.threshold == 0 else str(header.threshold)
+        lines = [
+            f"Valid codex32 {'secret' if isinstance(artifact, Secret) else 'share'}.",
+            f"Application: {_profile_label(artifact.profile)}",
+            f"Threshold: {threshold}",
+            f"Identifier: {header.identifier.upper()}",
+        ]
+        if isinstance(artifact, Share):
+            lines.append(f"Share index: {header.index.upper()}")
+        blocks.append("\n".join(lines))
+    _print("\n\n".join(blocks))
+    return 0
 
 
 def _share_command(index: str, pretty: bool) -> int:
@@ -325,34 +344,39 @@ def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codex32",
-        description="BIP93 backup and narrow Bitcoin interoperability tools.",
+        description="Create, check, recover, and use codex32 Bitcoin seed backups.",
+        epilog=(
+            "Never type or paste a seed or share into the command itself.\n"
+            "Enter it when prompted or provide it through stdin."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
         allow_abbrev=False,
     )
-    release = f"%(prog)s {version('codex32')}"
-    parser.add_argument("--version", action="version", version=release)
-    commands = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "-h", "--help", action="help", help="Show this help message and exit."
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {version('codex32')}",
+        help="Show the installed version and exit.",
+    )
+    commands = parser.add_subparsers(
+        dest="command", required=True, title="commands", metavar="COMMAND"
+    )
 
-    _command(commands, "verify", "Verify codex32 strings without deriving keys.")
+    check = _command(commands, "check", "Check whether a backup or share is valid.")
+    check.description = (
+        "Checks format, checksum, and application rules; it does not authenticate the intended wallet."
+    )
 
-    secret = _command(commands, "secret", "Recover S from exactly k shares.")
+    secret = _command(commands, "secret", "Recover the secret from enough shares.")
     secret.add_argument("--pretty", action="store_true", help="group for writing")
 
-    share = _command(commands, "share", "Derive one fresh ordinary share.")
+    share = _command(commands, "share", "Derive an additional share.")
     share.add_argument("index", help="fresh ordinary share index")
     share.add_argument("--pretty", action="store_true", help="group for writing")
 
-    create = _command(commands, "create", "Create or split an ms secret.")
-    create.add_argument("header", nargs="?", help="threshold plus identifier")
-    create.add_argument("--bytes", dest="byte_length", type=_integer("bytes", 16, 64))
-    create.add_argument("--shares", type=_integer("shares", 2, 31))
-    create.add_argument("--indices")
-    create.add_argument("--pretty", action="store_true", help="group for writing")
-
-    checksum = _command(commands, "checksum", "Complete a worksheet checksum.")
-    checksum.add_argument("header", nargs="?", help="optional prefixed header")
-    checksum.add_argument("--pretty", action="store_true", help="group for writing")
-
-    correct = _command(commands, "correct", "Suggest fixed-length corrections.")
+    correct = _command(commands, "correct", "Suggest repairs for damaged backup text.")
     correct.add_argument("--residue", action="store_true")
     correct.add_argument(
         "--erasure",
@@ -369,10 +393,20 @@ def _parser() -> argparse.ArgumentParser:
     )
     correct.add_argument("--pretty", action="store_true", help="group for writing")
 
-    xprv = _command(commands, "xprv", "Print the BIP32 master xprv.")
-    xprv.add_argument("--testnet", action="store_true")
+    checksum = _command(
+        commands, "checksum", "Finish a Codex32 Book checksum worksheet."
+    )
+    checksum.add_argument("header", nargs="?", help="optional prefixed header")
+    checksum.add_argument("--pretty", action="store_true", help="group for writing")
 
-    wallet = _command(commands, "wallet", "Emit wallet interoperability data.")
+    create = _command(commands, "create", "Create a backup or split one into shares.")
+    create.add_argument("header", nargs="?", help="threshold plus identifier")
+    create.add_argument("--bytes", dest="byte_length", type=_integer("bytes", 16, 64))
+    create.add_argument("--shares", type=_integer("shares", 2, 31))
+    create.add_argument("--indices")
+    create.add_argument("--pretty", action="store_true", help="group for writing")
+
+    wallet = _command(commands, "wallet", "Export data for Bitcoin wallet software.")
     wallet_commands = wallet.add_subparsers(dest="wallet_command", required=True)
     multisig = _command(
         wallet_commands, "multisig-xpub", "Print a BIP48 coordinator xpub."
@@ -389,16 +423,16 @@ def _parser() -> argparse.ArgumentParser:
     ):
         mode = _command(core_modes, name, help_text)
         _wallet_options(mode, timestamp=True)
+
+    xprv = _command(commands, "xprv", "Export the root private key (advanced).")
+    xprv.add_argument("--testnet", action="store_true")
     return parser
 
 
 def _dispatch(arguments: argparse.Namespace) -> int:
     command = cast(str, arguments.command)
-    if command == "verify":
-        for artifact in _artifacts(one=True):
-            kind = "secret" if isinstance(artifact, Secret) else "share"
-            _print(f"valid {artifact.profile.value} {kind}: {artifact.header}")
-        return 0
+    if command == "check":
+        return _check(_artifacts(one=True))
     if command == "secret":
         _emit(_secret(_artifacts()), bool(arguments.pretty))
         return 0
@@ -413,10 +447,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             bool(arguments.pretty),
         )
     if command == "checksum":
-        return _checksum(
-            cast(str | None, arguments.header),
-            bool(arguments.pretty),
-        )
+        return _checksum(cast(str | None, arguments.header), bool(arguments.pretty))
     if command == "correct":
         return _correct(
             bool(arguments.residue),
@@ -442,8 +473,11 @@ def _dispatch(arguments: argparse.Namespace) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
+    arguments_list = sys.argv[1:] if argv is None else argv
+    if not arguments_list:
+        arguments_list = ("--help",)
     try:
-        arguments = parser.parse_args(argv)
+        arguments = parser.parse_args(arguments_list)
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else 1
     try:

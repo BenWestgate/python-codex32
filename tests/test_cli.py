@@ -7,6 +7,7 @@ import io
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
@@ -25,6 +26,26 @@ class _Result:
     exit_code: int
     stdout: str
     stderr: str
+
+
+class _FakeLineEditor:
+    def __init__(self) -> None:
+        self.auto_history: list[bool] = []
+        self.inserted: list[str] = []
+        self.hook: Callable[[], object] | None = None
+
+    def insert_text(self, text: str) -> None:
+        self.inserted.append(text)
+
+    def set_auto_history(self, enabled: bool) -> None:
+        self.auto_history.append(enabled)
+
+    def set_startup_hook(self, function: Callable[[], object] | None) -> None:
+        self.hook = function
+
+    def run_hook(self) -> None:
+        if self.hook is not None:
+            self.hook()
 
 
 def _invoke(args: list[str], *lines: str) -> _Result:
@@ -48,19 +69,210 @@ def _output_artifacts(result: _Result, profile: str = "ms") -> list[Share | Secr
     ]
 
 
-def test_verify_supports_every_registered_application() -> None:
+def test_check_supports_every_registered_application() -> None:
     strings = (
         VECTOR_1["secret_s"],
+        VECTOR_3["secret_s"],
+        VECTOR_2["share_A"],
         SHARING_VECTORS["cl"]["S"],
         BIP39_12W_ZERO,
         SHARING_VECTORS["bip39_24w"]["S"],
     )
-    result = _invoke(["verify"], *strings)
+    result = _invoke(["check"], *strings)
 
     assert result.exit_code == 0
-    assert len(result.stdout.splitlines()) == 4
-    assert "valid ms secret" in result.stdout
-    assert "valid cl secret" in result.stdout
+    assert result.stdout == (
+        "Valid codex32 secret.\n"
+        "Application: Bitcoin master seed\n"
+        "Threshold: 0 (unshared)\n"
+        "Identifier: TEST\n\n"
+        "Valid codex32 secret.\n"
+        "Application: Bitcoin master seed\n"
+        "Threshold: 3\n"
+        "Identifier: CASH\n\n"
+        "Valid codex32 share.\n"
+        "Application: Bitcoin master seed\n"
+        "Threshold: 2\n"
+        "Identifier: NAME\n"
+        "Share index: A\n\n"
+        "Valid codex32 secret.\n"
+        "Application: Core Lightning\n"
+        "Threshold: 2\n"
+        "Identifier: TEST\n\n"
+        "Valid codex32 secret.\n"
+        "Application: 12-word BIP39 worksheet\n"
+        "Threshold: 0 (unshared)\n"
+        "Identifier: TEST\n\n"
+        "Valid codex32 secret.\n"
+        "Application: 24-word BIP39 worksheet\n"
+        "Threshold: 2\n"
+        "Identifier: TEST\n"
+    )
+    assert result.stderr == ""
+    assert all(text not in result.stdout for text in strings)
+    for forbidden in (
+        "Header(",
+        "Master fingerprint:",
+        "Application: ms",
+        "Application: cl",
+        "Application: bip39",
+    ):
+        assert forbidden not in result.stdout
+
+
+def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+
+    def forbidden(_seed: bytes) -> bytes:
+        raise AssertionError("check derived a BIP32 fingerprint")
+
+    monkeypatch.setattr(cli_module, "fingerprint_from_seed", forbidden)
+    result = _invoke(["check"], VECTOR_1["secret_s"])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+
+
+def test_check_help_explains_validation_scope() -> None:
+    result = _invoke(["check", "-h"])
+    help_text = " ".join(result.stdout.split())
+
+    assert result.exit_code == 0
+    assert "Checks format, checksum, and application rules" in help_text
+    assert "does not authenticate the intended wallet" in help_text
+
+
+def test_tty_check_prefills_rejected_entry_without_history(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    valid = VECTOR_1["secret_s"]
+    rejected = valid[:-1] + valid[-1].upper()
+    answers = iter((rejected, valid))
+    editor = _FakeLineEditor()
+    display_streams: list[bool] = []
+
+    def answer() -> str:
+        display_streams.append(sys.stdout is sys.stderr)
+        editor.run_hook()
+        return next(answers)
+
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module, "_line_editor", editor)
+    monkeypatch.setattr(builtins, "input", answer)
+
+    assert main(["check"]) == 0
+    captured = capsys.readouterr()
+    assert editor.inserted == [rejected]
+    assert editor.auto_history == [False, False]
+    assert editor.hook is None
+    assert display_streams == [True, True]
+    assert sys.stdout is not sys.stderr
+    assert rejected not in captured.out
+    assert "mixed upper/lower case codex32 string" in captured.err
+    assert captured.err.count("Enter a codex32 string: ") == 2
+
+
+def test_tty_retry_replaces_only_the_editable_suffix(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    prefix = "ms12name"
+    suffix = VECTOR_2["share_C"][len(prefix) :]
+    bad_one = suffix[:-1] + ("q" if suffix[-1] != "q" else "p")
+    bad_two = suffix[:-2] + ("q" if suffix[-2] != "q" else "p") + suffix[-1]
+    answers = iter((VECTOR_2["share_A"], bad_one, bad_two, suffix))
+    editor = _FakeLineEditor()
+
+    def answer() -> str:
+        editor.run_hook()
+        return next(answers)
+
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module, "_line_editor", editor)
+    monkeypatch.setattr(builtins, "input", answer)
+
+    assert main(["secret"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == VECTOR_2["secret_S"]
+    assert editor.inserted == [bad_one, bad_two]
+    assert editor.hook is None
+    assert editor.auto_history == [False, False, False, False]
+
+
+def test_tty_retry_without_line_editor_uses_an_empty_prompt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    valid = VECTOR_1["secret_s"]
+    rejected = valid[:-1] + valid[-1].upper()
+    answers = iter((rejected, valid))
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module, "_line_editor", None)
+    monkeypatch.setattr(builtins, "input", lambda: next(answers))
+
+    assert main(["check"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err.count("Enter a codex32 string: ") == 2
+
+
+def test_tty_display_file_descriptor_is_restored_after_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Stream:
+        def __init__(self, descriptor: int) -> None:
+            self.descriptor = descriptor
+            self.flushes = 0
+
+        def fileno(self) -> int:
+            return self.descriptor
+
+        def flush(self) -> None:
+            self.flushes += 1
+
+    stdout, stderr = Stream(10), Stream(11)
+    duplications: list[tuple[int, int]] = []
+    closed: list[int] = []
+    monkeypatch.setattr(input_module.sys, "stdout", stdout)
+    monkeypatch.setattr(input_module.sys, "stderr", stderr)
+    monkeypatch.setattr(input_module.os, "isatty", lambda _descriptor: True)
+    monkeypatch.setattr(input_module.os, "dup", lambda _descriptor: 12)
+    monkeypatch.setattr(
+        input_module.os,
+        "dup2",
+        lambda source, target: duplications.append((source, target)),
+    )
+    monkeypatch.setattr(input_module.os, "close", closed.append)
+
+    with (
+        pytest.raises(RuntimeError, match="input failed"),
+        input_module._input_display(),
+    ):
+        raise RuntimeError("input failed")
+
+    assert duplications == [(11, 10), (12, 10)]
+    assert closed == [12]
+    assert stdout.flushes == 2
 
 
 def test_secret_recovers_official_ms_and_bip39_sets() -> None:
@@ -97,7 +309,8 @@ def test_tty_recovery_accepts_suffix_after_fixed_prefix(
     assert status == 0
     assert captured.out.strip() == VECTOR_2["secret_S"]
     assert "Accepted share 1 (1 of 2 required)." in captured.err
-    assert "Codex32 share 2 of 2: MS12NAME" in captured.err
+    assert captured.err.startswith("Enter a codex32 string: ")
+    assert "codex32 share 2 of 2: MS12NAME" in captured.err
 
 
 def test_tty_recovery_accepts_complete_uppercase_and_retries(
@@ -113,19 +326,29 @@ def test_tty_recovery_accepts_complete_uppercase_and_retries(
     first = VECTOR_2["share_A"].upper()
     mismatch = SHARING_VECTORS["cl"]["C"].upper()
     answers = iter((first, mismatch, first, VECTOR_2["share_C"].upper()))
+    editor = _FakeLineEditor()
+
+    def answer() -> str:
+        editor.run_hook()
+        return next(answers)
+
     monkeypatch.setattr(input_module.sys, "stdin", Terminal())
-    monkeypatch.setattr(builtins, "input", lambda: next(answers))
+    monkeypatch.setattr(input_module, "_line_editor", editor)
+    monkeypatch.setattr(builtins, "input", answer)
 
     status = main(["secret"])
     captured = capsys.readouterr()
 
     assert status == 0
     assert captured.out.strip() == VECTOR_2["secret_S"].upper()
-    assert "Codex32 share 2 of 2: MS12NAME" in captured.err
+    assert captured.err.startswith("Enter a codex32 string: ")
+    assert "codex32 share 2 of 2: MS12NAME" in captured.err
     assert "ms and cl cannot be combined" in captured.err
     assert "Rejected: share indices must be distinct" in captured.err
-    assert captured.err.count("Codex32 share 2 of 2: MS12NAME") == 3
+    assert captured.err.count("codex32 share 2 of 2: MS12NAME") == 3
     assert first not in captured.err and mismatch not in captured.err
+    assert editor.inserted == [first[len("MS12NAME") :]]
+    assert editor.hook is None
 
 
 def test_tty_share_collects_secret_and_exact_basis(
@@ -152,6 +375,7 @@ def test_tty_share_collects_secret_and_exact_basis(
     assert main(["share", "d"]) == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == VECTOR_3["derived_d"]
+    assert captured.err.startswith("Enter a codex32 string: ")
     assert "Accepted basis item 3 (3 of 3 required)." in captured.err
 
 
@@ -169,13 +393,28 @@ def test_tty_interrupts_have_stable_statuses(
         def isatty() -> bool:
             return True
 
+    valid = VECTOR_1["secret_s"]
+    rejected = valid[:-1] + valid[-1].upper()
+    answers: list[str | BaseException] = [rejected, exception]
+    editor = _FakeLineEditor()
+
+    def answer() -> str:
+        editor.run_hook()
+        value = answers.pop(0)
+        if isinstance(value, BaseException):
+            raise value
+        return value
+
     monkeypatch.setattr(input_module.sys, "stdin", Terminal())
-    monkeypatch.setattr(builtins, "input", lambda: (_ for _ in ()).throw(exception))
+    monkeypatch.setattr(input_module, "_line_editor", editor)
+    monkeypatch.setattr(builtins, "input", answer)
 
     assert main(["secret"]) == status
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "Traceback" not in captured.err
+    assert editor.inserted == [rejected]
+    assert editor.hook is None
 
 
 def test_share_supports_ms_and_cl_but_not_bip39() -> None:
@@ -353,20 +592,28 @@ def test_wallet_cli_rejects_non_ms_profiles() -> None:
 
 
 def test_help_exposes_only_v1_commands() -> None:
-    result = _invoke(["--help"])
+    result = _invoke(["-h"])
+    bare = _invoke([])
 
+    assert bare == result
     assert result.exit_code == 0
-    for command in (
-        "verify",
-        "secret",
-        "share",
-        "create",
-        "checksum",
-        "correct",
-        "xprv",
-        "wallet",
-    ):
-        assert command in result.stdout
+    assert result.stdout.startswith("usage: codex32 [-h] [--version] COMMAND ...")
+    assert "Create, check, recover, and use codex32 Bitcoin seed backups." in result.stdout
+    descriptions = (
+        "check     Check whether a backup or share is valid.",
+        "secret    Recover the secret from enough shares.",
+        "share     Derive an additional share.",
+        "correct   Suggest repairs for damaged backup text.",
+        "checksum  Finish a Codex32 Book checksum worksheet.",
+        "create    Create a backup or split one into shares.",
+        "wallet    Export data for Bitcoin wallet software.",
+        "xprv      Export the root private key (advanced).",
+    )
+    positions = [result.stdout.index(description) for description in descriptions]
+    assert positions == sorted(positions)
+    assert "Never type or paste a seed or share into the command itself." in result.stdout
+    assert "Enter it when prompted or provide it through stdin." in result.stdout
+    assert "BIP93" not in result.stdout and "interoperability" not in result.stdout
     assert "--pretty" not in result.stdout
 
 
@@ -381,7 +628,13 @@ def test_long_options_must_not_be_abbreviated() -> None:
 
 
 def test_wallet_modes_are_mandatory_and_old_commands_are_absent() -> None:
-    for command in (["wallet"], ["wallet", "bitcoin-core"], ["xpub"], ["descriptors"]):
+    for command in (
+        ["wallet"],
+        ["wallet", "bitcoin-core"],
+        ["verify"],
+        ["xpub"],
+        ["descriptors"],
+    ):
         result = _invoke(command)
         assert result.exit_code == 2
 
@@ -405,7 +658,7 @@ def test_version_and_installed_entry_point() -> None:
 @pytest.mark.parametrize(
     "command",
     (
-        ("verify",),
+        ("check",),
         ("secret",),
         ("share",),
         ("create",),
@@ -433,13 +686,21 @@ def test_every_installed_command_has_help(command: tuple[str, ...]) -> None:
     assert result.stderr == ""
 
 
-def test_tty_adapter_has_no_history_or_terminal_editing_code() -> None:
+def test_tty_adapter_has_no_persistent_history_or_raw_terminal_code() -> None:
     module = importlib.import_module("codex32._cli_input")
     assert module.__file__ is not None
     source = Path(module.__file__).read_text()
 
-    for forbidden in ("readline", "termios", "fileno(", "set_history"):
+    for forbidden in (
+        "add_history(",
+        "read_history_file(",
+        "write_history_file(",
+        "termios",
+        "prompt_toolkit",
+    ):
         assert forbidden not in source
+    assert "set_auto_history(False)" in source
+    assert "os.dup2(saved_stdout, stdout_fd)" in source
 
 
 def test_production_size_budgets_are_enforced() -> None:

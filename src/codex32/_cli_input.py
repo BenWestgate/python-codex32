@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 import sys
+from collections.abc import Callable, Iterator
+from typing import Protocol
 
 from codex32.bip93 import (
     Secret,
@@ -16,6 +20,23 @@ from codex32.profiles import Profile
 
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
+
+
+class _LineEditor(Protocol):
+    def insert_text(self, text: str) -> None: ...
+
+    def set_auto_history(self, enabled: bool) -> None: ...
+
+    def set_startup_hook(self, function: Callable[[], object] | None) -> None: ...
+
+
+_line_editor: _LineEditor | None
+try:
+    import readline as _readline
+except ImportError:
+    _line_editor = None
+else:
+    _line_editor = _readline
 
 
 class InputError(Exception):
@@ -33,10 +54,55 @@ def _stdin() -> str:
     return value
 
 
+def _editable_input(prefill: str = "") -> str:
+    editor = _line_editor
+    if editor is None:
+        return input()
+    editor.set_auto_history(False)
+
+    def insert() -> None:
+        editor.insert_text(prefill)
+
+    if prefill:
+        editor.set_startup_hook(insert)
+    try:
+        with _input_display():
+            return input()
+    finally:
+        if prefill:
+            editor.set_startup_hook(None)
+
+
+@contextlib.contextmanager
+def _input_display() -> Iterator[None]:
+    try:
+        stdout_fd, stderr_fd = sys.stdout.fileno(), sys.stderr.fileno()
+    except (AttributeError, OSError):
+        with contextlib.redirect_stdout(sys.stderr):
+            yield
+        return
+    if not os.isatty(stderr_fd):
+        yield
+        return
+    sys.stdout.flush()
+    saved_stdout = os.dup(stdout_fd)
+    try:
+        os.dup2(stderr_fd, stdout_fd)
+        yield
+    finally:
+        try:
+            sys.stdout.flush()
+        finally:
+            try:
+                os.dup2(saved_stdout, stdout_fd)
+            finally:
+                os.close(saved_stdout)
+
+
 def read_text(prompt: str, *, optional: bool = False) -> str:
     if sys.stdin.isatty():
         _stderr(f"{prompt}: ", end="")
-        value = input()
+        value = _editable_input()
     else:
         value = _stdin()
     value = "".join(value.split())
@@ -56,10 +122,17 @@ def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
     return artifact
 
 
-def _prompt_entry(label: str, prefix: str, profiles: tuple[Profile, ...]) -> Artifact:
+def _prompt_entry(label: str, prefix: str, prefill: str) -> str:
     _stderr(f"{label}: {prefix}", end="")
-    value = "".join(input().split())
-    return _parse(value if "1" in value else prefix + value, profiles)
+    return "".join(_editable_input(prefill).split())
+
+
+def _retry_text(value: str, prefix: str) -> str:
+    if not prefix or "1" not in value:
+        return value
+    if value[: len(prefix)].lower() == prefix.lower():
+        return value[len(prefix) :]
+    return ""
 
 
 def _redirected(profiles: tuple[Profile, ...]) -> list[Artifact]:
@@ -75,23 +148,26 @@ def _interactive(
     *, basis: bool, one: bool, profiles: tuple[Profile, ...]
 ) -> list[Artifact]:
     accepted: list[Artifact] = []
-    prefix, required = "", 1
+    prefix, prefill, required = "", "", 1
     while len(accepted) < required:
         number = len(accepted) + 1
         label = (
-            "Codex32 share or secret"
+            "Enter a codex32 string"
             if not accepted
-            else f"Codex32 share {number} of {required}"
+            else f"codex32 share {number} of {required}"
         )
         try:
-            artifact = _prompt_entry(label, prefix, profiles)
+            value = _prompt_entry(label, prefix, prefill)
+            artifact = _parse(value if "1" in value else prefix + value, profiles)
             candidate = [*accepted, artifact]
             if not one and (accepted or isinstance(artifact, Share) or basis):
                 validator = _validate_basis_prefix if basis else _validate_recovery_prefix
                 validator(candidate)
         except (CodexError, InputError) as error:
             _stderr(f"Rejected: {error}")
+            prefill = _retry_text(value, prefix)
             continue
+        prefill = ""
         if one:
             return [artifact]
         if not accepted and isinstance(artifact, Secret) and not basis:

@@ -56,3 +56,12 @@ def _profile_spec(hrp: str | Profile) -> _ProfileSpec:
     except (ValueError, AttributeError) as error:
         raise UnknownProfile(f"unknown codex32 HRP {hrp!r}") from error
     return _SPECS[profile]
+
+
+def _profile_label(profile: Profile) -> str:
+    return {
+        Profile.MS: "Bitcoin master seed",
+        Profile.CL: "Core Lightning",
+        Profile.BIP39_12W: "12-word BIP39 worksheet",
+        Profile.BIP39_24W: "24-word BIP39 worksheet",
+    }[profile]

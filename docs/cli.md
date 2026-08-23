@@ -5,13 +5,16 @@ or stdin. Secret material is never a command argument.
 
 | Command | `ms` | `cl` | `bip39_12w/24w` |
 |---|---:|---:|---:|
-| `verify` | yes | yes | yes |
+| `check` | yes | yes | yes |
 | `secret` | yes | yes | yes |
 | `share` | yes | yes | no |
 | `create` | yes | no | no |
 | `checksum` | 128/256-bit worksheet | fixed 32-byte payload | no |
 | `correct` | fixed BCH | fixed BCH | no |
 | `xprv`, `wallet ...` | S only | no | no |
+
+`check` confirms the supported codex32 format, checksum, and application rules.
+It does not prove that a string belongs to the intended wallet.
 
 `correct --residue` is application-agnostic: 13 symbols select regular codex32
 and 15 select Long codex32.
@@ -24,11 +27,19 @@ re-sharing require an explicit new header.
 TTY recovery asks first for a complete secret or share. After the first ordinary
 share, it displays the immutable `hrp1` plus threshold and identifier inline.
 The user may type only the remaining suffix or paste a complete string. Invalid
-entries are discarded and the same prompt is repeated; rejected text is never
-inserted into an editable history buffer. The display uses no readline,
-terminal-editing, or cursor-control machinery. Ctrl-D exits 2 and Ctrl-C exits
-130 without a traceback. “Accepted” means checksum-valid and compatible with
-the entries collected so far; it does not authenticate the intended wallet.
+entries repeat the same prompt. Where Python provides Readline, the most recent
+rejected entry is restored for editing without being added to history. After a
+prefix is known, only a safely matching suffix is editable; an entry with a
+conflicting prefix is not restored. Platforms without Readline repeat an empty
+prompt. The temporary editor hook is removed after every attempt, and protected
+input is never written to a history file. Ctrl-D exits 2 and Ctrl-C exits 130
+without a traceback. “Accepted” means checksum-valid and compatible with the
+entries collected so far; it does not authenticate the intended wallet.
+
+Interactive editor display goes to stderr, including when stdout is piped to
+another program. A rejected entry remains temporarily visible in terminal
+scrollback and may remain in Python or native editor memory; neither can be
+reliably erased by this program.
 
 Redirected input accepts at most nine bounded whitespace-separated artifacts
 without prompts or status. In both modes, stdin is recovery material, stderr is

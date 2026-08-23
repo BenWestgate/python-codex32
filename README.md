@@ -1,6 +1,6 @@
 # python-codex32
 
-[Codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki)
+[codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki)
 helps you write down a Bitcoin wallet seed in a form designed to detect common
 copying mistakes. It can also split the backup into shares, so only a chosen
 number of shares together can recover the seed.
@@ -45,7 +45,7 @@ Avoid shell commands containing literal secrets because shell history and
 process inspection may retain them.
 
 ```bash
-codex32 verify
+codex32 check
 codex32 secret
 codex32 share d
 codex32 create 3cash --shares 5
@@ -80,7 +80,7 @@ codex32 wallet bitcoin-core watch-only |
   bitcoin-cli -rpcwallet=codex32-watchonly -stdin importdescriptors
 ```
 
-Codex32 prompts for the backup on the terminal. Its stdout goes directly to
+codex32 prompts for the backup on the terminal. Its stdout goes directly to
 Bitcoin Core as one `importdescriptors` argument; prompts and status remain on
 stderr.
 
