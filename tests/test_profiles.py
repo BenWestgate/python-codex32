@@ -78,9 +78,7 @@ def _oracle_encode(hrp: str, body: str, *, force_long: bool | None = None) -> st
         + [CHARSET.index(character) for character in body]
     )
     residue = _polymod(values + [0] * length, generators, length) ^ constant
-    checksum = "".join(
-        CHARSET[(residue >> (5 * (length - 1 - index))) & 31] for index in range(length)
-    )
+    checksum = "".join(CHARSET[(residue >> (5 * (length - 1 - index))) & 31] for index in range(length))
     return f"{hrp}1{body}{checksum}"
 
 
@@ -89,9 +87,7 @@ def _payload(data: bytes, padding: int) -> str:
     padding_bits = (-len(data) * 8) % 5
     combined = (accumulator << padding_bits) | padding
     count = (len(data) * 8 + 4) // 5
-    return "".join(
-        CHARSET[(combined >> (5 * (count - 1 - index))) & 31] for index in range(count)
-    )
+    return "".join(CHARSET[(combined >> (5 * (count - 1 - index))) & 31] for index in range(count))
 
 
 def test_every_ms_byte_length_and_legal_parsed_padding() -> None:
@@ -171,9 +167,7 @@ def test_expanded_codeword_upper_bound() -> None:
     _decode(max_text)
 
     oversized_body = _chars_to_u5("0tests" + "q" * 998)
-    oversized = _oracle_encode(
-        "ms", "".join(CHARSET[value] for value in oversized_body)
-    )
+    oversized = _oracle_encode("ms", "".join(CHARSET[value] for value in oversized_body))
     with pytest.raises(InvalidLength):
         _decode(oversized)
 
@@ -216,9 +210,7 @@ def test_core_lightning_constructor_and_parsed_padding() -> None:
     assert original.payload_symbols[-1] & 0xF == 0
     payload = list(original.payload_symbols)
     payload[-1] |= 0xF
-    nonzero = _oracle_encode(
-        "cl", "0peevs" + "".join(CHARSET[value] for value in payload)
-    )
+    nonzero = _oracle_encode("cl", "0peevs" + "".join(CHARSET[value] for value in payload))
     parsed = parse_codex32(nonzero)
     assert isinstance(parsed, CoreLightningSecret)
     assert parsed.secret_bytes == original.secret_bytes
@@ -269,6 +261,4 @@ def test_official_invalid_generic_checksum_vectors(
         assert error is not None
         return
     expanded_length = len(_hrp_expand(hrp)) + len(encoded)
-    assert not (
-        expanded_length <= maximum and checksum.verify(_hrp_expand(hrp) + encoded)
-    )
+    assert not (expanded_length <= maximum and checksum.verify(_hrp_expand(hrp) + encoded))

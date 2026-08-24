@@ -162,11 +162,17 @@ _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
 }
 
 
-def _interactive(*, basis: bool, one: bool, excluded_index: str | None, profiles: tuple[Profile, ...]) -> list[Artifact]:
+def _interactive(
+    *, basis: bool, one: bool, excluded_index: str | None, profiles: tuple[Profile, ...]
+) -> list[Artifact]:
     accepted: list[Artifact] = []
     prefix, prefill, required = "", "", 1
     while len(accepted) < required:
-        label = "Enter a codex32 string" if not accepted else f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}"
+        label = (
+            "Enter a codex32 string"
+            if not accepted
+            else f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}"
+        )
         try:
             value = _prompt_entry(label, prefix, prefill)
             artifact = _parse(value if "1" in value else prefix + value, profiles)
@@ -179,7 +185,11 @@ def _interactive(*, basis: bool, one: bool, excluded_index: str | None, profiles
         except (CodexError, InputError) as error:
             message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
             _stderr(f"Rejected: {message}")
-            prefill = "" if isinstance(error, (DuplicateShareIndex, ExistingTargetIndex)) else _retry_text(value, prefix)
+            prefill = (
+                ""
+                if isinstance(error, (DuplicateShareIndex, ExistingTargetIndex))
+                else _retry_text(value, prefix)
+            )
             continue
         prefill = ""
         if one:

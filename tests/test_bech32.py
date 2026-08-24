@@ -38,9 +38,7 @@ def test_invalid_data_character_uses_complete_one_based_position() -> None:
     with pytest.raises(InvalidCharacter) as raised:
         _parse("MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW'")
 
-    assert str(raised.value) == (
-        "Apostrophe (') is not allowed in a codex32 string (position 49)."
-    )
+    assert str(raised.value) == ("Apostrophe (') is not allowed in a codex32 string (position 49).")
 
 
 @pytest.mark.parametrize(
@@ -62,8 +60,6 @@ def test_lexical_rejections(value: str, error: type[Exception]) -> None:
 def test_convert_bits_requires_explicit_integer_padding() -> None:
     data = bytes.fromhex("ffeedd")
     symbols = _convert_bits(data, 8, 5, pad=True, pad_value=1)
-    assert (
-        bytes(_convert_bits(symbols, 5, 8, pad=False, accept_any_padding=True)) == data
-    )
+    assert bytes(_convert_bits(symbols, 5, 8, pad=False, accept_any_padding=True)) == data
     with pytest.raises(InvalidPadding):
         _convert_bits(data, 8, 5, pad=True, pad_value=2)

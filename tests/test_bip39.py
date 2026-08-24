@@ -12,9 +12,7 @@ from codex32.errors import (
 )
 
 BIP39_12W_ZERO = "bip39_12w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqcwa5plrxrewp27"
-BIP39_24W_ZERO = (
-    "bip39_24w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqxv5hjvxqkrlt8cg"
-)
+BIP39_24W_ZERO = "bip39_24w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqxv5hjvxqkrlt8cg"
 
 
 @pytest.mark.parametrize(
@@ -24,9 +22,7 @@ BIP39_24W_ZERO = (
         (BIP39_24W_ZERO, Profile.BIP39_24W, 53),
     ),
 )
-def test_frozen_bip39_zero_entropy_fixtures(
-    text: str, profile: Profile, payload_length: int
-) -> None:
+def test_frozen_bip39_zero_entropy_fixtures(text: str, profile: Profile, payload_length: int) -> None:
     secret = parse_codex32(text)
     assert isinstance(secret, Bip39Secret)
     assert secret.profile is profile
@@ -38,9 +34,7 @@ def test_frozen_bip39_zero_entropy_fixtures(
     ("hrp", "payload"),
     (("bip39_12w", "q" * 27), ("bip39_24w", "q" * 53)),
 )
-def test_valid_outer_checksum_does_not_mask_bad_bip39_checksum(
-    hrp: str, payload: str
-) -> None:
+def test_valid_outer_checksum_does_not_mask_bad_bip39_checksum(hrp: str, payload: str) -> None:
     with pytest.raises(InvalidBip39Checksum):
         parse_codex32(_oracle_encode(hrp, "0tests" + payload))
 

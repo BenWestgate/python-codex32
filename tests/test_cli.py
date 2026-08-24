@@ -88,9 +88,7 @@ def _invoke_terminal(args: list[str], *lines: str) -> _Result:
 
 def _output_artifacts(result: _Result, profile: str = "ms") -> list[Share | Secret]:
     return [
-        parse_codex32(line)
-        for line in result.stdout.splitlines()
-        if line.lower().startswith(profile + "1")
+        parse_codex32(line) for line in result.stdout.splitlines() if line.lower().startswith(profile + "1")
     ]
 
 
@@ -172,56 +170,36 @@ def test_secret_help_explains_threshold_protection() -> None:
         (
             "ms",
             25,
-            (
-                "This input has 47 characters. A Bitcoin master-seed backup "
-                "needs at least 48."
-            ),
+            ("This input has 47 characters. A Bitcoin master-seed backup needs at least 48."),
         ),
         (
             "ms",
             104,
-            (
-                "This input has 128 characters. A Bitcoin master-seed backup "
-                "can have at most 127."
-            ),
+            ("This input has 128 characters. A Bitcoin master-seed backup can have at most 127."),
         ),
         (
             "ms",
             27,
-            (
-                "This input does not encode a whole number of Bitcoin master-seed "
-                "bytes."
-            ),
+            ("This input does not encode a whole number of Bitcoin master-seed bytes."),
         ),
         (
             "cl",
             51,
-            (
-                "This input has 73 characters. A Core Lightning HSM secret backup "
-                "must have exactly 74."
-            ),
+            ("This input has 73 characters. A Core Lightning HSM secret backup must have exactly 74."),
         ),
         (
             "bip39_12w",
             26,
-            (
-                "This input has 55 characters. A 12-word BIP39 worksheet backup "
-                "must have exactly 56."
-            ),
+            ("This input has 55 characters. A 12-word BIP39 worksheet backup must have exactly 56."),
         ),
         (
             "bip39_24w",
             52,
-            (
-                "This input has 81 characters. A 24-word BIP39 worksheet backup "
-                "must have exactly 82."
-            ),
+            ("This input has 81 characters. A 24-word BIP39 worksheet backup must have exactly 82."),
         ),
     ),
 )
-def test_check_reports_profile_lengths_for_people(
-    hrp: str, payload_length: int, message: str
-) -> None:
+def test_check_reports_profile_lengths_for_people(hrp: str, payload_length: int, message: str) -> None:
     body = _chars_to_u5("0tests" + "q" * payload_length)
     result = _invoke(["check"], _encode(hrp, body))
 
@@ -293,8 +271,7 @@ def test_tty_check_reports_truncated_ms_length_before_checksum(
     captured = capsys.readouterr()
     for length in (45, 46, 47):
         message = (
-            f"Rejected: This input has {length} characters. A Bitcoin master-seed "
-            "backup needs at least 48."
+            f"Rejected: This input has {length} characters. A Bitcoin master-seed backup needs at least 48."
         )
         assert captured.err.count(message) == 1
     assert "checksum" not in captured.err
@@ -318,8 +295,7 @@ def test_tty_check_names_an_invalid_character_and_position(
 
     assert main(["check"]) == 0
     assert (
-        "Rejected: Apostrophe (') is not allowed in a codex32 string "
-        "(position 49)."
+        "Rejected: Apostrophe (') is not allowed in a codex32 string (position 49)."
     ) in capsys.readouterr().err
 
 
@@ -347,9 +323,7 @@ def test_tty_check_explains_header_and_prefix_errors(
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
     assert main(["check"]) == 0
-    rejected = [
-        line for line in capsys.readouterr().err.splitlines() if line.startswith("Rejected:")
-    ]
+    rejected = [line for line in capsys.readouterr().err.splitlines() if line.startswith("Rejected:")]
     assert rejected == [
         "Rejected: An unshared secret (threshold 0) must use S as its index.",
         "Rejected: The threshold must be 0 or a number from 2 through 9; found 'f'.",
@@ -622,9 +596,7 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
         def isatty() -> bool:
             return True
 
-    answers = iter(
-        (VECTOR_3["derived_f"], VECTOR_3["share_c"], VECTOR_3["secret_s"])
-    )
+    answers = iter((VECTOR_3["derived_f"], VECTOR_3["share_c"], VECTOR_3["secret_s"]))
     prompts: list[str] = []
 
     def answer(prompt: str) -> str:
@@ -766,8 +738,7 @@ def test_share_rejects_invalid_target_before_prompting(
 
     assert main(["share", index]) == 2
     assert capsys.readouterr().err == (
-        "codex32 share: Choose one share index from "
-        "ACDEFGHJKLMNPQRTUVWXYZ023456789.\n"
+        "codex32 share: Choose one share index from ACDEFGHJKLMNPQRTUVWXYZ023456789.\n"
     )
 
 
@@ -893,9 +864,7 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
     random_shares = _output_artifacts(random_header)
     shares = _output_artifacts(shared)
     assert isinstance(fingerprinted_secret, MasterSeed)
-    assert fingerprinted_secret.header.identifier == _fingerprint_identifier(
-        fingerprinted_secret.seed_bytes
-    )
+    assert fingerprinted_secret.header.identifier == _fingerprint_identifier(fingerprinted_secret.seed_bytes)
     assert unshared_secret.header.identifier == "test"
     assert len(random_shares) == 5
     assert len(random_shares[0].header.identifier) == 4
@@ -922,9 +891,7 @@ def test_pretty_create_separates_share_blocks() -> None:
 
     assert result.stdout.startswith("Bitcoin master-seed share ")
     assert result.stdout.count("\n\nBitcoin master-seed share ") == 3
-    assert result.stderr.endswith(
-        "Before relying on this backup, test recovery using what you wrote down.\n"
-    )
+    assert result.stderr.endswith("Before relying on this backup, test recovery using what you wrote down.\n")
 
 
 def test_create_raw_seed_and_resharing_accept_random_identifiers() -> None:
@@ -935,12 +902,8 @@ def test_create_raw_seed_and_resharing_accept_random_identifiers() -> None:
     source = parse_codex32(VECTOR_4["secret_s"])
     rejected_split = _invoke(["create"], source.text)
     missing_threshold = _invoke(["create", "--existing"], source.text)
-    random_split = _invoke(
-        ["create", "2", "--indices", "ac", "--existing"], source.text
-    )
-    accepted_split = _invoke(
-        ["create", "2name", "--indices", "ac", "--existing"], source.text
-    )
+    random_split = _invoke(["create", "2", "--indices", "ac", "--existing"], source.text)
+    accepted_split = _invoke(["create", "2name", "--indices", "ac", "--existing"], source.text)
 
     random_secret = _output_artifacts(random_raw)[0]
     assert isinstance(random_secret, MasterSeed) and random_secret.seed_bytes == raw
@@ -964,12 +927,8 @@ def test_create_supports_core_lightning_generation_and_splitting() -> None:
     shared = _invoke(["create", "cl13cln2", "--indices", "7cad"])
     default_shared = _invoke(["create", "cl12cln2"])
     source = _output_artifacts(unshared, "cl")[0]
-    split = _invoke(
-        ["create", "cl12name", "--indices", "ac", "--existing"], source.text
-    )
-    raw = _invoke(
-        ["create", "cl10raw0", "--existing"], bytes(range(32)).hex()
-    )
+    split = _invoke(["create", "cl12name", "--indices", "ac", "--existing"], source.text)
+    raw = _invoke(["create", "cl10raw0", "--existing"], bytes(range(32)).hex())
     random_identifier = _invoke(["create", "cl10"])
 
     assert isinstance(source, CoreLightningSecret)
@@ -992,9 +951,7 @@ def test_create_help_explains_headers_and_profile_specific_bytes() -> None:
     assert result.exit_code == 0
     assert "[HEADER]" in result.stdout
     assert "such as 3cash or 3" in result.stdout
-    assert "omit to create a new unshared Bitcoin master seed" in " ".join(
-        result.stdout.split()
-    )
+    assert "omit to create a new unshared Bitcoin master seed" in " ".join(result.stdout.split())
     assert "length of a new Bitcoin master seed" in result.stdout
     assert "two more than needed for recovery" in " ".join(result.stdout.split())
     assert "--existing" in result.stdout
@@ -1107,9 +1064,7 @@ def test_checksum_help_uses_book_worksheet_language() -> None:
 
 def test_terminal_secret_has_fingerprint_but_share_does_not() -> None:
     secret = _invoke_terminal(["secret"], VECTOR_1["secret_s"])
-    share = _invoke_terminal(
-        ["share", "d"], VECTOR_2["share_A"], VECTOR_2["share_C"]
-    )
+    share = _invoke_terminal(["share", "d"], VECTOR_2["share_A"], VECTOR_2["share_C"])
 
     assert secret.exit_code == share.exit_code == 0
     assert "Master fingerprint:" in secret.stdout
@@ -1169,9 +1124,7 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
 
 
 def test_correction_hides_internal_candidate_reparse_failures() -> None:
-    result = _invoke(
-        ["correct"], "ms12auxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg"
-    )
+    result = _invoke(["correct"], "ms12auxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg")
 
     assert result.exit_code != 0
     assert "No valid correction was found for this backup." in result.stderr
@@ -1189,26 +1142,16 @@ def test_correction_failure_directs_user_to_original_backup(damaged: str) -> Non
     result = _invoke(["correct"], damaged)
 
     assert result.exit_code != 0
-    assert result.stderr.strip() == (
-        "codex32 correct: No correction found. Check the original backup."
-    )
+    assert result.stderr.strip() == ("codex32 correct: No correction found. Check the original backup.")
 
 
 def test_wallet_commands_are_thin_master_seed_adapters() -> None:
     xprv = _invoke(["xprv"], VECTOR_1["secret_s"])
-    xpub = _invoke(
-        ["wallet", "multisig-xpub", "--account", "0"], VECTOR_1["secret_s"]
-    )
-    public = _invoke(
-        ["wallet", "bitcoin-core", "watch-only"], VECTOR_1["secret_s"]
-    )
-    private = _invoke(
-        ["wallet", "bitcoin-core", "restore"], VECTOR_1["secret_s"]
-    )
+    xpub = _invoke(["wallet", "multisig-xpub", "--account", "0"], VECTOR_1["secret_s"])
+    public = _invoke(["wallet", "bitcoin-core", "watch-only"], VECTOR_1["secret_s"])
+    private = _invoke(["wallet", "bitcoin-core", "restore"], VECTOR_1["secret_s"])
 
-    assert (
-        xprv.exit_code == xpub.exit_code == public.exit_code == private.exit_code == 0
-    )
+    assert xprv.exit_code == xpub.exit_code == public.exit_code == private.exit_code == 0
     assert xprv.stdout.strip() == VECTOR_1["xprv"]
     assert xpub.stdout.startswith("[3f3521a6/48h/0h/0h/2h]xpub")
     assert len(json.loads(public.stdout)) == 4
@@ -1391,8 +1334,6 @@ def test_production_size_budgets_are_enforced() -> None:
     module = importlib.import_module("codex32")
     assert module.__file__ is not None
     package = Path(module.__file__).parent
-    counts = {
-        path.name: len(path.read_text().splitlines()) for path in package.glob("*.py")
-    }
+    counts = {path.name: len(path.read_text().splitlines()) for path in package.glob("*.py")}
 
     assert sum(counts.values()) < 3000

@@ -97,10 +97,7 @@ def test_every_bch_error_erasure_distribution(
     erasures: int,
 ) -> None:
     count = errors + erasures
-    positions = [
-        3 + ((index * 11 + errors * 3 + erasures) % (len(source) - 3))
-        for index in range(count)
-    ]
+    positions = [3 + ((index * 11 + errors * 3 + erasures) % (len(source) - 3)) for index in range(count)]
     assert len(set(positions)) == count
     result = _success(_change(source, positions, erasures=erasures))
     assert result.artifact.text == source
@@ -271,9 +268,7 @@ def test_suspected_profile_is_not_inferred() -> None:
 
 
 def test_private_book_residue_uses_reverse_index() -> None:
-    assert correct_worksheet_residue("2ppjkw73qdjvc") == (
-        codex32.WorksheetCorrection(37, "x"),
-    )
+    assert correct_worksheet_residue("2ppjkw73qdjvc") == (codex32.WorksheetCorrection(37, "x"),)
     assert correct_worksheet_residue("secretshare32") == ()
 
 
@@ -281,8 +276,7 @@ def test_unmapped_short_locator_roots_are_not_silently_dropped() -> None:
     assert correct_worksheet_residue("t9cxwv58l0sgd") is None
 
     damaged = (
-        "ms10testsqqqsyquyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8varg0jz"
-        "gfzyvjz2f389q5j52ev9cmlrfhvw53es26"
+        "ms10testsqqqsyquyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8varg0jzgfzyvjz2f389q5j52ev9cmlrfhvw53es26"
     )
     result = _correct_fixed(damaged, suspected_profile=Profile.MS)
     assert isinstance(result, _FixedCorrectionFailure)

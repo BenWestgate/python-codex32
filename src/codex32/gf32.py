@@ -12,16 +12,10 @@ def _multiply_raw(left: int, right: int) -> int:
     return result
 
 
-_MULTIPLICATION = tuple(
-    tuple(_multiply_raw(left, right) for right in range(32)) for left in range(32)
-)
+_MULTIPLICATION = tuple(tuple(_multiply_raw(left, right) for right in range(32)) for left in range(32))
 _INVERSE = tuple(
     next(
-        (
-            candidate
-            for candidate in range(32)
-            if _MULTIPLICATION[value][candidate] == 1
-        ),
+        (candidate for candidate in range(32) if _MULTIPLICATION[value][candidate] == 1),
         0,
     )
     for value in range(32)

@@ -55,6 +55,9 @@ testpaths = ["tests"]
 python_version = "3.12"
 strict = true
 
+[tool.ruff]
+line-length = 110
+
 [project.urls]
 Homepage = "https://github.com/benwestgate/python-codex32"
 Repository = "https://github.com/benwestgate/python-codex32"

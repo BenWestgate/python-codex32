@@ -22,8 +22,7 @@ def _validate_bip39_secret(profile: Profile, symbols: tuple[int, ...]) -> None:
     entropy = semantic[:entropy_bits]
     embedded = semantic[entropy_bits : entropy_bits + checksum_bits]
     entropy_bytes = bytes(
-        sum(entropy[offset + bit] << (7 - bit) for bit in range(8))
-        for offset in range(0, entropy_bits, 8)
+        sum(entropy[offset + bit] << (7 - bit) for bit in range(8)) for offset in range(0, entropy_bits, 8)
     )
     digest = hashlib.sha256(entropy_bytes).digest()
     expected = [(digest[0] >> (7 - bit)) & 1 for bit in range(checksum_bits)]

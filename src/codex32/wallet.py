@@ -6,8 +6,7 @@ from codex32.bip93 import MasterSeed
 from codex32.checksums import DESCSUM
 
 _DESCRIPTOR_CHARSET = (
-    "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~"
-    'ijklmnopqrstuvwxyzABCDEFGH`#"\\ '
+    "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~ijklmnopqrstuvwxyzABCDEFGH`#\"\\ "
 )
 _TEMPLATES = (
     ("pkh({key})", 44),
@@ -49,9 +48,7 @@ def _descriptor_symbols(text: str) -> list[int]:
 
 
 def _with_checksum(descriptor: str) -> str:
-    return (
-        descriptor + "#" + _u5_to_chars(DESCSUM.create(_descriptor_symbols(descriptor)))
-    )
+    return descriptor + "#" + _u5_to_chars(DESCSUM.create(_descriptor_symbols(descriptor)))
 
 
 def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:

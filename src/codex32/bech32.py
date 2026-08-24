@@ -17,19 +17,13 @@ _MAX_CODEX32_LENGTH = 1024
 
 
 def _hrp_expand(hrp: str) -> list[int]:
-    return (
-        [ord(character) >> 5 for character in hrp]
-        + [0]
-        + [ord(character) & 31 for character in hrp]
-    )
+    return [ord(character) >> 5 for character in hrp] + [0] + [ord(character) & 31 for character in hrp]
 
 
 def _u5_to_chars(values: list[int] | tuple[int, ...]) -> str:
     for index, value in enumerate(values):
         if not 0 <= value < 32:
-            raise InvalidCharacter(
-                f"u5 value {value} at index {index} is outside 0..31"
-            )
+            raise InvalidCharacter(f"u5 value {value} at index {index} is outside 0..31")
     return "".join(CHARSET[value] for value in values)
 
 
@@ -40,16 +34,13 @@ def _chars_to_u5(value: str, first_position: int = 1) -> list[int]:
         if position < 0:
             label = "Apostrophe (')" if character == "'" else f"The character {character!r}"
             raise InvalidCharacter(
-                f"{label} is not allowed in a codex32 string "
-                f"(position {first_position + index})."
+                f"{label} is not allowed in a codex32 string (position {first_position + index})."
             )
         result.append(position)
     return result
 
 
-def _validate_single_case_ascii(
-    value: str, *, max_length: int = _MAX_CODEX32_LENGTH
-) -> bool:
+def _validate_single_case_ascii(value: str, *, max_length: int = _MAX_CODEX32_LENGTH) -> bool:
     if not isinstance(value, str):
         raise TypeError("codex32 input must be str")
     if len(value) > max_length:
@@ -57,17 +48,13 @@ def _validate_single_case_ascii(
     for index, character in enumerate(value):
         codepoint = ord(character)
         if not 33 <= codepoint <= 126:
-            raise InvalidCharacter(
-                f"non-printable U+{codepoint:04X} at position {index}"
-            )
+            raise InvalidCharacter(f"non-printable U+{codepoint:04X} at position {index}")
     if value.upper() != value and value.lower() != value:
         raise InvalidCase("Use either all uppercase or all lowercase letters.")
     return value.isupper()
 
 
-def _parse(
-    value: str, *, max_length: int = _MAX_CODEX32_LENGTH
-) -> tuple[str, list[int]]:
+def _parse(value: str, *, max_length: int = _MAX_CODEX32_LENGTH) -> tuple[str, list[int]]:
     """Perform bounded lexical parsing without interpreting a profile."""
     _validate_single_case_ascii(value, max_length=max_length)
     separator = value.rfind("1")
@@ -171,9 +158,7 @@ def _convert_bits(
         return result
     padding_bits = to_bits - bits
     if not 0 <= pad_value < (1 << padding_bits):
-        raise InvalidPadding(
-            f"padding value {pad_value} does not fit in {padding_bits} bits"
-        )
+        raise InvalidPadding(f"padding value {pad_value} does not fit in {padding_bits} bits")
     result.append(((accumulator << padding_bits) | pad_value) & output_mask)
     return result
 

@@ -31,9 +31,7 @@ class _ProfileSpec:
             rule = "needs at least 48" if text_length < 48 else "can have at most 127"
         else:
             rule = f"must have exactly {self.text_lengths[0]}"
-        raise InvalidLength(
-            f"This input has {text_length} characters. A {name} backup {rule}."
-        )
+        raise InvalidLength(f"This input has {text_length} characters. A {name} backup {rule}.")
 
     def _raise_length(self, too_short: bool | None = None) -> Never:
         name = _profile_label(self.profile).replace("master seed", "master-seed")
@@ -56,23 +54,16 @@ class _ProfileSpec:
             return
         if self.profile is Profile.MS:
             if self.payload_lengths[0] < payload_length < self.payload_lengths[-1]:
-                raise InvalidLength(
-                    "This input does not encode a whole number of Bitcoin "
-                    "master-seed bytes."
-                )
+                raise InvalidLength("This input does not encode a whole number of Bitcoin master-seed bytes.")
             self._raise_length(payload_length < self.payload_lengths[0])
         self._raise_length()
 
     def require_completion(self) -> None:
         if not self.completion_enabled:
-            raise UnsupportedOperation(
-                f"checksum completion is not available for {self.profile}"
-            )
+            raise UnsupportedOperation(f"checksum completion is not available for {self.profile}")
 
 
-_MS_PAYLOAD_LENGTHS = tuple(
-    sorted({(byte_length * 8 + 4) // 5 for byte_length in range(16, 65)})
-)
+_MS_PAYLOAD_LENGTHS = tuple(sorted({(byte_length * 8 + 4) // 5 for byte_length in range(16, 65)}))
 
 _SPECS = {
     Profile.MS: _ProfileSpec(Profile.MS, _MS_PAYLOAD_LENGTHS, True, range(48, 128)),

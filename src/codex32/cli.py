@@ -60,9 +60,7 @@ def _secret(artifacts: list[Artifact]) -> Secret:
     if not all(isinstance(artifact, Share) for artifact in artifacts):
         raise _UsageError("Recovery accepts ordinary shares or one complete secret.")
     try:
-        return recover_secret(
-            [artifact for artifact in artifacts if isinstance(artifact, Share)]
-        )
+        return recover_secret([artifact for artifact in artifacts if isinstance(artifact, Share)])
     except CodexError as error:
         raise _UsageError(str(error)) from error
 
@@ -188,8 +186,9 @@ def _create(
     if shares is not None and indices is not None:
         raise _UsageError("Choose either --shares or --indices, not both.")
     if byte_length is not None and profile is Profile.CL:
-        raise _UsageError("--bytes is only for Bitcoin master seeds; Core "
-                          "Lightning secrets are always 32 bytes.")
+        raise _UsageError(
+            "--bytes is only for Bitcoin master seeds; Core Lightning secrets are always 32 bytes."
+        )
     if byte_length is not None and existing:
         raise _UsageError("--bytes applies only when generating a new random seed.")
     source = _creation_source() if existing else None
@@ -197,9 +196,7 @@ def _create(
         raise _UsageError("Use --existing when supplying a seed or secret.")
     expected_type = MasterSeed if profile is Profile.MS else CoreLightningSecret
     if isinstance(source, (Share, Secret)) and not isinstance(source, expected_type):
-        raise _UsageError(
-            f"Enter one {_profile_label(profile)}, not a share or another backup type."
-        )
+        raise _UsageError(f"Enter one {_profile_label(profile)}, not a share or another backup type.")
     threshold = 0 if selected_threshold is None else selected_threshold
     if threshold and shares is None and indices is None:
         shares = threshold + 2
@@ -207,8 +204,7 @@ def _create(
         if isinstance(source, (MasterSeed, CoreLightningSecret)):
             if threshold == 0:
                 raise _UsageError(
-                    "The supplied secret is already complete; choose a sharing "
-                    "threshold from 2 through 9."
+                    "The supplied secret is already complete; choose a sharing threshold from 2 through 9."
                 )
             secret, outputs = split_secret(
                 source,
@@ -262,7 +258,9 @@ def _checksum(header: str | None, plain: bool) -> int:
         "rolls, seed words, hexadecimal seeds, passwords, or anything else."
     )
     _print(warning, err=True, danger=True)
-    prompt = "Checksum worksheet non-pink bold squares" if header is None else "Remaining non-pink bold squares"
+    prompt = (
+        "Checksum worksheet non-pink bold squares" if header is None else "Remaining non-pink bold squares"
+    )
     try:
         text = _unchecksummed(header, _text(prompt))
         artifact = complete_checksum(text)
@@ -309,12 +307,9 @@ def _correct(
     if profile is None:
         bip39_profiles = (Profile.BIP39_12W, Profile.BIP39_24W)
         if any(lowered.startswith(f"{item}1") for item in bip39_profiles):
-            raise _UsageError(
-                "Full-string correction is not available for BIP39 worksheet backups."
-            )
+            raise _UsageError("Full-string correction is not available for BIP39 worksheet backups.")
         raise _UsageError(
-            "The string must begin with an undamaged ms1 or cl1 prefix; "
-            "prefix correction is not attempted."
+            "The string must begin with an undamaged ms1 or cl1 prefix; prefix correction is not attempted."
         )
     fixed = _correct_fixed(value, suspected_profile=profile)
     if not isinstance(fixed, _FixedCorrectionSuccess):
@@ -328,8 +323,7 @@ def _correct(
         _print("The codex32 string is already valid.")
         return 0
     warning = (
-        "Warning: This is only a correction suggestion. Compare it with the "
-        "original backup before using it."
+        "Warning: This is only a correction suggestion. Compare it with the original backup before using it."
     )
     _print(warning, err=True)
     _emit(fixed.artifact, plain, err=True)

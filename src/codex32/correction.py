@@ -102,9 +102,7 @@ def _gf1024_mul(left: int, right: int) -> int:
     )
 
 
-def _field_pow(
-    value: int, exponent: int, multiply: Callable[[int, int], int]
-) -> int:
+def _field_pow(value: int, exponent: int, multiply: Callable[[int, int], int]) -> int:
     result = 1
     while exponent:
         if exponent & 1:
@@ -131,15 +129,12 @@ def _gf1024_pow(value: int, exponent: int) -> int:
 def _poly_sum(left: list[int], right: list[int]) -> list[int]:
     size = max(len(left), len(right))
     return [
-        (left[index] if index < len(left) else 0)
-        ^ (right[index] if index < len(right) else 0)
+        (left[index] if index < len(left) else 0) ^ (right[index] if index < len(right) else 0)
         for index in range(size)
     ]
 
 
-def _poly_mul(
-    left: list[int], right: list[int], multiply: Callable[[int, int], int]
-) -> list[int]:
+def _poly_mul(left: list[int], right: list[int], multiply: Callable[[int, int], int]) -> list[int]:
     if not left or not right:
         return []
     result = [0] * (len(left) + len(right) - 1)
@@ -161,10 +156,7 @@ def _horner(
 
 
 def _poly_diff(polynomial: list[int]) -> list[int]:
-    return [
-        coefficient if power & 1 else 0
-        for power, coefficient in enumerate(polynomial[1:], 1)
-    ]
+    return [coefficient if power & 1 else 0 for power, coefficient in enumerate(polynomial[1:], 1)]
 
 
 def _monic_mul(
@@ -331,9 +323,7 @@ def _synthesize_rec(values: list[int]) -> tuple[list[int], list[int]]:
         updated_adjustment = [0] + adjustment
     else:
         inverse = _gf1024_inv(discrepancy)
-        updated_adjustment = [
-            _gf1024_mul(value, inverse) for value in [1] + coefficients
-        ]
+        updated_adjustment = [_gf1024_mul(value, inverse) for value in [1] + coefficients]
     return updated, updated_adjustment
 
 
@@ -356,9 +346,7 @@ def _locator_poly(
 
 
 def _solve_word10(polynomial: list[int]) -> list[int]:
-    return [
-        value for value in range(1024) if _horner(polynomial, value, _gf1024_mul) == 0
-    ]
+    return [value for value in range(1024) if _horner(polynomial, value, _gf1024_mul) == 0]
 
 
 def _bch_error_corrections(
@@ -368,9 +356,7 @@ def _bch_error_corrections(
 ) -> list[tuple[int, int]] | None:
     if len(erasure_indices) > len(spec.roots):
         return None
-    erasure_roots = [
-        _gf1024_inv(_gf1024_pow(spec.base, index)) for index in erasure_indices
-    ]
+    erasure_roots = [_gf1024_inv(_gf1024_pow(spec.base, index)) for index in erasure_indices]
     erasure_poly = [1]
     for root in erasure_roots:
         erasure_poly = _poly_mul(
@@ -427,8 +413,7 @@ def _solve_linear(
     if not columns:
         return [] if not any(target) else None
     matrix = [
-        [vectors[column][row] for column in range(columns)] + [target[row]]
-        for row in range(len(target))
+        [vectors[column][row] for column in range(columns)] + [target[row]] for row in range(len(target))
     ]
     pivot_rows: list[int] = []
     next_row = 0
@@ -441,9 +426,7 @@ def _solve_linear(
             return None
         matrix[next_row], matrix[pivot] = matrix[pivot], matrix[next_row]
         inverse = _gf32_inverse(matrix[next_row][column])
-        matrix[next_row] = [
-            _gf32_multiply(value, inverse) for value in matrix[next_row]
-        ]
+        matrix[next_row] = [_gf32_multiply(value, inverse) for value in matrix[next_row]]
         for row_index in range(len(matrix)):
             if row_index == next_row or not matrix[row_index][column]:
                 continue
@@ -624,12 +607,8 @@ def correct_worksheet_residue(
     elif len(values) == _LONG_SPEC.degree:
         spec = _LONG_SPEC
     else:
-        raise InvalidCorrectionInput(
-            "worksheet residue must contain 13 or 15 Bech32 symbols"
-        )
-    if isinstance(erasure_indices, (str, bytes)) or not isinstance(
-        erasure_indices, Sequence
-    ):
+        raise InvalidCorrectionInput("worksheet residue must contain 13 or 15 Bech32 symbols")
+    if isinstance(erasure_indices, (str, bytes)) or not isinstance(erasure_indices, Sequence):
         raise InvalidCorrectionInput("erasure_indices must be an ordered sequence")
     if len(erasure_indices) > spec.degree:
         return None
@@ -639,12 +618,8 @@ def correct_worksheet_residue(
     if len(set(indices)) != len(indices):
         raise InvalidCorrectionInput("erasure indices must be distinct")
     if any(index < 0 or index >= spec.period for index in indices):
-        raise InvalidCorrectionInput(
-            f"erasure indices must be between 0 and {spec.period - 1}"
-        )
+        raise InvalidCorrectionInput(f"erasure indices must be between 0 and {spec.period - 1}")
     result = _error_corrections(spec, indices, values)
     if isinstance(result, _AlgebraFailure):
         return None
-    return tuple(
-        WorksheetCorrection(index, CHARSET[addend]) for index, addend in sorted(result)
-    )
+    return tuple(WorksheetCorrection(index, CHARSET[addend]) for index, addend in sorted(result))

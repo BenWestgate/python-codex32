@@ -55,9 +55,7 @@ class Header:
         if not isinstance(self.identifier, str):
             raise InvalidIdentifier("identifier must be str")
         identifier = self.identifier.lower()
-        if len(identifier) != 4 or any(
-            character not in CHARSET for character in identifier
-        ):
+        if len(identifier) != 4 or any(character not in CHARSET for character in identifier):
             raise InvalidIdentifier("identifier must be exactly four Bech32 symbols")
         if not isinstance(self.index, str):
             raise InvalidShareIndex("share index must be str")
@@ -75,7 +73,9 @@ class Header:
             raise InvalidLength("codex32 header must contain six symbols")
         text = _u5_to_chars(symbols)
         if text[0] not in "023456789":
-            raise InvalidThreshold(f"The threshold must be 0 or a number from 2 through 9; found {text[0]!r}.")
+            raise InvalidThreshold(
+                f"The threshold must be 0 or a number from 2 through 9; found {text[0]!r}."
+            )
         return cls(int(text[0]), text[1:5], text[5])
 
     @property
@@ -203,9 +203,7 @@ class Bip39Secret(Secret):
     __slots__ = ()
 
 
-def _validate_payload(
-    profile: Profile, header: Header, payload: tuple[int, ...]
-) -> None:
+def _validate_payload(profile: Profile, header: Header, payload: tuple[int, ...]) -> None:
     _profile_spec(profile).validate_payload_length(len(payload))
     if profile is Profile.MS:
         seed, _padding, _padding_bits = _payload_bytes(payload)
@@ -222,9 +220,7 @@ def _validate_payload(
         _validate_bip39_secret(profile, payload)
 
 
-def _artifact(
-    text: str, profile: Profile, header: Header, payload: tuple[int, ...]
-) -> Share | Secret:
+def _artifact(text: str, profile: Profile, header: Header, payload: tuple[int, ...]) -> Share | Secret:
     artifact_type: type[_Artifact]
     if header.index != "s":
         artifact_type = Share
@@ -332,9 +328,7 @@ def _bounded_artifacts(
     try:
         copied = tuple(artifacts[position] for position in range(count))
     except IndexError as error:
-        raise TypeError(
-            "share input Sequence changed length while being read"
-        ) from error
+        raise TypeError("share input Sequence changed length while being read") from error
     if not all(isinstance(item, _Artifact) for item in copied):
         raise TypeError("all share inputs must be validated codex32 artifacts")
     return copied
@@ -347,9 +341,7 @@ def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]
     return tuple(encoded[6:]), checksum.length, len(encoded)
 
 
-def _validate_share_set(
-    artifacts: Sequence[Share | Secret], *, require_exact: bool = True
-) -> _ShareSet:
+def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: bool = True) -> _ShareSet:
     """Validate one compatible interpolation domain."""
     copied = _bounded_artifacts(artifacts)
     first = copied[0]
@@ -357,17 +349,13 @@ def _validate_share_set(
     if threshold not in range(2, 10):
         raise MismatchedThreshold("linear sharing requires threshold 2 through 9")
     if len(copied) > threshold or (require_exact and len(copied) != threshold):
-        raise WrongShareCount(
-            f"threshold is {threshold}, but {len(copied)} artifacts were supplied"
-        )
+        raise WrongShareCount(f"threshold is {threshold}, but {len(copied)} artifacts were supplied")
     first_tail, checksum_length, encoded_length = _artifact_tail(first)
     tails = [first_tail]
     indices = [first.header.index]
     for item in copied[1:]:
         if item.profile is not first.profile:
-            raise MismatchedProfile(
-                f"{first.profile.value} and {item.profile.value} cannot be combined"
-            )
+            raise MismatchedProfile(f"{first.profile.value} and {item.profile.value} cannot be combined")
         if item.header.threshold != threshold:
             raise MismatchedThreshold("share thresholds do not match")
         if item.header.identifier != first.header.identifier:

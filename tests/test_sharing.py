@@ -43,10 +43,7 @@ def _ms_basis(byte_length: int = 16, threshold: int = 2):
     seed = bytes((position * 37 + byte_length) % 256 for position in range(byte_length))
     secret = MasterSeed.from_seed(seed, identifier="test", threshold=threshold)
     masks = [
-        complete_checksum(
-            f"ms1{threshold}test{index}"
-            + CHARSET[offset + 1] * len(secret.payload_symbols)
-        )
+        complete_checksum(f"ms1{threshold}test{index}" + CHARSET[offset + 1] * len(secret.payload_symbols))
         for offset, index in enumerate(IDX_SORT[1:threshold])
     ]
     assert all(isinstance(mask, Share) for mask in masks)
@@ -116,9 +113,7 @@ def test_share_set_mismatches_have_distinct_errors() -> None:
     with pytest.raises(MismatchedProfile):
         derive_share([ms_secret, cl], "c")  # type: ignore[list-item]
 
-    threshold_three = complete_checksum(
-        "ms13testc" + "q" * len(ms_secret.payload_symbols)
-    )
+    threshold_three = complete_checksum("ms13testc" + "q" * len(ms_secret.payload_symbols))
     with pytest.raises(MismatchedThreshold):
         derive_share([ms_secret, threshold_three], "d")  # type: ignore[list-item]
 
@@ -183,9 +178,7 @@ def test_every_ordinary_index_can_be_a_fresh_target() -> None:
     ordinary = tuple(character for character in CHARSET if character != "s")
     for target in ordinary:
         mask_index = next(index for index in ordinary if index != target)
-        mask = complete_checksum(
-            f"ms12test{mask_index}" + "p" * len(secret.payload_symbols)
-        )
+        mask = complete_checksum(f"ms12test{mask_index}" + "p" * len(secret.payload_symbols))
         derived = derive_share([secret, mask], target)  # type: ignore[list-item]
         assert derived.header.index == target
 
@@ -218,9 +211,7 @@ def test_invalid_implied_bip39_secret_rejects_recovery_and_derivation() -> None:
 @settings(max_examples=35, deadline=None)
 def test_order_and_case_properties(byte_length: int, uppercase: bool) -> None:
     shares = _ordinary_set(byte_length)
-    rendered = [
-        parse_codex32(item.text.upper() if uppercase else item.text) for item in shares
-    ]
+    rendered = [parse_codex32(item.text.upper() if uppercase else item.text) for item in shares]
     outputs = [recover_secret(list(order)).text for order in permutations(rendered)]
     assert len(set(outputs)) == 1
     assert outputs[0].isupper() is uppercase
@@ -241,9 +232,7 @@ def test_any_exact_threshold_subset_recovers_the_same_secret() -> None:
     secret, masks = _ms_basis(threshold=3)
     basis = [secret, *masks]
     ordinary = [*masks, *(derive_share(basis, index) for index in "def")]
-    recovered = {
-        recover_secret(list(subset)).text for subset in combinations(ordinary, 3)
-    }
+    recovered = {recover_secret(list(subset)).text for subset in combinations(ordinary, 3)}
     assert recovered == {secret.text}
 
 

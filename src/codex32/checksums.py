@@ -49,25 +49,20 @@ class _Checksum:
 
     def verify(self, values: list[int] | tuple[int, ...]) -> bool:
         """Return whether values include this checksum."""
-        return (
-            self.maximum_length is None or len(values) <= self.maximum_length
-        ) and self.polymod(values) == self.constant
+        return (self.maximum_length is None or len(values) <= self.maximum_length) and self.polymod(
+            values
+        ) == self.constant
 
     def create(self, values: list[int] | tuple[int, ...]) -> list[int]:
         """Create checksum symbols for values."""
         residue = self.polymod([*values, *([0] * self.length)]) ^ self.constant
         width = len(self.generators)
         mask = (1 << width) - 1
-        return [
-            (residue >> (width * (self.length - 1 - index))) & mask
-            for index in range(self.length)
-        ]
+        return [(residue >> (width * (self.length - 1 - index))) & mask for index in range(self.length)]
 
 
 _CODEX32 = _Checksum("codex32", _CODEX32_GEN, 13, 0x10CE0795C2FD1E62A, 93)
-_CODEX32_LONG = _Checksum(
-    "Long codex32", _CODEX32_LONG_GEN, 15, 0x43381E570BF4798AB26, 1023
-)
+_CODEX32_LONG = _Checksum("Long codex32", _CODEX32_LONG_GEN, 15, 0x43381E570BF4798AB26, 1023)
 
 # Descriptor checksum remains an independently specified, non-codex32 helper.
 DESCSUM = _Checksum("Descriptor", _DESCSUM_GEN, 8, 1)

@@ -48,21 +48,13 @@ def test_root_api_is_deliberately_small() -> None:
 
 def test_untyped_bip32_import_is_isolated() -> None:
     package = Path(codex32.__file__).parent
-    importers = [
-        path.name
-        for path in package.glob("*.py")
-        if "from bip32 import" in path.read_text()
-    ]
+    importers = [path.name for path in package.glob("*.py") if "from bip32 import" in path.read_text()]
 
     assert importers == ["_bip32.py"]
 
 
 def test_bip32_is_the_only_runtime_dependency() -> None:
-    runtime = [
-        requirement
-        for requirement in requires("codex32") or ()
-        if "extra ==" not in requirement
-    ]
+    runtime = [requirement for requirement in requires("codex32") or () if "extra ==" not in requirement]
 
     assert len(runtime) == 1
     assert runtime[0].lower().startswith("bip32")
@@ -107,8 +99,6 @@ def test_master_seed_factory_can_only_construct_index_s() -> None:
         ((0, "test", "a"), InvalidShareIndex),
     ),
 )
-def test_header_invariants(
-    arguments: tuple[object, ...], error: type[Exception]
-) -> None:
+def test_header_invariants(arguments: tuple[object, ...], error: type[Exception]) -> None:
     with pytest.raises(error):
         Header(*arguments)  # type: ignore[arg-type]

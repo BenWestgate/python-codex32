@@ -22,9 +22,7 @@ def _master() -> MasterSeed:
 
 @pytest.mark.parametrize("vector", (VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_5))
 def test_master_xprv_matches_bip93_vectors(vector: dict[str, str]) -> None:
-    secret = parse_codex32(
-        vector["secret_s"] if "secret_s" in vector else vector["secret_S"]
-    )
+    secret = parse_codex32(vector["secret_s"] if "secret_s" in vector else vector["secret_S"])
 
     assert isinstance(secret, MasterSeed)
     assert master_xprv(secret) == vector["xprv"]
@@ -36,9 +34,7 @@ def test_multisig_xpub_has_bip48_origin_and_frozen_key() -> None:
         "xpub6FCn7LwiLh2GPPPV5DgVo4NS2X9rZi2Keo8D7KSciChyAToHBcRLW1kXzG4X"
         "fyYbTNb6VMRDS6r9QaDsdJKH21ADGgy6dvGdE44FZtx2126"
     )
-    assert "/48h/1h/7h/2h]tpub" in multisig_account_xpub(
-        _master(), account=7, testnet=True
-    )
+    assert "/48h/1h/7h/2h]tpub" in multisig_account_xpub(_master(), account=7, testnet=True)
 
 
 def test_public_core_descriptors_are_fixed_and_private_free() -> None:
@@ -63,9 +59,7 @@ def test_public_core_descriptors_are_fixed_and_private_free() -> None:
 
 
 def test_private_core_descriptors_use_root_xprv_and_explicit_inputs() -> None:
-    records = core_descriptors(
-        _master(), account=3, testnet=True, private=True, timestamp=123
-    )
+    records = core_descriptors(_master(), account=3, testnet=True, private=True, timestamp=123)
 
     assert all(record["timestamp"] == 123 for record in records)
     for purpose, record in zip((44, 49, 84, 86), records, strict=True):

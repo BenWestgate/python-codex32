@@ -12,7 +12,11 @@ from typing import NoReturn
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         if message.startswith("the following arguments are required: "):
-            message = "Choose an index for the additional share." if message.endswith("INDEX") else "Choose a command."
+            message = (
+                "Choose an index for the additional share."
+                if message.endswith("INDEX")
+                else "Choose a command."
+            )
         elif message.startswith("unrecognized arguments: "):
             message = "Remove or correct these arguments: " + message.removeprefix("unrecognized arguments: ")
         else:
@@ -50,13 +54,14 @@ def _terminal_output(parser: argparse.ArgumentParser) -> None:
 
 def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None:
     parser.add_argument(
-        "--account", type=_integer("account", 0, 2**31 - 1), default=0,
-        help="account number (default: 0)"
+        "--account", type=_integer("account", 0, 2**31 - 1), default=0, help="account number (default: 0)"
     )
     if timestamp:
         parser.add_argument(
-            "--timestamp", type=_integer("timestamp", 0), default=0,
-            help="earliest descriptor time for Bitcoin Core (default: 0)"
+            "--timestamp",
+            type=_integer("timestamp", 0),
+            default=0,
+            help="earliest descriptor time for Bitcoin Core (default: 0)",
         )
     parser.add_argument("--testnet", action="store_true", help="use testnet keys")
 
@@ -73,8 +78,12 @@ def parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
-    result.add_argument("--version", action="version", version=f"%(prog)s {version('codex32')}",
-                        help="show the installed version and exit")
+    result.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {version('codex32')}",
+        help="show the installed version and exit",
+    )
     commands = result.add_subparsers(dest="command", required=True, title="commands", metavar="COMMAND")
 
     check = _command(commands, "check", "check whether a secret or share is intact")
@@ -115,13 +124,10 @@ def parser() -> argparse.ArgumentParser:
     checksum = _command(commands, "checksum", "finish a codex32 checksum worksheet")
     checksum.description = "Finish a codex32 checksum worksheet using its non-pink bold squares."
     checksum.add_argument(
-        "header", nargs="?", metavar="HEADER",
-        help="worksheet header; omit to enter it at the prompt"
+        "header", nargs="?", metavar="HEADER", help="worksheet header; omit to enter it at the prompt"
     )
     _terminal_output(checksum)
-    create = _command(
-        commands, "create", "create a new backup or split an existing secret"
-    )
+    create = _command(commands, "create", "create a new backup or split an existing secret")
     create.add_argument(
         "header",
         nargs="?",
@@ -144,10 +150,10 @@ def parser() -> argparse.ArgumentParser:
         metavar="COUNT",
         help="number of shares to output (default: two more than needed for recovery)",
     )
+    create.add_argument("--indices", metavar="INDICES", help="exact share indices, in output order")
     create.add_argument(
-        "--indices", metavar="INDICES", help="exact share indices, in output order"
+        "--existing", action="store_true", help="use an existing codex32 secret or hexadecimal seed"
     )
-    create.add_argument("--existing", action="store_true", help="use an existing codex32 secret or hexadecimal seed")
     _terminal_output(create)
 
     wallet = _command(commands, "wallet", "export data for Bitcoin wallet software")

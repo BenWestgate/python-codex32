@@ -41,15 +41,11 @@ def _indices(shares: tuple[Share, ...]) -> str:
 
 
 def _seed(byte_length: int) -> bytes:
-    return bytes(
-        (position * 109 + byte_length) % 256 for position in range(byte_length)
-    )
+    return bytes((position * 109 + byte_length) % 256 for position in range(byte_length))
 
 
 def test_entropy_mapping_and_index_population_are_exact() -> None:
-    assert Counter(value & 31 for value in range(256)) == Counter(
-        {symbol: 8 for symbol in range(32)}
-    )
+    assert Counter(value & 31 for value in range(256)) == Counter({symbol: 8 for symbol in range(32)})
     assert ORDINARY_INDICES == tuple(IDX_SORT[1:])
     assert len(set(ORDINARY_INDICES)) == 31
     assert set(ORDINARY_INDICES) == set(CHARSET) - {"s"}
@@ -239,9 +235,7 @@ def test_core_lightning_generation_and_splitting_target_zero_padding(
     assert encoded.payload_symbols[-1] & 15 == 0
     assert recover_secret(encoded_shares[:3]) == encoded
 
-    split, split_shares = split_secret(
-        encoded, 2, indices="ac", identifier="test"
-    )
+    split, split_shares = split_secret(encoded, 2, indices="ac", identifier="test")
     assert split.payload_symbols == encoded.payload_symbols
     assert recover_secret(split_shares).secret_bytes == raw
 
@@ -284,9 +278,7 @@ def test_split_rejects_non_secret_artifacts() -> None:
     ("vector", "expected"),
     ((VECTOR_1, "8u6j"), (VECTOR_2, "l2mg"), (VECTOR_3, "regv")),
 )
-def test_unshared_fingerprint_identifier_vectors(
-    vector: dict[str, str], expected: str
-) -> None:
+def test_unshared_fingerprint_identifier_vectors(vector: dict[str, str], expected: str) -> None:
     assert _fingerprint_identifier(bytes.fromhex(vector["secret_hex"])) == expected
 
 
