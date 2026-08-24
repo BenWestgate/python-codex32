@@ -6,7 +6,7 @@ import contextlib
 import os
 import sys
 from collections.abc import Callable, Iterator
-from typing import Protocol
+from typing import Protocol, cast
 
 from codex32.bip93 import (
     Secret,
@@ -46,7 +46,7 @@ try:
 except ImportError:
     _line_editor = None
 else:
-    _line_editor = _readline
+    _line_editor = cast(_LineEditor, _readline)
 
 
 class InputError(Exception):
