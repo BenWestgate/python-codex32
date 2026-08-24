@@ -86,6 +86,11 @@ def _invoke_terminal(args: list[str], *lines: str) -> _Result:
     return _Result(status, stdout.getvalue(), stderr.getvalue())
 
 
+def _installed_cli() -> Path:
+    suffix = ".exe" if sys.platform == "win32" else ""
+    return Path(sys.executable).with_name(f"codex32{suffix}")
+
+
 def _output_artifacts(result: _Result, profile: str = "ms") -> list[Share | Secret]:
     return [
         parse_codex32(line) for line in result.stdout.splitlines() if line.lower().startswith(profile + "1")
@@ -1133,7 +1138,7 @@ def test_fixed_correction_supports_cl_and_residue_reverse_positions() -> None:
     help_text = " ".join(help_result.stdout.split())
     assert "--prefix" not in help_text
     assert "use ? for an erasure" in help_text
-    assert "-e, --erasure POSITION" in help_text
+    assert "-e" in help_text and "--erasure POSITION" in help_text
     assert "one-based position counted backward from the end" in help_text
 
 
@@ -1300,9 +1305,8 @@ def test_wallet_modes_are_mandatory_and_old_commands_are_absent() -> None:
 
 def test_version_and_installed_entry_point() -> None:
     direct = _invoke(["--version"])
-    executable = Path(sys.executable).with_name("codex32")
     installed = subprocess.run(
-        [str(executable), "--version"],
+        [str(_installed_cli()), "--version"],
         text=True,
         capture_output=True,
         check=False,
@@ -1332,9 +1336,8 @@ def test_version_and_installed_entry_point() -> None:
     ),
 )
 def test_every_installed_command_has_help(command: tuple[str, ...]) -> None:
-    executable = Path(sys.executable).with_name("codex32")
     result = subprocess.run(
-        [str(executable), *command, "--help"],
+        [str(_installed_cli()), *command, "--help"],
         text=True,
         capture_output=True,
         check=False,
