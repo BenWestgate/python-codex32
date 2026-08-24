@@ -1,7 +1,8 @@
 # Production-ready v1 completion plan
 
 Status: active implementation roadmap. The mandatory new-session scan
-precondition and Gates 0--1 passed on 2026-08-24; Gate 2 is next.
+precondition and Gates 0--1 passed on 2026-08-24; Gate 2 local work is in
+progress and its remote platform matrix remains pending.
 
 This plan turns the current reference implementation into a narrowly scoped
 real-funds release. It does not add a GUI, networking, RPC, secret storage,
@@ -216,13 +217,18 @@ Work:
   compatible library dependency range;
 - reconcile the documented and tested versions of `bip32`, coincurve, CFFI,
   libsecp256k1 bindings, and transitive dependencies;
-- run BIP32 and wallet vectors on Python 3.12--3.14 and supported Linux, macOS,
-  and Windows wheels.
+- run BIP32 and wallet vectors on Python 3.12 and 3.13 across supported Linux,
+  macOS, and Windows wheels;
+- keep Python 3.14 as a non-blocking CI probe until the selected Coincurve
+  release publishes the required wheels and the full platform matrix passes.
 
-Do not replace `bip32` with locally implemented BIP32. Bitcoin Core currently
-has no interface that accepts raw seed bytes and returns this project's root
-key, account xpubs, or descriptors. A Core proposal belongs to a separate
-project.
+Do not replace `bip32` merely to work around stale dependency metadata. A
+bounded `cryptography` prototype must be materially smaller and easier to audit,
+fit the 3,000-line budget, match every official vector and a large differential
+corpus, handle invalid scalars explicitly, and have wheels on every supported
+platform before replacement is reconsidered. Bitcoin Core currently has no
+interface that accepts raw seed bytes and returns this project's root key,
+account xpubs, or descriptors.
 
 Success criteria:
 
@@ -235,6 +241,16 @@ Success criteria:
   reproducible.
 
 Dependency: Gate 1.
+
+Local evidence (2026-08-24): upstream `bip32`'s complete seven-test suite and
+all 499 project tests pass with Coincurve 21. The inspected Coincurve 20-to-21
+APIs used by `bip32` are behaviorally unchanged. A 6,272-record wallet corpus
+matches exactly under both versions. The owner-authored upstream range-only PR
+#53 is carried by exact commit and archive hash, and all published Python 3.12
+and 3.13 Coincurve wheel hashes are pinned. A bounded `cryptography` prototype
+matched the vectors and corpus but failed the size, audit-surface, performance,
+and wheel-coverage cut conditions, so the roadmap retains the narrow adapter.
+The required remote Linux/macOS/Windows matrix must pass before Gate 2 closes.
 
 ## Gate 3 -- Cuttable bounded structural correction
 
@@ -395,7 +411,8 @@ Required evidence:
 - extended malformed-input and fuzz campaigns;
 - clean Bitcoin Core integration from both wheel and sdist;
 - reproducible build, dependency manifest, and package-content comparison;
-- clean installation and CLI smoke tests on Python 3.12--3.14.
+- clean installation and CLI smoke tests on supported Python 3.12 and 3.13,
+  with Python 3.14 reported separately as non-blocking compatibility evidence.
 
 Release criteria:
 

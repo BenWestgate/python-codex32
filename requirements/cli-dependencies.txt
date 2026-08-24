@@ -1,0 +1,29 @@
+--require-hashes
+--only-binary=coincurve
+
+# Owner-authored upstream PR #53 changes only coincurve's upper bound and its CI matrix.
+bip32 @ https://github.com/darosior/python-bip32/archive/45db547bdf5a5bc19a8c55ef447dbf9169928792.tar.gz \
+    --hash=sha256:a25be30641b381eed9a5249bbc4a73124905223c9c50f93140f519bcf259e415
+
+# Every published CPython 3.12 and 3.13 wheel for the supported OS families.
+coincurve==21.0.0 \
+    --hash=sha256:f60ad56113f08e8c540bb89f4f35f44d434311433195ffff22893ccfa335070c \
+    --hash=sha256:1cb1cd19fb0be22e68ecb60ad950b41f18b9b02eebeffaac9391dc31f74f08f2 \
+    --hash=sha256:05d7e255a697b3475d7ae7640d3bdef3d5bc98ce9ce08dd387f780696606c33b \
+    --hash=sha256:5a366c314df7217e3357bb8c7d2cda540b0bce180705f7a0ce2d1d9e28f62ad4 \
+    --hash=sha256:1b04778b75339c6e46deb9ae3bcfc2250fbe48d1324153e4310fc4996e135715 \
+    --hash=sha256:8efcbdcd50cc219989a2662e6c6552f455efc000a15dd6ab3ebf4f9b187f41a3 \
+    --hash=sha256:6df44b4e3b7acdc1453ade52a52e3f8a5b53ecdd5a06bd200f1ec4b4e250f7d9 \
+    --hash=sha256:bcc0831f07cb75b91c35c13b1362e7b9dc76c376b27d01ff577bec52005e22a8 \
+    --hash=sha256:5dd7b66b83b143f3ad3861a68fc0279167a0bae44fe3931547400b7a200e90b1 \
+    --hash=sha256:78dbe439e8cb22389956a4f2f2312813b4bd0531a0b691d4f8e868c7b366555d \
+    --hash=sha256:9df5ceb5de603b9caf270629996710cf5ed1d43346887bc3895a11258644b65b \
+    --hash=sha256:154467858d23c48f9e5ab380433bc2625027b50617400e2984cc16f5799ab601 \
+    --hash=sha256:f57f07c44d14d939bed289cdeaba4acb986bba9f729a796b6a341eab1661eedc \
+    --hash=sha256:3fb03e3a388a93d31ed56a442bdec7983ea404490e21e12af76fb1dbf097082a \
+    --hash=sha256:d09ba4fd9d26b00b06645fcd768c5ad44832a1fa847ebe8fb44970d3204c3cb7 \
+    --hash=sha256:1a1e7ee73bc1b3bcf14c7b0d1f44e6485785d3b53ef7b16173c36d3cefa57f93 \
+    --hash=sha256:ad05952b6edc593a874df61f1bc79db99d716ec48ba4302d699e14a419fe6f51 \
+    --hash=sha256:4d2bf350ced38b73db9efa1ff8fd16a67a1cb35abb2dda50d89661b531f03fd3 \
+    --hash=sha256:54d9500c56d5499375e579c3917472ffcf804c3584dd79052a79974280985c74 \
+    --hash=sha256:773917f075ec4b94a7a742637d303a3a082616a115c36568eb6c873a8d950d18

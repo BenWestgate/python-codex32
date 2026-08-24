@@ -34,3 +34,14 @@ Explicit output indices preserve caller order. A share count uses
 `SystemRandom.sample` over the 31 ordinary indices and preserves sample order.
 There is no entropy injection, sorting, partial-basis completion, or BIP39
 generation.
+
+## Independent Gate 2 review record
+
+The delegated standard security scan on 2026-08-24 independently reviewed the
+OS CSPRNG boundary, one-call mask sampling, unbiased u5 mapping, rejection
+sampling, CRC/zero padding, identifier policy, random distinct-index selection,
+and re-sharing. It found no medium-or-higher generation issue. Its one low
+availability finding was that a string index selector was copied and normalized
+before enforcing the 31-index maximum. Gate 0 fixed that ordering in
+`generation._indices` and added a regression through every public generation
+API. No injectable or fallback entropy source was added.

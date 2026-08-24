@@ -19,6 +19,8 @@ BIP93 is Draft; later upstream changes require an explicit traceability review.
 | [Python `secrets`](https://docs.python.org/3/library/secrets.html) and [`random`](https://docs.python.org/3/library/random.html) | CPython 3.12–3.14 docs/source reviewed 2026-08-09 | OS entropy and `SystemRandom.sample` |
 | [Koopman CRC catalogue](https://users.ece.cmu.edu/~koopman/crc/index.html) | reviewed 2026-08-09 | polynomial context, not human-error optimality |
 | [Bitcoin Core 30 `createwallet`](https://bitcoincore.org/en/doc/30.0.0/rpc/wallet/createwallet/) and [`bitcoin-cli` stdin options](https://github.com/bitcoin/bitcoin/blob/master/src/bitcoin-cli.cpp) | Core 30 RPC documentation and master client source reviewed 2026-08-22 | blank watch-only wallet, encrypted restore prerequisite, one-line stdin arguments |
+| [`bip32` 5.0.0](https://github.com/darosior/python-bip32/tree/8aa611536f3ae19670f9847f356a33c4008b8cbe) and [Coincurve 21 range PR #53](https://github.com/darosior/python-bip32/pull/53) | tag commit `8aa611536f3ae19670f9847f356a33c4008b8cbe`; PR head `45db547bdf5a5bc19a8c55ef447dbf9169928792` | complete upstream suite, carried dependency-range metadata, official BIP32 vectors |
+| [Coincurve 20.0.0](https://github.com/ofek/coincurve/tree/1e47583d86f5580cb6f6d53e851cabe91f1b4f12) and [21.0.0](https://github.com/ofek/coincurve/tree/428504536bd7851354468c66ccf98d4bd6130338) | exact release tags and PyPI wheel metadata reviewed 2026-08-24 | used-API comparison, Python/platform wheels, differential wallet corpus |
 
 The frozen correction corpus at `tests/data/p70_correction_vectors.json` has
 SHA-256 `6aa552b34c0bb2878d45dee2655c331d52e40e41e61cef523415d314ad9948e5`.

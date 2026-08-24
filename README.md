@@ -25,12 +25,17 @@ reviewed by someone you trust before relying on it with funds. See
 
 ## Install and test
 
-Supported Python versions are 3.12 through 3.14.
+Supported Python versions are 3.12 and 3.13. Python 3.14 remains a
+non-blocking compatibility probe until the required native wheels are
+available and the platform matrix passes.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install --require-hashes -r requirements/cli-build-dependencies.txt
+SOURCE_DATE_EPOCH=1763060600 python -m pip install \
+  --no-build-isolation --require-hashes -r requirements/cli-dependencies.txt
+python -m pip install --no-build-isolation -e '.[dev]'
 python -m pytest -q
 python -m mypy src/codex32
 python -m ruff check .
