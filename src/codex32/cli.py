@@ -319,7 +319,7 @@ def _correct(
     fixed = _correct_fixed(value, suspected_profile=profile)
     if not isinstance(fixed, _FixedCorrectionSuccess):
         messages = {
-            "algebra": "No correction was found within the checksum's correction limit.",
+            "algebra": "No correction found. Check the original backup.",
             "body": "The proposed correction falls outside the supplied string.",
             "reparse": "No valid correction was found for this backup.",
         }

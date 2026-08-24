@@ -155,7 +155,7 @@ def parser() -> argparse.ArgumentParser:
     multisig = _command(
         wallet_commands,
         "multisig-xpub",
-        "export a public account key for multisig wallet software",
+        "export an account xpub for multisig coordinators",
     )
     _wallet_options(multisig, timestamp=False)
     bitcoin_core = _command(

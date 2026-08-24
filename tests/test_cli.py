@@ -1178,6 +1178,22 @@ def test_correction_hides_internal_candidate_reparse_failures() -> None:
     assert "threshold" not in result.stderr
 
 
+@pytest.mark.parametrize(
+    "damaged",
+    (
+        "ms12test5xxyxxuxxxxxxxxxpxxxxxxxxxx4nzvca9cmczlw",
+        "ms12test5xxyxxuxxxxxxxxxpxxxxxxxxxx4nzvca9cmczl?",
+    ),
+)
+def test_correction_failure_directs_user_to_original_backup(damaged: str) -> None:
+    result = _invoke(["correct"], damaged)
+
+    assert result.exit_code != 0
+    assert result.stderr.strip() == (
+        "codex32 correct: No correction found. Check the original backup."
+    )
+
+
 def test_wallet_commands_are_thin_master_seed_adapters() -> None:
     xprv = _invoke(["xprv"], VECTOR_1["secret_s"])
     xpub = _invoke(
@@ -1274,7 +1290,7 @@ def test_nested_commands_and_positionals_follow_help_table_style() -> None:
     checksum = _invoke(["checksum", "--help"])
     create = _invoke(["create", "--help"])
 
-    assert "multisig-xpub       export a public account key" in wallet.stdout
+    assert "multisig-xpub       export an account xpub" in wallet.stdout
     assert "bitcoin-core        export wallet-import data" in wallet.stdout
     assert "restore             restore signing ability" in core.stdout
     assert "watch-only          find transactions" in core.stdout
