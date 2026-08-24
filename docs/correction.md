@@ -6,6 +6,34 @@ boundary. A bounded structural adapter is a cuttable pre-v1 gate in
 the plan's completeness, performance, size, and audit requirements, v1 remains
 fixed-length-only and structural correction moves to v1.1.
 
+## Public full-string API
+
+`correct(CorrectionContext(...), damaged_text)` accepts every fixed registered
+profile. Its context may constrain the complete canonical length, the
+five-symbol threshold-plus-identifier header, and ordinary share indices that
+are already in use. The HRP and separator are immutable. A differing expected
+length receives no structural search in the current fixed-length
+implementation.
+
+The function returns an immutable tuple of `CorrectionCandidate` records in
+deterministic rank order. A valid unchanged string returns one candidate with
+no edits; no valid correction returns `()`. Malformed context raises
+`InvalidCorrectionInput`. Every candidate contains an ordinary parsed `Share`
+or `Secret`; the decoder never exposes a checksum-only result.
+
+Fixed correction emits only `substitution` and `erasure` edits. Insertions,
+deletions, and transpositions are reserved record kinds for the cuttable
+structural gate. Edit coordinates are zero-based from the end of the
+data/checksum body. `observed` and `replacement` preserve string case.
+`estimated_search_bits` is zero for fixed decoding, `erasures_filled` and
+`addend_hamming_weight` expose the deterministic secondary ranking inputs, and
+`crc_padding_match` is a boolean only for an `ms` S candidate. It is `None` for
+shares and other profiles and never affects validity.
+
+The API completes its fixed search without a deadline or provisional result.
+All four profiles are available to API callers. The CLI deliberately offers
+full-string correction only for `ms` and `cl`.
+
 ## Candidate structural-correction gate
 
 A future `indel.py` may search bounded insertion and deletion candidates, but
@@ -75,8 +103,8 @@ All algebra uses PR #70's native zero-based reverse coordinates: index 0 is the
 last data/checksum character. This convention is never converted using an HRP,
 separator, payload length, or complete-string length.
 
-Full-string correction requires a `suspected_profile`. The adapter accepts the
-exact registered HRP and its separator as an immutable prefix. Printable
+Full-string correction requires a `CorrectionContext` with an exact registered
+profile. The adapter accepts that HRP and its separator as an immutable prefix. Printable
 non-Bech32 characters after that boundary are erasures, including a later `1`.
 The format layer owns checksum selection. A correction outside the visible body is
 rejected, and every candidate must pass the ordinary `parse_codex32` boundary.
@@ -122,7 +150,7 @@ displays positions as one-based and performs only `position - 1` conversion.
 | Error-plus-erasure BCH decoding | `_bch_error_corrections` |
 | Unique arbitrary/consecutive erasure fallback | `_solve_linear`, `_linear_error_corrections` |
 | Root-subgroup and final target verification | `_bch_error_corrections`, `_corrections_reach_target` |
-| Fixed registered-profile adapter | `_correct_fixed` |
+| Public registered-profile adapter | `correct`, over `_correct_fixed` |
 | Application-agnostic residue adapter | `correct_worksheet_residue` |
 
 The target constants are checked against the imported checksum constants. No
@@ -139,10 +167,9 @@ for 13 consecutive regular-checksum erasures and 15 consecutive Long-checksum
 erasures. Other uniquely solvable erasure patterns may succeed but are not a
 guarantee.
 
-Failure records distinguish lexical text, immutable prefix, selected-profile
-shape, algebra, correction outside the visible body, and final semantic reparse.
-Algebra failures retain both BCH and linear-stage diagnostics rather than
-claiming that a mixed-corruption input failed for one inferred reason.
+Lexical, prefix, profile-shape, algebra, visible-body, and semantic-reparse
+failures all collapse to no public candidate. This avoids presenting one
+internal decoder stage as a diagnosis of the physical transcription error.
 
 Decoder success is fail-closed twice: every synthesized locator root must map
 to a legal reverse position in the selected checksum period, and the complete
@@ -164,3 +191,10 @@ The implementation carries the MIT notice from Blockstream's PR #70 head
 The source-derived offline corpus and its limitations are recorded in
 `source-manifest.md`; `tools/differential_correction.py --verify` checks it
 without network or Haskell dependencies.
+
+The frozen malformed corpus exercises parsing, checksum completion,
+interpolation, correction, and CLI tokenization. The dependency-free structured
+targets at `tools/fuzz_untrusted_boundaries.py` and
+`tools/fuzz_correction_context.py` bound each input to 4,096 bytes;
+`tests/test_fuzz_targets.py` supplies deterministic boundary seeds and
+Hypothesis smoke campaigns.

@@ -6,9 +6,8 @@ import json
 from pathlib import Path
 
 from codex32.correction import (
+    CorrectionCandidate,
     _correct_fixed,
-    _FixedCorrectionFailure,
-    _FixedCorrectionSuccess,
 )
 from codex32.profiles import Profile
 
@@ -37,9 +36,9 @@ def main() -> None:
         )
         expected = case["expected"]
         if expected is None:
-            if not isinstance(result, _FixedCorrectionFailure):
+            if result is not None:
                 raise SystemExit(f"case {checked}: expected no correction")
-        elif not (isinstance(result, _FixedCorrectionSuccess) and result.artifact.text == expected):
+        elif not (isinstance(result, CorrectionCandidate) and result.artifact.text == expected):
             raise SystemExit(f"case {checked}: differential mismatch")
         checked += 1
     print(f"verified {checked} frozen PR #70 correction cases")

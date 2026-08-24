@@ -21,12 +21,16 @@ def test_unsafe_legacy_surface_is_absent() -> None:
 
 
 def test_root_api_is_deliberately_small() -> None:
-    assert len(codex32.__all__) <= 24
+    assert len(codex32.__all__) <= 25
     assert set(codex32.__all__) == {
         "Bip39Secret",
         "CodexError",
         "CoreLightningSecret",
+        "CorrectionCandidate",
+        "CorrectionContext",
+        "CorrectionEdit",
         "Header",
+        "InvalidCorrectionInput",
         "MasterSeed",
         "Profile",
         "Secret",
@@ -34,6 +38,7 @@ def test_root_api_is_deliberately_small() -> None:
         "WorksheetCorrection",
         "complete_checksum",
         "core_descriptors",
+        "correct",
         "correct_worksheet_residue",
         "derive_share",
         "generate_master_seed",

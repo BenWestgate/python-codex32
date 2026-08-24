@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "parse": [
+    {"id": "empty", "text": ""},
+    {"id": "missing-separator", "text": "ms0testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
+    {"id": "mixed-case", "text": "Ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
+    {"id": "invalid-checksum", "text": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlq"},
+    {"id": "non-ascii", "text": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlé"},
+    {"id": "embedded-newline", "text": "ms10testsxxxxxxxxxxxxxxxx\nxxxxxxxxxx4nzvca9cmczlw"}
+  ],
+  "checksum_completion": [
+    {"id": "invalid-symbol", "text": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxx!"},
+    {"id": "mixed-case", "text": "Ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx"},
+    {"id": "short-ms", "text": "ms10testsqq"},
+    {"id": "short-cl", "text": "cl10testsqq"},
+    {"id": "bip39-disabled", "text": "bip39_12w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqq"}
+  ],
+  "interpolation": [
+    {
+      "id": "duplicate-index",
+      "artifacts": [
+        "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM",
+        "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM"
+      ]
+    },
+    {
+      "id": "mismatched-threshold-identifier",
+      "artifacts": [
+        "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM",
+        "ms13cashcacdefghjklmnpqrstuvwxyz023949xq35my48dr"
+      ]
+    },
+    {
+      "id": "mismatched-profile",
+      "artifacts": [
+        "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM",
+        "cl12testapppppppppppppppppppppppppppppppppppppppppppppppppppprqasqgqsaeje2"
+      ]
+    },
+    {
+      "id": "secret-in-recovery",
+      "artifacts": [
+        "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM",
+        "MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW"
+      ]
+    },
+    {
+      "id": "too-few-shares",
+      "artifacts": ["MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM"]
+    }
+  ],
+  "correction": [
+    {"id": "damaged-prefix", "profile": "ms", "text": "cl10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
+    {"id": "damaged-separator", "profile": "ms", "text": "msx0testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
+    {"id": "mixed-case", "profile": "ms", "text": "Ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
+    {"id": "too-many-errors", "profile": "ms", "text": "ms12test5xxyxxuxxxxxxxxxpxxxxxxxxxx4nzvca9cmczlw"},
+    {"id": "non-printable", "profile": "ms", "text": "ms10testsxxxxxxxxxxxxxxxx\nxxxxxxxxxx4nzvca9cmczlw"}
+  ],
+  "cli_tokens": [
+    {"id": "missing-command", "args": []},
+    {"id": "unknown-command", "args": ["unknown"]},
+    {"id": "abbreviated-command", "args": ["cre"]},
+    {"id": "missing-share-index", "args": ["share"]},
+    {"id": "unsupported-fresh-size", "args": ["create", "--bytes", "17"]},
+    {"id": "missing-wallet-mode", "args": ["wallet", "bitcoin-core"]},
+    {"id": "unknown-option", "args": ["correct", "--candidate"]}
+  ]
+}

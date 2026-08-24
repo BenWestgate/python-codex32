@@ -33,8 +33,8 @@ from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
 from codex32.bip93 import IDX_SORT, _normalize_target
 from codex32.correction import (
-    _correct_fixed,
-    _FixedCorrectionSuccess,
+    CorrectionContext,
+    correct,
     correct_worksheet_residue,
 )
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
@@ -311,15 +311,11 @@ def _correct(
         raise _UsageError(
             "The string must begin with an undamaged ms1 or cl1 prefix; prefix correction is not attempted."
         )
-    fixed = _correct_fixed(value, suspected_profile=profile)
-    if not isinstance(fixed, _FixedCorrectionSuccess):
-        messages = {
-            "algebra": "No correction found. Check the original backup.",
-            "body": "The proposed correction falls outside the supplied string.",
-            "reparse": "No valid correction was found for this backup.",
-        }
-        raise _CommandError(messages.get(fixed.stage, fixed.detail))
-    if not fixed.addends:
+    candidates = correct(CorrectionContext(profile), value)
+    if not candidates:
+        raise _CommandError("No valid correction found. Check the original backup.")
+    fixed = candidates[0]
+    if not fixed.edits:
         _print("The codex32 string is already valid.")
         return 0
     warning = (

@@ -103,6 +103,21 @@ assert isinstance(secret, MasterSeed)
 additional = derive_share([a, c], "d")
 ```
 
+Full-string correction returns immutable, untrusted candidates and requires an
+explicit registered profile:
+
+```python
+from codex32 import CorrectionContext, Profile, correct
+
+candidates = correct(CorrectionContext(Profile.MS), "ms10tests?xxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw")
+for candidate in candidates:
+    print(candidate.artifact)
+```
+
+The HRP and separator are never corrected. A candidate is checksum-valid, not
+proof that it belongs to the intended wallet; compare it with the physical
+backup.
+
 Worksheet residue correction is also available without disclosing the backup's
 profile or length:
 

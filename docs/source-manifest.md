@@ -25,6 +25,12 @@ SHA-256 `6aa552b34c0bb2878d45dee2655c331d52e40e41e61cef523415d314ad9948e5`.
 `tools/differential_correction.py --verify` checks it offline. The repository
 does not claim that the upstream Haskell property suite was executed locally.
 
+The independent rejection literals in `tests/data/malformed_inputs.json` have
+SHA-256 `966403685d979999524318d752537b5fe2ff01c0189a8e919e040dfd0de3978f`.
+They are fixed abuse cases, not outputs derived from production code. The two
+checked-in fuzz targets accept at most 4,096 bytes and add no runtime
+dependency.
+
 Generalized-HRP PR #2040 and length-restriction PR #2077 are non-authoritative
 research context. The README is user documentation, never requirements evidence.
 

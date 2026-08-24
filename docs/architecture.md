@@ -54,7 +54,7 @@ semantics. No artifact crosses the parsing boundary until every stage passes.
   hidden state.
 
 Private Python names are convention rather than access control. The supported
-surface is the 20-name package `__all__`; direct use of private helpers is
+surface is the 25-name package `__all__`; direct use of private helpers is
 unsupported but remains in the review scope.
 
 ## Size budget

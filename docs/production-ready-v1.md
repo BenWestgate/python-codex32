@@ -1,7 +1,7 @@
 # Production-ready v1 completion plan
 
 Status: active implementation roadmap. The mandatory new-session scan
-precondition and Gate 0 passed on 2026-08-24; Gate 1 is next.
+precondition and Gates 0--1 passed on 2026-08-24; Gate 2 is next.
 
 This plan turns the current reference implementation into a narrowly scoped
 real-funds release. It does not add a GUI, networking, RPC, secret storage,
@@ -191,6 +191,12 @@ Success criteria:
   bypass;
 - fixed correction remains differential-compatible with the frozen P70 corpus;
 - all four registered profiles are covered by public API tests.
+
+Completion evidence (2026-08-24): 499 ordinary, optimized, and
+Hypothesis-statistics tests pass; the two 4,096-byte fuzz targets complete 250
+generated examples each; 28 frozen malformed cases and all 57 differential PR
+#70 cases pass; mypy and Ruff pass; and the installed package remains at 2,999
+physical Python lines.
 
 Dependency: Gate 0.
 

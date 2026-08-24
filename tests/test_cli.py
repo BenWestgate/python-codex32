@@ -1159,7 +1159,7 @@ def test_correction_hides_internal_candidate_reparse_failures() -> None:
     result = _invoke(["correct"], "ms12auxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg")
 
     assert result.exit_code != 0
-    assert "No valid correction was found for this backup." in result.stderr
+    assert result.stderr.strip() == ("codex32 correct: No valid correction found. Check the original backup.")
     assert "threshold" not in result.stderr
 
 
@@ -1174,7 +1174,7 @@ def test_correction_failure_directs_user_to_original_backup(damaged: str) -> Non
     result = _invoke(["correct"], damaged)
 
     assert result.exit_code != 0
-    assert result.stderr.strip() == ("codex32 correct: No correction found. Check the original backup.")
+    assert result.stderr.strip() == ("codex32 correct: No valid correction found. Check the original backup.")
 
 
 def test_wallet_commands_are_thin_master_seed_adapters() -> None:

@@ -39,7 +39,7 @@ from codex32.bech32 import (
     _u5_to_chars,
     _validate_single_case_ascii,
 )
-from codex32.bip93 import Secret, Share, parse_codex32
+from codex32.bip93 import IDX_SORT, Header, MasterSeed, Secret, Share, _has_generation_padding, parse_codex32
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.gf32 import _inverse as _gf32_inverse
@@ -56,31 +56,31 @@ class WorksheetCorrection:
 
 
 @dataclass(frozen=True, slots=True)
-class _CorrectionAddend:
+class CorrectionContext:
+    """Immutable profile and wallet context constraining full-string correction."""
+
+    profile: Profile
+    expected_length: int | None = None
+    expected_header: str | None = None
+    excluded_indices: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CorrectionEdit:
+    kind: Literal["substitution", "erasure", "insertion", "deletion", "transposition"]
     reverse_index: int
-    value: int
+    observed: str
+    replacement: str
 
 
 @dataclass(frozen=True, slots=True)
-class _FixedCorrectionSuccess:
+class CorrectionCandidate:
     artifact: Share | Secret
-    addends: tuple[_CorrectionAddend, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _FixedCorrectionFailure:
-    stage: Literal["text", "prefix", "profile", "algebra", "body", "reparse"]
-    detail: str
-    erasure_count: int = 0
-    guaranteed_error_budget: int | None = None
-    bch_failure: str | None = None
-    linear_failure: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class _AlgebraFailure:
-    bch_failure: str
-    linear_failure: str
+    edits: tuple[CorrectionEdit, ...]
+    estimated_search_bits: float
+    erasures_filled: int
+    addend_hamming_weight: int
+    crc_padding_match: bool | None
 
 
 # --- Direct P70-derived field, polynomial, BCH, and linear algebra. ---
@@ -226,10 +226,8 @@ def _poly_powers(
 
 @dataclass(frozen=True, slots=True)
 class _Spec:
-    checksum: _Checksum
     base: int
     first_root: int
-    distance: int
     target: tuple[int, ...]
     roots: tuple[int, ...]
     generator: tuple[int, ...]
@@ -263,10 +261,8 @@ def _make_spec(
     if len(generator) != len(target_values):
         raise AssertionError("checksum target and generator degrees differ")
     return _Spec(
-        checksum,
         base,
         first_root,
-        8,
         target_values,
         roots,
         generator,
@@ -451,8 +447,6 @@ def _linear_error_corrections(
     erasure_indices: list[int],
     residue: list[int],
 ) -> list[tuple[int, int]] | None:
-    if len(erasure_indices) > spec.degree:
-        return None
     checksum_error = [value ^ bias for value, bias in zip(residue, spec.bias)]
     powers = _poly_powers(
         spec.generator,
@@ -471,27 +465,14 @@ def _error_corrections(
     spec: _Spec,
     erasure_indices: list[int],
     residue: list[int],
-) -> list[tuple[int, int]] | _AlgebraFailure:
+) -> list[tuple[int, int]] | None:
     bch = _bch_error_corrections(spec, erasure_indices, residue)
     if bch is not None and _corrections_reach_target(spec, residue, bch):
         return bch
-    bch_failure = (
-        "known erasures exceed the BCH distance"
-        if len(erasure_indices) > spec.distance
-        else "no bounded BCH solution"
-    )
     if len(erasure_indices) > spec.degree:
-        return _AlgebraFailure(
-            bch_failure,
-            "known erasures exceed the checksum degree",
-        )
+        return None
     linear = _linear_error_corrections(spec, erasure_indices, residue)
-    if linear is not None and _corrections_reach_target(spec, residue, linear):
-        return linear
-    return _AlgebraFailure(
-        bch_failure,
-        "erasure system has no unique consistent solution",
-    )
+    return linear if linear is not None and _corrections_reach_target(spec, residue, linear) else None
 
 
 def _corrections_reach_target(
@@ -512,37 +493,31 @@ def _corrections_reach_target(
     return corrected == list(spec.bias)
 
 
-# --- Small local adapters over the P70-derived algebra. ---
-
-
 def _correct_fixed(
     damaged_text: str,
     *,
     suspected_profile: Profile,
-) -> _FixedCorrectionSuccess | _FixedCorrectionFailure:
+) -> CorrectionCandidate | None:
     if not isinstance(suspected_profile, Profile):
         raise TypeError("suspected_profile must be Profile")
     try:
         uppercase = _validate_single_case_ascii(damaged_text)
     except TypeError:
         raise
-    except CodexError as error:
-        return _FixedCorrectionFailure("text", str(error))
+    except CodexError:
+        return None
 
     prefix = f"{suspected_profile.value}1"
     if not damaged_text.lower().startswith(prefix):
-        return _FixedCorrectionFailure(
-            "prefix",
-            f"input must start with suspected prefix {prefix!r}",
-        )
+        return None
     body_text = damaged_text[len(prefix) :]
     body = [CHARSET.find(character.lower()) for character in body_text]
     try:
         profile = _profile_spec(suspected_profile)
         checksum = _checksum_for_encoded_length(suspected_profile.value, len(body))
         profile.validate_payload_length(len(body) - checksum.length - 6)
-    except CodexError as error:
-        return _FixedCorrectionFailure("profile", str(error))
+    except CodexError:
+        return None
     spec = _spec_for_checksum(checksum)
     erasures = [index for index, value in enumerate(reversed(body)) if value < 0]
     zeroed = [max(value, 0) for value in body]
@@ -551,24 +526,12 @@ def _correct_fixed(
         erasures,
         _residue(spec, suspected_profile.value, zeroed),
     )
-    if isinstance(result, _AlgebraFailure):
-        budget = max(0, (spec.distance - len(erasures)) // 2)
-        return _FixedCorrectionFailure(
-            "algebra",
-            "checksum decoder found no permitted correction",
-            len(erasures),
-            budget,
-            result.bch_failure,
-            result.linear_failure,
-        )
+    if result is None:
+        return None
 
     corrected_reversed = list(reversed(zeroed))
     if any(index >= len(corrected_reversed) for index, _value in result):
-        return _FixedCorrectionFailure(
-            "body",
-            "correction points outside the visible data part",
-            len(erasures),
-        )
+        return None
     for index, addend in result:
         corrected_reversed[index] ^= addend
     corrected = prefix + _u5_to_chars(list(reversed(corrected_reversed)))
@@ -576,14 +539,76 @@ def _correct_fixed(
         corrected = corrected.upper()
     try:
         artifact = parse_codex32(corrected)
-    except CodexError as error:
-        return _FixedCorrectionFailure(
-            "reparse",
-            str(error),
-            len(erasures),
+    except CodexError:
+        return None
+    edits = tuple(
+        CorrectionEdit(
+            "substitution" if damaged_text[-index - 1].lower() in CHARSET else "erasure",
+            index,
+            damaged_text[-index - 1],
+            artifact.text[-index - 1],
         )
-    addends = tuple(_CorrectionAddend(index, value) for index, value in sorted(result))
-    return _FixedCorrectionSuccess(artifact, addends)
+        for index, _value in sorted(result)
+    )
+    return CorrectionCandidate(
+        artifact,
+        edits,
+        0.0,
+        sum(edit.kind == "erasure" for edit in edits),
+        sum(value.bit_count() for _index, value in result),
+        _has_generation_padding(artifact) if isinstance(artifact, MasterSeed) else None,
+    )
+
+
+def _validate_context(context: CorrectionContext) -> None:
+    try:
+        if not isinstance(context.profile, Profile):
+            raise TypeError("profile must be Profile")
+        length = context.expected_length
+        if length is not None:
+            if isinstance(length, bool) or not isinstance(length, int):
+                raise TypeError("expected_length must be an integer or None")
+            body_length = length - len(context.profile.value) - 1
+            checksum = _checksum_for_encoded_length(context.profile.value, body_length)
+            _profile_spec(context.profile).validate_payload_length(body_length - checksum.length - 6)
+        value = context.expected_header
+        if value is not None:
+            if not isinstance(value, str) or len(value) != 5:
+                raise ValueError("expected_header must be threshold plus four identifier symbols")
+            Header(int(value[0]), value[1:], "s")
+        indices = context.excluded_indices
+        if not isinstance(indices, tuple) or len(indices) > 31:
+            raise TypeError("excluded_indices must be a tuple of at most 31 ordinary indices")
+        lowered = tuple(index.lower() if isinstance(index, str) else "" for index in indices)
+        if any(len(index) != 1 or index not in IDX_SORT[1:] for index in lowered) or len(set(lowered)) != len(
+            lowered
+        ):
+            raise ValueError("excluded_indices must contain distinct ordinary indices")
+    except (CodexError, TypeError, ValueError) as error:
+        raise InvalidCorrectionInput(str(error)) from error
+
+
+def correct(context: CorrectionContext, damaged_text: str) -> tuple[CorrectionCandidate, ...]:
+    """Return every equally best fixed-length correction as an untrusted candidate."""
+    if not isinstance(context, CorrectionContext):
+        raise TypeError("context must be CorrectionContext")
+    if not isinstance(damaged_text, str):
+        raise TypeError("damaged_text must be str")
+    _validate_context(context)
+    if context.expected_length is not None and len(damaged_text) != context.expected_length:
+        return ()
+    fixed = _correct_fixed(damaged_text, suspected_profile=context.profile)
+    if fixed is None:
+        return ()
+    artifact = fixed.artifact
+    header = f"{artifact.header.threshold}{artifact.header.identifier}"
+    if context.expected_header is not None and header != context.expected_header.lower():
+        return ()
+    if isinstance(artifact, Share) and artifact.header.index in (
+        index.lower() for index in context.excluded_indices
+    ):
+        return ()
+    return (fixed,)
 
 
 def correct_worksheet_residue(
@@ -620,6 +645,6 @@ def correct_worksheet_residue(
     if any(index < 0 or index >= spec.period for index in indices):
         raise InvalidCorrectionInput(f"erasure indices must be between 0 and {spec.period - 1}")
     result = _error_corrections(spec, indices, values)
-    if isinstance(result, _AlgebraFailure):
+    if result is None:
         return None
     return tuple(WorksheetCorrection(index, CHARSET[addend]) for index, addend in sorted(result))

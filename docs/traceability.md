@@ -15,7 +15,7 @@ Every implemented claim identifies one code owner and direct evidence.
 | R08 | derive only a fresh ordinary share | `derive_share` | every target and existing/S rejection | Implemented |
 | R09 | fresh shared S uses k uniform u5 masks | `generation._masks` and basis loop | mask invariants, recovery, no entropy injection | Implemented |
 | R10 | splitting S uses S plus k−1 masks | `split_secret` | exact recovery and threshold properties | Implemented for `ms` and `cl` |
-| R11 | four errors, `2e+v≤8`, eight erasures, bursts | `correction.py` | P70 corpus and Hypothesis positions | Implemented fixed-length only |
+| R11 | four errors, `2e+v≤8`, eight erasures, bursts | public `correct` over `correction.py` | P70 corpus, all-profile API tests, and Hypothesis positions | Implemented fixed-length only |
 | R12 | correction is an untrusted suggestion | CLI `correct` | stderr/nonzero and no-correction tests | Implemented |
 | R13 | subsequent share input uses known prefix/header | `_cli_input.read_artifacts`, BIP93 prefix validators | suffix/full paste, retry, duplicate/mismatch and stream tests | Implemented |
 | R14 | structural correction/timeout UX | none | [cuttable v1 gate](production-ready-v1.md) | Missing; Gate 3 candidate |
@@ -32,8 +32,9 @@ Every implemented claim identifies one code owner and direct evidence.
 | R25 | xprv, coordinator xpub, descriptors in reusable API | `wallet.py`; goal-oriented CLI tree | official xprv, frozen BIP48/descriptor and nested-command tests | Implemented |
 | R26 | explicit account/timestamp, mandatory Core mode, root-xprv warning | wallet API and CLI | deterministic records, public/private separation and warning tests | Implemented |
 | R27 | no arbitrary security parser for descriptors | fixed templates in `wallet.py` | module/API absence and template fixtures | Implemented by removal |
-| R28 | safe typed installable reference surface | 20-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
+| R28 | safe typed installable reference surface | 25-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
 | R29 | explicit share-index selectors are bounded before copying or normalizing elements | `generation._indices` | oversized string pre-normalization regression across all three public generation APIs | Implemented from standard security scan |
+| R30 | malformed untrusted boundaries fail closed under bounded work | parser, completion, interpolation, correction, and CLI adapters | frozen malformed corpus and 4,096-byte structured fuzz target | Implemented in Gate 1 |
 
 The expanded checksum rule from PR #2258 is the only pending-upstream behavior.
 Its 44--46-byte compatibility exposure is explicitly accepted, has direct
