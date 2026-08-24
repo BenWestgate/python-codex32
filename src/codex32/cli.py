@@ -321,7 +321,7 @@ def _correct(
         messages = {
             "algebra": "No correction was found within the checksum's correction limit.",
             "body": "The proposed correction falls outside the supplied string.",
-            "reparse": f"The corrected string is not valid for this backup type: {fixed.detail}",
+            "reparse": "No valid correction was found for this backup.",
         }
         raise _CommandError(messages.get(fixed.stage, fixed.detail))
     if not fixed.addends:

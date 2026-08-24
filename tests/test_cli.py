@@ -553,7 +553,7 @@ def test_tty_recovery_accepts_suffix_after_fixed_prefix(
     assert captured.out.strip() == VECTOR_2["secret_S"]
     assert "Share 1 of 2 accepted." in captured.err
     assert "Share 2 of 2 accepted." not in captured.err
-    assert prompts == ["Enter a codex32 string: ", "Enter string 2 of 2: MS12NAME"]
+    assert prompts == ["Enter a codex32 string: ", "Enter share 2 of 2: MS12NAME"]
 
 
 def test_tty_recovery_accepts_complete_uppercase_and_retries(
@@ -589,15 +589,62 @@ def test_tty_recovery_accepts_complete_uppercase_and_retries(
     assert captured.out.strip() == VECTOR_2["secret_S"].upper()
     assert prompts == [
         "Enter a codex32 string: ",
-        "Enter string 2 of 2: MS12NAME",
-        "Enter string 2 of 2: MS12NAME",
-        "Enter string 2 of 2: MS12NAME",
+        "Enter share 2 of 2: MS12NAME",
+        "Enter share 2 of 2: MS12NAME",
+        "Enter share 2 of 2: MS12NAME",
     ]
     assert "Rejected: These strings are for different applications." in captured.err
     assert "Rejected: That share index was already entered." in captured.err
     assert first not in captured.err and mismatch not in captured.err
     assert editor.inserted == []
     assert editor.hook is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    (
+        ("secret", "--plain"),
+        ("xprv",),
+        ("wallet", "multisig-xpub"),
+        ("wallet", "bitcoin-core", "watch-only"),
+        ("wallet", "bitcoin-core", "restore"),
+    ),
+)
+def test_tty_recovery_accepts_secret_after_compatible_shares(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: tuple[str, ...],
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    answers = iter(
+        (VECTOR_3["derived_f"], VECTOR_3["share_c"], VECTOR_3["secret_s"])
+    )
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(builtins, "input", answer)
+
+    assert main(command) == 0
+    captured = capsys.readouterr()
+    assert captured.out
+    assert "Rejected:" not in captured.err
+    assert "Share 1 of 3 accepted." in captured.err
+    assert "Share 2 of 3 accepted." in captured.err
+    assert prompts == [
+        "Enter a codex32 string: ",
+        "Enter share 2 of 3: ms13cash",
+        "Enter share 3 of 3: ms13cash",
+    ]
 
 
 def test_tty_share_collects_secret_and_exact_basis(
@@ -1119,6 +1166,16 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
     assert "Remove or correct these arguments: --prefix" in removed.stderr
     assert "undamaged ms1 or cl1 prefix" in damaged_prefix.stderr
     assert "not available for BIP39 worksheet backups" in bip39.stderr
+
+
+def test_correction_hides_internal_candidate_reparse_failures() -> None:
+    result = _invoke(
+        ["correct"], "ms12auxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg"
+    )
+
+    assert result.exit_code != 0
+    assert "No valid correction was found for this backup." in result.stderr
+    assert "threshold" not in result.stderr
 
 
 def test_wallet_commands_are_thin_master_seed_adapters() -> None:

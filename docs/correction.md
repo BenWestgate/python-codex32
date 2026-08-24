@@ -3,6 +3,57 @@
 V1 implements only the algebraic, fixed-length correction boundary. Structural
 insertion/deletion search, deadlines, ranking, and concurrency are out of scope.
 
+## Deferred structural-correction plan
+
+A future `indel.py` may search bounded insertion and deletion candidates, but
+must remain separate from the fixed-length BCH core. Its primary ordering must
+come from an evidence-backed transcription-error model and estimated search
+cost, not from checksum-validity alone.
+
+The planned structural envelope is deliberately small:
+
+- one omitted character;
+- one duplicated character;
+- one adjacent-character transposition;
+- at most one omitted four-character transcription group and at most one
+  duplicated or otherwise erroneous four-character group;
+- explicit erasures and fixed-length substitutions within the BCH core's
+  existing capacity.
+
+Combinations may be attempted only inside a documented bounded search. Broader
+arbitrary-indel and repeated-group recovery is not part of the plan.
+
+Rank complete candidates by an estimated negative log likelihood of the
+observed transcription. The model must account for the structural operation,
+estimated search-space bits, and the number of unknown erasures filled. Among
+otherwise comparable candidates, prefer the lower sum of
+`addend.value.bit_count()` over known-character substitutions. This uses the
+Bech32 alphabet's bit ordering as a small confusion prior without claiming that
+Hamming distance is a measured human-error probability.
+
+For an `ms` S candidate with generation padding, a CRC-padding match may be used
+only as a secondary ordering hint after structural evidence. A match must never
+make a candidate valid, prune the search, establish completeness, or remove a
+nonmatching candidate from API results. Parsed and hand-generated BIP93 secrets
+may legally use arbitrary padding, and ordinary shares have no CRC semantics.
+The candidate record should expose whether this hint was applicable and whether
+it matched so callers can audit the ordering.
+
+Known profile, length, immutable header, and unused-index information constrain
+candidate construction before ranking; they are not score bonuses. The complete
+API result remains deterministic and retains every candidate in rank order,
+including non-CRC candidates and exact ties.
+
+Before selecting a ranking formula, test it against a frozen, independently
+labelled corpus of realistic transcription damage. Compare at least omitted and
+duplicated characters or groups, transpositions, repeated adjacent characters,
+visual substitutions, case mistakes, explicit erasures, and combinations of
+these errors. Record top-1 and top-k recovery rates, ties, search work, and
+timeouts; do not tune and evaluate on the same examples. Ranking tests must also
+prove that lower addend Hamming weight wins only after stronger structural
+evidence, a CRC match cannot outrank a structurally better candidate, and a CRC
+mismatch never removes an otherwise valid candidate.
+
 ## Coordinates and trust boundary
 
 All algebra uses PR #70's native zero-based reverse coordinates: index 0 is the

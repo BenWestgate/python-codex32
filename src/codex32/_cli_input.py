@@ -166,14 +166,15 @@ def _interactive(*, basis: bool, one: bool, excluded_index: str | None, profiles
     accepted: list[Artifact] = []
     prefix, prefill, required = "", "", 1
     while len(accepted) < required:
-        label = "Enter a codex32 string" if not accepted else f"Enter string {len(accepted) + 1} of {required}"
+        label = "Enter a codex32 string" if not accepted else f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}"
         try:
             value = _prompt_entry(label, prefix, prefill)
             artifact = _parse(value if "1" in value else prefix + value, profiles)
             if basis and artifact.header.index == excluded_index:
                 raise ExistingTargetIndex("That index was requested for the additional share.")
             if not one and (accepted or isinstance(artifact, Share) or basis):
-                validator = _validate_basis_prefix if basis else _validate_recovery_prefix
+                recovering = not basis and isinstance(artifact, Share)
+                validator = _validate_recovery_prefix if recovering else _validate_basis_prefix
                 validator([*accepted, artifact])
         except (CodexError, InputError) as error:
             message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
@@ -183,7 +184,7 @@ def _interactive(*, basis: bool, one: bool, excluded_index: str | None, profiles
         prefill = ""
         if one:
             return [artifact]
-        if not accepted and isinstance(artifact, Secret) and not basis:
+        if isinstance(artifact, Secret) and not basis:
             return [artifact]
         if not accepted:
             required = artifact.header.threshold
