@@ -1,27 +1,42 @@
 # Fixed-length BCH correction
 
-V1 implements only the algebraic, fixed-length correction boundary. Structural
-insertion/deletion search, deadlines, ranking, and concurrency are out of scope.
+The current implementation provides only the algebraic, fixed-length correction
+boundary. A bounded structural adapter is a cuttable pre-v1 gate in
+[the production-ready v1 plan](production-ready-v1.md). If it cannot satisfy
+the plan's completeness, performance, size, and audit requirements, v1 remains
+fixed-length-only and structural correction moves to v1.1.
 
-## Deferred structural-correction plan
+## Candidate structural-correction gate
 
 A future `indel.py` may search bounded insertion and deletion candidates, but
 must remain separate from the fixed-length BCH core. Its primary ordering must
 come from an evidence-backed transcription-error model and estimated search
 cost, not from checksum-validity alone.
 
-The planned structural envelope is deliberately small:
+The structural layer distinguishes extra text from fixed-length errors. An
+erroneous four-character group remains BCH damage. A duplicated or inserted
+group is extra text removed before BCH, while an omitted group is restored as
+four erasures.
 
-- one omitted character;
-- one duplicated character;
-- one adjacent-character transposition;
-- at most one omitted four-character transcription group and at most one
-  duplicated or otherwise erroneous four-character group;
-- explicit erasures and fixed-length substitutions within the BCH core's
-  existing capacity.
+If the gate ships, its minimum envelope is:
 
-Combinations may be attempted only inside a documented bounded search. Broader
-arbitrary-indel and repeated-group recovery is not part of the plan.
+- at least two arbitrary individual omissions and insertions;
+- at least two adjacent-character transpositions;
+- two arbitrary omitted, group-aligned four-character groups, represented by
+  eight erasures;
+- three omitted group-aligned groups when contiguous, represented by twelve
+  consecutive erasures;
+- four arbitrary inserted four-character groups, including candidates that
+  still require BCH correction after deletion; and
+- up to four exact adjacent duplicated groups through a dedicated fast path.
+
+General mixed damage retains the BCH guarantee
+`2 * substitutions + erasures <= 8`. The consecutive-erasure path instead
+guarantees up to 13 regular-checksum or 15 Long-checksum erasures. Eight
+insertion-only groups were searchable in an initial development benchmark, but
+that unlikely human-error mode is not a required v1 contract. Broader coverage
+may be retained only if it adds little code and passes the complete platform
+budget.
 
 Rank complete candidates by an estimated negative log likelihood of the
 observed transcription. The model must account for the structural operation,

@@ -18,7 +18,7 @@ Every implemented claim identifies one code owner and direct evidence.
 | R11 | four errors, `2e+v≤8`, eight erasures, bursts | `correction.py` | P70 corpus and Hypothesis positions | Implemented fixed-length only |
 | R12 | correction is an untrusted suggestion | CLI `correct` | stderr/nonzero and no-correction tests | Implemented |
 | R13 | subsequent share input uses known prefix/header | `_cli_input.read_artifacts`, BIP93 prefix validators | suffix/full paste, retry, duplicate/mismatch and stream tests | Implemented |
-| R14 | structural correction/timeout UX | none | explicit scope assertions/docs | Deliberately omitted |
+| R14 | structural correction/timeout UX | none | [cuttable v1 gate](production-ready-v1.md) | Missing; Gate 3 candidate |
 | R15 | only `ms` S enters wallet workflows | `wallet._master` | all non-`MasterSeed` types rejected | Implemented |
 | R16 | electronic generation defaults to 128 bits | generation API and CLI `create` | default and complete creation matrix | Implemented |
 | R17 | worksheet checksum sizes and private residue correction | CLI `checksum`, residue API | ms/cl sizes, short/long and BIP39 residues | Implemented |
@@ -36,3 +36,5 @@ Every implemented claim identifies one code owner and direct evidence.
 
 The expanded checksum rule from PR #2258 is the only pending-upstream behavior.
 It has direct boundary fixtures and is isolated in one format-layer function.
+All remaining production-release work and gate dependencies are recorded in
+[the production-ready v1 completion plan](production-ready-v1.md).
