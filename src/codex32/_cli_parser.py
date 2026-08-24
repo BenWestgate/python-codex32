@@ -141,8 +141,9 @@ def parser() -> argparse.ArgumentParser:
         "--bytes",
         dest="byte_length",
         type=_integer("bytes", 16, 64),
+        choices=(16, 32),
         metavar="BYTES",
-        help="length of a new Bitcoin master seed in bytes (default: 16)",
+        help="length of a new Bitcoin master seed: 16 or 32 bytes (default: 16)",
     )
     create.add_argument(
         "--shares",

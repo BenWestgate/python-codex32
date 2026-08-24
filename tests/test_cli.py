@@ -791,6 +791,37 @@ def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:
     assert artifacts[0].header.threshold == 0
 
 
+@pytest.mark.parametrize("byte_length", (16, 32))
+def test_fresh_cli_generation_supports_established_sizes(byte_length: int) -> None:
+    result = _invoke(["create", "--bytes", str(byte_length)])
+    artifact = _output_artifacts(result)[0]
+
+    assert result.exit_code == 0
+    assert isinstance(artifact, MasterSeed)
+    assert len(artifact.seed_bytes) == byte_length
+
+
+@pytest.mark.parametrize("byte_length", (17, 31, 33, 64))
+def test_fresh_cli_generation_rejects_other_bip93_sizes(byte_length: int) -> None:
+    result = _invoke(["create", "--bytes", str(byte_length)])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "--bytes" in result.stderr
+    assert "invalid choice" in result.stderr
+
+
+@pytest.mark.parametrize("byte_length", (17, 64))
+def test_cli_import_preserves_all_master_seed_sizes(byte_length: int) -> None:
+    raw = bytes(range(byte_length))
+    result = _invoke(["create", "--existing"], raw.hex())
+    artifact = _output_artifacts(result)[0]
+
+    assert result.exit_code == 0
+    assert isinstance(artifact, MasterSeed)
+    assert artifact.seed_bytes == raw
+
+
 def test_bare_create_does_not_prompt_on_a_terminal(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -953,6 +984,7 @@ def test_create_help_explains_headers_and_profile_specific_bytes() -> None:
     assert "such as 3cash or 3" in result.stdout
     assert "omit to create a new unshared Bitcoin master seed" in " ".join(result.stdout.split())
     assert "length of a new Bitcoin master seed" in result.stdout
+    assert "16 or 32 bytes" in " ".join(result.stdout.split())
     assert "two more than needed for recovery" in " ".join(result.stdout.split())
     assert "--existing" in result.stdout
     assert "use an existing codex32 secret or hexadecimal seed" in result.stdout

@@ -21,6 +21,16 @@ or wallet.
 - Correction produces untrusted suggestions, never authenticated input to a
   wallet operation.
 
+## Accepted release risks
+
+The durable dispositions, controls, and review triggers are recorded in the
+[accepted-risk register](docs/accepted-risks.md). In particular, this version
+intentionally follows the frozen checksum-boundary behavior of pending BIP93
+PR #2258. That creates a known compatibility risk for 44--46-byte `ms` strings;
+there is no dual decoder. Fresh CLI generation is limited to 16 or 32 bytes,
+while the API and imported existing seeds retain every BIP93 size from 16
+through 64 bytes.
+
 ## Accepted limitations
 
 - Python cannot guarantee secret zeroization, constant-time execution, locked
@@ -33,8 +43,8 @@ or wallet.
   narrowly and verifies BIP93 BIP32 vectors, but does not independently audit
   its cryptographic implementation.
 - Fresh unshared `ms` identifiers expose 20 bits of the BIP32 fingerprint.
-  Shared sets use random or explicit identifiers; raw seeds and re-sharing
-  require an explicit identifier.
+  Shared sets, supplied raw seeds, re-sharing, and CL generation use random or
+  explicit identifiers.
 - Generation-only CRC padding is a small recovery hint, not authentication or
   a codex32 validity requirement.
 - BCH correction detects/corrects bounded symbol errors but cannot establish
@@ -45,6 +55,5 @@ or wallet.
 
 The project has no GUI, network access, RPC, secret storage, wallet database,
 arbitrary descriptor parser, plugin/profile registry, structural correction
-search, partial-basis completion, BIP39 mnemonic conversion, or fresh Core
-Lightning secret generation. Adding one of these requires a separate threat
-model and explicit scope decision.
+search, partial-basis completion, or BIP39 mnemonic conversion. Adding one of
+these requires a separate threat model and explicit scope decision.

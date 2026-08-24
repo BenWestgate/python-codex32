@@ -1,7 +1,7 @@
 # Production-ready v1 completion plan
 
-Status: accepted implementation roadmap; no gate may begin until the scan
-precondition below passes in a new session.
+Status: active implementation roadmap. The mandatory new-session scan
+precondition and Gate 0 passed on 2026-08-24; Gate 1 is next.
 
 This plan turns the current reference implementation into a narrowly scoped
 real-funds release. It does not add a GUI, networking, RPC, secret storage,
@@ -62,6 +62,22 @@ value, or six workers run sequentially under a smaller cap is not equivalent to
 the required preflight result.
 
 No implementation gate starts if this precondition fails.
+
+### Completed precondition evidence
+
+At revision `8aa17dcd4fea76f1a37b43f8155e060493d02aa7`, the configuration
+preflight returned `status: ready`, `delegated_workers: pass`, and
+`usable_worker_slots_6: pass` with six actual delegated slots under a total
+seven-thread cap. TAC status was refreshed exactly once immediately before the
+scan and was granted.
+
+One independent baseline auditor and five focused investigators completed the
+repository-wide standard scan. It produced one low-severity availability
+finding: string share-index selectors were copied and normalized before their
+31-index limit was enforced. Gate 0 bounds every selector before either step
+and adds a regression across all three public generation APIs. No reportable
+medium-or-higher finding remained. The previously accepted PR #2258
+compatibility exposure remains tracked separately as AR-001.
 
 ## Public interface to complete
 

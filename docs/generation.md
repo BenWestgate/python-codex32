@@ -12,6 +12,11 @@ generation also use an independent random identifier unless one is supplied.
 Random re-sharing never repeats the source set header; an explicitly repeated
 source header is rejected.
 
+The Python API generates every BIP93 `ms` size from 16 through 64 bytes. Fresh
+CLI generation is deliberately narrower: `codex32 create --bytes` accepts only
+16 or 32 bytes. `--existing` continues to import every 16--64-byte hexadecimal
+seed, including unusual sizes that must remain recoverable.
+
 Shared generation follows the two BIP93 constructions:
 
 - a fresh set draws `k` independent complete u5 masks;

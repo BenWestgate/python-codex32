@@ -6,9 +6,9 @@ Every implemented claim identifies one code owner and direct evidence.
 | ID | Source requirement | Code owner | Direct tests/evidence | Status |
 |---|---|---|---|---|
 | R01 | B93 lexical format and header | `bech32._parse`, `Header` | official valid/invalid corpus, case/header tests | Implemented |
-| R02 | common short/long checksum selection | `bech32._checksum_for_encoded_length` | PR #2258 43–47-byte boundaries | Implemented pending upstream PR |
-| R03 | regular ≤93, gap 94/95, Long ≤1023 expanded symbols | same format helper, checksum specs | generic vectors and exact endpoints | Implemented pending upstream PR |
-| R04 | `ms` accepts every 16–64-byte seed and legal pad | `MasterSeed` | all 49 lengths and every pad value | Implemented |
+| R02 | common short/long checksum selection | `bech32._checksum_for_encoded_length` | PR #2258 43–47-byte boundaries | Implemented; accepted pending-standard risk |
+| R03 | regular ≤93, gap 94/95, Long ≤1023 expanded symbols | same format helper, checksum specs | generic vectors and exact endpoints | Implemented; accepted pending-standard risk |
+| R04 | `ms` API and imports accept every 16–64-byte seed and legal pad | `MasterSeed` | all 49 lengths, every pad value, and CLI imported-size boundaries | Implemented |
 | R05 | k=0/S; k=2–9/S or ordinary index | `Header` | header abuse and B93 invalid vectors | Implemented |
 | R06 | invalid checksum cannot enter domain APIs | `parse_codex32` artifact boundary | negative parser/public API tests | Implemented |
 | R07 | recover from exactly k compatible distinct shares | `recover_secret` | B93 vectors 2/3, k=2–9, mismatch properties | Implemented |
@@ -20,7 +20,7 @@ Every implemented claim identifies one code owner and direct evidence.
 | R13 | subsequent share input uses known prefix/header | `_cli_input.read_artifacts`, BIP93 prefix validators | suffix/full paste, retry, duplicate/mismatch and stream tests | Implemented |
 | R14 | structural correction/timeout UX | none | [cuttable v1 gate](production-ready-v1.md) | Missing; Gate 3 candidate |
 | R15 | only `ms` S enters wallet workflows | `wallet._master` | all non-`MasterSeed` types rejected | Implemented |
-| R16 | electronic generation defaults to 128 bits | generation API and CLI `create` | default and complete creation matrix | Implemented |
+| R16 | electronic generation defaults to 128 bits; fresh CLI `ms` is 16/32 bytes while the API remains 16–64 | generation API and CLI `create` | API all-length tests; CLI accepted/rejected/imported-size boundaries | Implemented |
 | R17 | worksheet checksum sizes and private residue correction | CLI `checksum`, residue API | ms/cl sizes, short/long and BIP39 residues | Implemented |
 | R18 | identifier selection is public metadata | `generation` identifier helpers | k=0 fixture, random defaults, explicit override | Accepted divergence |
 | R19 | `cl` custom ID, 32-byte payload, import and generation | `Profile.CL`, `CoreLightningSecret`, `generate_core_lightning_secret` | published examples, import evidence, generation/recovery and padding tests | Implemented |
@@ -33,8 +33,11 @@ Every implemented claim identifies one code owner and direct evidence.
 | R26 | explicit account/timestamp, mandatory Core mode, root-xprv warning | wallet API and CLI | deterministic records, public/private separation and warning tests | Implemented |
 | R27 | no arbitrary security parser for descriptors | fixed templates in `wallet.py` | module/API absence and template fixtures | Implemented by removal |
 | R28 | safe typed installable reference surface | 20-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
+| R29 | explicit share-index selectors are bounded before copying or normalizing elements | `generation._indices` | oversized string pre-normalization regression across all three public generation APIs | Implemented from standard security scan |
 
 The expanded checksum rule from PR #2258 is the only pending-upstream behavior.
-It has direct boundary fixtures and is isolated in one format-layer function.
-All remaining production-release work and gate dependencies are recorded in
-[the production-ready v1 completion plan](production-ready-v1.md).
+Its 44--46-byte compatibility exposure is explicitly accepted, has direct
+boundary fixtures, and is isolated in one format-layer function. The controls
+and review trigger are in the [accepted-risk register](accepted-risks.md). All
+remaining production-release work and gate dependencies are recorded in the
+[production-ready v1 completion plan](production-ready-v1.md).

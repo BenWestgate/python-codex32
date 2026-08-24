@@ -40,11 +40,12 @@ random or explicit. `--indices 7cad` preserves exact order.
 `--shares N` samples distinct indices and preserves sample order. Raw seeds and
 re-sharing use random identifiers when none is supplied. Bare interactive
 `create` immediately generates an unshared Bitcoin master seed. Generation
-never prompts for protected input. `--existing` instead reads one existing
-codex32 secret or hexadecimal seed from the terminal or bounded stdin. Nonempty
-redirected input without that flag is rejected rather than ignored. Without a
-share selector, a shared set contains two more shares than are needed for
-recovery; threshold zero remains unshared.
+never prompts for protected input. Fresh `ms` generation accepts 16 or 32 bytes;
+the default is 16. `--existing` instead reads one existing codex32 secret or
+hexadecimal seed from the terminal or bounded stdin and retains every 16--64
+byte BIP93 `ms` size. Nonempty redirected input without that flag is rejected
+rather than ignored. Without a share selector, a shared set contains two more
+shares than are needed for recovery; threshold zero remains unshared.
 Hexadecimal input must already contain securely generated entropy; a random
 backup identifier does not make a weak seed safe.
 After creation, the CLI reminds the user to test recovery using what was

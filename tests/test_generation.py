@@ -10,6 +10,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import codex32
+import codex32.generation as generation_module
 from codex32 import (
     CoreLightningSecret,
     MasterSeed,
@@ -181,6 +182,40 @@ def test_invalid_share_selections(arguments: dict[str, object]) -> None:
             identifier="test",
             **arguments,  # type: ignore[arg-type]
         )
+
+
+def test_oversized_index_strings_are_bounded_before_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_normalization(_value: object) -> str:
+        raise AssertionError("oversized selector reached per-index normalization")
+
+    monkeypatch.setattr(generation_module, "_index", unexpected_normalization)
+    source = MasterSeed.from_seed(bytes(range(16)), identifier="test")
+    operations = (
+        lambda: generate_master_seed(
+            bytes(range(16)),
+            threshold=2,
+            indices="a" * 32,
+            identifier="test",
+        ),
+        lambda: generate_core_lightning_secret(
+            bytes(range(32)),
+            threshold=2,
+            indices="a" * 32,
+            identifier="test",
+        ),
+        lambda: split_secret(
+            source,
+            2,
+            indices="a" * 32,
+            identifier="name",
+        ),
+    )
+
+    for operation in operations:
+        with pytest.raises(InvalidShareSelection, match="at most 31"):
+            operation()
 
 
 def test_unordered_indices_and_invalid_thresholds_are_rejected() -> None:

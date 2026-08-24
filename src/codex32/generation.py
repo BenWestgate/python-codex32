@@ -61,16 +61,14 @@ def _index(value: object) -> str:
 
 
 def _indices(values: Sequence[str] | str) -> tuple[str, ...]:
-    if isinstance(values, str):
-        copied: tuple[object, ...] = tuple(values)
-    else:
-        if isinstance(values, AbstractSet) or not isinstance(values, Sequence):
-            raise TypeError("indices must be an ordered sequence")
-        if len(values) > 31:
-            raise InvalidShareSelection("at most 31 shares may be requested")
-        copied = tuple(values[position] for position in range(len(values)))
+    if not isinstance(values, str) and (isinstance(values, AbstractSet) or not isinstance(values, Sequence)):
+        raise TypeError("indices must be an ordered sequence")
+    count = len(values)
+    if count > 31:
+        raise InvalidShareSelection("at most 31 shares may be requested")
+    copied: tuple[object, ...] = tuple(values[position] for position in range(count))
     normalized = tuple(_index(value) for value in copied)
-    if len(normalized) > 31 or len(set(normalized)) != len(normalized):
+    if len(set(normalized)) != len(normalized):
         raise InvalidShareSelection("output indices must be distinct")
     return normalized
 

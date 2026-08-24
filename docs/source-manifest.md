@@ -6,7 +6,7 @@ BIP93 is Draft; later upstream changes require an explicit traceability review.
 | Source | Frozen evidence | Use |
 |---|---|---|
 | [BIP93](https://github.com/bitcoin/bips/blob/ed4ffcb6a48d4dc4fdfc11cdba783c233db8c66e/bip-0093.mediawiki) | `bitcoin/bips@ed4ffcb6a48d4dc4fdfc11cdba783c233db8c66e` | normative `ms`, sharing, recovery, correction, vectors |
-| [checksum-boundary PR #2258](https://github.com/bitcoin/bips/pull/2258) | head `7c5251d29acc1446b1b7ed86cc1ab2327bf78271` | expanded-HRP short/long selection and 94/95 gap |
+| [checksum-boundary PR #2258](https://github.com/bitcoin/bips/pull/2258) | head `7c5251d29acc1446b1b7ed86cc1ab2327bf78271` | accepted pending-standard expanded-HRP short/long selection and 94/95 gap |
 | [wallet guidance](https://github.com/BlockstreamResearch/codex32/blob/1a1c22aa895d78f2d385303feb9491d155e14cf7/docs/wallets.md) | `BlockstreamResearch/codex32@1a1c22aa895d78f2d385303feb9491d155e14cf7` | import and worksheet UX |
 | [illustrated booklet](https://secretcodex32.com/docs/2023-03-07--bw.pdf) | SHA-256 `0370ea863d2eae692408aeefa9b13c14283e520f45a00f7373ad933ccf418f2e` | manual generation/checksum/sharing |
 | [secretcodex32.com](https://secretcodex32.com/) | response reviewed 2026-08-08 | profile and worksheet catalogue |
@@ -27,3 +27,11 @@ does not claim that the upstream Haskell property suite was executed locally.
 
 Generalized-HRP PR #2040 and length-restriction PR #2077 are non-authoritative
 research context. The README is user documentation, never requirements evidence.
+
+The implementation intentionally follows the frozen PR #2258 head rather than
+adding a dual decoder. Relative to the currently published BIP93 boundary, the
+known compatibility exposure is concentrated in `ms` strings carrying 44--46
+bytes. Fresh CLI generation avoids those lengths by accepting only 16 or 32
+bytes; library callers and imported existing seeds retain BIP93's full 16--64
+byte range. The [accepted-risk register](accepted-risks.md) requires another
+upstream status and revision check before both the RC and final release.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex32"
-version = "0.6.0"
+version = "1.0.0rc1"
 authors = [
   { name = "Ben Westgate", email = "benwestgate@protonmail.com" },
 ]
@@ -40,7 +40,7 @@ dev = [
   "hypothesis>=6,<7",
   "mypy",
   "pytest",
-  "ruff",
+  "ruff==0.16.2",
   "twine>=5,<7",
 ]
 
