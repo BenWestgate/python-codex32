@@ -1,8 +1,7 @@
 # Production-ready v1 completion plan
 
 Status: active implementation roadmap. The mandatory new-session scan
-precondition and Gates 0--1 passed on 2026-08-24; Gate 2 local work is in
-progress and its remote platform matrix remains pending.
+precondition and Gates 0--2 passed on 2026-08-24; Gate 3 is next.
 
 This plan turns the current reference implementation into a narrowly scoped
 real-funds release. It does not add a GUI, networking, RPC, secret storage,
@@ -242,7 +241,7 @@ Success criteria:
 
 Dependency: Gate 1.
 
-Local evidence (2026-08-24): upstream `bip32`'s complete seven-test suite and
+Completion evidence (2026-08-24): upstream `bip32`'s complete seven-test suite and
 all 499 project tests pass with Coincurve 21. The inspected Coincurve 20-to-21
 APIs used by `bip32` are behaviorally unchanged. A 6,272-record wallet corpus
 matches exactly under both versions. The owner-authored upstream range-only PR
@@ -250,7 +249,11 @@ matches exactly under both versions. The owner-authored upstream range-only PR
 and 3.13 Coincurve wheel hashes are pinned. A bounded `cryptography` prototype
 matched the vectors and corpus but failed the size, audit-surface, performance,
 and wheel-coverage cut conditions, so the roadmap retains the narrow adapter.
-The required remote Linux/macOS/Windows matrix must pass before Gate 2 closes.
+GitHub Actions
+[run 32729045916](https://github.com/BenWestgate/python-codex32/actions/runs/32729045916)
+passed the required Python 3.12/3.13 matrix on Ubuntu, macOS, and Windows at
+revision `aa10d59b60c375f4abbf4df241a8bf3c6ae46507`. Its non-blocking Python
+3.14 probe stopped at the expected unavailable Coincurve 21 wheel.
 
 ## Gate 3 -- Cuttable bounded structural correction
 

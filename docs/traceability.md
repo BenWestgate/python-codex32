@@ -35,7 +35,7 @@ Every implemented claim identifies one code owner and direct evidence.
 | R28 | safe typed installable reference surface | 25-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
 | R29 | explicit share-index selectors are bounded before copying or normalizing elements | `generation._indices` | oversized string pre-normalization regression across all three public generation APIs | Implemented from standard security scan |
 | R30 | malformed untrusted boundaries fail closed under bounded work | parser, completion, interpolation, correction, and CLI adapters | frozen malformed corpus and 4,096-byte structured fuzz target | Implemented in Gate 1 |
-| R31 | wallet derivation uses a reviewed, reproducible Python 3.12/3.13 dependency resolution | `_bip32.py`; pinned CLI requirement files | complete upstream suite, official vectors, 499 local tests, 6,272-record Coincurve 20/21 differential corpus, and required CI matrix | Implemented locally; remote platform matrix pending |
+| R31 | wallet derivation uses a reviewed, reproducible Python 3.12/3.13 dependency resolution | `_bip32.py`; pinned CLI requirement files | complete upstream suite, official vectors, 499 local tests, 6,272-record Coincurve 20/21 differential corpus, and required CI matrix | Implemented in Gate 2 |
 
 The expanded checksum rule from PR #2258 is the only pending-upstream behavior.
 Its 44--46-byte compatibility exposure is explicitly accepted, has direct

@@ -75,6 +75,16 @@ On 2026-08-24 under Python 3.13.12:
 resolved dependency, adapter, or vector change requires the upstream and local
 suites plus this corpus before publication.
 
+GitHub Actions
+[run 32729045916](https://github.com/BenWestgate/python-codex32/actions/runs/32729045916)
+passed on 2026-08-24 at revision
+`aa10d59b60c375f4abbf4df241a8bf3c6ae46507`. All tests, strict mypy, Ruff,
+formatting, correction and wallet differential checks, and package builds
+passed under Python 3.12 and 3.13 on Ubuntu, macOS, and Windows. The allowed
+Python 3.14 experimental job stopped while resolving Coincurve 21 because no
+compatible wheel is published; it did not affect the successful required
+matrix conclusion.
+
 Pip-audit 2.10.1, using its PyPI advisory service on 2026-08-24, reported no
 known vulnerability for exact versions BIP32 5.0.0 and Coincurve 21.0.0. The
 local unpublished codex32 release candidate is necessarily outside that service,
