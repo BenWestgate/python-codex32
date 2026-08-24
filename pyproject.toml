@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex32"
-version = "0.6.1"
+version = "0.6.2"
 authors = [
   { name = "Ben Westgate", email = "benwestgate@protonmail.com" },
 ]
@@ -26,7 +26,6 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
   "Operating System :: OS Independent",
   "Topic :: Security :: Cryptography",
   "Topic :: Software Development :: Libraries",
