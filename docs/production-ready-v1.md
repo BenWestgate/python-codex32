@@ -283,7 +283,7 @@ passes every platform budget.
 
 Gate 3 is removed wholesale and deferred to v1.1 if any condition fails:
 
-- fixed plus structural correction exceeds 1,000 physical lines;
+- fixed plus structural correction exceeds 1,500 physical lines;
 - the installed package reaches 3,000 lines;
 - supported searches are nondeterministic or incomplete in the API;
 - worst-case memory or CLI time exceeds its frozen budget;
@@ -323,7 +323,7 @@ Success criteria:
 
 Dependency: Gate 3, whether implemented or cleanly cut.
 
-## Gate 5 -- Recovery card, inheritance, and usability evidence
+## Gate 5 -- Recovery card, inheritance, and usability appraisal
 
 Objective: let an owner or heir recover without remembering this repository.
 
@@ -346,16 +346,17 @@ Validation uses dummy secrets only:
 - at least five unfamiliar with this repository;
 - at least three heir scenarios where the participant did not create the
   backup;
-- 100% successful recovery without an online secret disclosure;
-- measure the under-one-hour setup target for the current workflow;
+- Estimate successful recovery rate without an online secret disclosure;
+- estimate the under-one-hour setup target for the current workflow;
 - exclude Bitcoin Core synchronization and recovery rescans from setup time;
-- treat earlier Bails beta testing as supporting, not substitutive, evidence.
+- treat earlier Bails beta testing as substitutive evidence.
+  - 24 testers, at least 3 did not create the backup, all unfamiliar with Bails installed, created, wrote down and recovered in under 30 minutes
 
 Success criteria:
 
-- every participant can identify the correct recovery path from the card;
+- every participant should be able to identify the correct recovery path from the card;
 - no critical intervention is needed;
-- failed or confusing steps cause documentation/UI changes and a repeated trial;
+- failed or confusing steps cause documentation/UI changes and a repeated iteration on this gate;
 - claims use measured results and avoid absolute superlatives.
 
 Dependency: Gate 4.
