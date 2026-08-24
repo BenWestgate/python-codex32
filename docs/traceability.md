@@ -14,7 +14,7 @@ Every implemented claim identifies one code owner and direct evidence.
 | R07 | recover from exactly k compatible distinct shares | `recover_secret` | B93 vectors 2/3, k=2–9, mismatch properties | Implemented |
 | R08 | derive only a fresh ordinary share | `derive_share` | every target and existing/S rejection | Implemented |
 | R09 | fresh shared S uses k uniform u5 masks | `generation._masks` and basis loop | mask invariants, recovery, no entropy injection | Implemented |
-| R10 | splitting S uses S plus k−1 masks | `split_secret` | exact recovery and threshold properties | Implemented for `ms` |
+| R10 | splitting S uses S plus k−1 masks | `split_secret` | exact recovery and threshold properties | Implemented for `ms` and `cl` |
 | R11 | four errors, `2e+v≤8`, eight erasures, bursts | `correction.py` | P70 corpus and Hypothesis positions | Implemented fixed-length only |
 | R12 | correction is an untrusted suggestion | CLI `correct` | stderr/nonzero and no-correction tests | Implemented |
 | R13 | subsequent share input uses known prefix/header | `_cli_input.read_artifacts`, BIP93 prefix validators | suffix/full paste, retry, duplicate/mismatch and stream tests | Implemented |
@@ -22,8 +22,8 @@ Every implemented claim identifies one code owner and direct evidence.
 | R15 | only `ms` S enters wallet workflows | `wallet._master` | all non-`MasterSeed` types rejected | Implemented |
 | R16 | electronic generation defaults to 128 bits | generation API and CLI `create` | default and complete creation matrix | Implemented |
 | R17 | worksheet checksum sizes and private residue correction | CLI `checksum`, residue API | ms/cl sizes, short/long and BIP39 residues | Implemented |
-| R18 | identifier selection is explicit public metadata | `generation` identifier helpers | k=0 fixture, shared random, raw/re-share rules | Accepted divergence |
-| R19 | legacy `cl` custom ID and 32-byte payload | `Profile.CL`, `CoreLightningSecret` | three published examples and length/pad tests | Implemented; no generation |
+| R18 | identifier selection is public metadata | `generation` identifier helpers | k=0 fixture, random defaults, explicit override | Accepted divergence |
+| R19 | `cl` custom ID, 32-byte payload, import and generation | `Profile.CL`, `CoreLightningSecret`, `generate_core_lightning_secret` | published examples, import evidence, generation/recovery and padding tests | Implemented |
 | R20 | BIP39 fixed migration profiles | isolated `bip39.py` | 12/24 fixtures and invalid implied-S tests | Implemented migration subset |
 | R21 | unknown HRPs receive no application semantics | fixed `Profile` lookup after checksum | valid generic unknown-HRP rejection | Implemented |
 | R22 | generated S uses CRC padding; parsed S need not | private `_crc_pad` | frozen CRC and arbitrary parsed-pad tests | Accepted divergence |
@@ -32,7 +32,7 @@ Every implemented claim identifies one code owner and direct evidence.
 | R25 | xprv, coordinator xpub, descriptors in reusable API | `wallet.py`; goal-oriented CLI tree | official xprv, frozen BIP48/descriptor and nested-command tests | Implemented |
 | R26 | explicit account/timestamp, mandatory Core mode, root-xprv warning | wallet API and CLI | deterministic records, public/private separation and warning tests | Implemented |
 | R27 | no arbitrary security parser for descriptors | fixed templates in `wallet.py` | module/API absence and template fixtures | Implemented by removal |
-| R28 | safe typed installable reference surface | 19-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
+| R28 | safe typed installable reference surface | 20-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
 
 The expanded checksum rule from PR #2258 is the only pending-upstream behavior.
 It has direct boundary fixtures and is isolated in one format-layer function.

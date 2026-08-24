@@ -15,5 +15,5 @@ These choices are not presented as BIP93 requirements.
 | no partial-basis completion | unauthenticated points can create incompatible same-header polynomials |
 
 Unknown HRPs, GUI, networking, RPC, secret storage, runtime profiles, BIP39
-mnemonics, CL generation, structural correction, and arbitrary descriptor
+mnemonics, structural correction, and arbitrary descriptor
 parsing are explicit v1 non-goals.

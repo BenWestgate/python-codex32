@@ -35,11 +35,6 @@ class _Checksum:
     constant: int
     maximum_length: int | None = None
 
-    @property
-    def cs_len(self) -> int:
-        """Compatibility for descriptor and correction internals."""
-        return self.length
-
     def polymod(self, values: list[int] | tuple[int, ...], residue: int = 1) -> int:
         """Compute the polymod residue."""
         shift = len(self.generators) * (self.length - 1)

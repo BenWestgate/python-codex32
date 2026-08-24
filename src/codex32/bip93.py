@@ -434,7 +434,7 @@ def _normalize_target(value: object, *, label: str) -> str:
         raise InvalidTargetIndex(f"{label} must be one Bech32 symbol")
     normalized = value.lower()
     if len(normalized) != 1 or normalized not in CHARSET or normalized == "s":
-        raise InvalidTargetIndex(f"{label} must be one ordinary Bech32 index")
+        raise InvalidTargetIndex(f"{label} must be one of {IDX_SORT[1:].upper()}")
     return normalized
 
 

@@ -18,6 +18,7 @@ from .correction import (
 )
 from .errors import CodexError
 from .generation import (
+    generate_core_lightning_secret,
     generate_master_seed,
     split_secret,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "core_descriptors",
     "correct_worksheet_residue",
     "derive_share",
+    "generate_core_lightning_secret",
     "generate_master_seed",
     "master_xprv",
     "multisig_account_xpub",

@@ -37,6 +37,7 @@ def test_root_api_is_deliberately_small() -> None:
         "correct_worksheet_residue",
         "derive_share",
         "generate_master_seed",
+        "generate_core_lightning_secret",
         "master_xprv",
         "multisig_account_xpub",
         "parse_codex32",

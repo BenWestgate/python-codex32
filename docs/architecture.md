@@ -5,7 +5,7 @@ The package uses one narrow dependency direction:
 ```text
 text -> bounded format/checksum -> fixed profile -> immutable artifact
                                                    |-> BIP93 sharing
-                                                   |-> ms generation
+                                                   |-> ms/cl generation
                                                    |-> fixed BCH correction
                                                    `-> MasterSeed wallet adapter
 
@@ -40,7 +40,7 @@ semantics. No artifact crosses the parsing boundary until every stage passes.
 - Headers and artifacts are immutable; shares expose symbols, not bytes.
 - Sharing interpolates payload and checksum together, explicitly constructs the
   target header, and reparses the result.
-- `generation.py` is the only entropy owner and accepts only `ms`.
+- `generation.py` is the only entropy owner and generates only `ms` and `cl`.
 - Correction never edits the HRP or separator and reparses every candidate.
 - `wallet.py` accepts only `MasterSeed` and has no state or generic parser.
 - `_cli_input.py` retains at most nine artifacts and delegates partial-set
@@ -54,7 +54,7 @@ semantics. No artifact crosses the parsing boundary until every stage passes.
   hidden state.
 
 Private Python names are convention rather than access control. The supported
-surface is the 19-name package `__all__`; direct use of private helpers is
+surface is the 20-name package `__all__`; direct use of private helpers is
 unsupported but remains in the review scope.
 
 ## Size budget

@@ -18,6 +18,7 @@ from codex32.bip93 import (
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
+    ExistingTargetIndex,
     InvalidChecksum,
     MismatchedIdentifier,
     MismatchedPayloadLength,
@@ -108,6 +109,7 @@ def _input_display() -> Iterator[None]:
 def read_text(prompt: str, *, optional: bool = False) -> str:
     if sys.stdin.isatty():
         value = _editable_input(f"{prompt}: ")
+        _stderr("")
     else:
         value = _stdin()
     value = "".join(value.split())
@@ -160,32 +162,28 @@ _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
 }
 
 
-def _interactive(
-    *, basis: bool, one: bool, profiles: tuple[Profile, ...]
-) -> list[Artifact]:
+def _interactive(*, basis: bool, one: bool, excluded_index: str | None, profiles: tuple[Profile, ...]) -> list[Artifact]:
     accepted: list[Artifact] = []
     prefix, prefill, required = "", "", 1
     while len(accepted) < required:
-        number = len(accepted) + 1
-        label = (
-            "Enter a codex32 string" if not accepted else f"Enter string {number} of {required}"
-        )
+        label = "Enter a codex32 string" if not accepted else f"Enter string {len(accepted) + 1} of {required}"
         try:
             value = _prompt_entry(label, prefix, prefill)
             artifact = _parse(value if "1" in value else prefix + value, profiles)
+            if basis and artifact.header.index == excluded_index:
+                raise ExistingTargetIndex("That index was requested for the additional share.")
             if not one and (accepted or isinstance(artifact, Share) or basis):
                 validator = _validate_basis_prefix if basis else _validate_recovery_prefix
                 validator([*accepted, artifact])
         except (CodexError, InputError) as error:
             message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
             _stderr(f"Rejected: {message}")
-            prefill = _retry_text(value, prefix)
+            prefill = "" if isinstance(error, (DuplicateShareIndex, ExistingTargetIndex)) else _retry_text(value, prefix)
             continue
         prefill = ""
         if one:
             return [artifact]
         if not accepted and isinstance(artifact, Secret) and not basis:
-            _stderr("Secret accepted.")
             return [artifact]
         if not accepted:
             required = artifact.header.threshold
@@ -193,7 +191,8 @@ def _interactive(
             if artifact.text.isupper():
                 prefix = prefix.upper()
         accepted.append(artifact)
-        _stderr(f"{'String' if basis else 'Share'} {len(accepted)} of {required} accepted.")
+        if len(accepted) < required:
+            _stderr(f"{'String' if basis else 'Share'} {len(accepted)} of {required} accepted.")
     return accepted
 
 
@@ -201,8 +200,11 @@ def read_artifacts(
     *,
     basis: bool = False,
     one: bool = False,
+    excluded_index: str | None = None,
     profiles: tuple[Profile, ...] = tuple(Profile),
 ) -> list[Artifact]:
     if not sys.stdin.isatty():
         return _redirected(profiles)
-    return _interactive(basis=basis, one=one, profiles=profiles)
+    result = _interactive(basis=basis, one=one, excluded_index=excluded_index, profiles=profiles)
+    _stderr("")
+    return result

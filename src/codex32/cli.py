@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from typing import cast
 
 from codex32 import (
+    CoreLightningSecret,
     Header,
     MasterSeed,
     Profile,
@@ -17,6 +18,7 @@ from codex32 import (
     complete_checksum,
     core_descriptors,
     derive_share,
+    generate_core_lightning_secret,
     generate_master_seed,
     master_xprv,
     multisig_account_xpub,
@@ -29,6 +31,7 @@ from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
+from codex32.bip93 import IDX_SORT, _normalize_target
 from codex32.correction import (
     _correct_fixed,
     _FixedCorrectionSuccess,
@@ -44,7 +47,10 @@ class _CommandError(Exception):
     pass
 
 
-def _print(text: str, *, err: bool = False) -> None:
+def _print(text: str, *, err: bool = False, danger: bool = False) -> None:
+    if danger and sys.stderr.isatty():
+        label = text.split(maxsplit=1)[0]
+        text = text.replace(label, f"\x1b[1;31m{label}\x1b[0m", 1)
     print(text, file=sys.stderr if err else sys.stdout)
 
 
@@ -68,72 +74,69 @@ def _master_seed() -> MasterSeed:
     return value
 
 
+def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
+    header = artifact.header
+    name = _profile_label(artifact.profile)
+    if isinstance(artifact, Share):
+        name = name.replace("master seed", "master-seed").replace("HSM secret", "HSM-secret")
+        heading = f"{name} share {header.index.upper()}"
+    else:
+        heading = f"{'Unshared' if header.threshold == 0 else 'Shared'} {name}"
+    if valid and isinstance(artifact, Secret):
+        heading = heading[0].lower() + heading[1:]
+    lines = [f"{'Valid ' if valid else ''}{heading}.", f"Backup identifier: {header.identifier.upper()}"]
+    if header.threshold:
+        lines.append(f"Shares needed for recovery: {header.threshold}")
+    return lines
+
+
+def _group(text: str) -> str:
+    groups = [text[start : start + 4].upper() for start in range(0, len(text), 4)]
+    for index, group in enumerate(groups):
+        style = "\x1b[1m" if index % 2 == 0 else "\x1b[22m"
+        gap = " " if (index + 1) % 4 == 0 and index + 1 < len(groups) else ""
+        groups[index] = style + group + gap
+    return " ".join(groups) + "\x1b[0m"
+
+
 def _render(artifact: Artifact, pretty: bool) -> str:
     if not pretty:
         return artifact.text
-    header = artifact.header
-    if isinstance(artifact, Share):
-        heading = f"Share with index {header.index.upper()}."
-    elif header.threshold == 0:
-        heading = "Unshared secret."
-    else:
-        heading = "Shared secret."
-    lines = [
-        heading,
-        f"Type: {_profile_label(artifact.profile)}",
-        f"Identifier: {header.identifier.upper()}",
-    ]
-    if header.threshold:
-        lines.append(f"Shares needed for recovery: {header.threshold}")
+    lines = _summary(artifact)
     if isinstance(artifact, MasterSeed):
         fingerprint = fingerprint_from_seed(artifact.seed_bytes).hex()
         lines.append(f"Master fingerprint: {fingerprint.upper()}")
-    upper = artifact.text.upper()
-    grouped = " ".join(upper[start : start + 4] for start in range(0, len(upper), 4))
-    lines.extend(("", grouped))
+    lines.extend(("", _group(artifact.text)))
     return "\n".join(lines)
 
 
-def _emit(artifact: Artifact, pretty: bool | None, *, err: bool = False) -> None:
-    pretty = (sys.stderr if err else sys.stdout).isatty() if pretty is None else pretty
-    _print(_render(artifact, pretty), err=err)
+def _emit(artifact: Artifact, plain: bool, *, err: bool = False, gap: bool = False) -> None:
+    pretty = (sys.stderr if err else sys.stdout).isatty() and not plain
+    _print(("\n" if gap and pretty else "") + _render(artifact, pretty), err=err)
 
 
 def _check(artifacts: list[Artifact]) -> int:
-    blocks: list[str] = []
-    for artifact in artifacts:
-        header = artifact.header
-        if isinstance(artifact, Share):
-            heading = f"Valid share with index {header.index.upper()}."
-        elif header.threshold == 0:
-            heading = "Valid unshared secret."
-        else:
-            heading = "Valid shared secret."
-        lines = [
-            heading,
-            f"Type: {_profile_label(artifact.profile)}",
-            f"Identifier: {header.identifier.upper()}",
-        ]
-        if header.threshold:
-            lines.append(f"Shares needed for recovery: {header.threshold}")
-        blocks.append("\n".join(lines))
-    _print("\n\n".join(blocks))
+    _print("\n\n".join("\n".join(_summary(item, valid=True)) for item in artifacts))
     return 0
 
 
-def _share_command(index: str, pretty: bool | None) -> int:
-    artifacts = _artifacts(basis=True, profiles=(Profile.MS, Profile.CL))
+def _share_command(index: str, plain: bool) -> int:
+    try:
+        index = _normalize_target(index, label="share index")
+    except CodexError as error:
+        raise _UsageError(f"Choose one share index from {IDX_SORT[1:].upper()}.") from error
+    artifacts = _artifacts(basis=True, excluded_index=index, profiles=(Profile.MS, Profile.CL))
     try:
         derived = derive_share(artifacts, index)
     except CodexError as error:
         raise _CommandError(str(error)) from error
-    _emit(derived, pretty)
+    _emit(derived, plain)
     return 0
 
 
-def _creation_header(value: str | None) -> tuple[Profile, Header | None]:
+def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None]:
     if value is None:
-        return Profile.MS, None
+        return Profile.MS, None, None
     lowered = value.lower()
     if lowered != value and value.upper() != value:
         raise _UsageError("The set header must use either uppercase or lowercase.")
@@ -145,25 +148,23 @@ def _creation_header(value: str | None) -> tuple[Profile, Header | None]:
             raise _UsageError("The set header begins with an unknown prefix.") from error
     else:
         profile, header = Profile.MS, lowered
-    if len(header) != 5 or header[0] not in "023456789":
+    if len(header) not in (1, 5) or header[0] not in "023456789":
         raise _UsageError(
-            "The set header must contain a threshold followed by a "
-            "four-character identifier."
+            "Enter a threshold alone or a complete backup header containing "
+            "a threshold and four-character identifier."
         )
+    threshold = int(header[0])
+    if len(header) == 1:
+        return profile, threshold, None
     try:
-        return profile, Header(int(header[0]), header[1:], "s")
+        identifier = Header(threshold, header[1:], "s").identifier
     except CodexError as error:
-        raise _UsageError(f"Invalid set header: {error}") from error
+        raise _UsageError(f"Invalid backup header: {error}") from error
+    return profile, threshold, identifier
 
 
-def _creation_source() -> bytes | Artifact | None:
-    prompt = (
-        "Press Enter to generate a new seed, or enter an existing codex32 "
-        "secret or hexadecimal seed"
-    )
-    value = _text(prompt, optional=True)
-    if not value:
-        return None
+def _creation_source() -> bytes | Artifact:
+    value = _text("Enter an existing codex32 secret or hexadecimal seed")
     try:
         return bytes.fromhex(value)
     except ValueError:
@@ -178,38 +179,37 @@ def _create(
     byte_length: int | None,
     shares: int | None,
     indices: str | None,
-    pretty: bool | None,
+    existing: bool,
+    plain: bool,
 ) -> int:
-    profile, parsed_header = _creation_header(header)
-    if profile is not Profile.MS:
-        raise _UsageError("This command creates only Bitcoin master-seed backups.")
+    profile, selected_threshold, identifier = _creation_header(header)
+    if profile not in (Profile.MS, Profile.CL):
+        raise _UsageError("This command creates Bitcoin or Core Lightning backups.")
     if shares is not None and indices is not None:
         raise _UsageError("Choose either --shares or --indices, not both.")
-    source = _creation_source()
-    if source is not None and byte_length is not None:
+    if byte_length is not None and profile is Profile.CL:
+        raise _UsageError("--bytes is only for Bitcoin master seeds; Core "
+                          "Lightning secrets are always 32 bytes.")
+    if byte_length is not None and existing:
         raise _UsageError("--bytes applies only when generating a new random seed.")
-    if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
+    source = _creation_source() if existing else None
+    if not existing and not sys.stdin.isatty() and _text("", optional=True):
+        raise _UsageError("Use --existing when supplying a seed or secret.")
+    expected_type = MasterSeed if profile is Profile.MS else CoreLightningSecret
+    if isinstance(source, (Share, Secret)) and not isinstance(source, expected_type):
         raise _UsageError(
-            "Enter one Bitcoin master-seed secret, not a share or another "
-            "backup type."
+            f"Enter one {_profile_label(profile)}, not a share or another backup type."
         )
-    if isinstance(source, bytes) and parsed_header is None:
-        raise _UsageError("A hexadecimal seed requires an explicit set header.")
-    if isinstance(source, MasterSeed) and parsed_header is None:
-        raise _UsageError("Splitting an existing secret requires a new set header.")
-
-    threshold = 0 if parsed_header is None else parsed_header.threshold
-    identifier = None if parsed_header is None else parsed_header.identifier
+    threshold = 0 if selected_threshold is None else selected_threshold
     if threshold and shares is None and indices is None:
         shares = threshold + 2
     try:
-        if isinstance(source, MasterSeed):
+        if isinstance(source, (MasterSeed, CoreLightningSecret)):
             if threshold == 0:
                 raise _UsageError(
                     "The supplied secret is already complete; choose a sharing "
                     "threshold from 2 through 9."
                 )
-            assert identifier is not None
             secret, outputs = split_secret(
                 source,
                 threshold,
@@ -217,7 +217,7 @@ def _create(
                 share_count=shares,
                 indices=indices,
             )
-        else:
+        elif profile is Profile.MS:
             secret, outputs = generate_master_seed(
                 source,
                 byte_length=byte_length,
@@ -226,59 +226,59 @@ def _create(
                 share_count=shares,
                 indices=indices,
             )
+        else:
+            secret, outputs = generate_core_lightning_secret(
+                source,
+                identifier=identifier,
+                threshold=threshold,
+                share_count=shares,
+                indices=indices,
+            )
     except HeaderCollision as error:
         raise _CommandError(f"{error}; choose another set header") from error
     except CodexError as error:
         raise _CommandError(str(error)) from error
-    for artifact in (secret,) if threshold == 0 else outputs:
-        _emit(artifact, pretty)
+    for position, artifact in enumerate((secret,) if threshold == 0 else outputs):
+        _emit(artifact, plain, gap=position > 0)
+    _print("\nBefore relying on this backup, test recovery using what you wrote down.", err=True)
     return 0
 
 
 def _unchecksummed(header: str | None, payload: str) -> str:
     value = (header or "") + payload
-    lowered = value.lower()
-    if "1" in lowered:
-        hrp = lowered.rsplit("1", 1)[0]
-        try:
-            profile = Profile(hrp)
-        except ValueError as error:
-            raise _UsageError("The worksheet header has an unknown prefix.") from error
-        text = value
-    else:
-        profile, text = Profile.MS, "ms1" + value
+    text = value if "1" in value else "ms1" + value
+    profile = Profile(text[: text.rfind("1")].lower())
     if profile not in (Profile.MS, Profile.CL):
-        raise _UsageError(
-            "Checksum completion supports Bitcoin master-seed and Core Lightning "
-            "worksheets only."
-        )
-    body = text[text.rfind("1") + 1 :]
-    allowed = (26, 52) if profile is Profile.MS else (52,)
-    if len(body) < 6 or len(body) - 6 not in allowed:
-        lengths = "a 128- or 256-bit seed" if profile is Profile.MS else "32 bytes"
-        raise _UsageError(f"The worksheet must encode {lengths}.")
+        raise ValueError
     return text
 
 
-def _checksum(header: str | None, pretty: bool | None) -> int:
-    text = _unchecksummed(header, _text("Enter the worksheet text before its checksum"))
+def _checksum(header: str | None, plain: bool) -> int:
+    instruction = "Enter the header first, then only" if header is None else "Enter only"
     warning = (
-        "Warning: This command only adds a checksum. Use the Codex32 Book "
-        "worksheet to create the preceding characters safely."
+        "DANGER: Incorrect input can make the wallet predictable and cause "
+        f"permanent loss of funds. {instruction} characters generated by following "
+        "the Codex32 Book dice-debiasing worksheet exactly. Do not enter raw dice "
+        "rolls, seed words, hexadecimal seeds, passwords, or anything else."
     )
-    _print(warning, err=True)
+    _print(warning, err=True, danger=True)
+    prompt = "Checksum worksheet non-pink bold squares" if header is None else "Remaining non-pink bold squares"
     try:
+        text = _unchecksummed(header, _text(prompt))
         artifact = complete_checksum(text)
-    except CodexError as error:
-        raise _CommandError(str(error)) from error
-    _emit(artifact, pretty)
+    except (CodexError, ValueError) as error:
+        raise _UsageError(
+            "The input does not match the expected format of the filled-out "
+            "non-pink bold squares.\nConsult the Codex32 Book and check the worksheet."
+        ) from error
+    _emit(artifact, plain)
     return 0
 
 
 def _correct(
     residue: bool,
     erasures: tuple[int, ...],
-    pretty: bool | None,
+    plain: bool,
 ) -> int:
     prompt = "Enter the worksheet residue" if residue else "Enter the damaged codex32 string"
     value = _text(prompt)
@@ -332,7 +332,7 @@ def _correct(
         "original backup before using it."
     )
     _print(warning, err=True)
-    _emit(fixed.artifact, pretty, err=True)
+    _emit(fixed.artifact, plain, err=True)
     return 1
 
 
@@ -350,7 +350,7 @@ def _bitcoin_core(account: int, timestamp: int, testnet: bool, private: bool) ->
             "key and can spend funds. Import it only into the intended encrypted "
             "wallet."
         )
-        _print(warning, err=True)
+        _print(warning, err=True, danger=True)
     records = core_descriptors(
         secret,
         account=account,
@@ -364,29 +364,30 @@ def _bitcoin_core(account: int, timestamp: int, testnet: bool, private: bool) ->
 
 def _dispatch(arguments: argparse.Namespace) -> int:
     command = cast(str, arguments.command)
-    pretty = cast(bool | None, getattr(arguments, "pretty", None))
+    plain = bool(getattr(arguments, "plain", False))
     if command == "check":
         return _check(_artifacts(one=True))
     if command == "secret":
-        _emit(_secret(_artifacts()), pretty)
+        _emit(_secret(_artifacts()), plain)
         return 0
     if command == "share":
-        return _share_command(cast(str, arguments.index), pretty)
+        return _share_command(cast(str, arguments.index), plain)
     if command == "create":
         return _create(
             cast(str | None, arguments.header),
             cast(int | None, arguments.byte_length),
             cast(int | None, arguments.shares),
             cast(str | None, arguments.indices),
-            pretty,
+            bool(arguments.existing),
+            plain,
         )
     if command == "checksum":
-        return _checksum(cast(str | None, arguments.header), pretty)
+        return _checksum(cast(str | None, arguments.header), plain)
     if command == "correct":
         return _correct(
             bool(arguments.residue),
             tuple(cast(list[int], arguments.erasures)),
-            pretty,
+            plain,
         )
     if command == "xprv":
         secret = _master_seed()
@@ -394,6 +395,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             "Warning: The following root private key can spend funds from every "
             "wallet derived from this seed. Keep it secret.",
             err=True,
+            danger=True,
         )
         _print(master_xprv(secret, testnet=bool(arguments.testnet)))
         return 0
@@ -418,19 +420,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         arguments = parser.parse_args(arguments_list)
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else 1
+    scope = f"codex32 {arguments.command}"
     try:
         return _dispatch(arguments)
     except _UsageError as error:
-        _print(f"codex32: error: {error}", err=True)
+        _print(f"{scope}: {error}", err=True)
         return 2
     except (_CommandError, CodexError) as error:
-        _print(f"codex32: {error}", err=True)
+        _print(f"{scope}: {error}", err=True)
         return 1
     except EOFError:
-        _print("codex32: error: input ended before recovery completed", err=True)
+        _print(f"{scope}: Input ended before recovery completed.", err=True)
         return 2
     except KeyboardInterrupt:
-        _print("codex32: interrupted", err=True)
+        _print(f"{scope}: Interrupted.", err=True)
         return 130
 
 
