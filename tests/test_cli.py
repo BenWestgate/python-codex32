@@ -7,6 +7,7 @@ import io
 import json
 import subprocess
 import sys
+import sysconfig
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,7 +89,7 @@ def _invoke_terminal(args: list[str], *lines: str) -> _Result:
 
 def _installed_cli() -> Path:
     suffix = ".exe" if sys.platform == "win32" else ""
-    return Path(sys.executable).with_name(f"codex32{suffix}")
+    return Path(sysconfig.get_path("scripts")) / f"codex32{suffix}"
 
 
 def _output_artifacts(result: _Result, profile: str = "ms") -> list[Share | Secret]:
