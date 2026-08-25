@@ -1,7 +1,8 @@
 # Production-ready v1 completion plan
 
-Status: active implementation roadmap. The mandatory new-session scan
-precondition and Gates 0--3 passed by 2026-08-25; Gate 4 is next.
+Status: active implementation roadmap. The mandatory new-session scan and
+Gates 0--4 and 6 passed by 2026-08-25. Gate 5's local artifacts are complete;
+its moderated human validation remains open, so Gate 7 has not started.
 
 This plan turns the current reference implementation into a narrowly scoped
 real-funds release. It does not add a GUI, networking, RPC, secret storage,
@@ -1191,7 +1192,7 @@ Gate 3 passed these cut conditions:
 
 Dependency: Gates 1--2.
 
-## Gate 4 -- CLI and Bitcoin Core workflow
+## Gate 4 -- CLI and Bitcoin Core workflow (passed)
 
 Objective: complete the supported ordinary-user recovery paths without growing
 into a wallet or coordinator.
@@ -1221,7 +1222,20 @@ Success criteria:
 
 Dependency: Gate 3, whether implemented or cleanly cut.
 
-## Gate 5 -- Recovery card, inheritance, and usability appraisal
+Completion evidence (2026-08-25): interactive correction is available only
+with program-supplied immutable-prefix context, requires explicit operator
+confirmation, and is never attempted for redirected stdin. `--timestamp now`
+is accepted by the API, CLI, and Bitcoin Core. Exact parser/TTY tests cover
+first and subsequent confirmations, declined input, immutable context,
+redirection, prompts, and stream separation. `tools/bitcoin_core_regtest.py`
+passed against Bitcoin Core 31.1.0 from clean wheel and sdist environments: it
+imported timestamp-zero and `now` watch-only records, discovered a balance,
+proved spend refusal, imported private records into an encrypted wallet,
+unlocked, signed, broadcast, confirmed, and relocked. Mainnet/testnet extended
+keys and the origin-qualified BIP48 coordinator export were checked in the same
+run. No protected value entered argv or machine stdout.
+
+## Gate 5 -- Recovery card, inheritance, and usability appraisal (human validation incomplete)
 
 Objective: let an owner or heir recover without remembering this repository.
 
@@ -1244,22 +1258,35 @@ Validation uses dummy secrets only:
 - at least five unfamiliar with this repository;
 - at least three heir scenarios where the participant did not create the
   backup;
-- Estimate successful recovery rate without an online secret disclosure;
+- estimate successful recovery rate without an online secret disclosure;
 - estimate the under-one-hour setup target for the current workflow;
 - exclude Bitcoin Core synchronization and recovery rescans from setup time;
-- treat earlier Bails beta testing as substitutive evidence.
-  - 24 testers, at least 3 did not create the backup, all unfamiliar with Bails installed, created, wrote down and recovered in under 30 minutes
+- record the earlier reported Bails beta testing as context, not as a substitute
+  for this card-specific validation: 24 testers, including at least three who
+  did not create the backup, reportedly completed the workflow in under 30
+  minutes.
 
 Success criteria:
 
-- every participant should be able to identify the correct recovery path from the card;
+- every participant should be able to identify the correct recovery path from
+  the card;
 - no critical intervention is needed;
-- failed or confusing steps cause documentation/UI changes and a repeated iteration on this gate;
+- failed or confusing steps cause documentation/UI changes and another gate
+  iteration;
 - claims use measured results and avoid absolute superlatives.
 
 Dependency: Gate 4.
 
-## Gate 6 -- # Human Reviewability Refactor Gate
+Local evidence (2026-08-25): the printable one-page share card, separate
+wallet-verification record, manual fallback identifier/digest, inheritance
+workflow, static separation tests, and moderated-study protocol are complete.
+The share card has 32 blank four-character groups and contains neither a
+fingerprint nor receiving address. The separate record contains the wallet and
+multisig verification fields and no protected-text area. Gate 5 remains open
+until the required moderated participants complete this specific workflow; the
+reported earlier Bails testing is context, not fabricated replacement evidence.
+
+## Gate 6 -- Human reviewability refactor (passed)
 
 ## Purpose
 
@@ -1581,8 +1608,21 @@ Never manufacture a line-count reduction merely to make the gate pass.
 
 Dependency: Gate 4.
 
+Completion evidence (2026-08-25): the timeboxed pass reduced installed Python
+from 2,998 to 2,997 physical lines without changing the public API or existing
+CLI contract. It removed duplicated correction deadline setup and small
+forwarding/alias overhead while preserving explicit module boundaries. The
+three CLI modules were considered for consolidation and retained because they
+separate grammar, protected terminal input, and dispatch/presentation. Full
+ordinary and optimized tests, Hypothesis, strict mypy, Ruff, differential
+checks, package builds, Twine, clean installed-artifact checks, and Bitcoin Core
+31.1.0 integration pass. Repeated builds with `SOURCE_DATE_EPOCH` produce
+byte-identical wheels and sdists. The full before/after and human-reader review
+is in `docs/gate6-reviewability.md`; product-level removal candidates are in
+`docs/reviewability-removals.md`.
 
-## Gate 7 -- Final independent audit and release candidate
+
+## Gate 7 -- Final independent audit and release candidate (blocked by Gate 5)
 
 Objective: review the final artifact rather than an intermediate design.
 

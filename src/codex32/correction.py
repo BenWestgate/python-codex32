@@ -652,10 +652,7 @@ def _best(candidates: Sequence[CorrectionCandidate]) -> tuple[CorrectionCandidat
         return ()
     hamming = min(item.addend_hamming_weight for item in tied)
     tied = [item for item in tied if item.addend_hamming_weight == hamming]
-    for hint in (
-        lambda item: item.crc_padding_match,
-        _fingerprint_match,
-    ):
+    for hint in (lambda item: item.crc_padding_match, _fingerprint_match):
         if any(hint(item) is True for item in tied):
             tied = [item for item in tied if hint(item) is True]
     return tuple(sorted(tied, key=_candidate_order))
@@ -667,16 +664,12 @@ def _correct_complete(
     if not isinstance(damaged_text, str):
         raise TypeError("damaged_text must be str")
     _validate_context(context)
-    prefix = context.immutable_prefix
     if context.expected_length is not None:
         from codex32.indel import _search
 
         return _search(context, damaged_text, deadline=deadline)
-    fixed = _correct_fixed(
-        damaged_text,
-        suspected_profile=context.profile,
-        immutable_prefix=prefix,
-    )
+    fixed = _correct_fixed(damaged_text, suspected_profile=context.profile,
+                           immutable_prefix=context.immutable_prefix)
     candidates = () if fixed is None or not _allowed(context, fixed) else (fixed,)
     return candidates, True
 def correct(context: CorrectionContext, damaged_text: str) -> tuple[CorrectionCandidate, ...]:

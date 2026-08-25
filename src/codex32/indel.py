@@ -207,16 +207,12 @@ def _safe(
         if volume <= rank
     )
     return _FALSE_BOUND_DENOMINATOR * cumulative < 1 << (5 * degree)
-def _required_header_substitutions(
-    symbols: Sequence[int], excluded: frozenset[int],
-) -> int:
+def _required_header_substitutions(symbols: Sequence[int], excluded: frozenset[int]) -> int:
     if len(symbols) < 6:
         return 9
     threshold, index = symbols[0], symbols[5]
     required = int(threshold >= 0 and threshold not in _THRESHOLDS)
-    required += index >= 0 and (
-        index in excluded or threshold == 0 and index != _SECRET_INDEX
-    )
+    required += index >= 0 and (index in excluded or threshold == 0 and index != _SECRET_INDEX)
     return required
 def _adapt(
     fixed: CorrectionCandidate, variant: _Variant, alignments: int, observed_length: int,
@@ -234,9 +230,7 @@ def _adapt(
     )
     return replace(fixed, edits=tuple(sorted(edits, key=lambda edit: edit.reverse_index)),
                    capture_volume=alignments * fixed.capture_volume)
-def _normalize(
-    context: CorrectionContext, damaged_text: str,
-) -> tuple[str, int] | None:
+def _normalize(context: CorrectionContext, damaged_text: str) -> tuple[str, int] | None:
     target = context.expected_length
     assert target is not None
     if len(damaged_text) > 2 * (target + 8):
@@ -266,19 +260,15 @@ def _has_consecutive_ambiguity(
         shape for shape in _CLASSES
         if shape != _FIXED and not shape.erasures and shape.delta == len(text) - target
     )
-    counts = {shape: _alignment_count(shape, len(text), target, immutable) for shape in shapes}
     degree = _checksum_for_encoded_length(context.profile.value, target - base).length
     solver = _FixedCorrector(context.profile, target - base, text.isupper(), None, immutable - base)
     results: set[str] = set()
-    for shape in sorted(shapes, key=counts.__getitem__):
+    for shape in sorted(shapes, key=lambda item: item.unit == 1):
         for variant in _variants(text, target, shape, immutable, base):
             if deadline is not None and monotonic() >= deadline:
                 return False
-            positions = tuple(sorted(variant.erasure_indices))
-            if not (
-                8 < len(positions) <= degree
-                and positions == tuple(range(positions[0], positions[-1] + 1))
-            ):
+            positions = variant.erasure_indices
+            if not 8 < len(positions) <= degree or positions != tuple(range(positions[0], positions[-1] + 1)):
                 continue
             fixed = solver.correct(variant.symbols, variant.unknowns, variant.erasure_indices)
             if fixed is not None and _allowed(context, fixed):
@@ -308,21 +298,20 @@ def _search(
     results: dict[str, CorrectionCandidate] = {}
 
     if _FIXED in shapes:
-        fixed = _correct_fixed(
-            text, suspected_profile=context.profile, immutable_prefix=context.immutable_prefix,
-        )
+        fixed = _correct_fixed(text, suspected_profile=context.profile,
+                               immutable_prefix=context.immutable_prefix)
         positions = tuple(
             index for index, character in enumerate(text[immutable:])
             if character.lower() not in CHARSET
         )
         consecutive = not positions or positions == tuple(range(positions[0], positions[-1] + 1))
-        fixed_allowed = fixed is not None and _allowed(context, fixed)
-        if fixed_allowed and fixed is not None and 8 < fixed.erasures_filled <= degree and consecutive:
-            return (fixed,), True
-        if fixed_allowed and fixed is not None and fixed.erasures_filled <= 8 and _safe(
-            fixed.capture_volume, shapes, counts, mutable, explicit, degree,
-        ):
-            results[fixed.artifact.text.lower()] = fixed
+        if fixed is not None and _allowed(context, fixed):
+            if 8 < fixed.erasures_filled <= degree and consecutive:
+                return (fixed,), True
+            if fixed.erasures_filled <= 8 and _safe(
+                fixed.capture_volume, shapes, counts, mutable, explicit, degree,
+            ):
+                results[fixed.artifact.text.lower()] = fixed
 
     structural = [shape for shape in shapes if shape != _FIXED and counts[shape]]
     floors = {
