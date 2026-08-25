@@ -8,18 +8,17 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
-from time import monotonic
-from typing import cast
+from typing import Literal, cast
 
 from codex32._bip32 import fingerprint_from_seed
 from codex32._cli_input import InputError as _UsageError
+from codex32._cli_input import _correction_candidates
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
 from codex32.bip93 import IDX_SORT, CoreLightningSecret, Header, MasterSeed, Secret, Share
 from codex32.bip93 import _normalize_target, complete_checksum, derive_share, parse_codex32, recover_secret
-from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _correct_complete
-from codex32.correction import correct_worksheet_residue
+from codex32.correction import CorrectionContext, correct_worksheet_residue
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 from codex32.generation import generate_core_lightning_secret, generate_master_seed, split_secret
 from codex32.profiles import Profile, _profile_label
@@ -263,34 +262,21 @@ def _correct(residue: bool, erasures: tuple[int, ...], byte_length: int | None, 
                 raise _UsageError("--bytes does not match the valid master-seed backup length.")
         _print("The codex32 string is already valid.")
         return 0
-    targets: tuple[int, ...]
     if profile is Profile.CL:
-        targets = (74,)
+        target = 74
     elif byte_length is None:
-        targets = (48, 74)
+        target = 74 if len(normalized) > 61 else 48
     else:
         payload = (8 * byte_length + 4) // 5
-        targets = (payload + (22 if payload + 22 <= 91 else 24),)
-    found: list[CorrectionCandidate] = []
-    complete = True
-    started = monotonic()
-    for target in targets:
-        context = CorrectionContext(profile, expected_length=target)
-        deadline = started + 10 if target == 48 else None
-        search_result, finished = _correct_complete(context, value, deadline=deadline)
-        found.extend(search_result)
-        complete &= finished
+        target = payload + (22 if payload + 22 <= 91 else 24)
+    candidates, complete, deadline = _correction_candidates(value, profile, target, value[:3])
     if not complete:
         raise _CommandError("The bounded search did not complete within ten seconds; no correction accepted.")
-    candidates = _best(found)
     if not candidates:
         from codex32.indel import _has_consecutive_ambiguity
 
-        if any(
-            _has_consecutive_ambiguity(
-                CorrectionContext(profile, target), value, started + 10 if target == 48 else None,
-            )
-            for target in targets
+        if _has_consecutive_ambiguity(
+            CorrectionContext(profile, target), value, deadline if target == 48 else None,
         ):
             raise _CommandError("More than one correction is possible; none was selected.")
         raise _CommandError("No valid correction found. Check the original backup.")
@@ -307,7 +293,7 @@ def _xpub(account: int, testnet: bool) -> int:
     value = multisig_account_xpub(_master_seed(), account=account, testnet=testnet)
     _print(value)
     return 0
-def _bitcoin_core(account: int, timestamp: int, testnet: bool, private: bool) -> int:
+def _bitcoin_core(account: int, timestamp: int | Literal["now"], testnet: bool, private: bool) -> int:
     secret = _master_seed()
     if private:
         warning = (
@@ -363,7 +349,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
     if command == "wallet" and arguments.wallet_command == "bitcoin-core":
         return _bitcoin_core(
             int(arguments.account),
-            int(arguments.timestamp),
+            cast(int | Literal["now"], arguments.timestamp),
             bool(arguments.testnet),
             arguments.core_mode == "restore",
         )

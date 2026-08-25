@@ -1,6 +1,8 @@
 # fmt: off
 """Stateless Bitcoin wallet interoperability for validated master seeds."""
 
+from typing import Literal
+
 from codex32._bip32 import Bip32Node
 from codex32.bech32 import _u5_to_chars
 from codex32.bip93 import MasterSeed
@@ -56,15 +58,18 @@ def multisig_account_xpub(secret: MasterSeed, *, account: int = 0, testnet: bool
     return f"[{origin}]{node.xpub_from_path(path)}"
 
 def core_descriptors(
-    secret: MasterSeed, *, account: int = 0, testnet: bool = False, private: bool = False, timestamp: int = 0
+    secret: MasterSeed, *, account: int = 0, testnet: bool = False, private: bool = False,
+    timestamp: int | Literal["now"] = 0,
 ) -> tuple[dict[str, object], ...]:
     """Return fixed Bitcoin Core records; ``private=True`` includes the signing xprv."""
     node = _master(secret, testnet)
     account = _account(account)
     if not isinstance(private, bool):
         raise TypeError("private must be bool")
-    if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
-        raise ValueError("timestamp must be a nonnegative integer")
+    if timestamp != "now" and (
+        isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0
+    ):
+        raise ValueError("timestamp must be a nonnegative integer or 'now'")
     coin_type = int(testnet)
     fingerprint = node.fingerprint().hex()
     records = []

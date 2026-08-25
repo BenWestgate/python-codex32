@@ -63,6 +63,12 @@ those bits when split.
 
 TTY recovery asks first for a complete secret or share. After the first ordinary
 share, it displays the immutable `hrp1` plus threshold and identifier inline.
+Wallet-only recovery pre-fills `ms1` on the first prompt. If an `ms` or `cl`
+entry fails validation after the program has supplied such an immutable prefix,
+the CLI runs the supported correction search and prints every best candidate to
+stderr. Exactly one candidate may be used only after an explicit `y` or `yes`
+confirmation. A declined or ambiguous suggestion does not become accepted
+input and cannot establish recovery context.
 The user may type only the remaining suffix or paste a complete string. Invalid
 entries repeat the same prompt. Where Python provides Readline, the most recent
 rejected entry is restored for editing without being added to history. After a
@@ -89,8 +95,9 @@ scrollback and may remain in Python or native editor memory; neither can be
 reliably erased by this program.
 
 Redirected input accepts at most nine bounded whitespace-separated artifacts
-without prompts or status. In both modes, stdin is recovery material, stderr is
-human interaction, and stdout is only the requested result.
+without prompts, status, or automatic correction. In both modes, stdin is
+recovery material, stderr is human interaction, and stdout is only the requested
+result.
 
 Recovery commands stop immediately on a direct S. `share` instead collects an
 exact interpolation basis and may include S plus compatible ordinary shares.
@@ -115,17 +122,19 @@ Wallet commands are deliberately goal-oriented:
 ```text
 codex32 xprv [--testnet]
 codex32 wallet multisig-xpub [--account N] [--testnet]
-codex32 wallet bitcoin-core restore [--account N] [--timestamp N] [--testnet]
-codex32 wallet bitcoin-core watch-only [--account N] [--timestamp N] [--testnet]
+codex32 wallet bitcoin-core restore [--account N] [--timestamp N|now] [--testnet]
+codex32 wallet bitcoin-core watch-only [--account N] [--timestamp N|now] [--testnet]
 ```
 
 Every parser level requires its subcommand and rejects abbreviated options.
 `restore` always emits private descriptors and warns that they contain the root
 xprv. `watch-only` never emits private key material. Both modes write one compact
-`importdescriptors` JSON line. Account and timestamp are explicit; timestamp
-defaults to zero. The removed top-level `xpub` and `descriptors` commands have no
-aliases. Root-authority warnings use a bold red `Warning:` label only when stderr
-is a terminal; private keys and redirected output never contain styling codes.
+`importdescriptors` JSON line. Account and timestamp are explicit. Timestamp
+defaults to zero for a complete recovery scan; `--timestamp now` asks Bitcoin
+Core to begin at its current chain tip. The removed top-level `xpub` and
+`descriptors` commands have no aliases. Root-authority warnings use a bold red
+`Warning:` label only when stderr is a terminal; private keys and redirected
+output never contain styling codes.
 
 ## Air-gap transfer
 

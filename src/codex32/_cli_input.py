@@ -7,10 +7,12 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
-from collections.abc import Callable, Iterator
-from typing import Protocol, cast
+from collections.abc import Iterator
+from time import monotonic
+from typing import Any
 
 from codex32.bip93 import Secret, Share, _validate_basis_prefix, _validate_recovery_prefix, parse_codex32
+from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _correct_complete
 from codex32.errors import CodexError, DuplicateShareIndex, ExistingTargetIndex, InvalidChecksum
 from codex32.errors import MismatchedIdentifier, MismatchedPayloadLength, MismatchedProfile
 from codex32.errors import MismatchedThreshold, SecretInRecoverySet
@@ -19,19 +21,11 @@ from codex32.profiles import Profile, _profile_label
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
 
-class _LineEditor(Protocol):
-    def insert_text(self, text: str) -> None: ...
-    def set_auto_history(self, enabled: bool) -> None: ...
-    def set_startup_hook(self, function: Callable[[], object] | None) -> None: ...
-
-
-_line_editor: _LineEditor | None
+_line_editor: Any
 try:
-    import readline as _readline
+    import readline as _line_editor
 except ImportError:
     _line_editor = None
-else:
-    _line_editor = cast(_LineEditor, _readline)
 
 class InputError(Exception): pass
 
@@ -50,7 +44,6 @@ def _editable_input(prompt: str, prefill: str = "") -> str:
         editor.set_auto_history(False)
 
     def insert() -> None:
-        assert editor is not None
         editor.insert_text(prefill)
 
     if editor is not None and prefill:
@@ -72,17 +65,12 @@ def _input_display() -> Iterator[None]:
         return
     sys.stdout.flush()
     saved_stdout = os.dup(stdout_fd)
-    try:
+    with contextlib.ExitStack() as cleanup:
+        cleanup.callback(os.close, saved_stdout)
+        cleanup.callback(os.dup2, saved_stdout, stdout_fd)
+        cleanup.callback(sys.stdout.flush)
         os.dup2(stderr_fd, stdout_fd)
         yield
-    finally:
-        try:
-            sys.stdout.flush()
-        finally:
-            try:
-                os.dup2(saved_stdout, stdout_fd)
-            finally:
-                os.close(saved_stdout)
 
 def read_text(prompt: str, *, optional: bool = False, preserve_groups: bool = False) -> str:
     if sys.stdin.isatty():
@@ -106,15 +94,35 @@ def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
         raise InputError(f"This command accepts only {allowed} input.")
     return artifact
 
-def _prompt_entry(label: str, prefix: str, prefill: str) -> str:
-    return "".join(_editable_input(f"{label}: {prefix}", prefill).split())
-
 def _retry_text(value: str, prefix: str) -> str:
-    if not prefix or "1" not in value:
-        return value
-    if value[: len(prefix)].lower() == prefix.lower():
-        return value[len(prefix) :]
-    return ""
+    if prefix and "1" in value:
+        return value[len(prefix) :] if value[: len(prefix)].lower() == prefix.lower() else ""
+    return value
+
+def _correction_candidates(
+    value: str, profile: Profile, target: int, immutable: str,
+    excluded: tuple[str, ...] = (),
+) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
+    deadline = monotonic() + 10
+    context = CorrectionContext(profile, target, immutable, excluded)
+    candidates, complete = _correct_complete(context, value, deadline=deadline if target == 48 else None)
+    return (_best(candidates) if complete else ()), complete, deadline
+
+def _suggestions(
+    value: str, prefix: str, profiles: tuple[Profile, ...], accepted: list[Artifact],
+) -> tuple[CorrectionCandidate, ...]:
+    if not prefix:
+        return ()
+    profile = next(
+        (item for item in (Profile.MS, Profile.CL) if value.lower().startswith(f"{item}1")), None,
+    )
+    if profile is None or profile not in profiles:
+        return ()
+    target = len(accepted[0].text) if accepted else (
+        74 if profile is Profile.CL or len(value) > 61 else 48
+    )
+    excluded = tuple(artifact.header.index for artifact in accepted)
+    return _correction_candidates(value, profile, target, prefix, excluded)[0]
 
 def _redirected(profiles: tuple[Profile, ...]) -> list[Artifact]:
     tokens = _stdin().split()
@@ -139,23 +147,38 @@ def _interactive(
     *, basis: bool, one: bool, excluded_index: str | None, profiles: tuple[Profile, ...]
 ) -> list[Artifact]:
     accepted: list[Artifact] = []
-    prefix, prefill, required = "", "", 1
+    prefix = "ms1" if profiles == (Profile.MS,) else ""
+    prefill, required = "", 1
     while len(accepted) < required:
         label = (
             "Enter a codex32 string"
             if not accepted
             else (f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}")
         )
+        value = "".join(_editable_input(f"{label}: {prefix}", prefill).split())
+        complete_value = value if "1" in value else prefix + value
         try:
-            value = _prompt_entry(label, prefix, prefill)
-            artifact = _parse(value if "1" in value else prefix + value, profiles)
+            artifact = _parse(complete_value, profiles)
+        except InputError as error:
+            candidates = _suggestions(complete_value, prefix, profiles, accepted)
+            for candidate in candidates:
+                _stderr(f"Possible correction: {candidate.artifact.text}")
+            confirmed = len(candidates) == 1 and _editable_input(
+                "Use this correction? [y/N]: "
+            ).strip().lower() in ("y", "yes")
+            if not confirmed:
+                _stderr(f"Rejected: {error}")
+                prefill = _retry_text(value, prefix)
+                continue
+            artifact = candidates[0].artifact
+        try:
             if basis and artifact.header.index == excluded_index:
                 raise ExistingTargetIndex("That index was requested for the additional share.")
             if not one and (accepted or isinstance(artifact, Share) or basis):
                 recovering = not basis and isinstance(artifact, Share)
                 validator = _validate_recovery_prefix if recovering else _validate_basis_prefix
                 validator([*accepted, artifact])
-        except (CodexError, InputError) as error:
+        except CodexError as error:
             message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
             _stderr(f"Rejected: {message}")
             duplicate = isinstance(error, (DuplicateShareIndex, ExistingTargetIndex))

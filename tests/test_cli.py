@@ -23,6 +23,7 @@ from codex32 import (
     CorrectionCandidate,
     CorrectionContext,
     MasterSeed,
+    Profile,
     Secret,
     Share,
     parse_codex32,
@@ -358,7 +359,7 @@ def test_tty_retry_replaces_only_the_editable_suffix(
     bad_one = suffix[:-1] + (first if suffix[-1] != first else second)
     replacement = first if suffix[-2] != first else second
     bad_two = suffix[:-2] + replacement + suffix[-1]
-    answers = iter((VECTOR_2["share_A"], bad_one, bad_two, suffix))
+    answers = iter((VECTOR_2["share_A"], bad_one, "n", bad_two, "n", suffix))
     editor = _FakeLineEditor()
 
     def answer(_prompt: str) -> str:
@@ -374,8 +375,49 @@ def test_tty_retry_replaces_only_the_editable_suffix(
     assert captured.out.strip() == VECTOR_2["secret_S"]
     assert editor.inserted == [bad_one, bad_two]
     assert editor.hook is None
-    assert editor.auto_history == [False, False, False, False]
+    assert editor.auto_history == [False] * 6
     assert captured.err.count("Rejected: The checksum does not match.") == 2
+
+
+def test_tty_wallet_requires_confirmation_before_using_correction(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    original = VECTOR_1["secret_s"]
+    damaged = original[:20] + ("q" if original[20] != "q" else "p") + original[21:]
+    answers = iter((damaged[3:], "yes"))
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module, "_line_editor", None)
+    monkeypatch.setattr(builtins, "input", answer)
+
+    assert main(["xprv"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == VECTOR_1["xprv"]
+    assert f"Possible correction: {original}" in captured.err
+    assert prompts[0] == "Enter a codex32 string: ms1"
+    assert prompts[-1] == "Use this correction? [y/N]: "
+
+
+def test_redirected_recovery_never_attempts_correction() -> None:
+    original = VECTOR_1["secret_s"]
+    damaged = original[:-1] + ("q" if original[-1] != "q" else "p")
+    with patch("codex32._cli_input._correct_complete") as search:
+        result = _invoke(["check"], damaged)
+
+    assert result.exit_code == 2
+    search.assert_not_called()
 
 
 def test_redirected_check_uses_friendly_checksum_message() -> None:
@@ -538,6 +580,41 @@ def test_tty_recovery_accepts_suffix_after_fixed_prefix(
     assert prompts == ["Enter a codex32 string: ", "Enter share 2 of 2: MS12NAME"]
 
 
+def test_tty_subsequent_correction_uses_confirmed_immutable_context(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Terminal:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+    prefix = "MS12NAME"
+    suffix = VECTOR_2["share_C"][len(prefix) :]
+    damaged = suffix[:12] + ("Q" if suffix[12] != "Q" else "P") + suffix[13:]
+    answers = iter((VECTOR_2["share_A"], damaged, "y"))
+    original_search = input_module._correct_complete
+    contexts: list[CorrectionContext] = []
+
+    def search(context: CorrectionContext, value: str, *, deadline: float | None):
+        contexts.append(context)
+        return original_search(context, value, deadline=deadline)
+
+    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module, "_line_editor", None)
+    monkeypatch.setattr(input_module, "_correct_complete", search)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert main(["secret"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == VECTOR_2["secret_S"]
+    assert f"Possible correction: {VECTOR_2['share_C']}" in captured.err
+    assert contexts == [
+        CorrectionContext(Profile.MS, len(VECTOR_2["share_A"]), prefix, ("a",)),
+    ]
+
+
 def test_tty_recovery_accepts_complete_uppercase_and_retries(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -620,8 +697,9 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
     assert "Rejected:" not in captured.err
     assert "Share 1 of 3 accepted." in captured.err
     assert "Share 2 of 3 accepted." in captured.err
+    first_prefix = "" if command[0] == "secret" else "ms1"
     assert prompts == [
-        "Enter a codex32 string: ",
+        f"Enter a codex32 string: {first_prefix}",
         "Enter share 2 of 3: ms13cash",
         "Enter share 3 of 3: ms13cash",
     ]
@@ -1155,6 +1233,17 @@ def test_cli_reports_ambiguous_structural_plus_consecutive_erasure_input() -> No
     assert "More than one correction is possible" in result.stderr
 
 
+def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> None:
+    damaged = "MS10 NKSU SRVE Y98M ???? ???? ???? ???? UKX9 7HUD URKE V0ZV"
+
+    result = _invoke(["correct"], damaged)
+
+    assert len("".join(damaged.split())) == 48
+    assert damaged.count("?") == 16
+    assert result.exit_code == 1
+    assert "No valid correction found" in result.stderr
+
+
 def test_unusual_ms_length_requires_bytes_only_when_damaged() -> None:
     original = MasterSeed.from_seed(bytes(range(24)), identifier="test").text
     damaged = original[:19] + original[20:]
@@ -1177,7 +1266,7 @@ def test_valid_correction_input_must_match_explicit_byte_length() -> None:
 def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:19] + original[20:]
-    with patch("codex32.cli._correct_complete", return_value=((), False)):
+    with patch("codex32.cli._correction_candidates", return_value=((), False, 0.0)):
         result = _invoke(["correct"], damaged)
 
     assert result.exit_code != 0
@@ -1199,14 +1288,14 @@ def test_only_48_character_cli_search_has_a_deadline() -> None:
         calls.append((context.expected_length, deadline))
         return (), True
 
-    with patch("codex32.cli._correct_complete", side_effect=search):
+    with patch("codex32._cli_input._correct_complete", side_effect=search):
         _invoke(["correct"], damaged)
         default_calls = tuple(calls)
         calls.clear()
         _invoke(["correct", "--bytes", "64"], damaged)
 
     assert default_calls[0][0] == 48 and default_calls[0][1] is not None
-    assert default_calls[1] == (74, None)
+    assert len(default_calls) == 1
     assert calls == [(127, None)]
 
 
@@ -1286,6 +1375,16 @@ def test_wallet_commands_are_thin_master_seed_adapters() -> None:
     assert "\x1b[" not in private.stderr + private.stdout
     assert public.stderr == ""
     assert public.stdout.count("\n") == private.stdout.count("\n") == 1
+
+
+def test_bitcoin_core_cli_accepts_now_timestamp() -> None:
+    result = _invoke(
+        ["wallet", "bitcoin-core", "watch-only", "--timestamp", "now"],
+        VECTOR_1["secret_s"],
+    )
+
+    assert result.exit_code == 0
+    assert all(record["timestamp"] == "now" for record in json.loads(result.stdout))
 
 
 @pytest.mark.parametrize(
@@ -1450,7 +1549,7 @@ def test_tty_adapter_has_no_persistent_history_or_raw_terminal_code() -> None:
     ):
         assert forbidden not in source
     assert "set_auto_history(False)" in source
-    assert "os.dup2(saved_stdout, stdout_fd)" in source
+    assert "cleanup.callback(os.dup2, saved_stdout, stdout_fd)" in source
 
 
 def test_production_size_budgets_are_enforced() -> None:

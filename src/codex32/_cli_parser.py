@@ -7,7 +7,7 @@ import argparse
 import sys
 from collections.abc import Callable
 from importlib.metadata import version
-from typing import NoReturn
+from typing import Literal, NoReturn
 
 
 class _Parser(argparse.ArgumentParser):
@@ -38,6 +38,9 @@ def _integer(label: str, minimum: int, maximum: int | None = None) -> Callable[[
 
     return parse
 
+def _timestamp(value: str) -> int | Literal["now"]:
+    return "now" if value == "now" else _integer("timestamp", 0)(value)
+
 def _command(parsers: argparse._SubParsersAction[_Parser], name: str, summary: str) -> _Parser:
     description = summary[0].upper() + summary[1:] + "."
     return parsers.add_parser(name, help=summary, description=description, allow_abbrev=False)
@@ -52,9 +55,9 @@ def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None
     if timestamp:
         parser.add_argument(
             "--timestamp",
-            type=_integer("timestamp", 0),
+            type=_timestamp,
             default=0,
-            help="earliest descriptor time for Bitcoin Core (default: 0)",
+            help="earliest descriptor time or now for Bitcoin Core (default: 0)",
         )
     parser.add_argument("--testnet", action="store_true", help="use testnet keys")
 

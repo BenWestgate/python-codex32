@@ -30,7 +30,7 @@ Every implemented claim identifies one code owner and direct evidence.
 | R23 | electronic sets use random distinct output indices | generation selector | order, uniqueness, all-31 tests | Accepted divergence |
 | R24 | partial-basis completion | none | absence from API/CLI | Deliberately omitted |
 | R25 | xprv, coordinator xpub, descriptors in reusable API | `wallet.py`; goal-oriented CLI tree | official xprv, frozen BIP48/descriptor and nested-command tests | Implemented |
-| R26 | explicit account/timestamp, mandatory Core mode, root-xprv warning | wallet API and CLI | deterministic records, public/private separation and warning tests | Implemented |
+| R26 | explicit account/timestamp including `now`, mandatory Core mode, root-xprv warning | wallet API and CLI | deterministic records, public/private separation, parser, warning, and Core regtest | Implemented in Gate 4 |
 | R27 | no arbitrary security parser for descriptors | fixed templates in `wallet.py` | module/API absence and template fixtures | Implemented by removal |
 | R28 | safe typed installable reference surface | 25-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
 | R29 | explicit share-index selectors are bounded before copying or normalizing elements | `generation._indices` | oversized string pre-normalization regression across all three public generation APIs | Implemented from standard security scan |
@@ -40,6 +40,8 @@ Every implemented claim identifies one code owner and direct evidence.
 | R33 | all 14 character classes, led by `2O + 2I`, meet the 48-character runtime gate without a second repair implementation | `indel.py` enumeration; `correction.py` symbol core | per-delta benchmark, family recovery tests, and ownership checks | Implemented in Gate 3 |
 | R34 | immutable recovery context, lossless pruning, and global primary-rank completion | correction context and `indel._search` frontier | immutable-domain, header-budget, and tied-frontier regressions | Implemented in Gate 3 |
 | R35 | all five independent whole-group classes preserve automatic four-character phase | group generator in `indel.py` | exact first/subsequent counts, spaced/unspaced equivalence, and recovery tests | Implemented in Gate 3 |
+| R36 | interactive correction requires program-supplied immutable context and operator confirmation; redirected input is never corrected | `_cli_input` | first/subsequent confirmation, context, refusal, and redirected-input tests | Implemented in Gate 4 |
+| R37 | Bitcoin Core imports public/private descriptors and can discover, sign, broadcast, and relock | `wallet.py`; `tools/bitcoin_core_regtest.py` | isolated Core 31.1 regtest using installed artifacts | Implemented in Gate 4 |
 
 The expanded checksum rule from PR #2258 is the only pending-upstream behavior.
 Its 44--46-byte compatibility exposure is explicitly accepted, has direct

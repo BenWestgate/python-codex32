@@ -68,6 +68,10 @@ def test_private_core_descriptors_use_root_xprv_and_explicit_inputs() -> None:
         assert f"/{purpose}h/1h/3h/<0;1>/*" in descriptor
 
 
+def test_core_descriptors_accept_bitcoin_core_now_timestamp() -> None:
+    assert all(record["timestamp"] == "now" for record in core_descriptors(_master(), timestamp="now"))
+
+
 def test_descriptor_checksum_matches_published_example() -> None:
     assert _with_checksum("raw(deadbeef)") == "raw(deadbeef)#89f8spxm"
 
@@ -93,7 +97,7 @@ def test_account_is_explicitly_bounded(account: object) -> None:
         multisig_account_xpub(_master(), account=account)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("timestamp", (-1, True, "now"))
-def test_timestamp_is_a_nonnegative_integer(timestamp: object) -> None:
+@pytest.mark.parametrize("timestamp", (-1, True, "yesterday"))
+def test_timestamp_is_a_supported_core_value(timestamp: object) -> None:
     with pytest.raises((TypeError, ValueError)):
         core_descriptors(_master(), timestamp=timestamp)  # type: ignore[arg-type]
