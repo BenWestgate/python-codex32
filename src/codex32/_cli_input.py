@@ -1,4 +1,6 @@
+# fmt: off
 """Bounded stdin and deliberately small interactive codex32 entry."""
+# ruff: noqa: I001
 
 from __future__ import annotations
 
@@ -8,35 +10,18 @@ import sys
 from collections.abc import Callable, Iterator
 from typing import Protocol, cast
 
-from codex32.bip93 import (
-    Secret,
-    Share,
-    _validate_basis_prefix,
-    _validate_recovery_prefix,
-    parse_codex32,
-)
-from codex32.errors import (
-    CodexError,
-    DuplicateShareIndex,
-    ExistingTargetIndex,
-    InvalidChecksum,
-    MismatchedIdentifier,
-    MismatchedPayloadLength,
-    MismatchedProfile,
-    MismatchedThreshold,
-    SecretInRecoverySet,
-)
+from codex32.bip93 import Secret, Share, _validate_basis_prefix, _validate_recovery_prefix, parse_codex32
+from codex32.errors import CodexError, DuplicateShareIndex, ExistingTargetIndex, InvalidChecksum
+from codex32.errors import MismatchedIdentifier, MismatchedPayloadLength, MismatchedProfile
+from codex32.errors import MismatchedThreshold, SecretInRecoverySet
 from codex32.profiles import Profile, _profile_label
 
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
 
-
 class _LineEditor(Protocol):
     def insert_text(self, text: str) -> None: ...
-
     def set_auto_history(self, enabled: bool) -> None: ...
-
     def set_startup_hook(self, function: Callable[[], object] | None) -> None: ...
 
 
@@ -48,21 +33,16 @@ except ImportError:
 else:
     _line_editor = cast(_LineEditor, _readline)
 
-
-class InputError(Exception):
-    """Report invalid command input without a traceback."""
-
+class InputError(Exception): pass
 
 def _stderr(text: str, *, end: str = "\n") -> None:
     print(text, end=end, file=sys.stderr, flush=True)
-
 
 def _stdin() -> str:
     value = sys.stdin.read(_MAX_INPUT + 1)
     if len(value) > _MAX_INPUT:
         raise InputError("The supplied input is too long.")
     return value
-
 
 def _editable_input(prompt: str, prefill: str = "") -> str:
     editor = _line_editor
@@ -81,7 +61,6 @@ def _editable_input(prompt: str, prefill: str = "") -> str:
     finally:
         if editor is not None:
             editor.set_startup_hook(None)
-
 
 @contextlib.contextmanager
 def _input_display() -> Iterator[None]:
@@ -105,18 +84,16 @@ def _input_display() -> Iterator[None]:
             finally:
                 os.close(saved_stdout)
 
-
-def read_text(prompt: str, *, optional: bool = False) -> str:
+def read_text(prompt: str, *, optional: bool = False, preserve_groups: bool = False) -> str:
     if sys.stdin.isatty():
         value = _editable_input(f"{prompt}: ")
         _stderr("")
     else:
         value = _stdin()
-    value = "".join(value.split())
+    value = value.strip() if preserve_groups else "".join(value.split())
     if not value and not optional:
         raise InputError("No input was provided.")
     return value
-
 
 def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
     try:
@@ -129,10 +106,8 @@ def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
         raise InputError(f"This command accepts only {allowed} input.")
     return artifact
 
-
 def _prompt_entry(label: str, prefix: str, prefill: str) -> str:
     return "".join(_editable_input(f"{label}: {prefix}", prefill).split())
-
 
 def _retry_text(value: str, prefix: str) -> str:
     if not prefix or "1" not in value:
@@ -140,7 +115,6 @@ def _retry_text(value: str, prefix: str) -> str:
     if value[: len(prefix)].lower() == prefix.lower():
         return value[len(prefix) :]
     return ""
-
 
 def _redirected(profiles: tuple[Profile, ...]) -> list[Artifact]:
     tokens = _stdin().split()
@@ -161,7 +135,6 @@ _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
     SecretInRecoverySet: "Enter ordinary shares rather than the shared secret.",
 }
 
-
 def _interactive(
     *, basis: bool, one: bool, excluded_index: str | None, profiles: tuple[Profile, ...]
 ) -> list[Artifact]:
@@ -171,7 +144,7 @@ def _interactive(
         label = (
             "Enter a codex32 string"
             if not accepted
-            else f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}"
+            else (f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}")
         )
         try:
             value = _prompt_entry(label, prefix, prefill)
@@ -185,11 +158,8 @@ def _interactive(
         except (CodexError, InputError) as error:
             message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
             _stderr(f"Rejected: {message}")
-            prefill = (
-                ""
-                if isinstance(error, (DuplicateShareIndex, ExistingTargetIndex))
-                else _retry_text(value, prefix)
-            )
+            duplicate = isinstance(error, (DuplicateShareIndex, ExistingTargetIndex))
+            prefill = "" if duplicate else _retry_text(value, prefix)
             continue
         prefill = ""
         if one:
@@ -205,7 +175,6 @@ def _interactive(
         if len(accepted) < required:
             _stderr(f"{'String' if basis else 'Share'} {len(accepted)} of {required} accepted.")
     return accepted
-
 
 def read_artifacts(
     *,

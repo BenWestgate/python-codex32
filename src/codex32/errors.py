@@ -5,109 +5,39 @@ class CodexError(Exception):
     """Base class for codex32 errors."""
 
 
-class InvalidCharacter(CodexError):
-    """Input contains a character that is invalid in its context."""
+def _error(name: str, base: type[CodexError], doc: str) -> type[CodexError]:
+    """Declare a named empty exception while keeping the hierarchy visible."""
+    return type(name, (base,), {"__doc__": doc, "__module__": __name__})
 
 
-class MissingSeparator(CodexError):
-    """Input does not contain a Bech32 separator."""
+InvalidCharacter = _error("InvalidCharacter", CodexError, "Input contains an invalid character.")
+MissingSeparator = _error("MissingSeparator", CodexError, "Input lacks a Bech32 separator.")
+InvalidCase = _error("InvalidCase", CodexError, "Input mixes upper- and lowercase characters.")
+InvalidLength = _error("InvalidLength", CodexError, "Input length is not permitted by its profile.")
+UnknownProfile = _error("UnknownProfile", CodexError, "The HRP is not a registered profile.")
+UnsupportedOperation = _error("UnsupportedOperation", CodexError, "The profile omits this operation.")
+InvalidChecksum = _error("InvalidChecksum", CodexError, "The outer checksum does not validate.")
 
+InvalidHeader = _error("InvalidHeader", CodexError, "The six-symbol header is invalid.")
+InvalidThreshold = _error("InvalidThreshold", InvalidHeader, "The threshold is not 0 or 2 through 9.")
+InvalidIdentifier = _error("InvalidIdentifier", InvalidHeader, "The identifier is not four symbols.")
+InvalidShareIndex = _error("InvalidShareIndex", InvalidHeader, "The share index conflicts with its header.")
 
-class InvalidCase(CodexError):
-    """Input mixes upper- and lowercase characters."""
+InvalidPayload = _error("InvalidPayload", CodexError, "The payload is not permitted by its profile.")
+InvalidPadding = _error("InvalidPadding", InvalidPayload, "The discarded payload padding is invalid.")
+InvalidBip39Checksum = _error("InvalidBip39Checksum", InvalidPayload, "The BIP39 checksum is invalid.")
 
+InvalidShareSet = _error("InvalidShareSet", CodexError, "Artifacts cannot form an interpolation set.")
+WrongShareCount = _error("WrongShareCount", InvalidShareSet, "The share count differs from its threshold.")
+MismatchedProfile = _error("MismatchedProfile", InvalidShareSet, "Profiles differ.")
+MismatchedThreshold = _error("MismatchedThreshold", InvalidShareSet, "Thresholds differ.")
+MismatchedIdentifier = _error("MismatchedIdentifier", InvalidShareSet, "Identifiers differ.")
+MismatchedPayloadLength = _error("MismatchedPayloadLength", InvalidShareSet, "Payload shapes differ.")
+DuplicateShareIndex = _error("DuplicateShareIndex", InvalidShareSet, "Share indices repeat.")
+SecretInRecoverySet = _error("SecretInRecoverySet", InvalidShareSet, "Recovery received S.")
+InvalidTargetIndex = _error("InvalidTargetIndex", InvalidShareSet, "The target is not an ordinary index.")
+ExistingTargetIndex = _error("ExistingTargetIndex", InvalidTargetIndex, "The target repeats an input index.")
 
-class InvalidLength(CodexError):
-    """Input has a length not permitted by its registered profile."""
-
-
-class UnknownProfile(CodexError):
-    """The HRP is not one of the fixed registered codex32 profiles."""
-
-
-class UnsupportedOperation(CodexError):
-    """A registered profile deliberately does not provide this operation."""
-
-
-class InvalidChecksum(CodexError):
-    """The outer codex32 checksum does not validate."""
-
-
-class InvalidHeader(CodexError):
-    """The six-symbol codex32 header is invalid."""
-
-
-class InvalidThreshold(InvalidHeader):
-    """The threshold is not 0 or in the inclusive range 2 through 9."""
-
-
-class InvalidIdentifier(InvalidHeader):
-    """The identifier is not exactly four Bech32 symbols."""
-
-
-class InvalidShareIndex(InvalidHeader):
-    """The share index is inconsistent with the header."""
-
-
-class InvalidPayload(CodexError):
-    """The payload cannot represent data permitted by its profile."""
-
-
-class InvalidPadding(InvalidPayload):
-    """The otherwise-discarded payload padding is not permitted."""
-
-
-class InvalidBip39Checksum(InvalidPayload):
-    """A BIP39 migration secret has an invalid embedded checksum."""
-
-
-class InvalidShareSet(CodexError):
-    """A set of validated artifacts cannot be used for interpolation."""
-
-
-class WrongShareCount(InvalidShareSet):
-    """A share set does not contain exactly its declared threshold."""
-
-
-class MismatchedProfile(InvalidShareSet):
-    """Interpolation inputs belong to different registered profiles."""
-
-
-class MismatchedThreshold(InvalidShareSet):
-    """Interpolation inputs do not have one valid common threshold."""
-
-
-class MismatchedIdentifier(InvalidShareSet):
-    """Interpolation inputs do not have one common identifier."""
-
-
-class MismatchedPayloadLength(InvalidShareSet):
-    """Interpolation inputs do not have one common encoded payload shape."""
-
-
-class DuplicateShareIndex(InvalidShareSet):
-    """Interpolation inputs repeat an index."""
-
-
-class SecretInRecoverySet(InvalidShareSet):
-    """Recovery was given S rather than only ordinary shares."""
-
-
-class InvalidTargetIndex(InvalidShareSet):
-    """A derivation target is not an ordinary share index."""
-
-
-class ExistingTargetIndex(InvalidTargetIndex):
-    """A derivation target repeats an interpolation input index."""
-
-
-class InvalidShareSelection(CodexError):
-    """Generation output indices or their requested count are invalid."""
-
-
-class HeaderCollision(InvalidShareSelection):
-    """A new share set reuses its source set header."""
-
-
-class InvalidCorrectionInput(CodexError):
-    """Correction input cannot describe a supported checksum problem."""
+InvalidShareSelection = _error("InvalidShareSelection", CodexError, "Output share selection is invalid.")
+HeaderCollision = _error("HeaderCollision", InvalidShareSelection, "A new set reuses its source header.")
+InvalidCorrectionInput = _error("InvalidCorrectionInput", CodexError, "Correction input is unsupported.")

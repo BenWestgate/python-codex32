@@ -1,200 +1,145 @@
-# Fixed-length BCH correction
+# BCH and bounded structural correction
 
-The current implementation provides only the algebraic, fixed-length correction
-boundary. A bounded structural adapter is a cuttable pre-v1 gate in
-[the production-ready v1 plan](production-ready-v1.md). If it cannot satisfy
-the plan's completeness, performance, size, and audit requirements, v1 remains
-fixed-length-only and structural correction moves to v1.1.
+Correction produces checksum-valid, untrusted suggestions. It cannot prove the
+operator's intended wallet, and a suggestion never flows automatically into
+sharing, recovery, or wallet APIs.
 
 ## Public full-string API
 
-`correct(CorrectionContext(...), damaged_text)` accepts every fixed registered
-profile. Its context may constrain the complete canonical length, the
-five-symbol threshold-plus-identifier header, and ordinary share indices that
-are already in use. The HRP and separator are immutable. A differing expected
-length receives no structural search in the current fixed-length
-implementation.
+`correct(CorrectionContext(...), damaged_text)` supports every registered
+profile. The context fixes the profile and may supply:
 
-The function returns an immutable tuple of `CorrectionCandidate` records in
-deterministic rank order. A valid unchanged string returns one candidate with
-no edits; no valid correction returns `()`. Malformed context raises
-`InvalidCorrectionInput`. Every candidate contains an ordinary parsed `Share`
-or `Secret`; the decoder never exposes a checksum-only result.
+- `expected_length`, the complete canonical string length;
+- `immutable_prefix`, program-supplied text outside the correction domain; and
+- `excluded_indices`, ordinary share indices already accepted in a recovery.
 
-Fixed correction emits only `substitution` and `erasure` edits. Insertions,
-deletions, and transpositions are reserved record kinds for the cuttable
-structural gate. Edit coordinates are zero-based from the end of the
-data/checksum body. `observed` and `replacement` preserve string case.
-`estimated_search_bits` is zero for fixed decoding, `erasures_filled` and
-`addend_hamming_weight` expose the deterministic secondary ranking inputs, and
-`crc_padding_match` is a boolean only for an `ms` S candidate. It is `None` for
-shares and other profiles and never affects validity.
+Without `expected_length`, the API attempts only fixed-length BCH correction.
+An exact expected length enables bounded structural correction. The public API
+has no deadline and returns every final reconstruction tied at the best primary
+rank. A valid unchanged string returns one candidate with no edits, no result
+returns `()`, and malformed context raises `InvalidCorrectionInput`.
 
-The API completes its fixed search without a deadline or provisional result.
-All four profiles are available to API callers. The CLI deliberately offers
-full-string correction only for `ms` and `cl`.
+The HRP and separator are immutable. For a first share, `immutable_prefix` is
+the profile prefix, such as `ms1`. After a share has been validated and the
+operator confirms it, an interactive recovery may prefill `ms1` plus its
+threshold and identifier. That longer prefix admits no structural edits,
+erasures, or substitutions, and its symbols do not enter alignment or capture
+counts. A suggested correction never establishes or changes this context.
 
-## Candidate structural-correction gate
+Every candidate crosses the ordinary `parse_codex32` validation boundary.
+`capture_volume` is its exact integer primary rank. `addend_hamming_weight` is
+a secondary transcription hint, `erasures_filled` counts recovered unknown
+symbols, and `crc_padding_match` exposes the generation-padding hint when
+applicable. Edit positions count backward from the final data/checksum symbol.
 
-A future `indel.py` may search bounded insertion and deletion candidates, but
-must remain separate from the fixed-length BCH core. Its primary ordering must
-come from an evidence-backed transcription-error model and estimated search
-cost, not from checksum-validity alone.
+## Structural promise
 
-The structural layer distinguishes extra text from fixed-length errors. An
-erroneous four-character group remains BCH damage. A duplicated or inserted
-group is extra text removed before BCH, while an omitted group is restored as
-four erasures.
+Corrects up to four arbitrary missing or extra characters, including mixtures;
+up to two skipped or extra four-character groups, including one of each.
 
-If the gate ships, its minimum envelope is:
+There are exactly two independent structural families:
 
-- at least two arbitrary individual omissions and insertions;
-- at least two adjacent-character transpositions;
-- two arbitrary omitted, group-aligned four-character groups, represented by
-  eight erasures;
-- three omitted group-aligned groups when contiguous, represented by twelve
-  consecutive erasures;
-- four arbitrary inserted four-character groups, including candidates that
-  still require BCH correction after deletion; and
-- up to four exact adjacent duplicated groups through a dedicated fast path.
+- arbitrary characters with `inserted + omitted <= 4`; and
+- whole four-character groups with `inserted + omitted <= 2`.
 
-General mixed damage retains the BCH guarantee
-`2 * substitutions + erasures <= 8`. The consecutive-erasure path instead
-guarantees up to 13 regular-checksum or 15 Long-checksum erasures. Eight
-insertion-only groups were searchable in an initial development benchmark, but
-that unlikely human-error mode is not a required v1 contract. Broader coverage
-may be retained only if it adds little code and passes the complete platform
-budget.
+Only a class whose net length change reaches the expected target is generated.
+The families are never mixed. There are no special burst, duplication, or
+transposition generators. An adjacent swap remains two fixed substitutions.
 
-Rank complete candidates by an estimated negative log likelihood of the
-observed transcription. The model must account for the structural operation,
-estimated search-space bits, and the number of unknown erasures filled. Among
-otherwise comparable candidates, prefer the lower sum of
-`addend.value.bit_count()` over known-character substitutions. This uses the
-Bech32 alphabet's bit ordering as a small confusion prior without claiming that
-Hamming distance is a measured human-error probability.
+Group phase is derived from the canonical four-character display layout; input
+spaces are not evidence and are optional. Because group search admits only
+whole-group edits, its phase cannot shift. Character-indel search never relies
+on group boundaries.
 
-For an `ms` S candidate with generation padding, a CRC-padding match may be used
-only as a secondary ordering hint after structural evidence. A match must never
-make a candidate valid, prune the search, establish completeness, or remove a
-nonmatching candidate from API results. Parsed and hand-generated BIP93 secrets
-may legally use arbitrary padding, and ordinary shares have no CRC semantics.
-The candidate record should expose whether this hint was applicable and whether
-it matched so callers can audit the ordering.
+An invalid body character such as `?` is considered both ways when the length
+permits: it may be an extra character deleted by structural alignment, or an
+explicit erasure retained for fixed correction. Equivalent structural views
+are deduplicated before BCH work. Final reconstructions are deduplicated again
+before ambiguity handling.
 
-Known profile, length, immutable header, and unused-index information constrain
-candidate construction before ranking; they are not score bonuses. The complete
-API result remains deterministic and retains every candidate in rank order,
-including non-CRC candidates and exact ties.
+The ownership invariant is:
 
-Before selecting a ranking formula, test it against a frozen, independently
-labelled corpus of realistic transcription damage. Compare at least omitted and
-duplicated characters or groups, transpositions, repeated adjacent characters,
-visual substitutions, case mistakes, explicit erasures, and combinations of
-these errors. Record top-1 and top-k recovery rates, ties, search work, and
-timeouts; do not tune and evaluate on the same examples. Ranking tests must also
-prove that lower addend Hamming weight wins only after stronger structural
-evidence, a CRC match cannot outrank a structurally better candidate, and a CRC
-mismatch never removes an otherwise valid candidate.
+```text
+indel.py enumerates alignments
+correction.py performs all symbol repair
+```
 
-## Coordinates and trust boundary
+An omitted character becomes one BCH erasure and an omitted group becomes four.
+Deleting extra text consumes no BCH capacity after alignment. The fixed core
+continues to enforce `erasures + 2 * substitutions <= 8` for mixed errors. Its
+13-consecutive-erasure regular and 15-consecutive-erasure Long behavior remains
+a separate fixed-length feature. For exact-length input, that solver returns its
+unique checksum-valid completion directly when 9 through 13 (regular) or 15
+(Long) explicit erasures are contiguous. It never admits nonconsecutive
+erasures above eight or an insertion/deletion hypothesis.
 
-All algebra uses PR #70's native zero-based reverse coordinates: index 0 is the
-last data/checksum character. This convention is never converted using an HRP,
-separator, payload length, or complete-string length.
+## Capture bound and ordering
 
-Full-string correction requires a `CorrectionContext` with an exact registered
-profile. The adapter accepts that HRP and its separator as an immutable prefix. Printable
-non-Bech32 characters after that boundary are erasures, including a later `1`.
-The format layer owns checksum selection. A correction outside the visible body is
-rejected, and every candidate must pass the ordinary `parse_codex32` boundary.
-This means a BIP39 S must also satisfy its embedded SHA-256 checksum and outer
-padding, while an ordinary BIP39 share retains mask semantics.
+For one exact correction class, the primary decoder-capture volume is:
 
-Corrections are checksum-valid suggestions, not proof of the intended wallet.
-They must be compared with the physical backup before use.
+```text
+structural alignments * fixed-core BCH capture volume
+```
 
-The CLI infers `ms` or `cl` only from the literal undamaged prefix of a complete
-string. It does not expose a profile option, guess another prefix, or correct the
-HRP. BIP39 full-string correction remains available to API code but is not
-offered by the CLI.
+The fixed-core term already includes erased symbol values, so omissions are not
+multiplied by `32` a second time. For each observed-to-target length delta, the
+runtime sums every admitted class with primary volume no worse than a proposed
+structural result. Structural eligibility requires the strict integer bound:
+
+```text
+100_000 * cumulative_volume < 2 ** checksum_bits
+```
+
+This is a conservative `P_false < 1e-5` envelope. The checksum space is 65 bits
+for regular codex32 and 75 bits for Long. Optional profile semantics, CRC, and
+fingerprint hints do not enlarge it. In particular, two omitted groups remain
+inside the regular envelope at a conservative class bound of about `1.97e-6`.
+
+The separately guaranteed consecutive-erasure completion is not a structural
+capture-ranked result and is explicitly exempt from that envelope. Its erased
+locations are supplied, its fixed linear system has one checksum-valid
+completion, and it remains an untrusted, nonzero-exit CLI suggestion requiring
+comparison with the backup.
+
+Combining an above-eight burst with extra-character deletion is not part of the
+fixed guarantee. The CLI may nevertheless prove that such input is ambiguous
+by finding two distinct parsed completions through the same fixed core. It then
+reports ambiguity rather than selecting or emitting either completion.
+
+Search classes are ordered by their theoretical minimum primary volume. A best
+candidate does not stop the search: every remaining class with a floor equal to
+or better than that rank is exhausted. A class may be skipped only when its
+floor is strictly worse. Thus an early result cannot hide a tied reconstruction.
+
+The API retains all primary-volume ties. The interactive CLI first refines such
+ties by Bech32 addend Hamming weight, then by generation CRC, then by matching
+the BIP32 fingerprint identifier of an unshared master seed. If a tie remains,
+the CLI reports ambiguity instead of selecting by enumeration or lexical order.
+
+## Runtime boundary
+
+The 48-character reference target must complete every advertised class within
+ten seconds on the documented fast-laptop CPU. The largest class is two missing
+plus two extra arbitrary characters, with about one million alignments. The
+generic pipeline parses once, reuses erasure state, prunes only provably
+impossible profile headers, and calls the same fixed corrector for every class.
+
+The API has no deadline. The CLI finishes any class it starts; if the ten-second
+boundary is reached before another 48-character class, it accepts no provisional
+result. Longer strings retain the same finite structural families without a
+deadline and may take longer. They are interruptible normally.
+
+CLI `ms` correction defaults to 48- and 74-character targets. `--bytes 16..64`
+selects an unusual imported master-seed size. CL targets 74 characters. BIP39
+full-string correction remains API-only.
 
 ## Worksheet residue API
 
-`correct_worksheet_residue` accepts only the final worksheet residue:
+`correct_worksheet_residue` accepts only a 13- or 15-symbol residue and uses
+zero-based reverse positions. It has no profile, HRP, or complete-string length.
+`()` means already correct, a tuple contains unique addends, and `None` means no
+unique correction. The CLI alone converts displayed positions to one-based.
 
-- 13 characters select regular codex32, whose reverse-coordinate period is
-  93 symbols;
-- 15 characters select Long codex32, whose period is 1023 symbols.
-
-The API receives no profile, HRP, or string length. It therefore cannot tell
-whether the residue represents an `ms`, CL, BIP39, or other application of the
-same codex32 checksum. It also cannot decide whether a returned period-relative
-position lies outside an undisclosed shortened string. That decision belongs to
-the person or application holding the string.
-
-`()` means the residue is already correct. A sorted tuple contains the unique
-reverse-indexed addends. `None` means no unique correction was found. The CLI
-displays positions as one-based and performs only `position - 1` conversion.
-
-## Algebra-to-code map
-
-| P70 concept | Code owner |
-|---|---|
-| GF(32) scalar arithmetic shared with BIP93 interpolation | `gf32.py` |
-| Packed quadratic extension GF(1024) | `_gf1024*` helpers |
-| Minimal polynomials and generator construction | `_minimal_poly`, `_monic_mul`, `_make_spec` |
-| Short/Long target symbols | `_SHORT_SPEC`, `_LONG_SPEC` explicit `secretshare32*` constants |
-| Residue modulo the checksum generator | `_residue`, importing `_hrp_expand` |
-| Syndrome recurrence and locator synthesis | `_synthesize_rec`, `_locator_poly` |
-| Error-plus-erasure BCH decoding | `_bch_error_corrections` |
-| Unique arbitrary/consecutive erasure fallback | `_solve_linear`, `_linear_error_corrections` |
-| Root-subgroup and final target verification | `_bch_error_corrections`, `_corrections_reach_target` |
-| Public registered-profile adapter | `correct`, over `_correct_fixed` |
-| Application-agnostic residue adapter | `correct_worksheet_residue` |
-
-The target constants are checked against the imported checksum constants. No
-second polymod implementation exists in tests: official codec vectors already
-anchor checksum arithmetic, the frozen corpus anchors correction outcomes, and
-full candidates are reparsed through the production codec.
-
-## Guaranteed capacity
-
-For both checksum variants the BCH path guarantees every nonzero distribution
-with `2 * errors + erasures <= 8`, including four substitutions and eight
-arbitrary erasures. The linear fallback additionally covers every legal start
-for 13 consecutive regular-checksum erasures and 15 consecutive Long-checksum
-erasures. Other uniquely solvable erasure patterns may succeed but are not a
-guarantee.
-
-Lexical, prefix, profile-shape, algebra, visible-body, and semantic-reparse
-failures all collapse to no public candidate. This avoids presenting one
-internal decoder stage as a diagnosis of the physical transcription error.
-
-Decoder success is fail-closed twice: every synthesized locator root must map
-to a legal reverse position in the selected checksum period, and the complete
-set of proposed addends must algebraically transform the residue to the exact
-target. This prevents an out-of-subgroup locator from being silently truncated
-into a plausible partial correction.
-
-The two checks above are deliberate hardening beyond literal PR #70 behavior.
-The direct P70 routine checked the number of roots in GF(1024), but not whether
-every regular-code root belonged to the shortened code's order-93 position
-subgroup. This implementation adds that check explicitly and the frozen
-regression corpus exercises it.
-
-## Evidence and provenance
-
-The implementation carries the MIT notice from Blockstream's PR #70 head
-`610cbad30258c80cd862b3773a20f8099d25e36e`. The frozen patch digest is
-`11ef7d8a857d38b496068db4e44382825f0209ee7895d335daba122cfb1b77b8`.
-The source-derived offline corpus and its limitations are recorded in
-`source-manifest.md`; `tools/differential_correction.py --verify` checks it
-without network or Haskell dependencies.
-
-The frozen malformed corpus exercises parsing, checksum completion,
-interpolation, correction, and CLI tokenization. The dependency-free structured
-targets at `tools/fuzz_untrusted_boundaries.py` and
-`tools/fuzz_correction_context.py` bound each input to 4,096 bytes;
-`tests/test_fuzz_targets.py` supplies deterministic boundary seeds and
-Hypothesis smoke campaigns.
+The frozen PR #70 corpus, malformed corpus, arithmetic evidence, structural
+tests, and benchmarks are indexed in [source-manifest.md](source-manifest.md)
+and [gate3-analysis.md](gate3-analysis.md).

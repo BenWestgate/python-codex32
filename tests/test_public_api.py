@@ -85,7 +85,7 @@ def test_artifacts_cannot_be_directly_constructed_or_mutated() -> None:
         Share("ms", Header(2, "test", "a"), (), ())  # type: ignore[arg-type]
     share = parse_codex32(VECTOR_2["share_A"])
     with pytest.raises((FrozenInstanceError, AttributeError)):
-        share._text = "changed"  # type: ignore[misc]
+        share.text = "changed"  # type: ignore[misc]
     with pytest.raises((FrozenInstanceError, AttributeError)):
         share.header.identifier = "leak"  # type: ignore[misc]
 

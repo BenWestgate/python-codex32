@@ -28,7 +28,8 @@ def LLVMFuzzerTestOneInput(data: bytes) -> int:
             complete_checksum(text)
         elif mode == 2:
             profile = _PROFILES[payload[0] % len(_PROFILES)] if payload else Profile.MS
-            correct(CorrectionContext(profile), text)
+            target = {Profile.MS: 48, Profile.CL: 74, Profile.BIP39_12W: 56, Profile.BIP39_24W: 82}
+            correct(CorrectionContext(profile, target[profile]), text)
         elif mode == 3:
             artifacts = [parse_codex32(token) for token in text.split()[:10]]
             recover_secret(artifacts)

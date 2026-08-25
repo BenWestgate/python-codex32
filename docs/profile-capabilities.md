@@ -14,6 +14,8 @@ There is no unknown-profile fallback or runtime registration.
 | existing-S splitting | yes | yes | no |
 | fixed BCH API | yes | yes | yes |
 | fixed BCH CLI | yes | yes | no |
+| bounded structural API | yes | yes | yes |
+| bounded structural CLI | yes | yes | no |
 | wallet API | S only | no | no |
 
 `ms` payloads encode every byte length from 16 through 64 and may have any legal

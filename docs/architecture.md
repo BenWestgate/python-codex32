@@ -6,7 +6,7 @@ The package uses one narrow dependency direction:
 text -> bounded format/checksum -> fixed profile -> immutable artifact
                                                    |-> BIP93 sharing
                                                    |-> ms/cl generation
-                                                   |-> fixed BCH correction
+                                                   |-> bounded correction
                                                    `-> MasterSeed wallet adapter
 
 CLI -> public APIs above
@@ -29,6 +29,7 @@ semantics. No artifact crosses the parsing boundary until every stage passes.
 | entropy, masks, identifiers, output indices | `generation.py` | `test_generation.py` |
 | shared GF(32) arithmetic | `gf32.py` | sharing vectors and correction corpus |
 | fixed BCH and worksheet correction | `correction.py` | `test_correction_bch.py` |
+| structural alignment | `indel.py` | `test_correction_indel.py` |
 | typed BIP32 dependency boundary | `_bip32.py` | BIP32 and wallet vectors |
 | fixed wallet derivation and descriptors | `wallet.py` | `test_wallet.py` |
 | bounded stdin and fixed-prefix TTY entry | `_cli_input.py` | `test_cli.py` |

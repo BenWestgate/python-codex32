@@ -102,7 +102,7 @@ def test_vector_6_core_lightning_examples_are_immutable() -> None:
     assert luea.secret_bytes.hex() == ("6c696768746e696e672d31330000000000000000000000000000000000000000")
     assert peev.secret_bytes.hex() == ("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1")
     with pytest.raises((FrozenInstanceError, AttributeError)):
-        luea._header = cln2.header  # type: ignore[misc]
+        luea.header = cln2.header  # type: ignore[misc]
 
 
 @pytest.mark.parametrize("value", BAD_CHECKSUMS)

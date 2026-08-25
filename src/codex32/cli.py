@@ -1,4 +1,6 @@
+# fmt: off
 """Small command-line adapter for codex32-native workflows."""
+# ruff: noqa: I001
 
 from __future__ import annotations
 
@@ -6,54 +8,29 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from time import monotonic
 from typing import cast
 
-from codex32 import (
-    CoreLightningSecret,
-    Header,
-    MasterSeed,
-    Profile,
-    Secret,
-    Share,
-    complete_checksum,
-    core_descriptors,
-    derive_share,
-    generate_core_lightning_secret,
-    generate_master_seed,
-    master_xprv,
-    multisig_account_xpub,
-    parse_codex32,
-    recover_secret,
-    split_secret,
-)
 from codex32._bip32 import fingerprint_from_seed
 from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
-from codex32.bip93 import IDX_SORT, _normalize_target
-from codex32.correction import (
-    CorrectionContext,
-    correct,
-    correct_worksheet_residue,
-)
+from codex32.bip93 import IDX_SORT, CoreLightningSecret, Header, MasterSeed, Secret, Share
+from codex32.bip93 import _normalize_target, complete_checksum, derive_share, parse_codex32, recover_secret
+from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _correct_complete
+from codex32.correction import correct_worksheet_residue
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
-from codex32.profiles import _profile_label
-
+from codex32.generation import generate_core_lightning_secret, generate_master_seed, split_secret
+from codex32.profiles import Profile, _profile_label
+from codex32.wallet import core_descriptors, master_xprv, multisig_account_xpub
 Artifact = Share | Secret
-
-
-class _CommandError(Exception):
-    pass
-
-
+class _CommandError(Exception): pass
 def _print(text: str, *, err: bool = False, danger: bool = False) -> None:
     if danger and sys.stderr.isatty():
         label = text.split(maxsplit=1)[0]
         text = text.replace(label, f"\x1b[1;31m{label}\x1b[0m", 1)
     print(text, file=sys.stderr if err else sys.stdout)
-
-
 def _secret(artifacts: list[Artifact]) -> Secret:
     if len(artifacts) == 1 and isinstance(artifacts[0], Secret):
         return artifacts[0]
@@ -63,15 +40,11 @@ def _secret(artifacts: list[Artifact]) -> Secret:
         return recover_secret([artifact for artifact in artifacts if isinstance(artifact, Share)])
     except CodexError as error:
         raise _UsageError(str(error)) from error
-
-
 def _master_seed() -> MasterSeed:
     value = _secret(_artifacts(profiles=(Profile.MS,)))
     if not isinstance(value, MasterSeed):
         raise _UsageError("Wallet commands accept only Bitcoin master-seed secrets.")
     return value
-
-
 def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
     header = artifact.header
     name = _profile_label(artifact.profile)
@@ -86,8 +59,6 @@ def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
     if header.threshold:
         lines.append(f"Shares needed for recovery: {header.threshold}")
     return lines
-
-
 def _group(text: str) -> str:
     groups = [text[start : start + 4].upper() for start in range(0, len(text), 4)]
     for index, group in enumerate(groups):
@@ -95,8 +66,6 @@ def _group(text: str) -> str:
         gap = " " if (index + 1) % 4 == 0 and index + 1 < len(groups) else ""
         groups[index] = style + group + gap
     return " ".join(groups) + "\x1b[0m"
-
-
 def _render(artifact: Artifact, pretty: bool) -> str:
     if not pretty:
         return artifact.text
@@ -106,18 +75,12 @@ def _render(artifact: Artifact, pretty: bool) -> str:
         lines.append(f"Master fingerprint: {fingerprint.upper()}")
     lines.extend(("", _group(artifact.text)))
     return "\n".join(lines)
-
-
 def _emit(artifact: Artifact, plain: bool, *, err: bool = False, gap: bool = False) -> None:
     pretty = (sys.stderr if err else sys.stdout).isatty() and not plain
     _print(("\n" if gap and pretty else "") + _render(artifact, pretty), err=err)
-
-
 def _check(artifacts: list[Artifact]) -> int:
     _print("\n\n".join("\n".join(_summary(item, valid=True)) for item in artifacts))
     return 0
-
-
 def _share_command(index: str, plain: bool) -> int:
     try:
         index = _normalize_target(index, label="share index")
@@ -130,8 +93,6 @@ def _share_command(index: str, plain: bool) -> int:
         raise _CommandError(str(error)) from error
     _emit(derived, plain)
     return 0
-
-
 def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None]:
     if value is None:
         return Profile.MS, None, None
@@ -159,8 +120,6 @@ def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None
     except CodexError as error:
         raise _UsageError(f"Invalid backup header: {error}") from error
     return profile, threshold, identifier
-
-
 def _creation_source() -> bytes | Artifact:
     value = _text("Enter an existing codex32 secret or hexadecimal seed")
     try:
@@ -170,8 +129,6 @@ def _creation_source() -> bytes | Artifact:
             return parse_codex32(value)
         except CodexError as error:
             raise _UsageError(str(error)) from error
-
-
 def _create(
     header: str | None,
     byte_length: int | None,
@@ -207,11 +164,7 @@ def _create(
                     "The supplied secret is already complete; choose a sharing threshold from 2 through 9."
                 )
             secret, outputs = split_secret(
-                source,
-                threshold,
-                identifier=identifier,
-                share_count=shares,
-                indices=indices,
+                source, threshold, identifier=identifier, share_count=shares, indices=indices
             )
         elif profile is Profile.MS:
             secret, outputs = generate_master_seed(
@@ -224,11 +177,7 @@ def _create(
             )
         else:
             secret, outputs = generate_core_lightning_secret(
-                source,
-                identifier=identifier,
-                threshold=threshold,
-                share_count=shares,
-                indices=indices,
+                source, identifier=identifier, threshold=threshold, share_count=shares, indices=indices
             )
     except HeaderCollision as error:
         raise _CommandError(f"{error}; choose another set header") from error
@@ -238,8 +187,6 @@ def _create(
         _emit(artifact, plain, gap=position > 0)
     _print("\nBefore relying on this backup, test recovery using what you wrote down.", err=True)
     return 0
-
-
 def _unchecksummed(header: str | None, payload: str) -> str:
     value = (header or "") + payload
     text = value if "1" in value else "ms1" + value
@@ -247,8 +194,6 @@ def _unchecksummed(header: str | None, payload: str) -> str:
     if profile not in (Profile.MS, Profile.CL):
         raise ValueError
     return text
-
-
 def _checksum(header: str | None, plain: bool) -> int:
     instruction = "Enter the header first, then only" if header is None else "Enter only"
     warning = (
@@ -271,16 +216,12 @@ def _checksum(header: str | None, plain: bool) -> int:
         ) from error
     _emit(artifact, plain)
     return 0
-
-
-def _correct(
-    residue: bool,
-    erasures: tuple[int, ...],
-    plain: bool,
-) -> int:
+def _correct(residue: bool, erasures: tuple[int, ...], byte_length: int | None, plain: bool) -> int:
     prompt = "Enter the worksheet residue" if residue else "Enter the damaged codex32 string"
-    value = _text(prompt)
+    value = _text(prompt, preserve_groups=not residue)
     if residue:
+        if byte_length is not None:
+            raise _UsageError("--bytes cannot be used with --residue.")
         try:
             result = correct_worksheet_residue(
                 value, erasure_indices=tuple(position - 1 for position in erasures)
@@ -299,11 +240,9 @@ def _correct(
         return 0
     if erasures:
         raise _UsageError("--erasure can be used only with --residue.")
-    lowered = value.lower()
-    profile = next(
-        (item for item in (Profile.MS, Profile.CL) if lowered.startswith(f"{item}1")),
-        None,
-    )
+    normalized = "".join(value.split())
+    lowered = normalized.lower()
+    profile = next((item for item in (Profile.MS, Profile.CL) if lowered.startswith(f"{item}1")), None)
     if profile is None:
         bip39_profiles = (Profile.BIP39_12W, Profile.BIP39_24W)
         if any(lowered.startswith(f"{item}1") for item in bip39_profiles):
@@ -311,27 +250,63 @@ def _correct(
         raise _UsageError(
             "The string must begin with an undamaged ms1 or cl1 prefix; prefix correction is not attempted."
         )
-    candidates = correct(CorrectionContext(profile), value)
-    if not candidates:
-        raise _CommandError("No valid correction found. Check the original backup.")
-    fixed = candidates[0]
-    if not fixed.edits:
+    if byte_length is not None and profile is not Profile.MS:
+        raise _UsageError("--bytes can be used only with an ms1 master-seed backup.")
+    try:
+        parse_codex32(normalized)
+    except CodexError:
+        pass
+    else:
+        if byte_length is not None:
+            payload = (8 * byte_length + 4) // 5
+            if len(normalized) != payload + (22 if payload + 22 <= 91 else 24):
+                raise _UsageError("--bytes does not match the valid master-seed backup length.")
         _print("The codex32 string is already valid.")
         return 0
+    targets: tuple[int, ...]
+    if profile is Profile.CL:
+        targets = (74,)
+    elif byte_length is None:
+        targets = (48, 74)
+    else:
+        payload = (8 * byte_length + 4) // 5
+        targets = (payload + (22 if payload + 22 <= 91 else 24),)
+    found: list[CorrectionCandidate] = []
+    complete = True
+    started = monotonic()
+    for target in targets:
+        context = CorrectionContext(profile, expected_length=target)
+        deadline = started + 10 if target == 48 else None
+        search_result, finished = _correct_complete(context, value, deadline=deadline)
+        found.extend(search_result)
+        complete &= finished
+    if not complete:
+        raise _CommandError("The bounded search did not complete within ten seconds; no correction accepted.")
+    candidates = _best(found)
+    if not candidates:
+        from codex32.indel import _has_consecutive_ambiguity
+
+        if any(
+            _has_consecutive_ambiguity(
+                CorrectionContext(profile, target), value, started + 10 if target == 48 else None,
+            )
+            for target in targets
+        ):
+            raise _CommandError("More than one correction is possible; none was selected.")
+        raise _CommandError("No valid correction found. Check the original backup.")
+    if len(candidates) != 1:
+        raise _CommandError("More than one equally ranked correction was found; none was selected.")
+    fixed = candidates[0]
     warning = (
         "Warning: This is only a correction suggestion. Compare it with the original backup before using it."
     )
     _print(warning, err=True)
     _emit(fixed.artifact, plain, err=True)
     return 1
-
-
 def _xpub(account: int, testnet: bool) -> int:
     value = multisig_account_xpub(_master_seed(), account=account, testnet=testnet)
     _print(value)
     return 0
-
-
 def _bitcoin_core(account: int, timestamp: int, testnet: bool, private: bool) -> int:
     secret = _master_seed()
     if private:
@@ -341,16 +316,9 @@ def _bitcoin_core(account: int, timestamp: int, testnet: bool, private: bool) ->
             "wallet."
         )
         _print(warning, err=True, danger=True)
-    records = core_descriptors(
-        secret,
-        account=account,
-        testnet=testnet,
-        private=private,
-        timestamp=timestamp,
-    )
+    records = core_descriptors(secret, account=account, testnet=testnet, private=private, timestamp=timestamp)
     _print(json.dumps(records, separators=(",", ":")))
     return 0
-
 
 def _dispatch(arguments: argparse.Namespace) -> int:
     command = cast(str, arguments.command)
@@ -377,13 +345,14 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         return _correct(
             bool(arguments.residue),
             tuple(cast(list[int], arguments.erasures)),
+            cast(int | None, arguments.byte_length),
             plain,
         )
     if command == "xprv":
         secret = _master_seed()
         _print(
-            "Warning: The following root private key can spend funds from every "
-            "wallet derived from this seed. Keep it secret.",
+            "Warning: The following root private key can spend funds from every wallet derived "
+            "from this seed. Keep it secret.",
             err=True,
             danger=True,
         )
@@ -399,7 +368,6 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             arguments.core_mode == "restore",
         )
     raise AssertionError(f"unhandled command {command!r}")
-
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()

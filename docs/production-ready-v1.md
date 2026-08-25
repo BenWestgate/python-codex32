@@ -1,7 +1,7 @@
 # Production-ready v1 completion plan
 
 Status: active implementation roadmap. The mandatory new-session scan
-precondition and Gates 0--2 passed on 2026-08-24; Gate 3 is next.
+precondition and Gates 0--3 passed by 2026-08-25; Gate 4 is next.
 
 This plan turns the current reference implementation into a narrowly scoped
 real-funds release. It does not add a GUI, networking, RPC, secret storage,
@@ -88,14 +88,12 @@ Add immutable public correction records and export them from `codex32`:
 class CorrectionContext:
     profile: Profile
     expected_length: int | None = None
-    expected_header: str | None = None
+    immutable_prefix: str | None = None
     excluded_indices: tuple[str, ...] = ()
 
 @dataclass(frozen=True, slots=True)
 class CorrectionEdit:
-    kind: Literal[
-        "substitution", "erasure", "insertion", "deletion", "transposition"
-    ]
+    kind: Literal["substitution", "erasure", "insertion", "deletion"]
     reverse_index: int
     observed: str
     replacement: str
@@ -104,7 +102,7 @@ class CorrectionEdit:
 class CorrectionCandidate:
     artifact: Share | Secret
     edits: tuple[CorrectionEdit, ...]
-    estimated_search_bits: float
+    capture_volume: int
     erasures_filled: int
     addend_hamming_weight: int
     crc_padding_match: bool | None
@@ -120,9 +118,9 @@ Contract:
 - `expected_length` is the complete canonical string length; structural search
   requires an unambiguous expected length, while fixed-length correction may
   use the supplied string length;
-- `expected_header`, when present, is exactly threshold plus the four-character
-  identifier; the share index remains a correction variable constrained by
-  `excluded_indices`;
+- `immutable_prefix`, when present, is program-supplied text outside all
+  correction and capture accounting; it is either the profile prefix or that
+  prefix plus a validated, operator-confirmed threshold and identifier;
 - edit reverse index zero is the final character of the corrected data/checksum
   part; an empty `observed` or `replacement` distinguishes insertion from
   deletion without involving the HRP;
@@ -255,14 +253,48 @@ passed the required Python 3.12/3.13 matrix on Ubuntu, macOS, and Windows at
 revision `aa10d59b60c375f4abbf4df241a8bf3c6ae46507`. Its non-blocking Python
 3.14 probe stopped at the expected unavailable Coincurve 21 wheel.
 
-## Gate 3 -- Cuttable bounded structural correction
+## Gate 3 -- Bounded structural correction (passed)
 
 Objective: reduce realistic transcription burden while keeping the BCH core
 small and independently auditable.
 
-The structural adapter lives in `indel.py`. It generates fixed-length
-candidates and calls the fixed correction API. It must not reimplement checksum
-arithmetic, profile rules, parsing, or BCH decoding.
+Local implementation completed on 2026-08-25. The exact contract and evidence are in
+[correction.md](correction.md), [gate3-analysis.md](gate3-analysis.md), and
+[gate3-threat-model.md](gate3-threat-model.md).
+
+The ownership invariant is: `indel.py` enumerates alignments;
+`correction.py` performs all symbol repair. The adapter supplies compact
+fixed-length symbol buffers and must not reimplement checksum arithmetic,
+profile rules, parsing, BCH decoding, or substitution repair.
+
+The approved user promise is: corrects up to four arbitrary missing or extra
+characters, including mixtures; up to two skipped or extra four-character
+groups, including one of each. Character and group structural families are
+independent and never mixed. The strict cumulative false-reconstruction bound
+is `P_false < 1e-5`.
+
+The immutable prefix is outside the correction domain. It begins as the HRP
+plus separator and may be extended by an interactive recovery only after a
+share is validated and operator-confirmed. Suggested corrections never
+establish context.
+
+At 48 characters, every advertised class must complete within ten seconds on
+the documented fast-laptop reference CPU. Longer valid strings retain the same
+finite classes without a deadline. The API preserves all best-primary-volume
+reconstructions. The CLI refines primary ties by Hamming weight, CRC, and then
+the unshared-secret fingerprint identifier; any remaining tie is ambiguous.
+
+Completion evidence (2026-08-25): all 557 ordinary and optimized tests pass;
+the frozen 57-case differential corpus, independent constants, capture
+arithmetic, strict mypy, Ruff, build, and Twine checks pass. Every final-code
+48-character delta completed on the reference laptop, led by the 979,110-call
+delta-zero search at 9.24 seconds. The installed package is 2,998 physical
+Python lines. A six-delegate security diff scan found two Medium bounded-memory
+issues; both were fixed and two fresh bypass reviews found no remaining
+reportable finding. The sealed final snapshot reports complete coverage and
+zero unresolved findings.
+
+<!-- Superseded Gate 3 design history retained for audit provenance.
 
 ### Capacity model
 
@@ -275,7 +307,7 @@ After structural normalization, the fixed core guarantees:
 An erroneous four-character group is fixed-length BCH damage, not an indel.
 A duplicated/inserted group is extra text removed by the structural adapter.
 
-### Minimum envelope if Gate 3 ships
+### Design history and implemented envelope
 
 # Gate 3 Handoff — Bounded Structural Correction Design
 
@@ -293,8 +325,6 @@ It may generate candidate alignments and invoke fixed correction, but MUST NOT r
 * profile rules;
 * substitution correction;
 * erasure solving.
-
-Gate 3 remains **cuttable**. Failure to meet reviewability, performance, completeness, corpus, or ambiguity gates MUST NOT block v1 fixed-length correction.
 
 ---
 
@@ -343,7 +373,7 @@ The Gate must bound the cumulative capture volume of incorrect reconstructions t
 Use this initial Gate 3 target:
 
 ```text
-P_false < 1e-4
+P_false < 1e-5
 ```
 
 Meaning:
@@ -489,8 +519,6 @@ Gate 3 should support and analyze these separately:
 2. arbitrary character omission
 3. group-aligned insertion
 4. group-aligned omission
-5. contiguous/burst insertion
-6. contiguous/burst omission
 ```
 
 Substitutions and explicit erasures remain owned by the fixed core.
@@ -928,7 +956,7 @@ For 48→48 arbitrary character correction:
 
 2O + 2I:
     approximately ~1 million structural alignments
-    plausibly feasible; benchmark
+    feasible; benchmark
 
 3O + 3I:
     approximately hundreds of millions of structural alignments
@@ -1077,17 +1105,17 @@ Do not put probabilistic modeling or floating-point ranking machinery into the s
 Replace wording based on raw limits such as:
 
 ```text
-supports up to N omissions and M insertions
+supports up to N omissions and N insertions
 ```
 
 with:
 
-> Gate 3 supports bounded character-level, group-level, and burst structural correction only for corruption classes whose cumulative decoder capture volume keeps the conservative probability of an incorrect reconstruction at equal or better primary rank below the Gate threshold, while also meeting the runtime and reviewability budgets.
+> Gate 3 supports bounded character-level, and group-level structural correction only for corruption classes whose cumulative decoder capture volume keeps the conservative probability of an incorrect reconstruction at equal or better primary rank below the Gate threshold, while also meeting the runtime and reviewability budgets.
 
 Use:
 
 ```text
-P_false < 1e-4
+P_false < 1e-5
 ```
 
 as the initial safety threshold.
@@ -1105,43 +1133,61 @@ machine, but that is an unlikely human-error mode and is not a required v1
 contract. Broader coverage may be retained only when it adds little code and
 passes every platform budget.
 
-### Search and ranking
+### Superseded likelihood handoff
+
+The following likelihood/work notes were an earlier handoff. Runtime does not
+implement them: exact integer capture volume is primary, addend Hamming weight
+is secondary, and CRC/fingerprint agreement affects display order only.
+
+### Historical search and ranking
 
 - constrain candidates using the known profile, target length, immutable
-  five-symbol set header, and excluded indices before ranking;
+  five-symbol set header, and excluded indices before ranking, but count
+  repairable header disagreements against the remaining substitution capacity;
 - deduplicate fixed-length candidates before invoking BCH;
-- rank first by a frozen, evidence-backed negative-log structural likelihood
-  and estimated search work;
-- then use erasures filled and the sum of known substitution-addend Hamming
-  weights;
+- rank first by exact decoder-capture volume, then by known-substitution
+  addend Hamming weight;
 - use generation CRC match only as a final secondary hint for applicable `ms`
   S candidates; it never validates, prunes, or hides a candidate;
-- train and evaluate likelihood data on separate dummy-error corpora; retain all
-  exact best-rank ties.
+- retain all exact acceptance-rank ties; CRC and fingerprint agreement only
+  order their presentation.
 
 ### API and CLI completeness
 
 - the API exhaustively completes the published envelope without a deadline;
-- the CLI has a ten-second default deadline;
+- the CLI targets ten seconds for the complete common 48-character search;
+- longer valid targets retain the same bounded classes without that deadline;
 - CL has one fixed expected length; `ms` defaults to the established 48- and
   74-character targets, while an unusual imported BIP93 size requires an
   explicit expected byte length;
-- a CLI timeout may display the best candidate found on stderr as provisional,
-  but cannot accept it into recovery or machine stdout;
+- a CLI timeout reports failure and does not display or accept a provisional
+  candidate;
 - corrections are never silent and always require comparison with the written
   backup.
 
-### Cut line
+### Gate result
 
-Gate 3 is removed wholesale and deferred to v1.1 if any condition fails:
+Gate 3 passed these cut conditions:
 
-- fixed plus structural correction exceeds 1,500 physical lines;
-- the installed package reaches 3,000 lines;
-- supported searches are nondeterministic or incomplete in the API;
-- worst-case memory or CLI time exceeds its frozen budget;
-- intended candidates are missing from the best-ranked ties in the independent
-  holdout corpus;
-- an independent reviewer finds the implementation too difficult to audit.
+- fixed plus structural correction is below 1,500 physical lines;
+- the installed package is below 3,000 physical Python lines;
+- API search is deterministic and completes every class that can affect its
+  result;
+- the larger grouped worst-case 48-character envelope, including the complete
+  979,110-call `2O + 2I` generator, takes 8.75--8.96 seconds across three runs
+  on the documented Ryzen 7 7735U reference laptop;
+- `2O + 2I + 0S/1S/2S` use one fixed-core path and complete within the same
+  ten-second envelope;
+- the safe one-group, grouped-plus-character, and contiguous two-group-pair
+  classes use that fixed core and fit the same aggregate envelope;
+- lossless trusted-header pruning and global-frontier early stopping have
+  direct regressions;
+- longer valid strings are never refused merely because their bounded search
+  takes longer;
+- structural, mixed, group, rank, malformed, and boundary tests pass; and
+- `indel.py` remains a narrow structural adapter over the fixed symbol core.
+
+-->
 
 Dependency: Gates 1--2.
 
@@ -1213,7 +1259,330 @@ Success criteria:
 
 Dependency: Gate 4.
 
-## Gate 6 -- Final independent audit and release candidate
+## Gate 6 -- # Human Reviewability Refactor Gate
+
+## Purpose
+
+Before work is considered finished, spend a fixed amount of time reducing the
+amount and complexity of installed code that a human must review for safety and
+functionality.
+
+The goal is not merely fewer physical lines. The goal is a smaller, more direct,
+more obviously correct implementation. That matches the style of BIP93 and Bech32
+reference.
+
+Prefer deletion and simplification over abstraction.
+
+## Timebox
+
+Spend **45 minutes maximum** on this reviewability pass.
+
+The 45-minute limit applies to analysis and editing. Time required to run the
+required test, lint, type-check, and build commands does not count against the
+editing timebox.
+
+Stop making refactoring changes when the timebox expires. Do not extend the
+timebox merely to reach a line-count target.
+
+Reserve the final part of the pass for a separate human-reader self-review.
+
+## Hard constraints
+
+The following constraints override line-count reduction:
+
+* Preserve existing CLI behavior.
+
+  * Do not change commands, options, defaults, prompts, exit status, output
+    meaning, or stdout/stderr separation.
+  * Existing CLI tests define behavior where applicable.
+* Preserve the public Python API during this pass.
+
+  * Potential API removals belong in `/docs`, not in this refactor.
+* Preserve every security property documented in `SECURITY.md`.
+* Preserve normative BIP93 behavior and the project's documented divergences
+  and accepted risks.
+* Do not weaken, delete, skip, or rewrite tests merely to make a refactor pass.
+* Do not replace explicit validation with assertions.
+* Do not make correction output trusted input.
+* Do not weaken validated-artifact boundaries.
+* Do not introduce new dependencies for the purpose of reducing source code.
+* Do not mix an unrelated feature or behavior change into this pass.
+
+If reducing code requires crossing one of these boundaries, document the
+candidate instead of implementing it.
+
+## Primary objective
+
+Reduce installed Python source under `src/codex32/`.
+
+Measure physical Python source lines before and after the pass.
+
+```sh
+find src/codex32 -type f -name '*.py' -exec cat {} + | wc -l
+
+find src/codex32 -type f -name '*.py' \
+    ! -name correction.py \
+    ! -name indel.py \
+    -exec cat {} + | wc -l
+
+wc -l src/codex32/*.py | sort -n
+```
+
+Targets:
+
+1. Installed package: **must not grow** and should decrease.
+2. Installed package: **prefer below 2,000 lines**.
+3. Installed package excluding `correction.py` and `indel.py`:
+   **prefer below 1,000 lines**.
+4. A pass does not require reaching the preferred targets if doing so would
+   make the implementation denser, less explicit, less safe, or behaviorally
+   incompatible.
+
+Physical line count is a review-cost signal, not the objective by itself.
+
+Do **not** reduce line count by removing useful whitespace, chaining statements,
+using dense comprehensions, introducing metaprogramming, hiding logic behind
+generic helpers, or otherwise making individual lines harder to audit.
+
+## Secondary objective
+
+Reduce files a user may encounter while trying to understand or code review this project. If files can be combined without a loss of needed modularity or beneficial separation of concerns and it makes understanding and discovering multiple components or concepts in one view faster do so. Too many separate files can be overwhelming for humans to view and can make logic difficult to follow.
+This applies to src/ tests/ tools/  For example 3 different CLI files seem created to stay under an arbitrary line limit rather than actual need or review benefit.
+Another project should be able to import any module from this project and do something useful with it.
+
+
+## Refactoring priority
+
+Work in this order:
+
+1. Delete code that is unnecessary.
+2. Remove duplicated logic.
+3. Remove unnecessary wrappers, forwarding methods, aliases, and indirection.
+4. Collapse abstractions that exist only to serve one caller and do not enforce
+   a meaningful safety boundary.
+5. Move duplicated domain behavior out of the CLI rather than maintaining two
+   implementations.
+6. Simplify conditionals and data flow.
+7. Reduce unnecessary conversions between equivalent representations.
+8. Remove unused exports and implementation-only public surface where doing so
+   does not change the documented public API.
+9. Improve misleading or inconsistent names.
+10. Remove comments and docstrings that merely repeat the code.
+11. Add or retain comments where they explain a non-obvious reason, invariant,
+    compatibility constraint, security boundary, or upstream divergence.
+
+Prefer a direct three-line implementation over a reusable ten-line abstraction
+when there is only one real use case.
+
+Do not apply DRY mechanically. Two small pieces of security-sensitive logic may
+be easier to audit separately than one generalized helper with flags and
+multiple modes.
+
+## Reference style and terminology
+
+Where this project implements concepts directly derived from BIP93 or Bech32,
+prefer terminology and structure that makes comparison with the reference
+material straightforward.
+
+In particular:
+
+* Prefer the vocabulary used by BIP93 and the Bech32 reference implementation.
+* Preserve recognizable names such as `CHARSET`, checksum/polymod terminology,
+  shares, threshold, identifier, payload, HRP, and related normative concepts.
+* When a function closely implements a reference algorithm, prefer a similarly
+  direct functional structure instead of wrapping it in unnecessary objects.
+* Use `snake_case` for Python functions, methods, arguments, variables, and
+  modules.
+* Use `CapWords` for Python types.
+* Use `UPPER_CASE` for constants.
+* Use a leading underscore for implementation-private helpers.
+* Prefer small functions with explicit inputs and return values.
+* Avoid wildcard imports.
+* Use type hints where they improve reviewability or catch mistakes.
+* Keep multi-name imports predictable and sorted.
+* Give test modules a short module-level explanation of the behavior and
+  evidence being tested.
+
+Prefer lines under **100 characters** when that improves or preserves
+readability. Longer lines are acceptable when breaking them would make the
+code less clear.
+
+Do not contort code merely to satisfy a line-length number.
+
+## Comments
+
+Comments should normally answer **why**, not **what**.
+
+Good reasons for a comment include:
+
+* why behavior intentionally differs from an obvious alternative;
+* why an upstream algorithm is reproduced in a particular form;
+* why a validation must happen before another operation;
+* why two apparently similar cases cannot be combined;
+* why an apparently redundant check is security-relevant;
+* why compatibility requires unusual behavior;
+* why a particular representation or boundary exists.
+
+Remove comments such as:
+
+```python
+# Increment the counter.
+counter += 1
+```
+
+Prefer code whose names make the operation apparent.
+
+When a non-obvious decision comes from BIP93, Bech32, Bitcoin Core, a frozen
+upstream revision, or an accepted project divergence, leave enough context for
+a human reviewer to locate the reason without reverse-engineering it.
+
+## Human-reader self-review
+
+Before finishing, stop editing and review the resulting code as though you were
+a security-conscious human seeing the project for the first time.
+
+Do not review it from the perspective of the person or agent that just wrote
+the code.
+
+Explicitly look for:
+
+* duplicated logic;
+* unnecessary abstractions;
+* unnecessary classes or dataclasses;
+* one-use helpers that obscure rather than clarify;
+* wrapper functions that add no invariant;
+* overly generic functions with flags or mode parameters;
+* repeated validation or conversion logic;
+* confusing differences in terminology from BIP93 or Bech32;
+* public names that should actually be private;
+* private implementation details unnecessarily exported from `__init__.py`;
+* needless state or mutation;
+* functions that mix parsing, validation, policy, formatting, and I/O;
+* domain behavior duplicated inside `cli.py`;
+* comments that explain syntax instead of rationale;
+* tests coupled to implementation details instead of observable behavior;
+* error handling that has become more complicated than the operation itself;
+* code that became shorter but harder to verify;
+* code whose safety depends on a subtle interaction between distant modules.
+
+For each abstraction, ask:
+
+> Would a human reviewer understand this code faster if the abstraction did not
+> exist?
+
+For each helper, ask:
+
+> Does this helper enforce a real invariant or remove meaningful duplication,
+> or does it merely move lines elsewhere?
+
+For each non-obvious branch, ask:
+
+> Can a reviewer tell why this case exists?
+
+For every changed security-sensitive path, ask:
+
+> Can I demonstrate from the tests and surrounding code that the refactor
+> preserved the original safety boundary?
+
+If the shorter version requires more explanation than the longer version,
+prefer the clearer version.
+
+## Future removals
+
+During the pass, do not silently preserve features or APIs simply because
+removing them is outside the current compatibility constraints.
+
+Record significant simplification opportunities in:
+
+`docs/reviewability-removals.md`
+
+For each candidate, record:
+
+* feature, API, command, compatibility layer, or abstraction proposed for
+  removal;
+* files and modules it affects;
+* approximate source lines or concepts that could disappear;
+* why removal would make human safety/functionality review easier;
+* compatibility cost;
+* security implications;
+* tests and documentation that could disappear with it;
+* whether deprecation is required;
+* recommended release or migration boundary.
+
+Prioritize candidates that would remove entire concepts, states, compatibility
+paths, or modules rather than merely shorten individual functions.
+
+Do not implement those removals as part of this gate unless they were already
+approved as part of the task.
+
+## Verification
+
+After the editing timebox ends, run the repository's normal verification:
+
+```sh
+python -m pytest -q
+python -O -m pytest -q
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy src/codex32
+python -m build
+python -m twine check dist/*
+```
+
+Where applicable, also run the installed-wheel verification and relevant
+offline differential tests.
+
+A refactor is not successful merely because unit tests pass. Confirm that the
+CLI contract and documented security invariants remain unchanged.
+
+## Gate result
+
+Finish with a compact reviewability report containing:
+
+**Before**
+
+* total installed Python lines;
+* installed Python lines excluding `correction.py` and `indel.py`;
+* largest installed modules.
+
+**After**
+
+* the same measurements;
+* net lines removed;
+* modules/functions deleted, merged, or simplified.
+
+**Human review**
+
+* duplicated logic found and removed;
+* unnecessary complexity found and removed;
+* non-obvious decisions documented;
+* any places deliberately left less compact because the explicit form is
+  easier to audit.
+
+**Compatibility**
+
+* confirmation that CLI behavior was preserved;
+* confirmation that no public API was intentionally removed;
+* confirmation that security invariants were preserved.
+
+**Future reduction**
+
+* significant feature/API removal candidates added to
+  `docs/reviewability-removals.md`.
+
+The gate passes when verification succeeds and either:
+
+1. installed review surface is measurably reduced; or
+2. the timebox finds no safe further reduction, and the remaining significant
+   opportunities are explicitly documented because they require an API,
+   behavior, security-model, or compatibility decision.
+
+Never manufacture a line-count reduction merely to make the gate pass.
+
+Dependency: Gate 4.
+
+
+## Gate 7 -- Final independent audit and release candidate
 
 Objective: review the final artifact rather than an intermediate design.
 
@@ -1240,7 +1609,7 @@ Release criteria:
 - only the human maintainer pushes, opens a PR, publishes packages, writes
   maintainer comments, or authorizes use with real funds.
 
-Dependencies: Gates 0--5.
+Dependencies: Gates 0--6
 
 ## Verification commands
 

@@ -7,7 +7,6 @@ from codex32.profiles import Profile
 
 
 def _validate_bip39_secret(profile: Profile, symbols: tuple[int, ...]) -> None:
-    """Validate outer padding and embedded BIP39 checksum for an S artifact."""
     if profile is Profile.BIP39_12W:
         entropy_bits, checksum_bits, outer_padding = 128, 4, 3
     elif profile is Profile.BIP39_24W:

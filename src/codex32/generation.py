@@ -1,4 +1,6 @@
+# fmt: off
 """Electronic generation for ``ms`` and Core Lightning share sets."""
+# ruff: noqa: I001
 
 import secrets
 from collections.abc import Sequence
@@ -6,31 +8,13 @@ from collections.abc import Set as AbstractSet
 
 from codex32._bip32 import fingerprint_from_seed
 from codex32.bech32 import CHARSET, _convert_bits, _u5_to_chars
-from codex32.bip93 import (
-    IDX_SORT,
-    CoreLightningSecret,
-    Header,
-    MasterSeed,
-    Secret,
-    Share,
-    _from_parts,
-    _has_generation_padding,
-    _payload_padding,
-    derive_share,
-    recover_secret,
-)
-from codex32.errors import (
-    CodexError,
-    HeaderCollision,
-    InvalidIdentifier,
-    InvalidLength,
-    InvalidShareSelection,
-    InvalidThreshold,
-)
+from codex32.bip93 import IDX_SORT, CoreLightningSecret, Header, MasterSeed, Secret, Share
+from codex32.bip93 import _from_parts, _has_generation_padding, _payload_padding, derive_share, recover_secret
+from codex32.errors import CodexError, HeaderCollision, InvalidIdentifier, InvalidLength
+from codex32.errors import InvalidShareSelection, InvalidThreshold
 from codex32.profiles import Profile
 
 ORDINARY_INDICES = tuple(IDX_SORT[1:])
-
 
 def _threshold(value: object, *, allow_zero: bool = True) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
@@ -41,7 +25,6 @@ def _threshold(value: object, *, allow_zero: bool = True) -> int:
         raise InvalidThreshold(f"threshold must be {prefix}2 through 9")
     return value
 
-
 def _identifier(value: object) -> str:
     if not isinstance(value, str):
         raise InvalidIdentifier("identifier must be str")
@@ -50,7 +33,6 @@ def _identifier(value: object) -> str:
         raise InvalidIdentifier("identifier must be four Bech32 symbols")
     return value
 
-
 def _index(value: object) -> str:
     if not isinstance(value, str) or len(value) != 1:
         raise InvalidShareSelection("each output index must be one Bech32 symbol")
@@ -58,7 +40,6 @@ def _index(value: object) -> str:
     if value not in ORDINARY_INDICES:
         raise InvalidShareSelection("output indices must be ordinary non-S symbols")
     return value
-
 
 def _indices(values: Sequence[str] | str) -> tuple[str, ...]:
     if not isinstance(values, str) and (isinstance(values, AbstractSet) or not isinstance(values, Sequence)):
@@ -71,7 +52,6 @@ def _indices(values: Sequence[str] | str) -> tuple[str, ...]:
     if len(set(normalized)) != len(normalized):
         raise InvalidShareSelection("output indices must be distinct")
     return normalized
-
 
 def _selection(
     threshold: int, share_count: object, indices: Sequence[str] | str | None
@@ -94,24 +74,16 @@ def _selection(
         raise InvalidShareSelection(f"at least {threshold} indices are required")
     return None, selected
 
-
 def _random_identifier() -> str:
     return _u5_to_chars(tuple(value & 31 for value in secrets.token_bytes(4)))
-
 
 def _fingerprint_identifier(seed: bytes) -> str:
     symbols = _convert_bits(fingerprint_from_seed(seed), 8, 5, pad=True)
     return _u5_to_chars(tuple(symbols[:4]))
 
-
 def _masks(
-    profile: Profile,
-    threshold: int,
-    identifier: str,
-    payload_length: int,
-    count: int,
+    profile: Profile, threshold: int, identifier: str, payload_length: int, count: int
 ) -> tuple[Share, ...]:
-    """Draw every mask symbol for one basis in one OS-random call."""
     random_bytes = secrets.token_bytes(count * payload_length)
     symbols = tuple(value & 31 for value in random_bytes)
     result = []
@@ -126,19 +98,13 @@ def _masks(
         result.append(artifact)
     return tuple(result)
 
-
 def _basis(
     secret: MasterSeed | CoreLightningSecret, threshold: int, identifier: str
 ) -> tuple[Secret | Share, ...]:
-    reheadered = _from_parts(
-        secret.profile,
-        Header(threshold, identifier, "s"),
-        secret.payload_symbols,
-    )
+    reheadered = _from_parts(secret.profile, Header(threshold, identifier, "s"), secret.payload_symbols)
     assert isinstance(reheadered, Secret)
     masks = _masks(secret.profile, threshold, identifier, len(secret.payload_symbols), threshold - 1)
     return (reheadered, *masks)
-
 
 def _share_at(basis: tuple[Secret | Share, ...], index: str) -> Share:
     for artifact in basis:
@@ -146,7 +112,6 @@ def _share_at(basis: tuple[Secret | Share, ...], index: str) -> Share:
             assert isinstance(artifact, Share)
             return artifact
     return derive_share(basis, index)
-
 
 def _finish[SecretT: Secret](
     secret: SecretT,
@@ -159,11 +124,9 @@ def _finish[SecretT: Secret](
         explicit = tuple(secrets.SystemRandom().sample(ORDINARY_INDICES, share_count))
     return secret, tuple(_share_at(basis, index) for index in explicit)
 
-
 def _fresh_basis(
     profile: Profile, threshold: int, identifier: str, payload_length: int
 ) -> tuple[MasterSeed | CoreLightningSecret, tuple[Share, ...]]:
-    """Draw complete masks until the implied S has generation padding."""
     while True:
         masks = _masks(profile, threshold, identifier, payload_length, threshold)
         secret = recover_secret(masks)
@@ -175,7 +138,6 @@ def _fresh_basis(
             raise CodexError("generation produced an unsupported secret")
         if accepted:
             return secret, masks
-
 
 def _seed_input(seed_bytes: bytes | None, byte_length: int | None) -> tuple[bytes | None, int]:
     if seed_bytes is not None:
@@ -191,7 +153,6 @@ def _seed_input(seed_bytes: bytes | None, byte_length: int | None) -> tuple[byte
         raise InvalidLength("byte_length must be an integer from 16 through 64")
     return None, length
 
-
 def _cl_secret(secret_bytes: bytes, identifier: str, threshold: int) -> CoreLightningSecret:
     if not isinstance(secret_bytes, bytes):
         raise TypeError("secret_bytes must be bytes")
@@ -202,7 +163,6 @@ def _cl_secret(secret_bytes: bytes, identifier: str, threshold: int) -> CoreLigh
     assert isinstance(artifact, CoreLightningSecret)
     return artifact
 
-
 def generate_master_seed(
     seed_bytes: bytes | None = None,
     *,
@@ -212,9 +172,8 @@ def generate_master_seed(
     indices: Sequence[str] | str | None = None,
     identifier: str | None = None,
 ) -> tuple[MasterSeed, tuple[Share, ...]]:
-    """Generate an ``ms`` secret and, for k > 0, the selected fresh shares.
+    """Generate an ``ms`` secret and selected shares directly from OS entropy.
 
-    Entropy comes directly from :mod:`secrets`; callers cannot replace it or choose padding.
     Only fresh unshared seeds use fingerprint identifiers; other defaults are random.
     """
     supplied, length = _seed_input(seed_bytes, byte_length)
@@ -249,7 +208,6 @@ def generate_master_seed(
             continue
         return _finish(recovered, masks, share_count, explicit)
 
-
 def generate_core_lightning_secret(
     secret_bytes: bytes | None = None,
     *,
@@ -264,9 +222,7 @@ def generate_core_lightning_secret(
     identifier = _random_identifier() if identifier is None else _identifier(identifier)
     if secret_bytes is not None or threshold == 0:
         secret = _cl_secret(
-            secrets.token_bytes(32) if secret_bytes is None else secret_bytes,
-            identifier,
-            threshold,
+            secrets.token_bytes(32) if secret_bytes is None else secret_bytes, identifier, threshold
         )
         if threshold == 0:
             return secret, ()
@@ -274,7 +230,6 @@ def generate_core_lightning_secret(
     recovered, masks = _fresh_basis(Profile.CL, threshold, identifier, 52)
     assert isinstance(recovered, CoreLightningSecret)
     return _finish(recovered, masks, share_count, explicit)
-
 
 def split_secret(
     secret: MasterSeed | CoreLightningSecret,

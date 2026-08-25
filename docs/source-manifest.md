@@ -27,11 +27,26 @@ SHA-256 `6aa552b34c0bb2878d45dee2655c331d52e40e41e61cef523415d314ad9948e5`.
 `tools/differential_correction.py --verify` checks it offline. The repository
 does not claim that the upstream Haskell property suite was executed locally.
 
+Gate 3's independent integer capture analysis and production-path benchmark
+have SHA-256 digests
+`52cde9a2278e340405e097e7fd73dae045cc0a4eaefe66163063297c73a1492d`
+and `a21ba3630398bb52abdf3ef5c31b38ca551ce8b4082075a80b2b4a73775d0180`.
+They are evidence generators, not runtime dependencies. The obsolete prototype
+was removed when the final two-family model superseded its burst and mixed
+classes. Production structural correction remains in `indel.py`;
+`correction.py` alone repairs symbols through the PR #70-derived fixed core.
+
+`tools/verify_correction_constants.py` re-derives the installed short and Long
+BCH roots, generators, targets, and periods. Its SHA-256 digest is
+`4e37f851ea00c9ca6d10cd8897541b88cb9a835105a9880195f7ea7886f3bf04`.
+
 The independent rejection literals in `tests/data/malformed_inputs.json` have
 SHA-256 `966403685d979999524318d752537b5fe2ff01c0189a8e919e040dfd0de3978f`.
 They are fixed abuse cases, not outputs derived from production code. The two
 checked-in fuzz targets accept at most 4,096 bytes and add no runtime
-dependency.
+dependency. Their current digests are
+`92dbcfd168bb8e3a8bd86fa4f7bd3b68d89a6aafa200f81946248180b21c0f8e`
+and `44ba876848c2ce0b9ede352c6d82204febb0e4c7c401f64b842f247e9c149233`.
 
 Generalized-HRP PR #2040 and length-restriction PR #2077 are non-authoritative
 research context. The README is user documentation, never requirements evidence.

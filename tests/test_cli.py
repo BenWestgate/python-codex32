@@ -20,6 +20,8 @@ from test_bip39 import BIP39_12W_ZERO
 
 from codex32 import (
     CoreLightningSecret,
+    CorrectionCandidate,
+    CorrectionContext,
     MasterSeed,
     Secret,
     Share,
@@ -1121,6 +1123,91 @@ def test_fixed_correction_is_a_nonzero_stderr_suggestion() -> None:
     assert result.stdout == ""
     assert original in result.stderr
     assert "suggestion" in result.stderr
+
+
+def test_structural_correction_uses_default_lengths_and_preserved_groups() -> None:
+    original = VECTOR_1["secret_s"]
+    omitted = _invoke(["correct"], original[:19] + original[20:])
+    groups = [original[start : start + 4] for start in range(0, len(original), 4)]
+    grouped = _invoke(["correct"], "  ".join(group for index, group in enumerate(groups) if index != 6))
+
+    assert omitted.exit_code == grouped.exit_code == 1
+    assert omitted.stdout == grouped.stdout == ""
+    assert original in omitted.stderr and original in grouped.stderr
+
+
+def test_cli_preserves_consecutive_fixed_erasure_guarantee() -> None:
+    original = VECTOR_2["share_A"]
+    damaged = original[:25] + "?" * 10 + original[35:]
+
+    result = _invoke(["correct"], damaged)
+
+    assert result.exit_code == 1
+    assert original in result.stderr
+
+
+def test_cli_reports_ambiguous_structural_plus_consecutive_erasure_input() -> None:
+    damaged = "MS12NAMEA2320ZYX?????????????JHGFED3CAXRPP870HKKQRMF"
+
+    result = _invoke(["correct"], damaged)
+
+    assert result.exit_code == 1
+    assert "More than one correction is possible" in result.stderr
+
+
+def test_unusual_ms_length_requires_bytes_only_when_damaged() -> None:
+    original = MasterSeed.from_seed(bytes(range(24)), identifier="test").text
+    damaged = original[:19] + original[20:]
+    valid = _invoke(["correct"], original)
+    default = _invoke(["correct"], damaged)
+    explicit = _invoke(["correct", "--bytes", "24"], damaged)
+
+    assert valid.exit_code == 0 and "already valid" in valid.stdout
+    assert default.exit_code != 0 and original not in default.stderr
+    assert explicit.exit_code == 1 and original in explicit.stderr
+
+
+def test_valid_correction_input_must_match_explicit_byte_length() -> None:
+    result = _invoke(["correct", "--bytes", "24"], VECTOR_1["secret_s"])
+
+    assert result.exit_code == 2
+    assert "does not match" in result.stderr
+
+
+def test_cli_never_accepts_an_incomplete_structural_search() -> None:
+    original = VECTOR_1["secret_s"]
+    damaged = original[:19] + original[20:]
+    with patch("codex32.cli._correct_complete", return_value=((), False)):
+        result = _invoke(["correct"], damaged)
+
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert "did not complete" in result.stderr and original not in result.stderr
+
+
+def test_only_48_character_cli_search_has_a_deadline() -> None:
+    original = VECTOR_1["secret_s"]
+    damaged = original[:-1] + ("q" if original[-1] != "q" else "p")
+    calls: list[tuple[int | None, float | None]] = []
+
+    def search(
+        context: CorrectionContext,
+        _value: str,
+        *,
+        deadline: float | None,
+    ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
+        calls.append((context.expected_length, deadline))
+        return (), True
+
+    with patch("codex32.cli._correct_complete", side_effect=search):
+        _invoke(["correct"], damaged)
+        default_calls = tuple(calls)
+        calls.clear()
+        _invoke(["correct", "--bytes", "64"], damaged)
+
+    assert default_calls[0][0] == 48 and default_calls[0][1] is not None
+    assert default_calls[1] == (74, None)
+    assert calls == [(127, None)]
 
 
 def test_fixed_correction_supports_cl_and_residue_reverse_positions() -> None:

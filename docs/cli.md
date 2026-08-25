@@ -10,7 +10,7 @@ or stdin. Secret material is never a command argument.
 | `share` | yes | yes | no |
 | `create` | yes | yes | no |
 | `checksum` | published Book worksheets | fixed application worksheet | no |
-| `correct` | fixed BCH | fixed BCH | no |
+| `correct` | fixed and structural | fixed and structural | no |
 | `xprv`, `wallet ...` | S only | no | no |
 
 `check` confirms the supported codex32 format, checksum, and application rules.
@@ -31,6 +31,13 @@ and counted backward from the end. For a complete string, use `?` for an
 erasure; any other invalid data character is treated as an erasure as well.
 The complete-string command recognizes an undamaged `ms1` or `cl1` prefix and
 never guesses or corrects the prefix.
+It corrects up to four arbitrary missing or extra characters, including
+mixtures; up to two skipped or extra four-character groups, including one of
+each. Spaces are optional and do not establish group boundaries.
+Exact-length input separately retains fixed recovery of every 9--13-symbol
+contiguous regular erasure burst (9--15 for Long). If extra-character
+alignments around such a burst prove that multiple completions exist, the CLI
+reports ambiguity and does not print a candidate.
 
 `create` accepts either a sharing threshold or a complete backup header.
 `3` requests a 3-of-N Bitcoin master-seed set with a random identifier, while
@@ -98,7 +105,7 @@ never contains terminal control codes.
 its BIP32 fingerprint; shares never do. The application and artifact kind share
 one heading, followed by the codex32 backup identifier.
 
-A fixed correction suggestion goes only to stderr and exits nonzero. A valid
+A correction suggestion goes only to stderr and exits nonzero. A valid
 input needing no correction exits zero. A suggestion is not proof that the
 result belongs to the intended wallet; always compare it with the physical
 backup.

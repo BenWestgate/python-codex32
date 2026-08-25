@@ -20,6 +20,17 @@ or wallet.
 - Wallet operations accept only `MasterSeed`.
 - Correction produces untrusted suggestions, never authenticated input to a
   wallet operation.
+- Structural correction searches only frozen, finite rank classes. It never
+  edits the HRP or separator, accepts an incomplete rank class, or chooses among
+  equally ranked reconstructions.
+- Exact-length consecutive erasures retain the fixed core's separate guarantee:
+  13 symbols for regular Codex32 and 15 for Long. This does not admit more than
+  eight arbitrary erasures into structural correction.
+- `indel.py` enumerates alignments; `correction.py` alone repairs symbols.
+  The immutable prefix is program-supplied and outside the correction domain;
+  an interactive recovery may extend it only from a validated,
+  operator-confirmed share. Four-character phase is used only by the independent
+  whole-group family and does not depend on spaces in the input.
 
 ## Accepted release risks
 
@@ -50,13 +61,18 @@ through 64 bytes.
   explicit identifiers.
 - Generation-only CRC padding is a small recovery hint, not authentication or
   a codex32 validity requirement.
-- BCH correction detects/corrects bounded symbol errors but cannot establish
-  that a candidate was intended. The HRP and separator are never corrected.
+- BCH and structural correction can suggest checksum-valid text but cannot
+  establish that a candidate was intended. The HRP and separator are never
+  corrected. The structural controls and severity model are documented in the
+  [Gate 3 threat model](docs/gate3-threat-model.md).
+- The unique fixed completion for 9--13 consecutive regular erasures (9--15
+  Long erasures) is deliberately outside the structural `P_false` envelope.
+  It is shown only as an untrusted suggestion and never admits arbitrary
+  erasures above eight.
 - Private descriptors contain the root xprv by design (like Bitcoin Core).
 
 ## Out of scope
 
 The project has no GUI, network access, RPC, secret storage, wallet database,
-arbitrary descriptor parser, plugin/profile registry, structural correction
-search, partial-basis completion, or BIP39 mnemonic conversion. Adding one of
-these requires a separate threat model and explicit scope decision.
+arbitrary descriptor parser, plugin/profile registry, unbounded or metadata-
+driven recovery search, partial-basis completion, or BIP39 mnemonic conversion.

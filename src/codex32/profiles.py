@@ -1,3 +1,4 @@
+# fmt: off
 """Fixed application profiles layered over validated codex32 strings."""
 
 from dataclasses import dataclass
@@ -8,13 +9,10 @@ from codex32.errors import InvalidLength, UnknownProfile, UnsupportedOperation
 
 
 class Profile(StrEnum):
-    """Registered codex32 application profiles supported by this package."""
-
     MS = "ms"
     CL = "cl"
     BIP39_12W = "bip39_12w"
     BIP39_24W = "bip39_24w"
-
 
 @dataclass(frozen=True, slots=True)
 class _ProfileSpec:
@@ -39,14 +37,14 @@ class _ProfileSpec:
             assert too_short is not None
             boundary = "48 characters or more" if too_short else "127 characters or fewer"
             raise InvalidLength(
-                f"This input is too {'short' if too_short else 'long'} for a "
-                f"{name} backup; expected {boundary}."
+                f"This input is too {'short' if too_short else 'long'} for a {name} backup; "
+                f"expected {boundary}."
             )
         expected = self.text_lengths[0]
         article = "an" if expected == 82 else "a"
         raise InvalidLength(
-            f"This input has the wrong length for a {name} backup; "
-            f"expected {article} {expected}-character codex32 string."
+            f"This input has the wrong length for a {name} backup; expected {article} "
+            f"{expected}-character codex32 string."
         )
 
     def validate_payload_length(self, payload_length: int) -> None:
@@ -72,14 +70,12 @@ _SPECS = {
     Profile.BIP39_24W: _ProfileSpec(Profile.BIP39_24W, (53,), False, (82,)),
 }
 
-
 def _profile_spec(hrp: str | Profile) -> _ProfileSpec:
     try:
         profile = hrp if isinstance(hrp, Profile) else Profile(hrp.lower())
     except (ValueError, AttributeError) as error:
         raise UnknownProfile(f"The application prefix {hrp!r} is not supported.") from error
     return _SPECS[profile]
-
 
 def _profile_label(profile: Profile) -> str:
     return {

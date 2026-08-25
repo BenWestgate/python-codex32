@@ -1,3 +1,4 @@
+# fmt: off
 """The complete, non-abbreviating command-line grammar."""
 
 from __future__ import annotations
@@ -24,7 +25,6 @@ class _Parser(argparse.ArgumentParser):
         self.print_usage(sys.stderr)
         self.exit(2, f"{self.prog}: {message}\n")
 
-
 def _integer(label: str, minimum: int, maximum: int | None = None) -> Callable[[str], int]:
     def parse(value: str) -> int:
         try:
@@ -38,19 +38,12 @@ def _integer(label: str, minimum: int, maximum: int | None = None) -> Callable[[
 
     return parse
 
-
-def _command(
-    parsers: argparse._SubParsersAction[_Parser],
-    name: str,
-    summary: str,
-) -> _Parser:
+def _command(parsers: argparse._SubParsersAction[_Parser], name: str, summary: str) -> _Parser:
     description = summary[0].upper() + summary[1:] + "."
     return parsers.add_parser(name, help=summary, description=description, allow_abbrev=False)
 
-
 def _terminal_output(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--plain", action="store_true", help="print without transcription formatting")
-
 
 def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None:
     parser.add_argument(
@@ -65,9 +58,7 @@ def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None
         )
     parser.add_argument("--testnet", action="store_true", help="use testnet keys")
 
-
 def parser() -> argparse.ArgumentParser:
-    """Build the installed CLI without accepting abbreviated options."""
     result = _Parser(
         prog="codex32",
         description="Create, check, recover, and use codex32 Bitcoin seed backups.",
@@ -101,14 +92,11 @@ def parser() -> argparse.ArgumentParser:
 
     correct = _command(commands, "correct", "suggest repairs for damaged backup text")
     correct.description = (
-        "Suggest repairs for damaged backup text. In a complete string, use ? for "
-        "an erasure; any other invalid data character is treated as one too."
+        "Suggest repairs for damaged backup text. Corrects up to four arbitrary missing "
+        "or extra characters, including mixtures; up to two skipped or extra four-character "
+        "groups, including one of each; use ? for an erasure."
     )
-    correct.add_argument(
-        "--residue",
-        action="store_true",
-        help="correct only the final worksheet residue",
-    )
+    correct.add_argument("--residue", action="store_true", help="correct only the final worksheet residue")
     correct.add_argument(
         "-e",
         "--erasure",
@@ -118,6 +106,13 @@ def parser() -> argparse.ArgumentParser:
         type=_integer("erasure", 1),
         metavar="POSITION",
         help="one-based position counted backward from the end; repeat as needed",
+    )
+    correct.add_argument(
+        "--bytes",
+        dest="byte_length",
+        type=_integer("bytes", 16, 64),
+        metavar="BYTES",
+        help="expected imported master-seed length: 16 through 64 bytes",
     )
     _terminal_output(correct)
 
@@ -159,17 +154,9 @@ def parser() -> argparse.ArgumentParser:
 
     wallet = _command(commands, "wallet", "export data for Bitcoin wallet software")
     wallet_commands = wallet.add_subparsers(dest="wallet_command", required=True)
-    multisig = _command(
-        wallet_commands,
-        "multisig-xpub",
-        "export an account xpub for multisig coordinators",
-    )
+    multisig = _command(wallet_commands, "multisig-xpub", "export an account xpub for multisig coordinators")
     _wallet_options(multisig, timestamp=False)
-    bitcoin_core = _command(
-        wallet_commands,
-        "bitcoin-core",
-        "export wallet-import data for Bitcoin Core",
-    )
+    bitcoin_core = _command(wallet_commands, "bitcoin-core", "export wallet-import data for Bitcoin Core")
     core_modes = bitcoin_core.add_subparsers(dest="core_mode", required=True)
     for name, help_text in (
         ("restore", "restore signing ability using private wallet data"),

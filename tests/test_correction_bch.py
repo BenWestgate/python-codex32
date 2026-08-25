@@ -23,6 +23,7 @@ from codex32.correction import (
     correct_worksheet_residue,
 )
 from codex32.errors import InvalidCorrectionInput
+from tools.verify_correction_constants import verify
 
 
 def _change(
@@ -61,6 +62,10 @@ def _pack(values: tuple[int, ...]) -> int:
 def test_p70_target_constants_match_checksum_layer() -> None:
     assert _pack(_SHORT_SPEC.target) == _CODEX32.constant
     assert _pack(_LONG_SPEC.target) == _CODEX32_LONG.constant
+
+
+def test_frozen_bch_constants_are_reproducible() -> None:
+    verify()
 
 
 def test_frozen_p70_differential_corpus() -> None:
@@ -182,24 +187,24 @@ def test_public_candidate_reports_fixed_edits_and_ranking_inputs() -> None:
         "?",
         source[positions[1]],
     )
-    assert candidate.estimated_search_bits == 0.0
+    assert candidate.capture_volume > 0
     assert candidate.erasures_filled == 1
     assert candidate.addend_hamming_weight > 0
     assert isinstance(candidate.crc_padding_match, bool)
 
 
-def test_public_context_constrains_length_header_and_used_indices() -> None:
+def test_public_context_constrains_length_prefix_and_used_indices() -> None:
     source = VECTOR_2["share_A"]
     valid = CorrectionContext(
         Profile.MS,
         expected_length=len(source),
-        expected_header="2NAME",
+        immutable_prefix=source[:8],
     )
     candidate = correct(valid, source)
 
     assert len(candidate) == 1 and candidate[0].artifact.text == source
     assert correct(CorrectionContext(Profile.MS, expected_length=74), source) == ()
-    assert correct(CorrectionContext(Profile.MS, expected_header="2cash"), source) == ()
+    assert correct(CorrectionContext(Profile.MS, immutable_prefix="ms12cash"), source) == ()
     assert correct(CorrectionContext(Profile.MS, excluded_indices=("A",)), source) == ()
 
 
@@ -209,8 +214,8 @@ def test_public_context_constrains_length_header_and_used_indices() -> None:
         CorrectionContext("ms"),  # type: ignore[arg-type]
         CorrectionContext(Profile.MS, expected_length=True),  # type: ignore[arg-type]
         CorrectionContext(Profile.MS, expected_length=49),
-        CorrectionContext(Profile.MS, expected_header="1test"),
-        CorrectionContext(Profile.MS, expected_header="0tes!"),
+        CorrectionContext(Profile.MS, immutable_prefix="ms11test"),
+        CorrectionContext(Profile.MS, immutable_prefix="ms10tes!"),
         CorrectionContext(Profile.MS, excluded_indices=["a"]),  # type: ignore[arg-type]
         CorrectionContext(Profile.MS, excluded_indices=("s",)),
         CorrectionContext(Profile.MS, excluded_indices=("a", "A")),

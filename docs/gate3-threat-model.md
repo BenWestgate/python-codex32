@@ -1,105 +1,120 @@
 # Gate 3 structural-correction threat model
 
-## Overview
+## Scope and boundaries
 
-Gate 3 may add bounded insertion and deletion search around the existing
-fixed-length BCH decoder. The feature handles protected backup text supplied by
-an offline operator. It produces correction suggestions, never authenticated
-wallet input. The human must compare any suggestion with the written backup.
+Gate 3 handles protected backup text supplied by an offline operator. It emits
+untrusted correction suggestions, never authenticated wallet input. The human
+must compare any suggestion with the written backup.
 
-This model supplements the repository-wide properties in `SECURITY.md`. It
-does not place structural correction in release scope by itself. That scope
-change occurs only after the mathematical, performance, size, and review gates
-pass.
+The damaged text and presentation spaces are untrusted. Profile, target length,
+immutable prefix, and excluded share indices are program-controlled context.
+The first immutable prefix is the HRP plus separator. An interactive recovery
+may extend it with threshold and identifier only after a share has passed normal
+validation and the operator confirms it. Suggested corrections cannot establish
+or mutate context.
 
-## Threat model, trust boundaries, and assumptions
+The immutable prefix is outside the correction domain: no insertion, deletion,
+erasure, substitution, or structural shift crosses its boundary. Its symbols do
+not enter alignment or capture counts. Every final result crosses the ordinary
+`parse_codex32` boundary.
 
-The protected codex32 text and any presentation spaces are untrusted input.
-The selected profile, expected canonical length, optional expected header, and
-excluded share indices are operator-controlled constraints. For recovery of a
-set, a previously validated first artifact may supply the expected length.
+The ownership invariant is: `indel.py` enumerates alignments;
+`correction.py` performs all symbol repair. The structural adapter contains no
+checksum, finite-field, or substitution solver.
 
-The structural adapter may propose alignments and pass fixed-length candidates
-to `correction.py`. It must not implement checksum arithmetic, field arithmetic,
-BCH decoding, parsing, or profile rules. Every result crosses the ordinary
-`parse_codex32` validation boundary before it becomes a `CorrectionCandidate`.
-The resulting artifact remains an untrusted suggestion and cannot flow directly
-into sharing, recovery, or wallet APIs.
+## False reconstruction
 
-The HRP and separator are immutable. Group structure means exactly the
-four-character grouping emitted by the CLI. Presentation spaces may constrain
-alignment generation but never alter checksum semantics.
+An incorrect checksum-valid reconstruction could rank before the intended text.
+For each compatible length delta, the implementation conservatively sums all
+supported structural/BCH classes whose primary capture volume is no worse than
+the candidate. A structural-ranked result is eligible only when its cumulative
+probability bound is strictly below `1e-5`. Integer arithmetic prevents
+rounding at the boundary.
 
-The public API completes every supported rank class without a deadline. The
-simple CLI checks its deadline only between classes, finishes any class already
-started, and accepts a result only after every class that could rank as well has
-completed. Faster machines may search more classes. An incomplete search never
-produces an accepted candidate.
+There are exactly two non-mixed structural families: up to four arbitrary
+character omissions/insertions, or up to two whole four-character group
+omissions/insertions. The group phase follows canonical output grouping and is
+valid because group-only length changes preserve that phase. Spaces themselves
+are never trusted as evidence. Character search does not use group boundaries.
 
-## Attack surface, mitigations, and attacker stories
+Explicit unknown characters may be retained as fixed erasures or deleted as
+structural extras. Omitted values appear only in fixed-core capture volume, not
+again in the structural multiplier. Higher-substitution results naturally rank
+worse; there is no hand-maintained substitution rejection table.
 
-### False reconstruction
+Exact-length input with more than eight consecutive explicit erasures is a
+separate fixed-core case, not a structural class. Regular Codex32 retains its
+13-consecutive-erasure guarantee and Long retains 15. That path returns the
+unique fixed reconstruction without enumerating insertion/deletion alignments;
+more than eight nonconsecutive arbitrary erasures remain outside Gate 3. This
+fixed, known-location completion is explicitly exempt from the structural
+capture envelope and remains an untrusted suggestion rather than authenticated
+recovery input.
 
-An incorrect checksum-valid reconstruction could rank before or alongside the
-intended text. Every supported class therefore needs an exact, conservative
-decoder-capture volume. The cumulative union bound for an incorrect result at
-equal or better rank must remain below `1e-4`. The runtime compares integer
-volumes; it does not rank with floating-point estimates.
+An above-eight burst combined with extra-character alignment is not silently
+promoted into that guarantee. The CLI may stop once two distinct parsed,
+context-allowed completions prove ambiguity, because no further search can make
+the input unique. Neither witness is displayed as a correction suggestion.
 
-Hamming weight is a secondary transcription hint. CRC padding for `ms` secrets
-and fingerprint-identifier agreement for unshared master seeds are lower
-priority presentation hints. Neither hint validates, removes, or resolves an
-otherwise ambiguous candidate.
+Bech32 addend Hamming weight is a secondary transcription hint. Generation CRC
+and the fingerprint identifier of an unshared seed are still lower-priority CLI
+hints. None enlarges the capture envelope or makes a worse primary rank win.
 
-### Ambiguity suppression
+## Ambiguity and early stopping
 
-Different alignments can reach the same final text, while other alignments can
-reach distinct texts. Paths are deduplicated by final canonical string. The CLI
-returns a suggestion only when exactly one best reconstruction remains. It
-reports ambiguity instead of selecting by enumeration order, CRC, fingerprint,
-or lexical order.
+Equivalent alignment views are deduplicated before BCH work. Different paths
+that reconstruct the same final canonical string count once. The public API
+retains every reconstruction at the best primary rank.
 
-### Resource exhaustion
+A found candidate does not justify stopping. The search exhausts every class
+whose theoretical floor can tie or beat the current best. It stops early only
+when every unsearched class has a strictly worse floor. The CLI applies Hamming,
+CRC, and fingerprint refinements in that order; if a tie remains, it reports
+ambiguity rather than selecting by enumeration or lexical order.
 
-Malformed or adversarial text could request a combinatorial search. Input is
-bounded before candidate generation. Each supported class has a static
-hypothesis count and memory bound. Candidate generation streams rather than
-materializing the search space. The CLI starts another complete class only
-while its deadline permits; the API searches only the frozen finite envelope.
+## Resource exhaustion
 
-### Boundary and context confusion
+Input length is bounded before enumeration. Each admitted class has a finite
+combinatorial count, generators stream their views, and repeated reductions use
+a canonical earliest embedding plus a small capped cache. Memory therefore does
+not scale with the million-view search space. The primary 48-character
+benchmark is `2O + 2I`, approximately one million alignments.
 
-An attacker or mistaken operator could try to change the HRP, separator,
-profile, target length, set header, or used share index during correction.
-Structural edits are limited to the data/checksum body. Context constraints are
-checked before ranking, and final artifacts pass the ordinary registered-profile
-parser. A valid first artifact may constrain subsequent set entries but damaged
-text can never establish its own trusted context.
+The CLI gives 48-character correction a ten-second reference target and
+finishes the class it starts. If another potentially competitive class remains
+when the deadline is reached, it rejects all provisional results. Longer valid
+profiles use the same finite families without a deadline and remain normally
+interruptible.
 
-### Candidate promotion
+Multiprocessing is intentionally absent. CPython threads do not accelerate the
+CPU-bound loop, while worker processes replicate secret-bearing buffers and BCH
+tables, complicate deterministic frontier coordination, and add cross-platform
+failure modes. The measured single-process generic pipeline meets the reference
+target without those costs.
 
-CLI prompts, logs, or API composition could accidentally treat a suggestion as
-validated intent. Suggestions remain immutable ordinary artifacts paired with
-their edits and rank evidence, but callers must explicitly choose to reuse the
-artifact. The simple CLI writes suggestions and warnings to stderr, returns a
-nonzero status, and emits no machine-consumable protected output.
+## Context and candidate promotion
+
+Immutable text is supplied by the program, never inferred from damaged input.
+Outside that prefix, profile-header pruning is a lossless lower bound: a known
+mismatch consumes available substitution capacity, while an erasure remains
+repairable. Already-used share indices are checked again on parsed artifacts.
+
+Suggestions remain immutable artifacts paired with edits and rank evidence, but
+callers must explicitly choose to reuse them. The simple CLI writes suggestions
+and warnings to stderr, returns nonzero, and emits no machine-consumable secret
+on stdout.
 
 ## Severity calibration
 
-- **Critical:** an unchecked or ambiguous reconstruction automatically reaches
-  secret recovery, private-key derivation, or wallet output; or correction leaks
-  protected text through an unintended public channel.
-- **High:** the implementation can silently select an incorrect candidate
-  outside the frozen probability envelope, or mutate the HRP/separator and pass
-  the result as the requested profile.
-- **Medium:** bounded input can force work or memory beyond the published
-  envelope; a timeout accepts an incomplete rank layer; or grouping/context
-  constraints are inconsistently applied.
-- **Low:** deterministic presentation order or diagnostics differ without
-  hiding candidates, changing acceptance, leaking protected text, or exceeding
-  the resource bound.
+- **Critical:** an unchecked or ambiguous result reaches recovery, derivation,
+  or wallet output; or protected text leaks through an unintended channel.
+- **High:** a result outside the approved capture envelope is silently selected,
+  or structural correction changes immutable text.
+- **Medium:** bounded input exceeds the documented work/memory envelope, a
+  provisional frontier is accepted, or context/group phase is inconsistent.
+- **Low:** deterministic diagnostics differ without hiding candidates, leaking
+  text, or changing accepted results.
 
-Gate 3 findings are mitigated and retested. A medium-or-higher finding does not
-by itself cut the feature. If mitigation eventually requires removing an
-existing feature or important public API, implementation stops for explicit
-human approval of a separate removal plan.
+Gate 3 findings are mitigated and retested. If a necessary fix would remove an
+existing important API or user feature, implementation stops for explicit human
+approval of a separate removal plan.

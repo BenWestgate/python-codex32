@@ -10,14 +10,15 @@ These choices are not presented as BIP93 requirements.
 | fingerprint identifier only for fresh k=0 | shared sets, raw seeds, re-sharing, and CL generation use random IDs unless explicitly overridden |
 | BIP39 profiles are migration-only in CLI | website marks them not recommended; API can recover/derive codex32 only |
 | reject existing derivation targets | enforces BIP93's fresh-index wording |
-| fixed BCH is the current shipped behavior | a bounded structural adapter ships only if the cuttable Gate 3 passes its completeness, performance, size, and audit conditions |
+| bounded structural correction is deliberately finite | exact capture safety, complete global rank layers, the 48-character ten-second target, and the package audit budget exclude a general recovery engine; longer valid strings keep the same bounded classes |
 | private descriptors contain root xprv | matches Bitcoin Core behavior and carries an explicit authority warning |
 | no partial-basis completion | unauthenticated points can create incompatible same-header polynomials |
 
 Unknown HRPs, GUI, networking, RPC, secret storage, runtime profiles, BIP39
 mnemonics, and arbitrary descriptor parsing are explicit v1 non-goals.
-Structural correction is absent today and remains absent in v1 unless the
-cuttable gate in [the production-ready plan](production-ready-v1.md) passes.
+Structural correction is bounded as documented in
+[correction.md](correction.md); broader multi-candidate recovery remains a
+separate-tool concern.
 
 Pending-standard compatibility, the external BIP32 boundary, identifier
 privacy, and Python secret-memory limitations are tracked with controls and

@@ -15,10 +15,10 @@ Every implemented claim identifies one code owner and direct evidence.
 | R08 | derive only a fresh ordinary share | `derive_share` | every target and existing/S rejection | Implemented |
 | R09 | fresh shared S uses k uniform u5 masks | `generation._masks` and basis loop | mask invariants, recovery, no entropy injection | Implemented |
 | R10 | splitting S uses S plus k−1 masks | `split_secret` | exact recovery and threshold properties | Implemented for `ms` and `cl` |
-| R11 | four errors, `2e+v≤8`, eight erasures, bursts | public `correct` over `correction.py` | P70 corpus, all-profile API tests, and Hypothesis positions | Implemented fixed-length only |
+| R11 | four errors, `2e+v≤8`, eight erasures, bursts | public `correct` over `correction.py` | P70 corpus, all-profile API tests, and Hypothesis positions | Implemented |
 | R12 | correction is an untrusted suggestion | CLI `correct` | stderr/nonzero and no-correction tests | Implemented |
-| R13 | subsequent share input uses known prefix/header | `_cli_input.read_artifacts`, BIP93 prefix validators | suffix/full paste, retry, duplicate/mismatch and stream tests | Implemented |
-| R14 | structural correction/timeout UX | none | [cuttable v1 gate](production-ready-v1.md) | Missing; Gate 3 candidate |
+| R13 | subsequent share input uses an immutable confirmed prefix/header | `_cli_input.read_artifacts`, correction context | suffix/full paste, retry, immutable-domain and mismatch tests | Implemented |
+| R14 | bounded structural correction/timeout UX | `indel.py`, CLI `correct` | exact capture analysis, 979,110-call benchmark, structural/boundary and incomplete-search tests | Implemented in Gate 3 |
 | R15 | only `ms` S enters wallet workflows | `wallet._master` | all non-`MasterSeed` types rejected | Implemented |
 | R16 | electronic generation defaults to 128 bits; fresh CLI `ms` is 16/32 bytes while the API remains 16–64 | generation API and CLI `create` | API all-length tests; CLI accepted/rejected/imported-size boundaries | Implemented |
 | R17 | worksheet checksum sizes and private residue correction | CLI `checksum`, residue API | ms/cl sizes, short/long and BIP39 residues | Implemented |
@@ -35,7 +35,11 @@ Every implemented claim identifies one code owner and direct evidence.
 | R28 | safe typed installable reference surface | 25-name `__all__`, project script | public abuse tests, mypy, wheel/CLI checks | Implemented |
 | R29 | explicit share-index selectors are bounded before copying or normalizing elements | `generation._indices` | oversized string pre-normalization regression across all three public generation APIs | Implemented from standard security scan |
 | R30 | malformed untrusted boundaries fail closed under bounded work | parser, completion, interpolation, correction, and CLI adapters | frozen malformed corpus and 4,096-byte structured fuzz target | Implemented in Gate 1 |
-| R31 | wallet derivation uses a reviewed, reproducible Python 3.12/3.13 dependency resolution | `_bip32.py`; pinned CLI requirement files | complete upstream suite, official vectors, 499 local tests, 6,272-record Coincurve 20/21 differential corpus, and required CI matrix | Implemented in Gate 2 |
+| R31 | wallet derivation uses a reviewed, reproducible Python 3.12/3.13 dependency resolution | `_bip32.py`; pinned CLI requirement files | complete upstream suite, official vectors, 536 local tests, 6,272-record Coincurve 20/21 differential corpus, and required CI matrix | Implemented in Gate 2 |
+| R32 | structural false-reconstruction bound is below `1e-5` | exact integer capture policy in `indel.py` | `gate3_capture.py`, frozen `2GO`/unsafe-result boundaries, and threat model | Implemented in Gate 3 |
+| R33 | all 14 character classes, led by `2O + 2I`, meet the 48-character runtime gate without a second repair implementation | `indel.py` enumeration; `correction.py` symbol core | per-delta benchmark, family recovery tests, and ownership checks | Implemented in Gate 3 |
+| R34 | immutable recovery context, lossless pruning, and global primary-rank completion | correction context and `indel._search` frontier | immutable-domain, header-budget, and tied-frontier regressions | Implemented in Gate 3 |
+| R35 | all five independent whole-group classes preserve automatic four-character phase | group generator in `indel.py` | exact first/subsequent counts, spaced/unspaced equivalence, and recovery tests | Implemented in Gate 3 |
 
 The expanded checksum rule from PR #2258 is the only pending-upstream behavior.
 Its 44--46-byte compatibility exposure is explicitly accepted, has direct
