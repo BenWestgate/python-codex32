@@ -53,6 +53,27 @@ the same BIP32 wheel twice: SHA-256
 Without that environment variable, ZIP timestamps make the wheel hash vary even
 though its files are identical. CI sets it explicitly.
 
+## Reproducible project archives
+
+The project build uses the reviewed Setuptools 80.9.0 pin and a thin backend in
+`build_backend.py`. The backend delegates every standard hook to
+`setuptools.build_meta`; when
+`SOURCE_DATE_EPOCH` is set, its only additional operation is to normalize the
+sdist gzip and tar timestamps and ownership metadata. Content-related PAX
+headers remain intact. Without the variable, ordinary Setuptools behavior is
+unchanged.
+
+Two complete builds from the same working tree with
+`SOURCE_DATE_EPOCH=1763060600` produced byte-identical wheels and sdists. The
+wheel SHA-256 in both runs was
+`5e65b332739e239de63ee91fac673b086c8aae6f82d11d0cdf4b2975378008b2`;
+the sdist equality was checked byte for byte rather than recording its digest
+inside the archive itself. Twine accepted all four artifacts. The sdist includes
+the backend, tests, tools, Markdown evidence, printable recovery card, and
+separate verification record. `tests/test_build_backend.py` independently
+regresses removal of variable archive metadata while preserving file content
+and non-metadata PAX fields.
+
 ## Compatibility evidence
 
 The Coincurve APIs used by `bip32` were inspected at tags v20.0.0 and v21.0.0:

@@ -9,6 +9,12 @@ website, online QR generator, chat service, or network-connected wallet. A
 successful checksum proves that the text is internally valid; it does not prove
 that it belongs to the intended wallet.
 
+Owners can print the [share recovery card](recovery-card.html) once per share
+and keep the optional [wallet-verification record](wallet-verification-record.html)
+separately. The card deliberately omits wallet fingerprints and receiving
+addresses so compromising one share location does not also reveal the easiest
+wallet-identification metadata.
+
 ## Identify the material
 
 `codex32 check` reports whether one secret or share is intact. Its backup

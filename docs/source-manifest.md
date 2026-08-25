@@ -40,6 +40,18 @@ classes. Production structural correction remains in `indel.py`;
 BCH roots, generators, targets, and periods. Its SHA-256 digest is
 `4e37f851ea00c9ca6d10cd8897541b88cb9a835105a9880195f7ea7886f3bf04`.
 
+`tools/bitcoin_core_regtest.py` exercises the installed CLI against an isolated
+Bitcoin Core 31.1.0 regtest. It covers descriptor import with timestamp zero and
+`now`, watch-only discovery and spend refusal, encrypted private import,
+unlock/sign/broadcast/relock, and network-specific extended keys. This is
+integration evidence, not a runtime RPC dependency.
+
+`build_backend.py` is the complete project-specific build layer. It delegates
+to Setuptools and, only when `SOURCE_DATE_EPOCH` is supplied, normalizes sdist
+archive timestamps and ownership. `tests/test_build_backend.py` freezes that
+boundary. `MANIFEST.in` includes the backend, repository evidence, and both
+printable recovery artifacts in the source distribution.
+
 The independent rejection literals in `tests/data/malformed_inputs.json` have
 SHA-256 `966403685d979999524318d752537b5fe2ff01c0189a8e919e040dfd0de3978f`.
 They are fixed abuse cases, not outputs derived from production code. The two

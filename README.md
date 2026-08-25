@@ -92,7 +92,9 @@ stderr.
 Private restoration has additional security requirements; see the
 [CLI documentation](docs/cli.md#private-bitcoin-core-restoration).
 For recovery by someone who did not create the wallet, see
-[Restoring an inherited backup](docs/inheritance.md).
+[Restoring an inherited backup](docs/inheritance.md), the printable
+[share recovery card](docs/recovery-card.html), and the separate
+[wallet-verification record](docs/wallet-verification-record.html).
 
 ## API example
 

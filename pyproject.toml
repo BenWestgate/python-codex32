@@ -1,6 +1,7 @@
 [build-system]
-requires = ["setuptools>=80"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools==80.9.0"]
+backend-path = ["."]
+build-backend = "build_backend"
 
 [project]
 name = "codex32"
