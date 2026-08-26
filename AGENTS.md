@@ -21,9 +21,10 @@ Run the local CLI with `codex32 --help`. Python 3.12 is the minimum; CI also cov
 
 ## Coding Style & Naming Conventions
 
-Use four-space indentation and PEP 8. Ruff is the only linter and formatter. Mypy is strict; keep untyped dependency interaction inside its narrow adapter. Use `snake_case` for functions and modules, `CapWords` for types, `UPPER_CASE` for constants. Optimize for external human review. Keep the 100-character rule soft, explicitly prefer lines under 100 when doing so does not reduce readability.
+Use four-space indentation and PEP 8. Ruff is the only linter and formatter. Mypy is strict; keep untyped dependency interaction inside its narrow adapter. Use `snake_case` for functions and modules, `CapWords` for types, `UPPER_CASE` for constants. Optimize for external human review. Keep the 100-character rule soft, explicitly prefer lines under 100 when doing so does not reduce readability. 
 
-Be deliberately direct and function-oriented, with recognizable algorithm names rather than layers of abstraction, favors PEP 8, type hints, no wildcard imports, predictable imports, and explanatory module-level test documentation.
+Prefer the style of segwit_addr.py and the in-line Python reference of BIP-0093, BIP-0173, BIP-0350, and BIP-380:
+Be deliberately direct and function-oriented, with recognizable algorithm names rather than layers of abstraction, type hints, no wildcard imports, predictable imports, and explanatory module-level test documentation.
 
 ## Testing Guidelines
 
