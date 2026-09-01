@@ -121,7 +121,8 @@ def test_pr2258_supported_size_vectors(seed_hex: str, text: str) -> None:
 
 @pytest.mark.parametrize("text", FORMERLY_VALID_UNSUPPORTED_MS)
 def test_pr2258_rejects_formerly_valid_unsupported_sizes(text: str) -> None:
-    with pytest.raises(InvalidLength):
+    expected = InvalidChecksum if text in FORMERLY_VALID_UNSUPPORTED_MS[-2:] else InvalidLength
+    with pytest.raises(expected):
         parse_codex32(text)
 
 
@@ -163,11 +164,11 @@ def test_expanded_codeword_upper_bound() -> None:
         _checksum_for_encoded_length("ms", len(bech32_decode(oversized)[1]))
 
 
-def test_unknown_hrp_is_rejected_before_checksum_interpretation() -> None:
+def test_checksum_is_verified_before_unknown_hrp_dispatch() -> None:
     valid_generic = _oracle_encode("zz", "0tests" + "q" * 26)
     with pytest.raises(UnknownProfile):
         parse_codex32(valid_generic)
-    with pytest.raises(UnknownProfile):
+    with pytest.raises(InvalidChecksum):
         parse_codex32("zz10tests" + "q" * 39)
 
 
@@ -175,16 +176,16 @@ def test_unknown_hrp_is_rejected_before_checksum_interpretation() -> None:
     ("hrp", "payload_length"),
     (("ms", 26), ("cl", 52), ("bip39_12w", 27), ("bip39_24w", 53)),
 )
-def test_profile_length_precedes_checksum(hrp: str, payload_length: int) -> None:
+def test_checksum_precedes_profile_length(hrp: str, payload_length: int) -> None:
     valid = _oracle_encode(hrp, "0tests" + "q" * payload_length)
-    with pytest.raises(InvalidLength):
+    with pytest.raises(InvalidChecksum):
         parse_codex32(valid[:-1])
 
 
-def test_ms_length_precedence_covers_extremes_and_alignment() -> None:
-    with pytest.raises(InvalidLength, match="48, 54, 61, 67, 74, or 127"):
+def test_generic_length_and_checksum_precede_ms_length() -> None:
+    with pytest.raises(InvalidLength, match="at least 21"):
         parse_codex32("ms1")
-    with pytest.raises(InvalidLength, match="48, 54, 61, 67, 74, or 127"):
+    with pytest.raises(InvalidChecksum):
         parse_codex32("ms10tests" + "q" * 40)
 
 

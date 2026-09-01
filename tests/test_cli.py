@@ -313,7 +313,7 @@ def test_tty_check_prefills_rejected_entry_without_history(
     assert captured.err.endswith("\n\n")
 
 
-def test_tty_check_reports_truncated_ms_length_before_checksum(
+def test_tty_check_reports_checksum_before_truncated_ms_length(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
@@ -335,13 +335,8 @@ def test_tty_check_reports_truncated_ms_length_before_checksum(
 
     assert main(["check"]) == 0
     captured = capsys.readouterr()
-    for length in (45, 46, 47):
-        message = (
-            f"Rejected: This input has {length} characters. A Bitcoin master-seed backup must have "
-            "exactly 48, 54, 61, 67, 74, or 127 characters."
-        )
-        assert captured.err.count(message) == 1
-    assert "checksum" not in captured.err
+    assert captured.err.count("Rejected: The checksum does not match.") == 3
+    assert "Bitcoin master-seed backup must have" not in captured.err
 
 
 def test_tty_check_names_an_invalid_character_and_position(
@@ -396,8 +391,8 @@ def test_tty_check_explains_header_and_prefix_errors(
         "Rejected: The threshold must be 0 or a number from 2 through 9; found 'f'.",
         "Rejected: No separator (1) was found.",
         "Rejected: The application prefix before 1 is missing.",
-        "Rejected: The application prefix 'm' is not supported.",
-        "Rejected: The application prefix 's' is not supported.",
+        "Rejected: The checksum does not match.",
+        "Rejected: The checksum does not match.",
     ]
 
 

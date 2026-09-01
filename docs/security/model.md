@@ -8,8 +8,9 @@ repository root `SECURITY.md`.
 
 - Unchecked text cannot enter sharing, generation, correction output, or wallet
   operations as a validated artifact.
-- An HRP selects only fixed application length rules before the codex32
-  checksum is verified. Application payload semantics are applied afterward.
+- Parsing verifies the generic codex32 format and checksum before an HRP
+  selects application length or payload rules. Header and application payload
+  semantics are applied afterward.
 - Artifacts and headers are immutable. Shares have symbol semantics only and
   cannot be constructed from or converted to bytes.
 - Recovery requires exactly the declared threshold of compatible, distinct
