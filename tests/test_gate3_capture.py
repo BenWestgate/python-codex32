@@ -1,16 +1,32 @@
 """Independent arithmetic evidence for the final Gate 3 structural envelope."""
 
+from fractions import Fraction
 from math import comb
+from unittest.mock import patch
+
+import pytest
 
 from tools.gate3_capture import (
     FALSE_BOUND_DENOMINATOR,
     Shape,
     alignment_count,
+    alignment_distribution,
     capture_volume,
     checksum_bits,
     classes,
+    cross_length_classes,
+    main,
     supported_shapes,
 )
+
+
+def test_cross_length_cli_rejects_the_single_target_erasure_count() -> None:
+    with (
+        patch("sys.argv", ["gate3_capture.py", "--observed-length", "48", "--erasures", "8"]),
+        pytest.raises(SystemExit) as failure,
+    ):
+        main()
+    assert failure.value.code == 2
 
 
 def test_checksum_spaces_follow_expanded_lengths() -> None:
@@ -123,3 +139,134 @@ def test_every_reported_safety_result_uses_exact_cumulative_inequality() -> None
         space = 1 << checksum_bits(hrp, length)
         for item in classes(hrp, length, prefix):
             assert item.safe == (FALSE_BOUND_DENOMINATOR * item.cumulative_volume < space)
+
+
+def test_cross_length_bound_is_strict_for_every_40_to_56_observation() -> None:
+    for observed in range(40, 57):
+        admitted = [item for item in cross_length_classes(observed) if item.admitted]
+        if not admitted:
+            continue
+        maximum = max(item.checksum_bits for item in admitted)
+        cumulative = sum(item.volume << (maximum - item.checksum_bits) for item in admitted)
+
+        assert FALSE_BOUND_DENOMINATOR * cumulative < 1 << maximum
+
+
+def test_automatic_48_compatible_cumulative_bounds_are_exact() -> None:
+    expected = {
+        40: Fraction(55, 33_554_432),
+        44: Fraction(49_550_963, 8_796_093_022_208),
+        45: Fraction(9_244_785, 562_949_953_421_312),
+        46: Fraction(48_584_517_267, 18_014_398_509_481_984),
+        47: Fraction(1_229_275_380_015, 1_152_921_504_606_846_976),
+        48: Fraction(127_246_374_791_303, 36_893_488_147_419_103_232),
+        49: Fraction(3_853_028_054_033, 18_446_744_073_709_551_616),
+        50: Fraction(183_552_742_479_439, 36_893_488_147_419_103_232),
+        51: Fraction(130_377_745_889, 576_460_752_303_423_488),
+        52: Fraction(23_225_724_342_457, 9_223_372_036_854_775_808),
+        56: Fraction(164_824_085_127_117, 18_446_744_073_709_551_616),
+    }
+
+    for observed, bound in expected.items():
+        admitted = [item for item in cross_length_classes(observed) if item.admitted]
+        actual = sum(
+            (Fraction(item.volume, 1 << item.checksum_bits) for item in admitted),
+            Fraction(),
+        )
+
+        assert actual == bound
+        assert actual < Fraction(1, FALSE_BOUND_DENOMINATOR)
+
+
+def test_every_secondary_stretch_shape_admits_pure_structural_recovery() -> None:
+    requested = tuple(
+        shape
+        for shape in supported_shapes()
+        if shape.name != "fixed"
+        and (
+            shape.unit == 1
+            and shape.inserted + shape.omitted <= 3
+            or shape.unit == 4
+            and shape.inserted + shape.omitted <= 2
+        )
+    )
+
+    for target in (54, 61, 67):
+        for shape in requested:
+            layers = cross_length_classes(target + shape.delta)
+            assert any(
+                item.admitted
+                and item.target_length == target
+                and item.shape == shape.name
+                and item.remaining_explicit == 0
+                and item.substitutions == 0
+                for item in layers
+            )
+
+
+def test_secondary_third_order_substitution_frontiers_are_exact() -> None:
+    expected = {
+        (54, "characters-0i-3o"): {0, 1},
+        (61, "characters-0i-3o"): {0, 1},
+        (67, "characters-0i-3o"): {0, 1},
+        (54, "characters-1i-2o"): {0, 1, 2},
+        (61, "characters-1i-2o"): {0, 1, 2},
+        (67, "characters-1i-2o"): {0, 1},
+        (54, "characters-2i-1o"): {0, 1, 2},
+        (61, "characters-2i-1o"): {0, 1, 2},
+        (67, "characters-2i-1o"): {0, 1, 2},
+        (54, "characters-3i-0o"): {0, 1, 2, 3},
+        (61, "characters-3i-0o"): {0, 1, 2, 3},
+        (67, "characters-3i-0o"): {0, 1, 2, 3},
+    }
+
+    for (target, name), substitutions in expected.items():
+        shape = next(item for item in supported_shapes() if item.name == name)
+        admitted = {
+            item.substitutions
+            for item in cross_length_classes(target + shape.delta)
+            if item.admitted
+            and item.target_length == target
+            and item.shape == name
+            and item.remaining_explicit == 0
+        }
+        assert admitted == substitutions
+
+
+def test_cross_length_frontier_uses_actual_explicit_and_immutable_domains() -> None:
+    character = Shape("character", inserted=1)
+    group = Shape("group", inserted=1, unit=4)
+
+    assert alignment_distribution(character, 49, 48, 3, (12,)) == {0: 1, 1: 45}
+    assert alignment_distribution(character, 49, 48, 8, (12,)) == {0: 1, 1: 40}
+    assert alignment_distribution(group, 52, 48, 3, (3, 4, 5, 8)) == {2: 1, 3: 1, 4: 10}
+
+    for prefix in ("ms1", "ms10test"):
+        for observed in range(40, 57):
+            for erasures in (1, 4, 8):
+                positions = tuple(range(len(prefix), min(observed, len(prefix) + erasures)))
+                admitted = [
+                    item
+                    for item in cross_length_classes(
+                        observed,
+                        immutable_prefix=prefix,
+                        explicit_positions=positions,
+                    )
+                    if item.admitted
+                ]
+                if not admitted:
+                    continue
+                maximum = max(item.checksum_bits for item in admitted)
+                cumulative = sum(item.volume << (maximum - item.checksum_bits) for item in admitted)
+                assert FALSE_BOUND_DENOMINATOR * cumulative < 1 << maximum
+
+
+def test_unknown_length_offers_full_intermediate_families_and_truncates_by_rank() -> None:
+    layers = cross_length_classes(46, reduced_targets=())
+    intermediate = [item for item in layers if not item.primary]
+
+    assert any(item.target_length == 54 and item.shape == "groups-0gi-2go" for item in intermediate)
+    ranks = sorted({item.volume for item in intermediate})
+    admitted = {item.volume for item in intermediate if item.admitted}
+    if admitted:
+        assert admitted == set(ranks[: ranks.index(max(admitted)) + 1])

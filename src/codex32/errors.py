@@ -40,4 +40,5 @@ ExistingTargetIndex = _error("ExistingTargetIndex", InvalidTargetIndex, "The tar
 
 InvalidShareSelection = _error("InvalidShareSelection", CodexError, "Output share selection is invalid.")
 HeaderCollision = _error("HeaderCollision", InvalidShareSelection, "A new set reuses its source header.")
+CeremonyStateError = _error("CeremonyStateError", CodexError, "A creation ceremony is out of sequence.")
 InvalidCorrectionInput = _error("InvalidCorrectionInput", CodexError, "Correction input is unsupported.")

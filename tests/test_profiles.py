@@ -2,10 +2,10 @@
 
 import pytest
 from data.bip93_vectors import (
+    BIP93_ADDITIONAL_MASTER_SEEDS,
+    FORMERLY_VALID_UNSUPPORTED_MS,
     INVALID_CODEX32,
     INVALID_CODEX32_LONG,
-    PR2258_BOUNDARY,
-    PR2258_LEGACY_SHORT,
     VALID_CODEX32,
     VALID_CODEX32_LONG,
     VECTOR_2,
@@ -22,10 +22,10 @@ from codex32 import (
 from codex32.bech32 import (
     CHARSET,
     _chars_to_u5,
-    _decode,
-    _hrp_expand,
-    _parse,
+    bech32_decode,
+    bech32_hrp_expand,
 )
+from codex32.bip93 import _checksum_for_encoded_length
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import (
     InvalidCase,
@@ -36,6 +36,7 @@ from codex32.errors import (
     UnknownProfile,
     UnsupportedOperation,
 )
+from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, TEXT_LENGTHS
 
 _SHORT_GENERATORS = (
     0x19DC500CE73FDE210,
@@ -90,8 +91,8 @@ def _payload(data: bytes, padding: int) -> str:
     return "".join(CHARSET[(combined >> (5 * (count - 1 - index))) & 31] for index in range(count))
 
 
-def test_every_ms_byte_length_and_legal_parsed_padding() -> None:
-    for byte_length in range(16, 65):
+def test_every_supported_ms_size_and_legal_parsed_padding() -> None:
+    for byte_length in SEED_BYTE_LENGTHS:
         data = bytes((index * 29 + byte_length) % 256 for index in range(byte_length))
         padding_bits = (-byte_length * 8) % 5
         for padding in range(1 << padding_bits):
@@ -101,75 +102,65 @@ def test_every_ms_byte_length_and_legal_parsed_padding() -> None:
             assert secret.seed_bytes == data
 
 
-def test_ms_checksum_boundary_covers_expanded_hrp() -> None:
-    short = _oracle_encode("ms", "0tests" + "q" * 69)
-    long = _oracle_encode("ms", "0tests" + "q" * 71)
-    assert 2 * len("ms") + 1 + 6 + 69 + 13 == 93
-    assert 2 * len("ms") + 1 + 6 + 71 + 15 == 97
-    assert isinstance(parse_codex32(short), MasterSeed)
-    assert isinstance(parse_codex32(long), MasterSeed)
-    with pytest.raises(InvalidLength):
-        parse_codex32(_oracle_encode("ms", "0tests" + "q" * 75))
+def test_supported_factories_use_exact_bip93_lengths() -> None:
+    artifacts = tuple(MasterSeed.from_seed(bytes(size), identifier="test") for size in SEED_BYTE_LENGTHS)
+    assert tuple(len(artifact.text) for artifact in artifacts) == TEXT_LENGTHS
+    assert all(
+        _checksum_for_encoded_length("ms", len(bech32_decode(artifact.text)[1])) is _CODEX32
+        for artifact in artifacts[:-1]
+    )
+    assert _checksum_for_encoded_length("ms", len(bech32_decode(artifacts[-1].text)[1])) is _CODEX32_LONG
 
 
-def test_43_and_44_byte_factories_choose_short_and_long() -> None:
-    short = MasterSeed.from_seed(bytes(43), identifier="test")
-    long = MasterSeed.from_seed(bytes(44), identifier="test")
-    assert len(short.payload_symbols) == 69
-    assert len(long.payload_symbols) == 71
-    assert len(short.text) == 2 + 1 + 75 + 13
-    assert len(long.text) == 2 + 1 + 77 + 15
-
-
-def test_46_and_47_byte_factories_both_use_long() -> None:
-    seed_46 = MasterSeed.from_seed(bytes(46), identifier="test")
-    seed_47 = MasterSeed.from_seed(bytes(47), identifier="test")
-    assert len(seed_46.payload_symbols) == 74
-    assert len(seed_47.payload_symbols) == 76
-    assert len(seed_46.text) == 2 + 1 + 80 + 15
-    assert len(seed_47.text) == 2 + 1 + 82 + 15
-
-
-@pytest.mark.parametrize(("byte_length", "text"), PR2258_BOUNDARY)
-def test_pr2258_boundary_vectors(byte_length: int, text: str) -> None:
+@pytest.mark.parametrize(("seed_hex", "text"), BIP93_ADDITIONAL_MASTER_SEEDS)
+def test_pr2258_supported_size_vectors(seed_hex: str, text: str) -> None:
     artifact = parse_codex32(text)
     assert isinstance(artifact, MasterSeed)
-    assert len(artifact.seed_bytes) == byte_length
+    assert artifact.seed_bytes == bytes.fromhex(seed_hex)
 
 
-@pytest.mark.parametrize("text", PR2258_LEGACY_SHORT)
-def test_pr2258_rejects_legacy_short_encodings(text: str) -> None:
-    with pytest.raises((InvalidChecksum, InvalidLength)):
+@pytest.mark.parametrize("text", FORMERLY_VALID_UNSUPPORTED_MS)
+def test_pr2258_rejects_formerly_valid_unsupported_sizes(text: str) -> None:
+    with pytest.raises(InvalidLength):
         parse_codex32(text)
+
+
+def test_every_other_16_through_64_byte_size_is_rejected() -> None:
+    for byte_length in set(range(16, 65)) - set(SEED_BYTE_LENGTHS):
+        data = bytes(byte_length)
+        with pytest.raises(InvalidLength):
+            MasterSeed.from_seed(data, identifier="test")
+        with pytest.raises(InvalidLength):
+            parse_codex32(_oracle_encode("ms", "0tests" + _payload(data, 0)))
 
 
 def test_expanded_codeword_boundaries() -> None:
     header = "0tests"
     max_regular = _oracle_encode("ms", header + "q" * 69)
     first_long = _oracle_encode("ms", header + "q" * 70)
-    assert len(_hrp_expand("ms")) + len(_parse(max_regular)[1]) == 93
-    assert len(_hrp_expand("ms")) + len(_parse(first_long)[1]) == 96
-    _decode(max_regular)
-    _decode(first_long)
+    assert len(bech32_hrp_expand("ms")) + len(bech32_decode(max_regular)[1]) == 93
+    assert len(bech32_hrp_expand("ms")) + len(bech32_decode(first_long)[1]) == 96
+    assert _checksum_for_encoded_length("ms", len(bech32_decode(max_regular)[1])) is _CODEX32
+    assert _checksum_for_encoded_length("ms", len(bech32_decode(first_long)[1])) is _CODEX32_LONG
 
     for body_length in (74, 75):
         body = _chars_to_u5(header + "q" * (body_length - len(header)))
-        checksum = _CODEX32_LONG.create(_hrp_expand("ms") + body)
+        checksum = _CODEX32_LONG.create(bech32_hrp_expand("ms") + body)
         invalid = "ms1" + "".join(CHARSET[value] for value in body + checksum)
         with pytest.raises(InvalidLength):
-            _decode(invalid)
+            _checksum_for_encoded_length("ms", len(bech32_decode(invalid)[1]))
 
 
 def test_expanded_codeword_upper_bound() -> None:
     max_body = _chars_to_u5("0tests" + "q" * 997)
     max_text = _oracle_encode("ms", "".join(CHARSET[value] for value in max_body))
-    assert len(_hrp_expand("ms")) + len(_parse(max_text)[1]) == 1023
-    _decode(max_text)
+    assert len(bech32_hrp_expand("ms")) + len(bech32_decode(max_text)[1]) == 1023
+    assert _checksum_for_encoded_length("ms", len(bech32_decode(max_text)[1])) is _CODEX32_LONG
 
     oversized_body = _chars_to_u5("0tests" + "q" * 998)
     oversized = _oracle_encode("ms", "".join(CHARSET[value] for value in oversized_body))
     with pytest.raises(InvalidLength):
-        _decode(oversized)
+        _checksum_for_encoded_length("ms", len(bech32_decode(oversized)[1]))
 
 
 def test_unknown_hrp_is_rejected_before_checksum_interpretation() -> None:
@@ -191,9 +182,9 @@ def test_profile_length_precedes_checksum(hrp: str, payload_length: int) -> None
 
 
 def test_ms_length_precedence_covers_extremes_and_alignment() -> None:
-    with pytest.raises(InvalidLength, match="needs at least 48"):
+    with pytest.raises(InvalidLength, match="48, 54, 61, 67, 74, or 127"):
         parse_codex32("ms1")
-    with pytest.raises(InvalidLength, match="whole number"):
+    with pytest.raises(InvalidLength, match="48, 54, 61, 67, 74, or 127"):
         parse_codex32("ms10tests" + "q" * 40)
 
 
@@ -236,10 +227,10 @@ def test_profile_completion_capabilities() -> None:
 def test_official_generic_checksum_vectors_at_codec_level(
     value: str, checksum: _Checksum, minimum: int, maximum: int
 ) -> None:
-    hrp, encoded = _parse(value, max_length=2048)
-    expanded_length = len(_hrp_expand(hrp)) + len(encoded)
-    assert checksum.polymod(_hrp_expand(hrp) + encoded) == checksum.constant
-    assert checksum.verify(_hrp_expand(hrp) + encoded) is (
+    hrp, encoded = bech32_decode(value)
+    expanded_length = len(bech32_hrp_expand(hrp)) + len(encoded)
+    assert checksum.polymod(bech32_hrp_expand(hrp) + encoded) == checksum.constant
+    assert checksum.verify(bech32_hrp_expand(hrp) + encoded) is (
         checksum.maximum_length is None or expanded_length <= checksum.maximum_length
     )
 
@@ -255,10 +246,10 @@ def test_official_invalid_generic_checksum_vectors(
     value: str, checksum: _Checksum, minimum: int, maximum: int
 ) -> None:
     try:
-        hrp, encoded = _parse(value, max_length=2048)
+        hrp, encoded = bech32_decode(value)
     except (InvalidCase, InvalidCharacter, InvalidLength, MissingSeparator) as error:
         # Lexical failure is one of the official invalid classes.
         assert error is not None
         return
-    expanded_length = len(_hrp_expand(hrp)) + len(encoded)
-    assert not (expanded_length <= maximum and checksum.verify(_hrp_expand(hrp) + encoded))
+    expanded_length = len(bech32_hrp_expand(hrp)) + len(encoded)
+    assert not (expanded_length <= maximum and checksum.verify(bech32_hrp_expand(hrp) + encoded))

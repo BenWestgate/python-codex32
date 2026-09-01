@@ -10,6 +10,7 @@ from data.bip93_vectors import VECTOR_2
 import codex32
 from codex32 import Header, MasterSeed, Share, bip93, checksums, parse_codex32
 from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshold
+from codex32.profiles import Profile, _profile_rules
 
 
 def test_unsafe_legacy_surface_is_absent() -> None:
@@ -21,14 +22,16 @@ def test_unsafe_legacy_surface_is_absent() -> None:
 
 
 def test_root_api_is_deliberately_small() -> None:
-    assert len(codex32.__all__) <= 25
+    assert len(codex32.__all__) <= 26
     assert set(codex32.__all__) == {
         "Bip39Secret",
         "CodexError",
         "CoreLightningSecret",
+        "ConfirmationResult",
         "CorrectionCandidate",
         "CorrectionContext",
         "CorrectionEdit",
+        "CreationCeremony",
         "Header",
         "InvalidCorrectionInput",
         "MasterSeed",
@@ -47,15 +50,44 @@ def test_root_api_is_deliberately_small() -> None:
         "multisig_account_xpub",
         "parse_codex32",
         "recover_secret",
-        "split_secret",
     }
 
 
 def test_untyped_bip32_import_is_isolated() -> None:
     package = Path(codex32.__file__).parent
-    importers = [path.name for path in package.glob("*.py") if "from bip32 import" in path.read_text()]
+    importers = [
+        path.relative_to(package).as_posix()
+        for path in package.rglob("*.py")
+        if "from bip32 import" in path.read_text()
+    ]
 
-    assert importers == ["_bip32.py"]
+    assert importers == ["profiles/ms32.py"]
+
+
+def test_profile_selector_contains_no_application_policy() -> None:
+    package = Path(codex32.__file__).parent
+    source = (package / "profiles" / "__init__.py").read_text()
+    for application_policy in (
+        "Bitcoin master seed",
+        "Core Lightning HSM secret",
+        "word BIP39 worksheet",
+        "InvalidLength",
+        "padding",
+        "TEXT_LENGTH",
+        "PAYLOAD_LENGTH",
+    ):
+        assert application_policy not in source
+
+
+def test_profile_selector_resolves_four_fixed_profiles_to_three_modules() -> None:
+    modules = {profile: type(_profile_rules(profile)).__module__ for profile in Profile}
+
+    assert modules == {
+        Profile.MS: "codex32.profiles.ms32",
+        Profile.CL: "codex32.profiles.cl32",
+        Profile.BIP39_12W: "codex32.profiles.bip39",
+        Profile.BIP39_24W: "codex32.profiles.bip39",
+    }
 
 
 def test_bip32_is_the_only_runtime_dependency() -> None:

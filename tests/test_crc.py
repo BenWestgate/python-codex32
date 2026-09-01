@@ -7,9 +7,9 @@ from data.bip93_vectors import VECTOR_2, VECTOR_4
 
 import codex32
 from codex32 import MasterSeed, Share, parse_codex32
-from codex32.bip93 import _has_generation_padding, _payload_padding
 from codex32.checksums import _CRC, _crc_pad
 from codex32.gf32 import _multiply as _gf32_multiply
+from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding, _payload_padding
 
 
 @pytest.mark.parametrize(
@@ -40,8 +40,8 @@ def test_compact_crc_definitions_are_unchanged() -> None:
     )
 
 
-def test_master_seed_factory_uses_crc_for_every_byte_length() -> None:
-    for byte_length in range(16, 65):
+def test_master_seed_factory_uses_crc_for_every_supported_size() -> None:
+    for byte_length in SEED_BYTE_LENGTHS:
         seed = bytes((position * 73 + byte_length) % 256 for position in range(byte_length))
         secret = MasterSeed.from_seed(seed, identifier="test")
         assert _has_generation_padding(secret)

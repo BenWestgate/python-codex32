@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+from codex32._bitcoin_core import BitcoinCore
+from codex32.bip93 import parse_codex32
+from codex32.profiles.ms32 import MasterSeed
 
 # Frozen public BIP93 vector material; it has never controlled a funded wallet.
 _SEED = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
@@ -25,7 +32,7 @@ def _exports(executable: str, *, private: bool = False, now: bool = False) -> li
     result = _run(command, stdin=_SEED + "\n")
     if result.returncode:
         raise RuntimeError(result.stderr.strip())
-    return json.loads(result.stdout)
+    return cast(list[dict[str, Any]], json.loads(result.stdout))
 
 
 def main() -> None:
@@ -37,6 +44,9 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="codex32-core-") as temporary:
         datadir = Path(temporary)
+        real_cli = shutil.which(arguments.bitcoin_cli)
+        if real_cli is None:
+            raise RuntimeError("bitcoin-cli was not found")
         daemon = subprocess.Popen(
             [
                 arguments.bitcoind,
@@ -52,7 +62,7 @@ def main() -> None:
             stderr=subprocess.PIPE,
             text=True,
         )
-        base = [arguments.bitcoin_cli, "-regtest", f"-datadir={datadir}"]
+        base = [real_cli, "-regtest", f"-datadir={datadir}"]
 
         def rpc(*rpc_arguments: str, wallet: str | None = None, stdin: str | None = None) -> Any:
             command = [*base, "-rpcwait", "-rpcwaittimeout=30"]
@@ -109,14 +119,69 @@ def main() -> None:
                 if not all(item["success"] for item in imported):
                     raise RuntimeError(f"descriptor import failed for {wallet}")
 
+            rpc(
+                "-named",
+                "createwallet",
+                "wallet_name=fresh",
+                "disable_private_keys=false",
+                "blank=true",
+                "descriptors=true",
+            )
+            rpc("encryptwallet", wallet="fresh", stdin=passphrase + "\n")
+            fresh_unlocked = _run(
+                [*base, "-rpcwallet=fresh", "-stdinwalletpassphrase", "walletpassphrase", "120"],
+                stdin=passphrase + "\n",
+            )
+            if fresh_unlocked.returncode:
+                raise RuntimeError(fresh_unlocked.stderr.strip())
+            wrapper_directory = datadir / "wrapper"
+            wrapper_directory.mkdir()
+            wrapper = wrapper_directory / "bitcoin-cli"
+            wrapper.write_text(
+                f'#!/bin/sh\nexec {shlex.quote(real_cli)} -regtest {shlex.quote(f"-datadir={datadir}")} "$@"\n'
+            )
+            wrapper.chmod(0o700)
+            os.environ["PATH"] = str(wrapper_directory) + os.pathsep + os.environ.get("PATH", "")
+            client = BitcoinCore.connect()
+            secret = parse_codex32(_SEED)
+            if not isinstance(secret, MasterSeed):
+                raise TypeError("synthetic fixture was not a master seed")
+            answers = iter(("1", "yes"))
+            if client.initialize(secret, lambda _prompt: next(answers), lambda _message: None) != "fresh":
+                raise RuntimeError("automatic initialization selected the wrong wallet")
+            if rpc("getwalletinfo", wallet="fresh")["unlocked_until"] != 0:
+                raise RuntimeError("automatic initialization did not relock the wallet")
+
+            accepted = rpc("listdescriptors", wallet="fresh")["descriptors"]
+            public_fields = ("desc", "timestamp", "active", "internal", "range", "next_index")
+            accepted_public = [{key: item[key] for key in public_fields if key in item} for item in accepted]
+            rpc(
+                "-named",
+                "createwallet",
+                "wallet_name=fresh-watch",
+                "disable_private_keys=true",
+                "blank=true",
+                "descriptors=true",
+            )
+            imported = rpc(
+                "importdescriptors", wallet="fresh-watch", stdin=json.dumps(accepted_public) + "\n"
+            )
+            if not all(item["success"] for item in imported):
+                raise RuntimeError("accepted public descriptor reimport failed")
+
             watch_address = rpc("getnewaddress", wallet="watch")
             signer_address = rpc("getnewaddress", wallet="signer")
             if watch_address != signer_address:
                 raise RuntimeError("watch-only and private descriptors derived different addresses")
+            fresh_address = rpc("getnewaddress", wallet="fresh")
+            if fresh_address != rpc("getnewaddress", wallet="fresh-watch"):
+                raise RuntimeError("automatic private/public wallets derived different addresses")
             rpc("sendtoaddress", watch_address, "1", wallet="miner")
             rpc("generatetoaddress", "1", miner_address)
             if rpc("getbalance", wallet="watch") != 1 or rpc("getbalance", wallet="signer") != 1:
                 raise RuntimeError("imported wallets did not discover the funded output")
+            if rpc("getbalance", wallet="fresh") != 1 or rpc("getbalance", wallet="fresh-watch") != 1:
+                raise RuntimeError("automatic private/public wallets did not discover the funded output")
 
             denied = _run(
                 [*base, "-rpcwallet=watch", "sendtoaddress", miner_address, "0.1"],
@@ -127,6 +192,19 @@ def main() -> None:
             rpc("generatetoaddress", "1", miner_address)
             if rpc("gettransaction", txid, wallet="signer")["confirmations"] < 1:
                 raise RuntimeError("signed transaction was not broadcast and confirmed")
+            rpc("sendtoaddress", rpc("getnewaddress", wallet="fresh"), "1", wallet="miner")
+            rpc("generatetoaddress", "1", miner_address)
+            fresh_unlocked = _run(
+                [*base, "-rpcwallet=fresh", "-stdinwalletpassphrase", "walletpassphrase", "120"],
+                stdin=passphrase + "\n",
+            )
+            if fresh_unlocked.returncode:
+                raise RuntimeError(fresh_unlocked.stderr.strip())
+            fresh_txid = rpc("sendtoaddress", miner_address, "0.5", wallet="fresh")
+            rpc("generatetoaddress", "1", miner_address)
+            if rpc("gettransaction", fresh_txid, wallet="fresh")["confirmations"] < 1:
+                raise RuntimeError("automatically initialized wallet did not spend")
+            rpc("walletlock", wallet="fresh")
             rpc("walletlock", wallet="signer")
             if rpc("getwalletinfo", wallet="signer")["unlocked_until"] != 0:
                 raise RuntimeError("private restore wallet did not relock")

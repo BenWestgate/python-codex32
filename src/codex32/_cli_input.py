@@ -9,14 +9,16 @@ import os
 import sys
 from collections.abc import Iterator
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 
+from codex32.bech32 import CHARSET
 from codex32.bip93 import Secret, Share, _validate_basis_prefix, _validate_recovery_prefix, parse_codex32
-from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _correct_complete
+from codex32.correction import CorrectionCandidate, CorrectionContext, _best
 from codex32.errors import CodexError, DuplicateShareIndex, ExistingTargetIndex, InvalidChecksum
 from codex32.errors import MismatchedIdentifier, MismatchedPayloadLength, MismatchedProfile
 from codex32.errors import MismatchedThreshold, SecretInRecoverySet
-from codex32.profiles import Profile, _profile_label
+from codex32.profiles import Profile, _profile_rules
+from codex32.profiles.ms32 import TEXT_LENGTHS, _text_length
 
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
@@ -90,7 +92,7 @@ def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
         message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
         raise InputError(message) from error
     if artifact.profile not in profiles:
-        allowed = " or ".join(_profile_label(profile) for profile in profiles)
+        allowed = " or ".join(_profile_rules(profile).label for profile in profiles)
         raise InputError(f"This command accepts only {allowed} input.")
     return artifact
 
@@ -99,14 +101,50 @@ def _retry_text(value: str, prefix: str) -> str:
         return value[len(prefix) :] if value[: len(prefix)].lower() == prefix.lower() else ""
     return value
 
+_PRIMARY_MS = (48, 74, 127)
+_REDUCED_MS = frozenset((54, 61, 67))
+_TIMED_48_COUNTS = frozenset((40, *range(44, 53), 56))
+
+def _automatic_targets(count: int) -> tuple[int, ...]:
+    nearest = min(_PRIMARY_MS, key=lambda length: abs(count - length))
+    return (nearest, *(length for length in TEXT_LENGTHS if length != nearest))
+
+def _correction_plan(
+    profile: Profile, byte_length: int | Literal["?"] | None, count: int, target: int | None,
+) -> tuple[tuple[int, ...], frozenset[int], frozenset[int], bool]:
+    if target is not None:
+        return (target,), frozenset((target,)), frozenset(), target == 48 and count in _TIMED_48_COUNTS
+    if profile is Profile.CL:
+        return (74,), frozenset((74,)), frozenset(), False
+    if isinstance(byte_length, int):
+        length = _text_length(byte_length)
+        return (length,), frozenset((length,)), frozenset(), False
+    if byte_length == "?":
+        return TEXT_LENGTHS, frozenset(_PRIMARY_MS), frozenset(), False
+    return _automatic_targets(count), frozenset(_PRIMARY_MS), _REDUCED_MS, count in _TIMED_48_COUNTS
+
 def _correction_candidates(
-    value: str, profile: Profile, target: int, immutable: str,
-    excluded: tuple[str, ...] = (),
-) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
-    deadline = monotonic() + 10
-    context = CorrectionContext(profile, target, immutable, excluded)
-    candidates, complete = _correct_complete(context, value, deadline=deadline if target == 48 else None)
-    return (_best(candidates) if complete else ()), complete, deadline
+    value: str, profile: Profile, byte_length: int | Literal["?"] | None, immutable: str,
+    excluded: tuple[str, ...] = (), *, target: int | None = None,
+) -> tuple[tuple[CorrectionCandidate, ...], bool, float | None, bool]:
+    count = len(value.replace(" ", ""))
+    targets, primary, reduced, timed = _correction_plan(profile, byte_length, count, target)
+    deadline = monotonic() + 10 if timed else None
+    contexts = tuple(CorrectionContext(profile, length, immutable, excluded) for length in targets)
+    from codex32.indel import _consecutive_witnesses, _search_many
+
+    candidates, complete = _search_many(
+        contexts, value, primary=primary, reduced=reduced, deadline=deadline,
+    )
+    ambiguous = False
+    if complete and sum(char.lower() not in CHARSET for char in value.replace(" ", "")) > 8:
+        witnesses, complete = _consecutive_witnesses(
+            contexts, value, reduced=reduced, deadline=deadline,
+        )
+        observed = witnesses | {item.artifact.text.lower() for item in candidates}
+        ambiguous = complete and len(observed) > 1
+    results = _best(candidates, prefer_common=byte_length == "?") if complete and not ambiguous else ()
+    return results, complete, deadline, ambiguous
 
 def _suggestions(
     value: str, prefix: str, profiles: tuple[Profile, ...], accepted: list[Artifact],
@@ -118,11 +156,9 @@ def _suggestions(
     )
     if profile is None or profile not in profiles:
         return ()
-    target = len(accepted[0].text) if accepted else (
-        74 if profile is Profile.CL or len(value) > 61 else 48
-    )
     excluded = tuple(artifact.header.index for artifact in accepted)
-    return _correction_candidates(value, profile, target, prefix, excluded)[0]
+    target = len(accepted[0].text) if accepted else None
+    return _correction_candidates(value, profile, None, prefix, excluded, target=target)[0]
 
 def _redirected(profiles: tuple[Profile, ...]) -> list[Artifact]:
     tokens = _stdin().split()
@@ -155,7 +191,8 @@ def _interactive(
             if not accepted
             else (f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}")
         )
-        value = "".join(_editable_input(f"{label}: {prefix}", prefill).split())
+        displayed_prefix = prefix if accepted else ""
+        value = "".join(_editable_input(f"{label}: {displayed_prefix}", prefill).split())
         complete_value = value if "1" in value else prefix + value
         try:
             artifact = _parse(complete_value, profiles)

@@ -33,6 +33,7 @@ from codex32.errors import (
     SecretInRecoverySet,
     WrongShareCount,
 )
+from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
 
 
 def _payload_text(artifact: Share | MasterSeed | CoreLightningSecret) -> str:
@@ -121,7 +122,7 @@ def test_share_set_mismatches_have_distinct_errors() -> None:
     with pytest.raises(MismatchedIdentifier):
         derive_share([ms_secret, other_id], "d")  # type: ignore[list-item]
 
-    longer = MasterSeed.from_seed(bytes(17), identifier="test", threshold=2)
+    longer = MasterSeed.from_seed(bytes(20), identifier="test", threshold=2)
     longer_mask = complete_checksum("ms12testc" + "q" * len(longer.payload_symbols))
     with pytest.raises(MismatchedPayloadLength):
         derive_share([ms_secret, longer_mask], "d")  # type: ignore[list-item]
@@ -163,8 +164,8 @@ def test_existing_targets_are_rejected_case_insensitively() -> None:
         derive_share([secret, *masks], "A")
 
 
-def test_every_ms_length_recovers_with_short_and_long_checksums() -> None:
-    for byte_length in range(16, 65):
+def test_every_ms_size_recovers_with_short_and_long_checksums() -> None:
+    for byte_length in SEED_BYTE_LENGTHS:
         shares = _ordinary_set(byte_length)
         recovered = recover_secret(shares)
         expected = _ms_basis(byte_length)[0]
@@ -207,7 +208,7 @@ def test_invalid_implied_bip39_secret_rejects_recovery_and_derivation() -> None:
             operation()
 
 
-@given(st.integers(min_value=16, max_value=64), st.booleans())
+@given(st.sampled_from(SEED_BYTE_LENGTHS), st.booleans())
 @settings(max_examples=35, deadline=None)
 def test_order_and_case_properties(byte_length: int, uppercase: bool) -> None:
     shares = _ordinary_set(byte_length)

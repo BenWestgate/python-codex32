@@ -6,16 +6,17 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from codex32.bech32 import CHARSET, _chars_to_u5, _convert_bits, _decode, _encode, _parse
-from codex32.bech32 import _payload_bytes, _require_checksum, _u5_to_chars, _validate_shape
-from codex32.checksums import _crc_pad
-from codex32.errors import DuplicateShareIndex, ExistingTargetIndex, InvalidIdentifier, InvalidLength
+from codex32.bech32 import CHARSET, _chars_to_u5, _u5_to_chars, bech32_decode, bech32_encode
+from codex32.bech32 import bech32_verify_checksum
+from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
+from codex32.errors import DuplicateShareIndex, ExistingTargetIndex, InvalidChecksum, InvalidIdentifier
+from codex32.errors import InvalidLength
 from codex32.errors import InvalidShareIndex, InvalidShareSet, InvalidTargetIndex, InvalidThreshold
 from codex32.errors import MismatchedIdentifier, MismatchedPayloadLength, MismatchedProfile
-from codex32.errors import MismatchedThreshold, SecretInRecoverySet, WrongShareCount
+from codex32.errors import MismatchedThreshold, SecretInRecoverySet, UnsupportedOperation, WrongShareCount
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles import Profile, _profile_spec
+from codex32.profiles import Profile, _ProfileRules, _profile_rules
 
 IDX_SORT = "sacdefghjklmnpqrtuvwxyz023456789"
 _CONSTRUCTION_TOKEN = object()
@@ -61,6 +62,30 @@ class Header:
     def _symbols(self) -> tuple[int, ...]:
         return tuple(_chars_to_u5(f"{self.threshold}{self.identifier}{self.index}"))
 
+def _checksum_for_encoded_length(hrp: str, encoded_length: int) -> _Checksum:
+    expanded_length = 2 * len(hrp) + 1 + encoded_length
+    if expanded_length <= 93:
+        return _CODEX32
+    if expanded_length < 96:
+        raise InvalidLength("expanded codex32 lengths 94 and 95 are invalid")
+    if expanded_length <= 1023:
+        return _CODEX32_LONG
+    raise InvalidLength("expanded codex32 codeword exceeds 1023 symbols")
+
+def _decode_codex32(text: str) -> tuple[_ProfileRules, tuple[int, ...], _Checksum]:
+    hrp, encoded = bech32_decode(text)
+    profile_rules = _profile_rules(hrp)
+    profile_rules.validate_text_length(len(text))
+    if len(hrp) + 1 + len(encoded) < 21:
+        raise InvalidLength("codex32 string must contain at least 21 characters")
+    checksum = _checksum_for_encoded_length(hrp, len(encoded))
+    body = tuple(encoded[: -checksum.length])
+    profile_rules.validate_payload_length(len(body) - 6)
+    Header._from_symbols(body[:6])
+    if not bech32_verify_checksum(hrp, encoded, checksum):
+        raise InvalidChecksum(f"invalid {checksum.kind} checksum")
+    return profile_rules, tuple(encoded), checksum
+
 @dataclass(frozen=True, slots=True, init=False)
 class _Artifact:
     text: str
@@ -68,9 +93,8 @@ class _Artifact:
     profile: Profile
     payload_symbols: tuple[int, ...]
 
-    def __init__(
-        self, text: str, header: Header, profile: Profile, payload_symbols: tuple[int, ...], *, _token: object
-    ) -> None:
+    def __init__(self, text: str, header: Header, profile: Profile,
+                 payload_symbols: tuple[int, ...], *, _token: object) -> None:
         if _token is not _CONSTRUCTION_TOKEN:
             raise TypeError("codex32 artifacts must be created by the public factories")
         object.__setattr__(self, "text", text)
@@ -87,105 +111,45 @@ class Share(_Artifact): __slots__ = ()
 
 class Secret(_Artifact): __slots__ = ()
 
-class MasterSeed(Secret):
-    """A validated BIP93 ``ms`` secret."""
-
-    __slots__ = ()
-    @property
-    def seed_bytes(self) -> bytes:
-        """Return the BIP32 master-seed bytes represented by S."""
-        seed, _padding, _padding_bits = _payload_bytes(self.payload_symbols)
-        return seed
-
-    @classmethod
-    def from_seed(cls, seed_bytes: bytes, *, identifier: str, threshold: int = 0) -> "MasterSeed":
-        """Encode 16 through 64 seed bytes as S with generation-only CRC padding."""
-        if not isinstance(seed_bytes, bytes):
-            raise TypeError("seed_bytes must be bytes")
-        if not 16 <= len(seed_bytes) <= 64:
-            raise InvalidLength("master seed must contain 16 through 64 bytes")
-        header = Header(threshold, identifier, "s")
-        payload = tuple(_convert_bits(seed_bytes, 8, 5, pad=True, pad_value=_crc_pad(seed_bytes)))
-        artifact = _from_parts(Profile.MS, header, payload)
-        assert isinstance(artifact, MasterSeed)
-        return artifact
-
-class CoreLightningSecret(Secret):
-    """A validated 32-byte Core Lightning HSM secret."""
-
-    __slots__ = ()
-    @property
-    def secret_bytes(self) -> bytes:
-        """Return the 32-byte Core Lightning HSM secret represented by S."""
-        secret, _padding, _padding_bits = _payload_bytes(self.payload_symbols)
-        return secret
-
-class Bip39Secret(Secret):
-    """Migration-only BIP39 S artifact without entropy or mnemonic access."""
-
-    __slots__ = ()
-
 def _validate_payload(profile: Profile, header: Header, payload: tuple[int, ...]) -> None:
-    _profile_spec(profile).validate_payload_length(len(payload))
-    if profile is Profile.MS:
-        seed, _padding, _padding_bits = _payload_bytes(payload)
-        if not 16 <= len(seed) <= 64:
-            raise InvalidLength("master seed must contain 16 through 64 bytes")
-    elif profile is Profile.CL:
-        secret, _padding, _padding_bits = _payload_bytes(payload)
-        if len(secret) != 32:
-            raise InvalidLength("Core Lightning secret must contain exactly 32 bytes")
-    elif header.index == "s":
-        # The SHA dependency is isolated from normal ms/cl imports and execution.
-        from codex32.bip39 import _validate_bip39_secret
-
-        _validate_bip39_secret(profile, payload)
+    rules = _profile_rules(profile)
+    rules.validate_payload_length(len(payload))
+    rules.validate_payload(payload, header.index)
 
 def _artifact(text: str, profile: Profile, header: Header, payload: tuple[int, ...]) -> Share | Secret:
-    artifact_type: type[_Artifact]
-    if header.index != "s":
-        artifact_type = Share
-    elif profile is Profile.MS:
-        artifact_type = MasterSeed
-    elif profile is Profile.CL:
-        artifact_type = CoreLightningSecret
-    else:
-        artifact_type = Bip39Secret
+    artifact_type = Share if header.index != "s" else _profile_rules(profile).secret_type
     return artifact_type(text, header, profile, payload, _token=_CONSTRUCTION_TOKEN)
 
 def parse_codex32(text: str) -> Share | Secret:
     """Validate one registered codex32 string and return an immutable artifact."""
-    hrp, encoded = _parse(text)
-    profile_spec = _profile_spec(hrp)
-    profile_spec.validate_text_length(len(text))
-    checksum = _validate_shape(hrp, encoded)
+    profile_rules, encoded, checksum = _decode_codex32(text)
     body = tuple(encoded[: -checksum.length])
-    profile_spec.validate_payload_length(len(body) - 6)
-    _require_checksum(hrp, encoded, checksum)
     header = Header._from_symbols(body[:6])
     payload = body[6:]
-    _validate_payload(profile_spec.profile, header, payload)
-    return _artifact(text, profile_spec.profile, header, payload)
+    _validate_payload(profile_rules.profile, header, payload)
+    return _artifact(text, profile_rules.profile, header, payload)
 
-def _from_parts(
-    profile: Profile, header: Header, payload: tuple[int, ...], *, uppercase: bool = False
-) -> Share | Secret:
+def _from_parts(profile: Profile, header: Header, payload: tuple[int, ...], *,
+                uppercase: bool = False) -> Share | Secret:
     _validate_payload(profile, header, payload)
-    body = (*header._symbols, *payload)
-    text = _encode(profile.value, body)
+    body = [*header._symbols, *payload]
+    expanded_body_length = 2 * len(profile.value) + 1 + len(body)
+    checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
+    text = bech32_encode(profile.value, body, checksum)
     return parse_codex32(text.upper() if uppercase else text)
 
 def complete_checksum(unchecksummed_text: str) -> Share | Secret:
     """Add the outer checksum; this provides no entropy or wallet suitability."""
-    hrp, body_values = _parse(unchecksummed_text)
-    profile_spec = _profile_spec(hrp)
-    profile_spec.require_completion()
+    hrp, body_values = bech32_decode(unchecksummed_text)
+    profile_rules = _profile_rules(hrp)
+    if profile_rules.completion_error is not None:
+        raise UnsupportedOperation(profile_rules.completion_error)
     body = tuple(body_values)
-    profile_spec.validate_payload_length(len(body) - 6)
+    profile_rules.validate_payload_length(len(body) - 6)
     header = Header._from_symbols(body[:6])
     payload = body[6:]
-    _validate_payload(profile_spec.profile, header, payload)
-    return _from_parts(profile_spec.profile, header, payload, uppercase=unchecksummed_text.isupper())
+    _validate_payload(profile_rules.profile, header, payload)
+    return _from_parts(profile_rules.profile, header, payload, uppercase=unchecksummed_text.isupper())
 
 def _lagrange_weights(points: tuple[int, ...], target: int) -> tuple[int, ...]:
     weights: list[int] = []
@@ -229,8 +193,8 @@ def _bounded_artifacts(artifacts: Sequence[Share | Secret]) -> tuple[Share | Sec
     return copied
 
 def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]:
-    hrp, encoded, checksum = _decode(artifact.text)
-    if hrp != artifact.profile.value:
+    profile_rules, encoded, checksum = _decode_codex32(artifact.text)
+    if profile_rules.profile is not artifact.profile:
         raise InvalidShareSet("artifact text and validated profile disagree")
     return tuple(encoded[6:]), checksum.length, len(encoded)
 
@@ -253,24 +217,15 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
         if item.header.identifier != first.header.identifier:
             raise MismatchedIdentifier("share identifiers do not match")
         tail, item_checksum_length, item_encoded_length = _artifact_tail(item)
-        if (
-            len(item.payload_symbols) != len(first.payload_symbols)
-            or item_checksum_length != checksum_length
-            or item_encoded_length != encoded_length
-        ):
+        item_shape = len(item.payload_symbols), item_checksum_length, item_encoded_length
+        if item_shape != (len(first.payload_symbols), checksum_length, encoded_length):
             raise MismatchedPayloadLength("share payload/checksum lengths do not match")
         tails.append(tail)
         indices.append(item.header.index)
     if len(set(indices)) != len(indices):
         raise DuplicateShareIndex("share indices must be distinct")
-    return _ShareSet(
-        copied,
-        first.profile,
-        threshold,
-        first.header.identifier,
-        tuple(tails),
-        all(item.text.isupper() for item in copied),
-    )
+    return _ShareSet(copied, first.profile, threshold, first.header.identifier, tuple(tails),
+                     all(item.text.isupper() for item in copied))
 
 def _validate_recovery_prefix(shares: Sequence[Share | Secret]) -> None:
     share_set = _validate_share_set(shares, require_exact=False)
@@ -317,18 +272,14 @@ def derive_share(basis: Sequence[Share | Secret], fresh_index: str) -> Share:
     target = _normalize_target(fresh_index, label="fresh_index")
     if target in share_set.indices:
         raise ExistingTargetIndex(f"index {target.upper()} is already in the basis")
-    if share_set.profile in (Profile.BIP39_12W, Profile.BIP39_24W):
+    profile_rules = _profile_rules(share_set.profile)
+    if profile_rules.basis_secret_type is not None:
         implied_secret = _interpolate_tail(share_set, "s")
-        if not isinstance(implied_secret, Bip39Secret):
-            raise InvalidShareSet("BIP39 basis did not imply a valid BIP39 secret")
+        if not isinstance(implied_secret, Secret):
+            raise InvalidShareSet("interpolation did not produce a secret")
+        if not isinstance(implied_secret, profile_rules.basis_secret_type):
+            raise InvalidShareSet(profile_rules.basis_error)
     derived = _interpolate_tail(share_set, target)
     if not isinstance(derived, Share):
         raise InvalidShareSet("interpolation did not produce an ordinary share")
     return derived
-
-def _payload_padding(artifact: MasterSeed | CoreLightningSecret) -> int:
-    _data, padding, _padding_bits = _payload_bytes(artifact.payload_symbols)
-    return padding
-
-def _has_generation_padding(secret: MasterSeed) -> bool:
-    return _payload_padding(secret) == _crc_pad(secret.seed_bytes)

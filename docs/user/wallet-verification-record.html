@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Codex32 Wallet Verification Record</title>
+  <title>codex32 wallet-verification record</title>
   <style>
     @page { size: letter; margin: 0.45in; }
     * { box-sizing: border-box; }
@@ -20,7 +20,7 @@
   </style>
 </head>
 <body>
-  <h1>Separate wallet-verification record</h1>
+  <h1>Wallet-verification record</h1>
   <p class="warning">
     PUBLIC WALLET METADATA — store separately from every share. Never write a seed, share,
     xprv, private descriptor, wallet passphrase, device PIN, or recovery text here.
@@ -29,13 +29,12 @@
   <h2>Wallet identity</h2>
   <div class="fields">
     <div class="field">Backup identifier:</div>
-    <div class="field">Network:</div>
-    <div class="field">Wallet software and version:</div>
-    <div class="field">Approximate creation date:</div>
+    <div class="field">Bitcoin Core wallet name:</div>
+    <div class="field">Bitcoin Core version:</div>
+    <div class="field">Approximate creation / earliest-use date:</div>
     <div class="field">Master fingerprint:</div>
-    <div class="field">Known receiving address:</div>
-    <div class="field">Account number:</div>
     <div class="field">Derivation / purpose:</div>
+    <div class="field">Account number:</div>
     <div class="field wide">Descriptor or policy archive location:</div>
   </div>
 
@@ -45,16 +44,21 @@
     <div class="field">Total cosigners:</div>
     <div class="field">Coordinator and version:</div>
     <div class="field">This cosigner label:</div>
-    <div class="field wide">Cosigner origins / fingerprints / public keys:</div>
-    <div class="field wide">Other cosigner backup locations and trusted contacts:</div>
+    <div class="field wide">Cosigner origins / fingerprints:</div>
+    <div class="field wide">Cosigner trusted contacts:</div>
   </div>
 
-  <h2>Watch-only verification before private restoration</h2>
-  <p><span class="check"></span> Imported public descriptors into a new watch-only wallet.</p>
-  <p><span class="check"></span> Matched the expected fingerprint or receiving address.</p>
-  <p><span class="check"></span> Matched known transaction history or balance where available.</p>
-  <p><span class="check"></span> For multisig, verified complete policy and first address independently.</p>
-  <p><span class="check"></span> A second person reviewed the destination and recovery plan.</p>
+  <h2>Fresh initialization</h2>
+  <p><span class="check"></span> Confirmed every recovery card before wallet initialization.</p>
+  <p><span class="check"></span> codex32 verified the descriptors accepted by the private Core wallet.</p>
+  <p><span class="check"></span> Copied the displayed wallet identity and policy above.</p>
+  <p><span class="check"></span> Received and found a small test payment before relying on the wallet.</p>
+
+  <h2>Later watch-only verification for recovery</h2>
+  <p><span class="check"></span> Imported public descriptors into a new watch-only wallet first.</p>
+  <p><span class="check"></span> Matched the expected master fingerprint.</p>
+  <p><span class="check"></span> Matched account, complete policy, history, and balance.</p>
+  <p><span class="check"></span> If available, a trusted person reviewed the wallet setup and recovery plan.</p>
 
   <h2>Private restoration record</h2>
   <div class="fields">

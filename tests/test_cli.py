@@ -11,6 +11,7 @@ import sysconfig
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -19,6 +20,7 @@ from data.sharing_vectors import SHARING_VECTORS
 from test_bip39 import BIP39_12W_ZERO
 
 from codex32 import (
+    ConfirmationResult,
     CoreLightningSecret,
     CorrectionCandidate,
     CorrectionContext,
@@ -29,9 +31,11 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.bech32 import _chars_to_u5, _encode
+from codex32.bech32 import _chars_to_u5, bech32_encode
+from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main
 from codex32.generation import _fingerprint_identifier
+from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
 
 
 @dataclass(frozen=True)
@@ -66,6 +70,33 @@ class _TTYOutput(io.StringIO):
         return True
 
 
+class _TTYInput(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+class _CreationOutput(io.StringIO):
+    def __init__(self, *, pretty: bool = False) -> None:
+        super().__init__()
+        self.pretty = pretty
+        self.checks = 0
+
+    def isatty(self) -> bool:
+        self.checks += 1
+        return self.pretty or self.checks == 1
+
+
+@dataclass
+class _FakeBitcoinCore:
+    chain: str = "main"
+    version: int = 300000
+    imported: MasterSeed | None = None
+
+    def initialize(self, secret: MasterSeed, _ask: Callable[[str], str], _tell: Callable[[str], None]) -> str:
+        self.imported = secret
+        return "test-wallet"
+
+
 def _invoke(args: list[str], *lines: str) -> _Result:
     stdin = io.StringIO("\n".join(lines) + "\n")
     stdout = io.StringIO()
@@ -83,6 +114,30 @@ def _invoke_terminal(args: list[str], *lines: str) -> _Result:
     stdout, stderr = _TTYOutput(), io.StringIO()
     with (
         patch.object(sys, "stdin", io.StringIO("\n".join(lines) + "\n")),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        status = main(args)
+    return _Result(status, stdout.getvalue(), stderr.getvalue())
+
+
+def _invoke_confirmed_create(args: list[str], *lines: str, terminal_output: bool = False) -> _Result:
+    args = args if terminal_output or "--plain" in args else [*args, "--plain"]
+    stdin = _TTYInput("\n".join(lines) + "\n")
+    stdout = _CreationOutput(pretty=terminal_output)
+    stderr = io.StringIO()
+
+    def confirm_card(
+        artifact: Share | Secret, confirm: Callable[[str], ConfirmationResult] | None = None
+    ) -> None:
+        if confirm is not None:
+            result = confirm(artifact.text)
+            assert result.accepted
+
+    with (
+        patch.object(sys, "stdin", stdin),
+        patch("codex32.cli._confirm_card", confirm_card),
+        patch("codex32.cli.BitcoinCore.connect", return_value=_FakeBitcoinCore()),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
@@ -151,7 +206,7 @@ def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> N
     def forbidden(_seed: bytes) -> bytes:
         raise AssertionError("check derived a BIP32 fingerprint")
 
-    monkeypatch.setattr(cli_module, "fingerprint_from_seed", forbidden)
+    monkeypatch.setattr(cli_module, "_fingerprint_from_seed", forbidden)
     result = _invoke(["check"], VECTOR_1["secret_s"])
 
     assert result.exit_code == 0
@@ -179,17 +234,17 @@ def test_secret_help_explains_threshold_protection() -> None:
         (
             "ms",
             25,
-            ("This input has 47 characters. A Bitcoin master-seed backup needs at least 48."),
+            ("A Bitcoin master-seed backup must have exactly 48, 54, 61, 67, 74, or 127 characters."),
         ),
         (
             "ms",
             104,
-            ("This input has 128 characters. A Bitcoin master-seed backup can have at most 127."),
+            ("A Bitcoin master-seed backup must have exactly 48, 54, 61, 67, 74, or 127 characters."),
         ),
         (
             "ms",
             27,
-            ("This input does not encode a whole number of Bitcoin master-seed bytes."),
+            ("A Bitcoin master-seed backup must have exactly 48, 54, 61, 67, 74, or 127 characters."),
         ),
         (
             "cl",
@@ -210,7 +265,9 @@ def test_secret_help_explains_threshold_protection() -> None:
 )
 def test_check_reports_profile_lengths_for_people(hrp: str, payload_length: int, message: str) -> None:
     body = _chars_to_u5("0tests" + "q" * payload_length)
-    result = _invoke(["check"], _encode(hrp, body))
+    expanded_body_length = 2 * len(hrp) + 1 + len(body)
+    checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
+    result = _invoke(["check"], bech32_encode(hrp, body, checksum))
 
     assert result.exit_code == 2
     assert message in result.stderr
@@ -280,7 +337,8 @@ def test_tty_check_reports_truncated_ms_length_before_checksum(
     captured = capsys.readouterr()
     for length in (45, 46, 47):
         message = (
-            f"Rejected: This input has {length} characters. A Bitcoin master-seed backup needs at least 48."
+            f"Rejected: This input has {length} characters. A Bitcoin master-seed backup must have "
+            "exactly 48, 54, 61, 67, 74, or 127 characters."
         )
         assert captured.err.count(message) == 1
     assert "checksum" not in captured.err
@@ -406,14 +464,14 @@ def test_tty_wallet_requires_confirmation_before_using_correction(
     captured = capsys.readouterr()
     assert captured.out.strip() == VECTOR_1["xprv"]
     assert f"Possible correction: {original}" in captured.err
-    assert prompts[0] == "Enter a codex32 string: ms1"
+    assert prompts[0] == "Enter a codex32 string: "
     assert prompts[-1] == "Use this correction? [y/N]: "
 
 
 def test_redirected_recovery_never_attempts_correction() -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:-1] + ("q" if original[-1] != "q" else "p")
-    with patch("codex32._cli_input._correct_complete") as search:
+    with patch("codex32.indel._search_many") as search:
         result = _invoke(["check"], damaged)
 
     assert result.exit_code == 2
@@ -594,25 +652,24 @@ def test_tty_subsequent_correction_uses_confirmed_immutable_context(
     suffix = VECTOR_2["share_C"][len(prefix) :]
     damaged = suffix[:12] + ("Q" if suffix[12] != "Q" else "P") + suffix[13:]
     answers = iter((VECTOR_2["share_A"], damaged, "y"))
-    original_search = input_module._correct_complete
-    contexts: list[CorrectionContext] = []
+    indel = importlib.import_module("codex32.indel")
+    original_search = indel._search_many
+    contexts: list[tuple[CorrectionContext, ...]] = []
 
-    def search(context: CorrectionContext, value: str, *, deadline: float | None):
-        contexts.append(context)
-        return original_search(context, value, deadline=deadline)
+    def search(active: tuple[CorrectionContext, ...], value: str, **kwargs: object):
+        contexts.append(active)
+        return original_search(active, value, **kwargs)
 
     monkeypatch.setattr(input_module.sys, "stdin", Terminal())
     monkeypatch.setattr(input_module, "_line_editor", None)
-    monkeypatch.setattr(input_module, "_correct_complete", search)
+    monkeypatch.setattr(indel, "_search_many", search)
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
     assert main(["secret"]) == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == VECTOR_2["secret_S"]
     assert f"Possible correction: {VECTOR_2['share_C']}" in captured.err
-    assert contexts == [
-        CorrectionContext(Profile.MS, len(VECTOR_2["share_A"]), prefix, ("a",)),
-    ]
+    assert contexts == [(CorrectionContext(Profile.MS, len(VECTOR_2["share_A"]), prefix, ("a",)),)]
 
 
 def test_tty_recovery_accepts_complete_uppercase_and_retries(
@@ -697,9 +754,8 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
     assert "Rejected:" not in captured.err
     assert "Share 1 of 3 accepted." in captured.err
     assert "Share 2 of 3 accepted." in captured.err
-    first_prefix = "" if command[0] == "secret" else "ms1"
     assert prompts == [
-        f"Enter a codex32 string: {first_prefix}",
+        "Enter a codex32 string: ",
         "Enter share 2 of 3: ms13cash",
         "Enter share 3 of 3: ms13cash",
     ]
@@ -867,7 +923,7 @@ def test_tty_share_rejects_target_index_as_soon_as_entered(
 
 
 def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:
-    result = _invoke(["create"])
+    result = _invoke_confirmed_create(["create"])
     artifacts = _output_artifacts(result)
 
     assert result.exit_code == 0
@@ -877,9 +933,55 @@ def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:
     assert artifacts[0].header.threshold == 0
 
 
-@pytest.mark.parametrize("byte_length", (16, 32))
-def test_fresh_cli_generation_supports_established_sizes(byte_length: int) -> None:
-    result = _invoke(["create", "--bytes", str(byte_length)])
+def test_fresh_bitcoin_terminal_and_core_preflight_precede_entropy() -> None:
+    with (
+        patch("codex32.cli.BitcoinCore.connect") as connect,
+        patch("codex32.cli.generate_master_seed") as generate,
+    ):
+        redirected = _invoke(["create"])
+
+    assert redirected.exit_code == 2
+    assert "interactive terminal" in redirected.stderr
+    connect.assert_not_called()
+    generate.assert_not_called()
+
+    stdout, stderr = _TTYOutput(), io.StringIO()
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("codex32.cli.BitcoinCore.connect", side_effect=RuntimeError("preflight")),
+        patch("codex32.cli.generate_master_seed") as generate,
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+        pytest.raises(RuntimeError, match="preflight"),
+    ):
+        main(["create", "--plain"])
+    generate.assert_not_called()
+
+
+def test_confirmation_cannot_replace_the_original_seed_used_for_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    core = _FakeBitcoinCore()
+    stdout, stderr = _TTYOutput(), io.StringIO()
+    monkeypatch.setattr(builtins, "input", lambda _prompt: secret.text.upper())
+
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("codex32.cli.generate_master_seed", return_value=secret),
+        patch("codex32.cli.BitcoinCore.connect", return_value=core),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        assert main(["create", "--plain"]) == 0
+
+    assert core.imported is secret
+
+
+@pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)
+def test_fresh_cli_generation_supports_bip93_sizes(byte_length: int) -> None:
+    result = _invoke_confirmed_create(["create", "--bytes", str(byte_length)])
     artifact = _output_artifacts(result)[0]
 
     assert result.exit_code == 0
@@ -887,18 +989,16 @@ def test_fresh_cli_generation_supports_established_sizes(byte_length: int) -> No
     assert len(artifact.seed_bytes) == byte_length
 
 
-@pytest.mark.parametrize("byte_length", (17, 31, 33, 64))
-def test_fresh_cli_generation_rejects_other_bip93_sizes(byte_length: int) -> None:
-    result = _invoke(["create", "--bytes", str(byte_length)])
-
-    assert result.exit_code == 2
-    assert result.stdout == ""
-    assert "--bytes" in result.stderr
-    assert "invalid choice" in result.stderr
+def test_fresh_cli_generation_rejects_every_other_16_through_64_byte_size() -> None:
+    for byte_length in set(range(16, 65)) - set(SEED_BYTE_LENGTHS):
+        result = _invoke(["create", "--bytes", str(byte_length)])
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "--bytes" in result.stderr and "invalid choice" in result.stderr
 
 
-@pytest.mark.parametrize("byte_length", (17, 64))
-def test_cli_import_preserves_all_master_seed_sizes(byte_length: int) -> None:
+@pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)
+def test_cli_import_preserves_all_bip93_master_seed_sizes(byte_length: int) -> None:
     raw = bytes(range(byte_length))
     result = _invoke(["create", "--existing"], raw.hex())
     artifact = _output_artifacts(result)[0]
@@ -908,7 +1008,15 @@ def test_cli_import_preserves_all_master_seed_sizes(byte_length: int) -> None:
     assert artifact.seed_bytes == raw
 
 
-def test_bare_create_does_not_prompt_on_a_terminal(
+def test_cli_import_rejects_every_other_16_through_64_byte_size() -> None:
+    for byte_length in set(range(16, 65)) - set(SEED_BYTE_LENGTHS):
+        result = _invoke(["create", "--existing"], bytes(byte_length).hex())
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "16, 20, 24, 28, 32, or 64" in result.stderr
+
+
+def test_bare_create_requires_exact_confirmation_on_a_terminal(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class Terminal:
@@ -916,19 +1024,26 @@ def test_bare_create_does_not_prompt_on_a_terminal(
         def isatty() -> bool:
             return True
 
-    def forbidden(_prompt: str) -> str:
-        raise AssertionError("bare create prompted without a decision to make")
+    emitted: list[str] = []
+
+    def answer(prompt: str) -> str:
+        assert prompt == "Re-enter this card from the paper: "
+        text = capsys.readouterr().out.strip()
+        emitted.append(text)
+        return text.upper()
 
     monkeypatch.setattr(sys, "stdin", Terminal())
-    monkeypatch.setattr(builtins, "input", forbidden)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(builtins, "input", answer)
 
-    assert main(["create", "--plain"]) == 0
-    artifact = parse_codex32(capsys.readouterr().out.strip())
+    with patch("codex32.cli.BitcoinCore.connect", return_value=_FakeBitcoinCore()):
+        assert main(["create", "--plain"]) == 0
+    artifact = parse_codex32(emitted[0])
     assert isinstance(artifact, MasterSeed)
     assert artifact.header.identifier == _fingerprint_identifier(artifact.seed_bytes)
 
 
-def test_fresh_shared_create_does_not_prompt_on_a_terminal(
+def test_fresh_shared_create_confirms_each_card_on_a_terminal(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class Terminal:
@@ -936,17 +1051,86 @@ def test_fresh_shared_create_does_not_prompt_on_a_terminal(
         def isatty() -> bool:
             return True
 
-    def forbidden(_prompt: str) -> str:
-        raise AssertionError("fresh create prompted without --existing")
+    emitted: list[str] = []
+
+    def answer(prompt: str) -> str:
+        assert prompt == "Re-enter this card from the paper: "
+        text = capsys.readouterr().out.strip()
+        emitted.append(text)
+        return text
 
     monkeypatch.setattr(sys, "stdin", Terminal())
-    monkeypatch.setattr(builtins, "input", forbidden)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(builtins, "input", answer)
 
-    assert main(["create", "2", "--indices", "ac", "--plain"]) == 0
-    assert len(_output_artifacts(_Result(0, capsys.readouterr().out, ""))) == 2
+    with patch("codex32.cli.BitcoinCore.connect", return_value=_FakeBitcoinCore()):
+        assert main(["create", "2", "--indices", "ac", "--plain"]) == 0
+    assert len(emitted) == 2
+    assert all(isinstance(parse_codex32(text), Share) for text in emitted)
 
 
-def test_existing_create_uses_one_unambiguous_prompt(
+def test_shared_create_refuses_redirected_input() -> None:
+    result = _invoke(["create", "2", "--indices", "ac"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "requires an interactive terminal" in result.stderr
+
+
+def test_creation_confirmation_highlights_groups_without_correction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+    artifact = parse_codex32(VECTOR_1["secret_s"])
+    damaged = artifact.text[:4] + ("q" if artifact.text[4] != "q" else "p") + artifact.text[5:]
+    answers = iter((damaged, artifact.text.upper()))
+    output = _TTYOutput()
+    monkeypatch.setattr(cli_module, "_text", lambda _prompt: next(answers))
+
+    with contextlib.redirect_stderr(output):
+        cli_module._confirm_card(artifact)
+
+    message = output.getvalue()
+    assert "group(s): 2" in message
+    assert "No correction was applied" in message
+    assert "\x1b[1;31m" in message
+
+
+def test_interrupted_creation_marks_partial_cards_void() -> None:
+    stdout, stderr = _TTYOutput(), io.StringIO()
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("codex32.cli._confirm_card", side_effect=KeyboardInterrupt),
+        patch("codex32.cli.BitcoinCore.connect", return_value=_FakeBitcoinCore()),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        status = main(["create", "2", "--indices", "ac", "--plain"])
+
+    assert status == 130
+    assert "Mark every card from this incomplete creation void" in stderr.getvalue()
+
+
+def test_interruption_after_confirmation_keeps_cards_valid() -> None:
+    core = _FakeBitcoinCore()
+    stdout, stderr = _TTYOutput(), io.StringIO()
+
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("codex32.cli._confirm_card"),
+        patch.object(core, "initialize", side_effect=KeyboardInterrupt),
+        patch("codex32.cli.BitcoinCore.connect", return_value=core),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        status = main(["create", "--plain"])
+
+    assert status == 130
+    assert "recovery cards are valid" in stderr.getvalue()
+    assert "Mark every card" not in stderr.getvalue()
+
+
+def test_existing_create_prompts_for_source_then_each_card(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
@@ -960,21 +1144,27 @@ def test_existing_create_uses_one_unambiguous_prompt(
 
     def answer(prompt: str) -> str:
         prompts.append(prompt)
-        return VECTOR_4["secret_s"]
+        if len(prompts) == 1:
+            return VECTOR_4["secret_s"]
+        return capsys.readouterr().out.strip()
 
     monkeypatch.setattr(input_module.sys, "stdin", Terminal())
     monkeypatch.setattr(builtins, "input", answer)
 
     assert main(["create", "2", "--indices", "ac", "--existing", "--plain"]) == 0
-    assert prompts == ["Enter an existing codex32 secret or hexadecimal seed: "]
+    assert prompts == [
+        "Enter an existing codex32 secret or hexadecimal seed: ",
+        "Re-enter this card from the paper: ",
+        "Re-enter this card from the paper: ",
+    ]
     assert capsys.readouterr().err.startswith("\n")
 
 
 def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
-    fingerprinted = _invoke(["create", "0"])
-    unshared = _invoke(["create", "0test"])
-    random_header = _invoke(["create", "3"])
-    shared = _invoke(["create", "ms13cash", "--indices", "7cad"])
+    fingerprinted = _invoke_confirmed_create(["create", "0"])
+    unshared = _invoke_confirmed_create(["create", "0test"])
+    random_header = _invoke_confirmed_create(["create", "3"])
+    shared = _invoke_confirmed_create(["create", "ms13cash", "--indices", "7cad"])
 
     fingerprinted_secret = _output_artifacts(fingerprinted)[0]
     unshared_secret = _output_artifacts(unshared)[0]
@@ -993,22 +1183,23 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
 
 @pytest.mark.parametrize("threshold", range(2, 10))
 def test_create_defaults_to_threshold_plus_two_shares(threshold: int) -> None:
-    result = _invoke(["create", f"{threshold}test"])
+    result = _invoke_confirmed_create(["create", f"{threshold}test"])
     shares = _output_artifacts(result)
 
     assert result.exit_code == 0
     assert len(shares) == threshold + 2
     assert all(isinstance(share, Share) for share in shares)
     assert len({share.header.index for share in shares}) == threshold + 2
-    assert "test recovery using what you wrote down" in result.stderr
+    assert "Every recovery card was confirmed" in result.stderr
 
 
 def test_pretty_create_separates_share_blocks() -> None:
-    result = _invoke_terminal(["create", "2test"])
+    result = _invoke_confirmed_create(["create", "2test"], terminal_output=True)
 
     assert result.stdout.startswith("Bitcoin master-seed share ")
     assert result.stdout.count("\n\nBitcoin master-seed share ") == 3
-    assert result.stderr.endswith("Before relying on this backup, test recovery using what you wrote down.\n")
+    assert "Every recovery card was confirmed from its re-entered text." in result.stderr
+    assert "Bitcoin Core wallet initialized and verified." in result.stderr
 
 
 def test_create_raw_seed_and_resharing_accept_random_identifiers() -> None:
@@ -1019,15 +1210,17 @@ def test_create_raw_seed_and_resharing_accept_random_identifiers() -> None:
     source = parse_codex32(VECTOR_4["secret_s"])
     rejected_split = _invoke(["create"], source.text)
     missing_threshold = _invoke(["create", "--existing"], source.text)
-    random_split = _invoke(["create", "2", "--indices", "ac", "--existing"], source.text)
-    accepted_split = _invoke(["create", "2name", "--indices", "ac", "--existing"], source.text)
+    random_split = _invoke_confirmed_create(["create", "2", "--indices", "ac", "--existing"], source.text)
+    accepted_split = _invoke_confirmed_create(
+        ["create", "2name", "--indices", "ac", "--existing"], source.text
+    )
 
     random_secret = _output_artifacts(random_raw)[0]
     assert isinstance(random_secret, MasterSeed) and random_secret.seed_bytes == raw
     assert rejected_raw.exit_code != 0
     assert rejected_split.exit_code != 0
-    assert "Use --existing" in rejected_raw.stderr
-    assert "Use --existing" in rejected_split.stderr
+    assert "interactive terminal" in rejected_raw.stderr
+    assert "interactive terminal" in rejected_split.stderr
     assert "choose a sharing threshold" in missing_threshold.stderr
     secret = _output_artifacts(accepted_raw)[0]
     assert isinstance(secret, MasterSeed) and secret.seed_bytes == raw
@@ -1041,10 +1234,10 @@ def test_create_raw_seed_and_resharing_accept_random_identifiers() -> None:
 
 def test_create_supports_core_lightning_generation_and_splitting() -> None:
     unshared = _invoke(["create", "cl10cln2"])
-    shared = _invoke(["create", "cl13cln2", "--indices", "7cad"])
-    default_shared = _invoke(["create", "cl12cln2"])
+    shared = _invoke_confirmed_create(["create", "cl13cln2", "--indices", "7cad"])
+    default_shared = _invoke_confirmed_create(["create", "cl12cln2"])
     source = _output_artifacts(unshared, "cl")[0]
-    split = _invoke(["create", "cl12name", "--indices", "ac", "--existing"], source.text)
+    split = _invoke_confirmed_create(["create", "cl12name", "--indices", "ac", "--existing"], source.text)
     raw = _invoke(["create", "cl10raw0", "--existing"], bytes(range(32)).hex())
     random_identifier = _invoke(["create", "cl10"])
 
@@ -1070,7 +1263,7 @@ def test_create_help_explains_headers_and_profile_specific_bytes() -> None:
     assert "such as 3cash or 3" in result.stdout
     assert "omit to create a new unshared Bitcoin master seed" in " ".join(result.stdout.split())
     assert "length of a new Bitcoin master seed" in result.stdout
-    assert "16 or 32 bytes" in " ".join(result.stdout.split())
+    assert "16, 20, 24, 28, 32, or 64 bytes" in " ".join(result.stdout.split())
     assert "two more than needed for recovery" in " ".join(result.stdout.split())
     assert "--existing" in result.stdout
     assert "use an existing codex32 secret or hexadecimal seed" in result.stdout
@@ -1244,16 +1437,41 @@ def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> 
     assert "No valid correction found" in result.stderr
 
 
-def test_unusual_ms_length_requires_bytes_only_when_damaged() -> None:
-    original = MasterSeed.from_seed(bytes(range(24)), identifier="test").text
+@pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)
+def test_supported_ms_length_is_inferred_when_damaged(byte_length: int) -> None:
+    original = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = original[:19] + original[20:]
     valid = _invoke(["correct"], original)
     default = _invoke(["correct"], damaged)
-    explicit = _invoke(["correct", "--bytes", "24"], damaged)
+    explicit = _invoke(["correct", "--bytes", str(byte_length)], damaged)
 
     assert valid.exit_code == 0 and "already valid" in valid.stdout
-    assert default.exit_code != 0 and original not in default.stderr
+    assert default.exit_code == 1 and original in default.stderr
     assert explicit.exit_code == 1 and original in explicit.stderr
+
+
+@pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)
+def test_unknown_length_correction_recovers_every_ms_length(byte_length: int) -> None:
+    original = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
+    damaged = original[:19] + original[20:]
+
+    result = _invoke(["correct", "--bytes", "?"], damaged)
+
+    assert result.exit_code == 1
+    assert original in result.stderr
+
+
+def test_intermediate_automatic_envelope_is_reduced_but_explicit_search_is_full() -> None:
+    original = MasterSeed.from_seed(bytes(range(20)), identifier="test").text
+    damaged = "".join(character for index, character in enumerate(original) if index not in (16, 27, 38, 49))
+
+    automatic = _invoke(["correct"], damaged)
+    numeric = _invoke(["correct", "--bytes", "20"], damaged)
+    unknown = _invoke(["correct", "--bytes", "?"], damaged)
+
+    assert original not in automatic.stderr
+    assert numeric.exit_code == unknown.exit_code == 1
+    assert original in numeric.stderr and original in unknown.stderr
 
 
 def test_valid_correction_input_must_match_explicit_byte_length() -> None:
@@ -1263,10 +1481,18 @@ def test_valid_correction_input_must_match_explicit_byte_length() -> None:
     assert "does not match" in result.stderr
 
 
+def test_correction_bytes_rejects_an_unsupported_ms_size() -> None:
+    result = _invoke(["correct", "--bytes", "17"], VECTOR_1["secret_s"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "bytes must be 16, 20, 24, 28, 32, 64, or ?" in result.stderr
+
+
 def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:19] + original[20:]
-    with patch("codex32.cli._correction_candidates", return_value=((), False, 0.0)):
+    with patch("codex32.cli._correction_candidates", return_value=((), False, 0.0, False)):
         result = _invoke(["correct"], damaged)
 
     assert result.exit_code != 0
@@ -1274,29 +1500,66 @@ def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     assert "did not complete" in result.stderr and original not in result.stderr
 
 
-def test_only_48_character_cli_search_has_a_deadline() -> None:
+def test_only_automatic_48_compatible_search_has_a_deadline() -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:-1] + ("q" if original[-1] != "q" else "p")
-    calls: list[tuple[int | None, float | None]] = []
+    calls: list[tuple[tuple[int | None, ...], float | None, frozenset[int]]] = []
 
     def search(
-        context: CorrectionContext,
+        contexts: tuple[CorrectionContext, ...],
         _value: str,
         *,
+        primary: frozenset[int],
+        reduced: frozenset[int],
         deadline: float | None,
     ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
-        calls.append((context.expected_length, deadline))
+        del primary
+        calls.append((tuple(context.expected_length for context in contexts), deadline, reduced))
         return (), True
 
-    with patch("codex32._cli_input._correct_complete", side_effect=search):
+    with patch("codex32.indel._search_many", side_effect=search):
         _invoke(["correct"], damaged)
         default_calls = tuple(calls)
         calls.clear()
         _invoke(["correct", "--bytes", "64"], damaged)
 
-    assert default_calls[0][0] == 48 and default_calls[0][1] is not None
+    assert default_calls[0][0][0] == 48 and default_calls[0][1] is not None
+    assert default_calls[0][2] == frozenset((54, 61, 67))
     assert len(default_calls) == 1
-    assert calls == [(127, None)]
+    assert calls == [((127,), None, frozenset())]
+
+
+def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> None:
+    from codex32._cli_input import _automatic_targets
+
+    for observed in range(40, 136):
+        targets = _automatic_targets(observed)
+        expected = 48 if observed <= 61 else 74 if observed <= 100 else 127
+
+        assert targets[0] == expected
+        assert sorted(targets) == [48, 54, 61, 67, 74, 127]
+
+
+def test_unknown_bytes_searches_all_lengths_without_a_deadline() -> None:
+    original = VECTOR_1["secret_s"]
+    damaged = original[:19] + original[20:]
+    calls: list[tuple[tuple[int | None, ...], float | None, frozenset[int]]] = []
+
+    def search(contexts: tuple[CorrectionContext, ...], _value: str, **kwargs: object):
+        calls.append(
+            (
+                tuple(context.expected_length for context in contexts),
+                cast(float | None, kwargs["deadline"]),
+                cast(frozenset[int], kwargs["reduced"]),
+            )
+        )
+        return (), True
+
+    with patch("codex32.indel._search_many", side_effect=search):
+        result = _invoke(["correct", "--bytes", "?"], damaged)
+
+    assert result.exit_code == 1
+    assert calls == [((48, 54, 61, 67, 74, 127), None, frozenset())]
 
 
 def test_fixed_correction_supports_cl_and_residue_reverse_positions() -> None:
@@ -1373,7 +1636,7 @@ def test_wallet_commands_are_thin_master_seed_adapters() -> None:
     assert all("xprv" in record["desc"] for record in json.loads(private.stdout))
     assert "contains the root private key and can spend funds" in private.stderr
     assert "\x1b[" not in private.stderr + private.stdout
-    assert public.stderr == ""
+    assert "Do not enter codex32 shares on a network-connected computer" in public.stderr
     assert public.stdout.count("\n") == private.stdout.count("\n") == 1
 
 
@@ -1385,6 +1648,20 @@ def test_bitcoin_core_cli_accepts_now_timestamp() -> None:
 
     assert result.exit_code == 0
     assert all(record["timestamp"] == "now" for record in json.loads(result.stdout))
+
+
+def test_direct_watch_only_warning_precedes_recovery_input(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+
+    def stop_before_input() -> MasterSeed:
+        assert "Do not enter codex32 shares on a network-connected computer" in capsys.readouterr().err
+        raise cli_module._UsageError("stopped")
+
+    monkeypatch.setattr(cli_module, "_master_seed", stop_before_input)
+
+    assert main(["wallet", "bitcoin-core", "watch-only"]) == 2
 
 
 @pytest.mark.parametrize(
@@ -1465,7 +1742,9 @@ def test_nested_commands_and_positionals_follow_help_table_style() -> None:
     assert "HEADER      worksheet header; omit to enter it at the prompt" in checksum.stdout
     assert "HEADER             backup header or sharing threshold" in create.stdout
     assert "\nDerive an additional share from existing codex32 strings.\n" in share.stdout
-    assert "\nCreate a new backup or split an existing secret.\n" in create.stdout
+    assert "Create a backup. Fresh Bitcoin creation confirms cards and initializes Bitcoin Core." in (
+        " ".join(create.stdout.split())
+    )
 
 
 def test_long_options_must_not_be_abbreviated() -> None:
@@ -1556,6 +1835,11 @@ def test_production_size_budgets_are_enforced() -> None:
     module = importlib.import_module("codex32")
     assert module.__file__ is not None
     package = Path(module.__file__).parent
-    counts = {path.name: len(path.read_text().splitlines()) for path in package.glob("*.py")}
+    counts = {
+        path.relative_to(package): sum(
+            bool(line.strip()) and not line.lstrip().startswith("#") for line in path.read_text().splitlines()
+        )
+        for path in package.rglob("*.py")
+    }
 
     assert sum(counts.values()) < 3000

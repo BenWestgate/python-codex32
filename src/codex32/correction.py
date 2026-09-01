@@ -32,14 +32,15 @@ from functools import cache
 from math import comb
 from typing import Literal
 
-from codex32.bech32 import CHARSET, _chars_to_u5, _checksum_for_encoded_length, _hrp_expand
-from codex32.bech32 import _u5_to_chars, _validate_single_case_ascii
-from codex32.bip93 import IDX_SORT, Header, MasterSeed, Secret, Share, _has_generation_padding, parse_codex32
+from codex32.bech32 import CHARSET, _chars_to_u5, _u5_to_chars, _validate_single_case_ascii
+from codex32.bech32 import bech32_hrp_expand
+from codex32.bip93 import IDX_SORT, Header, Secret, Share, _checksum_for_encoded_length, parse_codex32
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles import Profile, _profile_spec
+from codex32.profiles import Profile, _profile_rules
+from codex32.profiles.ms32 import MasterSeed, _has_generation_padding
 @dataclass(frozen=True, slots=True)
 class WorksheetCorrection:
     reverse_index: int
@@ -106,7 +107,8 @@ def _poly_mul(left: list[int], right: list[int], multiply: Callable[[int, int], 
         for right_index, right_value in enumerate(right):
             result[left_index + right_index] ^= multiply(left_value, right_value)
     return result
-def _horner(polynomial: list[int] | tuple[int, ...], value: int, multiply: Callable[[int, int], int]) -> int:
+def _horner(polynomial: list[int] | tuple[int, ...], value: int,
+            multiply: Callable[[int, int], int]) -> int:
     result = 0
     for coefficient in reversed(polynomial):
         result = multiply(result, value) ^ coefficient
@@ -172,7 +174,7 @@ def _spec_for_checksum(checksum: _Checksum) -> _Spec:
         return _LONG_SPEC
     raise AssertionError("registered profile selected a non-codex32 checksum")
 def _residue(spec: _Spec, hrp: str, body: list[int]) -> list[int]:
-    initial_and_hrp = [1, *_hrp_expand(hrp)]
+    initial_and_hrp = [1, *bech32_hrp_expand(hrp)]
     return _poly_mod(list(reversed(initial_and_hrp + body)), spec.generator)
 def _syndromes(spec: _Spec, residue: list[int], *, target: bool) -> tuple[int, ...]:
     coefficients = [
@@ -183,7 +185,8 @@ def _syndromes(spec: _Spec, residue: list[int], *, target: bool) -> tuple[int, .
 def _pack_syndromes(values: tuple[int, ...]) -> int:
     return sum(value << (10 * index) for index, value in enumerate(values))
 @cache
-def _syndrome_alignment(spec: _Spec, hrp: str, length: int) -> tuple[int, tuple[tuple[int, ...], ...]]:
+def _syndrome_alignment(spec: _Spec, hrp: str,
+                        length: int) -> tuple[int, tuple[tuple[int, ...], ...]]:
     base = _pack_syndromes(_syndromes(spec, _residue(spec, hrp, [0] * length), target=True))
     powers = _poly_powers(spec.generator, length)
     effects = tuple(
@@ -299,7 +302,8 @@ def _locator_poly(
 @cache
 def _word_roots(spec: _Spec, length: int) -> tuple[int, ...]:
     return tuple(_gf1024_inv(_gf1024_pow(spec.base, index)) for index in range(length))
-def _erasure_state(spec: _Spec, length: int, indices: tuple[int, ...]) -> tuple[tuple[int, ...], list[int]]:
+def _erasure_state(spec: _Spec, length: int,
+                   indices: tuple[int, ...]) -> tuple[tuple[int, ...], list[int]]:
     word_roots = _word_roots(spec, length)
     roots = tuple(word_roots[index] for index in indices)
     polynomial = [1]
@@ -390,9 +394,9 @@ class _FixedCorrector:
         self, profile: Profile, body_length: int, uppercase: bool, max_substitutions: int | None,
         mutable_start: int = 0,
     ) -> None:
-        profile_spec = _profile_spec(profile)
+        profile_rules = _profile_rules(profile)
         checksum = _checksum_for_encoded_length(profile.value, body_length)
-        profile_spec.validate_payload_length(body_length - checksum.length - 6)
+        profile_rules.validate_payload_length(body_length - checksum.length - 6)
         self.profile = profile
         self.prefix = f"{profile.value}1"
         self.spec = _spec_for_checksum(checksum)
@@ -537,7 +541,8 @@ def _error_corrections(
         return None
     linear = _linear_error_corrections(spec, erasure_indices, residue)
     return linear if linear is not None and _corrections_reach_target(spec, residue, linear) else None
-def _corrections_reach_target(spec: _Spec, residue: list[int], corrections: list[tuple[int, int]]) -> bool:
+def _corrections_reach_target(spec: _Spec, residue: list[int],
+                              corrections: list[tuple[int, int]]) -> bool:
     count = max((index for index, _addend in corrections), default=-1) + 1
     powers = _poly_powers(spec.generator, count)
     corrected = list(residue)
@@ -590,7 +595,7 @@ def _validate_context(context: CorrectionContext) -> None:
                 raise TypeError("expected_length must be an integer or None")
             body_length = length - len(context.profile.value) - 1
             checksum = _checksum_for_encoded_length(context.profile.value, body_length)
-            _profile_spec(context.profile).validate_payload_length(body_length - checksum.length - 6)
+            _profile_rules(context.profile).validate_payload_length(body_length - checksum.length - 6)
         prefix = context.immutable_prefix
         if prefix is not None:
             if not isinstance(prefix, str):
@@ -645,11 +650,15 @@ def _primary(candidates: Sequence[CorrectionCandidate]) -> tuple[CorrectionCandi
         return ()
     rank = min(item.capture_volume for item in candidates)
     return tuple(sorted((item for item in candidates if item.capture_volume == rank), key=_candidate_order))
-def _best(candidates: Sequence[CorrectionCandidate]) -> tuple[CorrectionCandidate, ...]:
+def _best(
+    candidates: Sequence[CorrectionCandidate], *, prefer_common: bool = False,
+) -> tuple[CorrectionCandidate, ...]:
     """Apply the CLI-only Hamming, CRC, and fingerprint tie breakers."""
     tied = list(_primary(candidates))
     if not tied:
         return ()
+    if prefer_common and any(len(item.artifact.text) in (48, 74) for item in tied):
+        tied = [item for item in tied if len(item.artifact.text) in (48, 74)]
     hamming = min(item.addend_hamming_weight for item in tied)
     tied = [item for item in tied if item.addend_hamming_weight == hamming]
     for hint in (lambda item: item.crc_padding_match, _fingerprint_match):
@@ -665,9 +674,14 @@ def _correct_complete(
         raise TypeError("damaged_text must be str")
     _validate_context(context)
     if context.expected_length is not None:
-        from codex32.indel import _search
+        from codex32.indel import _search_many
 
-        return _search(context, damaged_text, deadline=deadline)
+        return _search_many(
+            (context,),
+            damaged_text,
+            primary=frozenset((context.expected_length,)),
+            deadline=deadline,
+        )
     fixed = _correct_fixed(damaged_text, suspected_profile=context.profile,
                            immutable_prefix=context.immutable_prefix)
     candidates = () if fixed is None or not _allowed(context, fixed) else (fixed,)
@@ -679,8 +693,10 @@ def correct_worksheet_residue(
     residue: str, *, erasure_indices: Sequence[int] = ()
 ) -> tuple[WorksheetCorrection, ...] | None:
     """Correct a 13/15-symbol residue; return ``()`` if valid and ``None`` if ambiguous."""
+    if isinstance(residue, str) and len(residue) > 15:
+        raise InvalidCorrectionInput("codex32 input exceeds 15 characters")
     try:
-        _validate_single_case_ascii(residue, max_length=15)
+        _validate_single_case_ascii(residue)
         values = list(reversed(_chars_to_u5(residue)))
     except TypeError:
         raise

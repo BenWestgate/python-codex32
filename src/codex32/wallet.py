@@ -1,24 +1,23 @@
 # fmt: off
 """Stateless Bitcoin wallet interoperability for validated master seeds."""
 
-from typing import Literal
+from typing import Any, Literal
 
-from codex32._bip32 import Bip32Node
 from codex32.bech32 import _u5_to_chars
-from codex32.bip93 import MasterSeed
 from codex32.checksums import DESCSUM
+from codex32.profiles.ms32 import MasterSeed, _bip32_node
 
 _DESCRIPTOR_CHARSET = (
     "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~ijklmnopqrstuvwxyzABCDEFGH`#\"\\ "
 )
 _TEMPLATES = (("pkh({key})", 44), ("sh(wpkh({key}))", 49), ("wpkh({key})", 84), ("tr({key})", 86))
 
-def _master(secret: MasterSeed, testnet: bool) -> Bip32Node:
+def _master(secret: MasterSeed, testnet: bool) -> Any:
     if not isinstance(secret, MasterSeed):
         raise TypeError("wallet operations accept only MasterSeed")
     if not isinstance(testnet, bool):
         raise TypeError("testnet must be bool")
-    return Bip32Node.from_seed(secret.seed_bytes, testnet=testnet)
+    return _bip32_node(secret.seed_bytes, testnet=testnet)
 
 def _account(value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 2**31:
@@ -46,7 +45,7 @@ def _with_checksum(descriptor: str) -> str:
 
 def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:
     """Return the root BIP32 extended private key with authority over all children."""
-    return _master(secret, testnet).xpriv()
+    return _master(secret, testnet).get_xpriv()  # type: ignore[no-any-return]
 
 def multisig_account_xpub(secret: MasterSeed, *, account: int = 0, testnet: bool = False) -> str:
     """Return a public BIP48 native-SegWit account key with its key origin."""
@@ -54,8 +53,8 @@ def multisig_account_xpub(secret: MasterSeed, *, account: int = 0, testnet: bool
     account = _account(account)
     coin_type = int(testnet)
     path = f"m/48h/{coin_type}h/{account}h/2h"
-    origin = f"{node.fingerprint().hex()}{path[1:]}"
-    return f"[{origin}]{node.xpub_from_path(path)}"
+    origin = f"{node.get_fingerprint().hex()}{path[1:]}"
+    return f"[{origin}]{node.get_xpub_from_path(path)}"
 
 def core_descriptors(
     secret: MasterSeed, *, account: int = 0, testnet: bool = False, private: bool = False,
@@ -71,15 +70,15 @@ def core_descriptors(
     ):
         raise ValueError("timestamp must be a nonnegative integer or 'now'")
     coin_type = int(testnet)
-    fingerprint = node.fingerprint().hex()
+    fingerprint = node.get_fingerprint().hex()
     records = []
     for template, purpose in _TEMPLATES:
         path = f"m/{purpose}h/{coin_type}h/{account}h"
         if private:
-            key = node.xpriv() + path[1:] + "/<0;1>/*"
+            key = node.get_xpriv() + path[1:] + "/<0;1>/*"
         else:
             origin = f"{fingerprint}{path[1:]}"
-            key = f"[{origin}]{node.xpub_from_path(path)}/<0;1>/*"
+            key = f"[{origin}]{node.get_xpub_from_path(path)}/<0;1>/*"
         descriptor = template.format(key=key)
         records.append({"desc": _with_checksum(descriptor), "active": True, "timestamp": timestamp})
     return tuple(records)

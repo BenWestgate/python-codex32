@@ -9,6 +9,8 @@ from collections.abc import Callable
 from importlib.metadata import version
 from typing import Literal, NoReturn
 
+from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
+
 
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
@@ -41,6 +43,14 @@ def _integer(label: str, minimum: int, maximum: int | None = None) -> Callable[[
 def _timestamp(value: str) -> int | Literal["now"]:
     return "now" if value == "now" else _integer("timestamp", 0)(value)
 
+def _correction_bytes(value: str) -> int | Literal["?"]:
+    if value == "?":
+        return "?"
+    parsed = _integer("bytes", 16, 64)(value)
+    if parsed not in SEED_BYTE_LENGTHS:
+        raise argparse.ArgumentTypeError("bytes must be 16, 20, 24, 28, 32, 64, or ?")
+    return parsed
+
 def _command(parsers: argparse._SubParsersAction[_Parser], name: str, summary: str) -> _Parser:
     description = summary[0].upper() + summary[1:] + "."
     return parsers.add_parser(name, help=summary, description=description, allow_abbrev=False)
@@ -49,9 +59,8 @@ def _terminal_output(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--plain", action="store_true", help="print without transcription formatting")
 
 def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None:
-    parser.add_argument(
-        "--account", type=_integer("account", 0, 2**31 - 1), default=0, help="account number (default: 0)"
-    )
+    parser.add_argument("--account", type=_integer("account", 0, 2**31 - 1), default=0,
+                        help="account number (default: 0)")
     if timestamp:
         parser.add_argument(
             "--timestamp",
@@ -62,22 +71,13 @@ def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None
     parser.add_argument("--testnet", action="store_true", help="use testnet keys")
 
 def parser() -> argparse.ArgumentParser:
-    result = _Parser(
-        prog="codex32",
-        description="Create, check, recover, and use codex32 Bitcoin seed backups.",
-        epilog=(
-            "Do not type a seed or share into the command itself.\n"
-            "Enter it when prompted, or pipe it into the command."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        allow_abbrev=False,
-    )
-    result.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {version('codex32')}",
-        help="show the installed version and exit",
-    )
+    result = _Parser(prog="codex32",
+                     description="Create, check, recover, and use codex32 Bitcoin seed backups.",
+                     epilog="Do not type a seed or share into the command itself.\n"
+                            "Enter it when prompted, or pipe it into the command.",
+                     formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
+    result.add_argument("--version", action="version", version=f"%(prog)s {version('codex32')}",
+                        help="show the installed version and exit")
     commands = result.add_subparsers(dest="command", required=True, title="commands", metavar="COMMAND")
 
     check = _command(commands, "check", "check whether a secret or share is intact")
@@ -113,9 +113,9 @@ def parser() -> argparse.ArgumentParser:
     correct.add_argument(
         "--bytes",
         dest="byte_length",
-        type=_integer("bytes", 16, 64),
+        type=_correction_bytes,
         metavar="BYTES",
-        help="expected imported master-seed length: 16 through 64 bytes",
+        help="expected master-seed bytes: 16, 20, 24, 28, 32, or 64; ? searches every size",
     )
     _terminal_output(correct)
 
@@ -126,22 +126,23 @@ def parser() -> argparse.ArgumentParser:
     )
     _terminal_output(checksum)
     create = _command(commands, "create", "create a new backup or split an existing secret")
+    create.description = "Create a backup. Fresh Bitcoin creation confirms cards and initializes Bitcoin Core."
     create.add_argument(
         "header",
         nargs="?",
         metavar="HEADER",
         help=(
             "backup header or sharing threshold, such as 3cash or 3; omit to "
-            "create a new unshared Bitcoin master seed"
+            "create a new unshared Bitcoin master seed and initialize Bitcoin Core"
         ),
     )
     create.add_argument(
         "--bytes",
         dest="byte_length",
         type=_integer("bytes", 16, 64),
-        choices=(16, 32),
+        choices=SEED_BYTE_LENGTHS,
         metavar="BYTES",
-        help="length of a new Bitcoin master seed: 16 or 32 bytes (default: 16)",
+        help="length of a new Bitcoin master seed: 16, 20, 24, 28, 32, or 64 bytes (default: 16)",
     )
     create.add_argument(
         "--shares",

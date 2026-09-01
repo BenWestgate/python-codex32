@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Codex32 Share Recovery Card</title>
+  <title>codex32 recovery card</title>
   <style>
     @page { size: letter; margin: 0.35in; }
     * { box-sizing: border-box; }
@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <h1>Codex32 share recovery card</h1>
+  <h1>codex32 recovery card</h1>
   <p class="warning">
     PROTECTED RECOVERY MATERIAL — keep offline. Do not photograph, upload, or enter this
     text into a website, chat, or network-connected device.
@@ -32,9 +32,8 @@
     <div class="field">Threshold (shares needed):</div>
     <div class="field">Four-character identifier:</div>
     <div class="field">This share index:</div>
-    <div class="field">Network: mainnet / testnet / other:</div>
     <div class="field">Wallet policy: single-key / multisig / other:</div>
-    <div class="field">Separate wallet record location:</div>
+    <div class="field">Separate wallet record location(s):</div>
   </div>
 
   <h2>Protected codex32 text — copy exactly in four-character groups</h2>
@@ -54,8 +53,8 @@
   <ol>
     <li>Collect the stated threshold of cards with the same identifier and text length.</li>
     <li>On a reviewed offline computer, install the owner’s archived codex32 release.</li>
-    <li>Run <code>codex32 check</code>. Compare any correction suggestion with the paper.</li>
-    <li>Prefer <code>codex32 wallet bitcoin-core watch-only</code> before private restoration.</li>
+    <li>Run <code>codex32 check</code>. It validates but does not suggest corrections.</li>
+    <li>For an existing wallet, recover watch-only before private restoration.</li>
     <li>Use the separate wallet record to verify the watch-only wallet before signing.</li>
   </ol>
 
@@ -66,6 +65,6 @@
     Expected SHA-256: <code>0370ea863d2eae692408aeefa9b13c14283e520f45a00f7373ad933ccf418f2e</code>.
     Follow that archived document if compatible software is unavailable.
   </p>
-  <p class="footer small">Card revision 1 — BIP93/codex32 — one card per share.</p>
+  <p class="footer small">Card revision 1 — BIP93/codex32 — one card per share or secret.</p>
 </body>
 </html>

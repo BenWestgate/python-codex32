@@ -14,9 +14,9 @@ from codex32 import (
 )
 
 _DOMAIN = b"python-codex32 differential wallet corpus v1"
-_SEED_LENGTHS = tuple(range(16, 65))
+_SEED_LENGTHS = (16, 20, 24, 28, 32, 64)
 _EXPECTED_CASES = 64
-_EXPECTED_DIGEST = "a51c9833408bd02d8fbafc339a7d4b48ada02af655e268e0bd165040c45b0249"
+_EXPECTED_DIGEST = "f21f9b7f5574f39b14a585c99b99b9db70bf4e7b852d3f038679956cd2e7cb12"
 
 
 def _seed(case: int, length: int) -> bytes:

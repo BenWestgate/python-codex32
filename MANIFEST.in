@@ -1,5 +1,7 @@
-include LICENSE README.md SECURITY.md build_backend.py
+include LICENSE README.md SECURITY.md
 recursive-include docs *.html *.md
+prune docs/planning
+exclude docs/developer/provenance.md
 recursive-include requirements *.txt
 recursive-include tests *.py *.json *.md
 recursive-include tools *.py

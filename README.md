@@ -10,9 +10,14 @@ This project provides a command-line tool and Python library for:
 - creating and checking codex32 master-seed backups;
 - splitting a backup into shares and recovering it;
 - suggesting corrections for damaged backup text;
-- checking or recovering supported older Core Lightning and BIP39 worksheet
-  backups; and
-- producing Bitcoin wallet import information from a recovered master seed.
+- checking or recovering other codex32 applications;
+- completing or correcting checksum worksheets; and
+- exporting Bitcoin Core wallet descriptors from a recovered master seed.
+
+Creation adds the codex32 checksum. `codex32 check` detects damaged text;
+`codex32 correct` only suggests a repair for comparison with the paper backup.
+Shared backups use Shamir secret sharing. Splitting an existing secret creates
+a new M-of-N share set with a new backup identifier.
 
 This is not a Bitcoin wallet and it does not store your backup. It has no
 graphical interface, does not connect to the Bitcoin network, cannot show
@@ -20,148 +25,83 @@ balances or send bitcoin, and does not produce BIP39 mnemonic words.
 
 This is security-critical reference software. Use it offline and have it
 reviewed by someone you trust before relying on it with funds. See
-[SECURITY.md](SECURITY.md) and the direct
-[specification-to-code map](docs/traceability.md).
+[SECURITY.md](SECURITY.md).
 
-## Install and test
+## Install
 
-Supported Python versions are 3.12 and 3.13. Python 3.14 remains a
-non-blocking compatibility probe until the required native wheels are
-available and the platform matrix passes.
+Python 3.12 or 3.13 is required. From this folder:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install --require-hashes -r requirements/cli-build-dependencies.txt
-SOURCE_DATE_EPOCH=1763060600 python -m pip install \
-  --no-build-isolation --require-hashes -r requirements/cli-dependencies.txt
-python -m pip install --no-build-isolation -e '.[dev]'
+
+python -m pip install \
+  --require-hashes \
+  -r requirements/cli-build-dependencies.txt
+
+python -m pip install \
+  --no-build-isolation \
+  --require-hashes \
+  -r requirements/cli-dependencies.txt
+
+python -m pip install \
+  --no-build-isolation \
+  --no-deps \
+  .
+
+python -m pip check
+```
+
+On Windows, activate the environment with `.venv\Scripts\activate` instead.
+The installed command is `codex32`.
+
+## Common commands
+
+Do not type recovery text on the same line as a command. Run the command first,
+then enter the master seed or shares only when prompted.
+
+```bash
+codex32 check                 # check one backup or share
+codex32 secret                # recover a complete secret
+codex32 share d               # make share d from enough existing shares
+codex32 create 3              # create 3-of-5 shares and initialize Bitcoin Core
+codex32 correct               # suggest repairs for damaged text
+codex32 wallet multisig-xpub  # export a public multisig key
+```
+
+Fresh Bitcoin wallet creation requires Bitcoin Core 30 or newer with local RPC
+enabled. codex32 confirms each paper card before it asks you to select an empty
+Bitcoin Core wallet.
+
+A valid checksum means the text is internally consistent. It does not prove
+that the backup belongs to your wallet. Compare recovered identifiers,
+fingerprints, addresses, and wallet policy with wallet records kept separately
+from the shares.
+
+Correction results are suggestions. Always compare them with the physical
+backup before using them.
+
+See the [user guide](docs/user/guide.md) for setup, recovery, inheritance,
+offline signing, and Bitcoin Core instructions. Printable forms:
+
+- [codex32 recovery card](docs/user/recovery-card.html)
+- [wallet-verification record](docs/user/wallet-verification-record.html)
+
+## For developers and reviewers
+
+The public Python API is documented in the
+[API and architecture guide](docs/developer/api.md). The detailed threat model
+and security properties are in the [security model](docs/security/model.md).
+
+To work on the project:
+
+```bash
+python -m pip install -e '.[dev]'
 python -m pytest -q
 python -m mypy src/codex32
 python -m ruff check .
+python -m ruff format --check .
 ```
 
-The installed command is `codex32`.
-
-## CLI usage
-
-Secret inputs are read from a terminal prompt or stdin, not command arguments.
-Avoid shell commands containing literal secrets because shell history and
-process inspection may retain them.
-
-```bash
-codex32 check
-codex32 secret
-codex32 share d
-codex32 create 3cash
-codex32 correct
-codex32 wallet multisig-xpub --account 0
-```
-
-On a terminal, recovery commands request one secret or the required shares in
-sequence. Redirected stdin may instead contain bounded whitespace-separated
-inputs for automation.
-
-`correct` prints its suggestion to stderr and exits nonzero. A correction is not
-proof that the result belongs to your wallet; always compare it with the
-physical backup.
-
-See [docs/cli.md](docs/cli.md) for the complete command/profile matrix.
-
-## Create a Bitcoin Core watch-only wallet
-
-This example creates a wallet that can find balances but cannot sign
-transactions:
-
-```bash
-bitcoin-cli -named createwallet \
-  wallet_name=codex32-watchonly \
-  disable_private_keys=true \
-  blank=true \
-  descriptors=true \
-  load_on_startup=true
-
-codex32 wallet bitcoin-core watch-only |
-  bitcoin-cli -rpcwallet=codex32-watchonly -stdin importdescriptors
-```
-
-codex32 prompts for the backup on the terminal. Its stdout goes directly to
-Bitcoin Core as one `importdescriptors` argument; prompts and status remain on
-stderr.
-
-Private restoration has additional security requirements; see the
-[CLI documentation](docs/cli.md#private-bitcoin-core-restoration).
-For recovery by someone who did not create the wallet, see
-[Restoring an inherited backup](docs/inheritance.md), the printable
-[share recovery card](docs/recovery-card.html), and the separate
-[wallet-verification record](docs/wallet-verification-record.html).
-
-## API example
-
-```python
-from codex32 import MasterSeed, Share, derive_share, parse_codex32, recover_secret
-
-a = parse_codex32("MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM")
-c = parse_codex32("MS12NAMECACDEFGHJKLMNPQRSTUVWXYZ023FTR2GDZMPY6PN")
-assert isinstance(a, Share) and isinstance(c, Share)
-
-secret = recover_secret([a, c])
-assert isinstance(secret, MasterSeed)
-additional = derive_share([a, c], "d")
-```
-
-Full-string correction returns immutable, untrusted candidates and requires an
-explicit registered profile:
-
-```python
-from codex32 import CorrectionContext, Profile, correct
-
-candidates = correct(CorrectionContext(Profile.MS), "ms10tests?xxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw")
-for candidate in candidates:
-    print(candidate.artifact)
-```
-
-The HRP and separator are never corrected. A candidate is checksum-valid, not
-proof that it belongs to the intended wallet; compare it with the physical
-backup.
-
-Worksheet residue correction is also available without disclosing the backup's
-profile or length:
-
-```python
-from codex32 import correct_worksheet_residue
-
-corrections = correct_worksheet_residue("2ppjkw73qdjvc")
-if corrections is None:
-    raise ValueError("no unique correction")
-
-for correction in corrections:
-    print(correction.reverse_index + 1, correction.addend)
-```
-
-Ordinary shares expose canonical text and u5 payload symbols, never bytes.
-Only profile-specific secret types expose semantic bytes. Public construction,
-sharing, correction, generation, and wallet functions are listed in the
-authoritative [package exports](src/codex32/__init__.py).
-
-## Review map
-
-Start with these small, one-owner modules:
-
-| Concern | Owner |
-|---|---|
-| bounded text and checksum boundary | `bech32.py`, `checksums.py` |
-| fixed application rules | `profiles.py`, `bip39.py` |
-| immutable artifacts and BIP93 interpolation | `bip93.py` |
-| generation and OS entropy | `generation.py` |
-| fixed BCH correction | `correction.py`, `gf32.py` |
-| typed BIP32 boundary and wallet interoperability | `_bip32.py`, `wallet.py` |
-| bounded stdin and TTY entry | `_cli_input.py` |
-| command grammar and presentation only | `_cli_parser.py`, `cli.py` |
-
-The installed package is under 3,000 physical Python lines, excluding tests.
-Tests use official vectors, frozen external fixtures, negative boundary cases,
-and property checks without replacing production entropy.
-
-The reviewed runtime dependency boundary is recorded in
-[docs/dependencies.md](docs/dependencies.md).
+Read [SECURITY.md](SECURITY.md) before reporting a vulnerability. Do not include
+a real seed, share, wallet descriptor, or funded-wallet data in a report.

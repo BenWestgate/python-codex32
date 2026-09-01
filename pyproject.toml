@@ -1,7 +1,6 @@
 [build-system]
 requires = ["setuptools==80.9.0"]
-backend-path = ["."]
-build-backend = "build_backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex32"
@@ -11,7 +10,7 @@ authors = [
 ]
 description = "Python reference implementation for codex32 (BIP93) and codex32-encoded master seeds."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 license = "MIT"
 license-files = ["LICENSE*"]
 maintainers = [

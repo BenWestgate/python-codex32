@@ -3,11 +3,12 @@
 # ruff: noqa: I001
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
-from itertools import combinations
+from itertools import combinations, groupby
 from math import comb
 from time import monotonic
 
-from codex32.bech32 import CHARSET, _checksum_for_encoded_length, _validate_single_case_ascii
+from codex32.bech32 import CHARSET, _validate_single_case_ascii
+from codex32.bip93 import _checksum_for_encoded_length
 from codex32.correction import CorrectionCandidate, CorrectionContext, CorrectionEdit
 from codex32.correction import _FixedCorrector, _allowed, _capture_volume, _correct_fixed, _primary
 from codex32.errors import CodexError
@@ -45,24 +46,46 @@ _GROUP_CLASSES = tuple(
     for total in range(1, 3) for inserted in range(total + 1)
 )
 _CLASSES = (_FIXED, *_CHARACTER_CLASSES, *_GROUP_CLASSES)
+_REDUCED_CLASSES = (
+    _FIXED,
+    *(shape for shape in _CHARACTER_CLASSES if shape.inserted + shape.omitted <= 3),
+    *(shape for shape in _GROUP_CLASSES if shape.inserted + shape.omitted <= 2),
+)
 def _group_boundary(immutable_length: int) -> int:
     return 4 * ((immutable_length + 3) // 4)
-def _alignment_count(
-    shape: _StructuralClass, observed_length: int, target_length: int,
-    immutable_length: int,
-) -> int:
-    if shape == _FIXED:
-        return 1
+def _alignment_counts(shape: _StructuralClass, text: str, target_length: int,
+                      immutable_length: int) -> dict[int, int]:
+    explicit = sum(character.lower() not in CHARSET for character in text[immutable_length:])
+    if shape == _FIXED: return {explicit: 1}
     if shape.unit == 1:
-        observed = observed_length - immutable_length
-        target = target_length - immutable_length
-    else:
-        boundary = _group_boundary(immutable_length)
-        observed = (observed_length - boundary) // 4
-        target = (target_length - boundary) // 4
-    if min(observed, target) < 0:
-        return 0
-    return comb(observed, shape.inserted) * comb(target, shape.omitted)
+        observed, target = len(text) - immutable_length, target_length - immutable_length
+        if min(observed, target) < 0: return {}
+        known = observed - explicit
+        omitted = comb(target, shape.omitted)
+        return {
+            explicit - deleted: comb(explicit, deleted) * comb(known, shape.inserted - deleted) * omitted
+            for deleted in range(max(0, shape.inserted - known), min(shape.inserted, explicit) + 1)
+        }
+    boundary = _group_boundary(immutable_length)
+    target_groups = (target_length - boundary) // 4
+    observed_groups = target_groups + shape.inserted - shape.omitted
+    group_end = boundary + 4 * observed_groups
+    if min(target_groups, observed_groups) < 0 or group_end > len(text): return {}
+    group_explicit = tuple(
+        sum(character.lower() not in CHARSET for character in text[start : start + 4])
+        for start in range(boundary, group_end, 4)
+    )
+    outside = explicit - sum(group_explicit)
+    counts: dict[int, int] = {}
+    omitted = comb(target_groups, shape.omitted)
+    for deleted in combinations(range(observed_groups), shape.inserted):
+        remaining = outside + sum(count for index, count in enumerate(group_explicit)
+                                  if index not in deleted)
+        counts[remaining] = counts.get(remaining, 0) + omitted
+    return counts
+def _alignment_count(shape: _StructuralClass, observed_length: int, target_length: int,
+                     immutable_length: int) -> int:
+    return sum(_alignment_counts(shape, "q" * observed_length, target_length, immutable_length).values())
 def _reductions(
     values: tuple[int, ...], characters: str, count: int, offset: int,
 ) -> Iterator[tuple[tuple[int, ...], tuple[tuple[int, str], ...]]]:
@@ -181,32 +204,57 @@ def _variants(
 ) -> Iterator[_Variant]:
     generator = _character_variants if shape.unit == 1 else _group_variants
     yield from generator(text, target, shape, immutable, prefix_length)
-def _remaining_explicit_counts(shape: _StructuralClass, explicit: int) -> range:
-    if shape == _FIXED:
-        return range(explicit, explicit + 1)
-    return range(max(0, explicit - shape.unit * shape.inserted), explicit + 1)
 def _capacities(erasures: int, _degree: int) -> range:
     return range((8 - erasures) // 2 + 1) if erasures <= 8 else range(0)
-def _volumes(
-    shape: _StructuralClass, alignments: int, mutable: int, explicit: int, degree: int,
-) -> Iterator[int]:
-    for remaining in _remaining_explicit_counts(shape, explicit):
-        erasures = shape.erasures + remaining
-        capacities = range(1) if shape == _FIXED and 8 < erasures <= degree else _capacities(
-            erasures, degree,
-        )
-        for substitutions in capacities:
-            yield alignments * _capture_volume(mutable, erasures, substitutions)
-def _safe(
-    rank: int, classes: Sequence[_StructuralClass], counts: dict[_StructuralClass, int],
-    mutable: int, explicit: int, degree: int,
-) -> bool:
-    cumulative = sum(
-        volume for shape in classes
-        for volume in _volumes(shape, counts[shape], mutable, explicit, degree)
-        if volume <= rank
-    )
-    return _FALSE_BOUND_DENOMINATOR * cumulative < 1 << (5 * degree)
+@dataclass(frozen=True, slots=True)
+class _Target:
+    context: CorrectionContext
+    text: str
+    immutable: int
+    target: int
+    base: int
+    degree: int
+    counts: dict[_StructuralClass, dict[int, int]]
+def _prepare(context: CorrectionContext, damaged_text: str,
+             classes: Sequence[_StructuralClass]) -> _Target | None:
+    normalized = _normalize(context, damaged_text)
+    if normalized is None: return None
+    text, immutable = normalized
+    target = context.expected_length
+    assert target is not None
+    shapes = tuple(shape for shape in classes if shape.delta == len(text) - target)
+    counts = {shape: {remaining: count for remaining, count in
+                     _alignment_counts(shape, text, target, immutable).items() if count}
+              for shape in shapes}
+    base = len(context.profile.value) + 1
+    degree = _checksum_for_encoded_length(context.profile.value, target - base).length
+    return _Target(context, text, immutable, target, base, degree, counts)
+
+def _layers(state: _Target) -> Iterator[tuple[int, int, tuple[int, _StructuralClass, int, int]]]:
+    for shape, counts in state.counts.items():
+        for remaining, alignments in counts.items():
+            erasures = shape.erasures + remaining
+            for substitutions in _capacities(erasures, state.degree):
+                volume = alignments * _capture_volume(state.target - state.immutable, erasures,
+                                                       substitutions)
+                yield volume, 5 * state.degree, (state.target, shape, remaining, substitutions)
+def _frontier(states: Sequence[_Target], primary: frozenset[int]
+              ) -> dict[tuple[int, _StructuralClass, int, int], int]:
+    layers = tuple(layer for state in states for layer in _layers(state))
+    maximum = max((bits for _volume, bits, _key in layers), default=0)
+    admitted: dict[tuple[int, _StructuralClass, int, int], int] = {}
+    cumulative = 0
+    def add(pool: Sequence[tuple[int, int, tuple[int, _StructuralClass, int, int]]]) -> None:
+        nonlocal cumulative
+        for _rank, grouped in groupby(sorted(pool, key=lambda item: item[0]), key=lambda item: item[0]):
+            batch = tuple(grouped)
+            increment = sum(volume << (maximum - bits) for volume, bits, _key in batch)
+            if _FALSE_BOUND_DENOMINATOR * (cumulative + increment) >= 1 << maximum: break
+            cumulative += increment
+            admitted.update((key, volume) for volume, _bits, key in batch)
+    add(tuple(layer for layer in layers if layer[2][0] in primary))
+    add(tuple(layer for layer in layers if layer[2][0] not in primary))
+    return admitted
 def _required_header_substitutions(symbols: Sequence[int], excluded: frozenset[int]) -> int:
     if len(symbols) < 6:
         return 9
@@ -233,153 +281,111 @@ def _adapt(
 def _normalize(context: CorrectionContext, damaged_text: str) -> tuple[str, int] | None:
     target = context.expected_length
     assert target is not None
-    if len(damaged_text) > 2 * (target + 8):
-        return None
+    if len(damaged_text) > 2 * (target + 8): return None
     text = damaged_text.replace(" ", "")
+    if len(text) > target + 8: return None
     try:
-        _validate_single_case_ascii(text, max_length=target + 8)
+        _validate_single_case_ascii(text)
     except CodexError:
         return None
     prefix = context.immutable_prefix or f"{context.profile.value}1"
     matches = text.startswith(prefix) if context.immutable_prefix else text.lower().startswith(prefix)
-    if not matches or not target - 8 <= len(text) <= target + 8:
-        return None
+    if not matches or not target - 8 <= len(text) <= target + 8: return None
     return text, len(prefix)
-def _has_consecutive_ambiguity(
-    context: CorrectionContext, damaged_text: str, deadline: float | None,
-) -> bool:
-    """Prove that an extra-only alignment plus a fixed erasure burst is ambiguous."""
-    normalized = _normalize(context, damaged_text)
-    if normalized is None:
-        return False
-    text, immutable = normalized
-    target = context.expected_length
-    assert target is not None
-    base = len(context.profile.value) + 1
-    shapes = tuple(
-        shape for shape in _CLASSES
-        if shape != _FIXED and not shape.erasures and shape.delta == len(text) - target
-    )
-    degree = _checksum_for_encoded_length(context.profile.value, target - base).length
-    solver = _FixedCorrector(context.profile, target - base, text.isupper(), None, immutable - base)
-    results: set[str] = set()
-    for shape in sorted(shapes, key=lambda item: item.unit == 1):
-        for variant in _variants(text, target, shape, immutable, base):
-            if deadline is not None and monotonic() >= deadline:
-                return False
-            positions = variant.erasure_indices
-            if not 8 < len(positions) <= degree or positions != tuple(range(positions[0], positions[-1] + 1)):
-                continue
-            fixed = solver.correct(variant.symbols, variant.unknowns, variant.erasure_indices)
-            if fixed is not None and _allowed(context, fixed):
-                results.add(fixed.artifact.text.lower())
-                if len(results) > 1:
-                    return True
-    return False
-
-def _search(
-    context: CorrectionContext, damaged_text: str, *, deadline: float | None = None,
-) -> tuple[tuple[CorrectionCandidate, ...], bool]:
-    normalized = _normalize(context, damaged_text)
-    if normalized is None:
-        return (), True
-    text, immutable = normalized
-    target = context.expected_length
-    assert target is not None
-    base_length = len(context.profile.value) + 1
-    delta = len(text) - target
-    shapes = tuple(shape for shape in _CLASSES if shape.delta == delta)
-    counts = {shape: _alignment_count(shape, len(text), target, immutable) for shape in shapes}
-    mutable = target - immutable
-    explicit = sum(character.lower() not in CHARSET for character in text[immutable:])
-    checksum = _checksum_for_encoded_length(context.profile.value, target - base_length)
-    degree = checksum.length
+def _keep(results: dict[str, CorrectionCandidate], candidate: CorrectionCandidate) -> None:
+    key = candidate.artifact.text.lower()
+    current = results.get(key)
+    rank = candidate.capture_volume, candidate.addend_hamming_weight
+    if current is None or rank < (current.capture_volume, current.addend_hamming_weight): results[key] = candidate
+def _search_target(state: _Target, frontier: dict[tuple[int, _StructuralClass, int, int], int],
+                   results: dict[str, CorrectionCandidate], deadline: float | None) -> bool:
+    context, text = state.context, state.text
     excluded = frozenset(CHARSET.index(value.lower()) for value in context.excluded_indices)
-    results: dict[str, CorrectionCandidate] = {}
-
-    if _FIXED in shapes:
+    if _FIXED in state.counts:
         fixed = _correct_fixed(text, suspected_profile=context.profile,
                                immutable_prefix=context.immutable_prefix)
-        positions = tuple(
-            index for index, character in enumerate(text[immutable:])
-            if character.lower() not in CHARSET
-        )
+        positions = tuple(index for index, character in enumerate(text[state.immutable:])
+                          if character.lower() not in CHARSET)
         consecutive = not positions or positions == tuple(range(positions[0], positions[-1] + 1))
         if fixed is not None and _allowed(context, fixed):
-            if 8 < fixed.erasures_filled <= degree and consecutive:
-                return (fixed,), True
-            if fixed.erasures_filled <= 8 and _safe(
-                fixed.capture_volume, shapes, counts, mutable, explicit, degree,
-            ):
-                results[fixed.artifact.text.lower()] = fixed
-
-    structural = [shape for shape in shapes if shape != _FIXED and counts[shape]]
-    floors = {
-        shape: min(_volumes(shape, counts[shape], mutable, explicit, degree), default=0)
-        for shape in structural
-    }
+            substitutions = sum(edit.kind == "substitution" for edit in fixed.edits)
+            key = (state.target, _FIXED, fixed.erasures_filled, substitutions)
+            if key in frontier or 8 < fixed.erasures_filled <= state.degree and consecutive:
+                _keep(results, fixed)
+    entries = {shape: tuple((remaining, substitutions, volume) for
+               (target, active, remaining, substitutions), volume in frontier.items()
+               if target == state.target and active == shape)
+               for shape in state.counts if shape != _FIXED}
+    structural = [shape for shape, values in entries.items() if values]
+    floors = {shape: min(value[2] for value in entries[shape]) for shape in structural}
     structural.sort(key=lambda shape: (floors[shape], shape.unit, shape.inserted))
     solvers: dict[int, _FixedCorrector] = {}
     for shape in structural:
         best = min((item.capture_volume for item in results.values()), default=None)
-        if best is not None and floors[shape] > best:
-            break
-        possible = sorted(set(_volumes(shape, counts[shape], mutable, explicit, degree)))
-        allowed = [rank for rank in possible if (best is None or rank <= best) and _safe(
-            rank, shapes, counts, mutable, explicit, degree,
-        )]
-        if not allowed:
-            continue
-        if deadline is not None and monotonic() >= deadline:
-            return _primary(tuple(results.values())), False
-        max_rank = max(allowed)
-        max_substitutions = max(
-            substitution
-            for remaining in _remaining_explicit_counts(shape, explicit)
-            for substitution in _capacities(shape.erasures + remaining, degree)
-            if counts[shape] * _capture_volume(
-                mutable, shape.erasures + remaining, substitution,
-            ) <= max_rank
-        )
-        solver = solvers.setdefault(
-            max_substitutions,
-            _FixedCorrector(context.profile, target - base_length, text.isupper(), max_substitutions,
-                            immutable - base_length),
-        )
-        for variant in _variants(text, target, shape, immutable, base_length):
+        if best is not None and floors[shape] > best: continue
+        if deadline is not None and monotonic() >= deadline: return False
+        limits = {
+            remaining: max(substitution for active, substitution, _volume in entries[shape]
+                           if active == remaining)
+            for remaining in state.counts[shape]
+            if any(active == remaining for active, _substitution, _volume in entries[shape])}
+        for variant in _variants(text, state.target, shape, state.immutable, state.base):
             remaining = len(variant.unknowns)
-            total_erasures = shape.erasures + remaining
-            capacity = max(_capacities(total_erasures, degree), default=-1)
-            if capacity < 0:
-                continue
-            limit = max(
-                (
-                    substitution for substitution in range(min(max_substitutions, capacity) + 1)
-                    if counts[shape] * _capture_volume(
-                        mutable, total_erasures, substitution,
-                    ) <= max_rank
-                ),
-                default=-1,
-            )
-            if limit < 0:
-                continue
-            if _required_header_substitutions(variant.symbols, excluded) > limit:
-                continue
-            active = solver if limit == max_substitutions else solvers.setdefault(
-                limit, _FixedCorrector(context.profile, target - base_length, text.isupper(), limit,
-                                       immutable - base_length),
-            )
-            fixed = active.correct(variant.symbols, variant.unknowns, variant.erasure_indices)
-            if fixed is None or not _allowed(context, fixed):
-                continue
-            candidate = _adapt(fixed, variant, counts[shape], len(text), target)
-            if candidate.capture_volume > max_rank or not _safe(
-                candidate.capture_volume, shapes, counts, mutable, explicit, degree,
-            ):
-                continue
-            key = candidate.artifact.text.lower()
-            current = results.get(key)
-            rank = candidate.capture_volume, candidate.addend_hamming_weight
-            if current is None or rank < (current.capture_volume, current.addend_hamming_weight):
-                results[key] = candidate
+            limit = limits.get(remaining, -1)
+            if _required_header_substitutions(variant.symbols, excluded) > limit: continue
+            solver = solvers.setdefault(limit, _FixedCorrector(
+                context.profile, state.target - state.base, text.isupper(), limit,
+                state.immutable - state.base))
+            fixed = solver.correct(variant.symbols, variant.unknowns, variant.erasure_indices)
+            if fixed is None or not _allowed(context, fixed): continue
+            substitutions = sum(edit.kind == "substitution" for edit in fixed.edits)
+            key = (state.target, shape, remaining, substitutions)
+            if key not in frontier: continue
+            candidate = _adapt(fixed, variant, state.counts[shape][remaining], len(text), state.target)
+            if candidate.capture_volume == frontier[key]:
+                _keep(results, candidate)
+    return True
+def _search_many(contexts: Sequence[CorrectionContext], damaged_text: str, *,
+                 primary: frozenset[int], reduced: frozenset[int] = frozenset(),
+                 deadline: float | None = None) -> tuple[tuple[CorrectionCandidate, ...], bool]:
+    states = tuple(state for context in contexts if (state := _prepare(
+        context, damaged_text, _REDUCED_CLASSES if context.expected_length in reduced else _CLASSES))
+        is not None)
+    frontier = _frontier(states, primary)
+    results: dict[str, CorrectionCandidate] = {}
+    for state in states:
+        target_layers = [volume for (target, _shape, _remaining, _substitutions), volume
+                         in frontier.items() if target == state.target]
+        positions = tuple(i for i, char in enumerate(state.text[state.immutable:]) if char.lower() not in CHARSET)
+        burst = (_FIXED in state.counts and 8 < len(positions) <= state.degree and positions == tuple(range(positions[0], positions[-1] + 1)))
+        if not target_layers and not burst: continue
+        best = min((item.capture_volume for item in results.values()), default=None)
+        if best is not None and target_layers and min(target_layers) > best and not burst:
+            continue
+        if not _search_target(state, frontier, results, deadline):
+            return _primary(tuple(results.values())), False
     return _primary(tuple(results.values())), True
+def _consecutive_witnesses(contexts: Sequence[CorrectionContext], damaged_text: str, *,
+                           reduced: frozenset[int] = frozenset(), deadline: float | None = None
+                           ) -> tuple[frozenset[str], bool]:
+    results: set[str] = set()
+    for context in contexts:
+        classes = _REDUCED_CLASSES if context.expected_length in reduced else _CLASSES
+        state = _prepare(context, damaged_text, classes)
+        if state is None: continue
+        shapes = tuple(shape for shape in state.counts if not shape.erasures)
+        solver = _FixedCorrector(context.profile, state.target - state.base, state.text.isupper(),
+                                 None, state.immutable - state.base)
+        for shape in shapes:
+            if deadline is not None and monotonic() >= deadline: return frozenset(results), False
+            variants = _variants(state.text, state.target, shape, state.immutable, state.base)
+            for variant in variants:
+                positions = variant.erasure_indices
+                consecutive = positions and positions == tuple(range(positions[0], positions[-1] + 1))
+                if not 8 < len(positions) <= state.degree or not consecutive: continue
+                fixed = solver.correct(variant.symbols, variant.unknowns, positions)
+                if fixed is not None and _allowed(context, fixed):
+                    results.add(fixed.artifact.text.lower())
+                    if len(results) > 1:
+                        return frozenset(results), True
+    return frozenset(results), True
