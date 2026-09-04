@@ -77,13 +77,13 @@ def _decode_codex32(text: str) -> tuple[_ProfileRules, tuple[int, ...], _Checksu
     if len(hrp) + 1 + len(encoded) < 21:
         raise InvalidLength("codex32 string must contain at least 21 characters")
     checksum = _checksum_for_encoded_length(hrp, len(encoded))
+    body = tuple(encoded[: -checksum.length])
+    Header._from_symbols(body[:6])
     if not bech32_verify_checksum(hrp, encoded, checksum):
         raise InvalidChecksum(f"invalid {checksum.kind} checksum")
     profile_rules = _profile_rules(hrp)
     profile_rules.validate_text_length(len(text))
-    body = tuple(encoded[: -checksum.length])
     profile_rules.validate_payload_length(len(body) - 6)
-    Header._from_symbols(body[:6])
     return profile_rules, tuple(encoded), checksum
 
 @dataclass(frozen=True, slots=True, init=False)

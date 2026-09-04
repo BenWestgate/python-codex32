@@ -1,4 +1,4 @@
-"""Exercise installed codex32 wallet exports against an isolated Bitcoin Core regtest."""
+"""Exercise codex32 wallet integration against an isolated Bitcoin Core regtest."""
 
 from __future__ import annotations
 
@@ -10,11 +10,12 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from codex32._bitcoin_core import BitcoinCore
 from codex32.bip93 import parse_codex32
 from codex32.profiles.ms32 import MasterSeed
+from codex32.wallet import core_descriptors
 
 # Frozen public BIP93 vector material; it has never controlled a funded wallet.
 _SEED = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
@@ -22,17 +23,6 @@ _SEED = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
 
 def _run(command: list[str], *, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, input=stdin, text=True, capture_output=True, check=False)
-
-
-def _exports(executable: str, *, private: bool = False, now: bool = False) -> list[dict[str, Any]]:
-    mode = "restore" if private else "watch-only"
-    command = [executable, "wallet", "bitcoin-core", mode, "--testnet"]
-    if now:
-        command.extend(("--timestamp", "now"))
-    result = _run(command, stdin=_SEED + "\n")
-    if result.returncode:
-        raise RuntimeError(result.stderr.strip())
-    return cast(list[dict[str, Any]], json.loads(result.stdout))
 
 
 def main() -> None:
@@ -93,7 +83,7 @@ def main() -> None:
                     "descriptors=true",
                 )
 
-            passphrase = "gate4-regtest-only"
+            passphrase = "regtest-only-passphrase"
             rpc("encryptwallet", wallet="signer", stdin=passphrase + "\n")
             unlocked = _run(
                 [
@@ -111,9 +101,12 @@ def main() -> None:
             miner_address = rpc("getnewaddress", wallet="miner")
             rpc("generatetoaddress", "101", miner_address)
 
-            public = _exports(arguments.codex32)
-            private = _exports(arguments.codex32, private=True)
-            recent = _exports(arguments.codex32, now=True)
+            secret = parse_codex32(_SEED)
+            if not isinstance(secret, MasterSeed):
+                raise TypeError("synthetic fixture was not a master seed")
+            public = core_descriptors(secret, testnet=True, timestamp=0)
+            private = core_descriptors(secret, testnet=True, private=True, timestamp=0)
+            recent = core_descriptors(secret, testnet=True, timestamp="now")
             for records, wallet in ((public, "watch"), (private, "signer"), (recent, "now")):
                 imported = rpc("importdescriptors", wallet=wallet, stdin=json.dumps(records) + "\n")
                 if not all(item["success"] for item in imported):
@@ -138,15 +131,12 @@ def main() -> None:
             wrapper_directory.mkdir()
             wrapper = wrapper_directory / "bitcoin-cli"
             wrapper.write_text(
-                f'#!/bin/sh\nexec {shlex.quote(real_cli)} -regtest {shlex.quote(f"-datadir={datadir}")} "$@"\n'
+                f'#!/bin/sh\nexec {shlex.quote(real_cli)} {shlex.quote(f"-datadir={datadir}")} "$@"\n'
             )
             wrapper.chmod(0o700)
             os.environ["PATH"] = str(wrapper_directory) + os.pathsep + os.environ.get("PATH", "")
             client = BitcoinCore.connect()
-            secret = parse_codex32(_SEED)
-            if not isinstance(secret, MasterSeed):
-                raise TypeError("synthetic fixture was not a master seed")
-            answers = iter(("1", "yes"))
+            answers = iter(("yes",))
             if client.initialize(secret, lambda _prompt: next(answers), lambda _message: None) != "fresh":
                 raise RuntimeError("automatic initialization selected the wrong wallet")
             if rpc("getwalletinfo", wallet="fresh")["unlocked_until"] != 0:
@@ -209,9 +199,9 @@ def main() -> None:
             if rpc("getwalletinfo", wallet="signer")["unlocked_until"] != 0:
                 raise RuntimeError("private restore wallet did not relock")
 
-            mainnet = _run([arguments.codex32, "wallet", "bitcoin-core", "watch-only"], stdin=_SEED + "\n")
+            mainnet = core_descriptors(secret, timestamp=0)
             multisig = _run([arguments.codex32, "wallet", "multisig-xpub", "--testnet"], stdin=_SEED + "\n")
-            if mainnet.returncode or "xpub" not in mainnet.stdout or "tpub" not in json.dumps(public):
+            if "xpub" not in json.dumps(mainnet) or "tpub" not in json.dumps(public):
                 raise RuntimeError("mainnet/testnet descriptor versions were not separated")
             if multisig.returncode or "/48h/1h/0h/2h]tpub" not in multisig.stdout:
                 raise RuntimeError("BIP48 coordinator export was malformed")

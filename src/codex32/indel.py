@@ -18,8 +18,7 @@ _THRESHOLDS = frozenset(CHARSET.index(value) for value in "023456789")
 _SECRET_INDEX = CHARSET.index("s")
 @dataclass(frozen=True, slots=True)
 class _StructuralClass:
-    inserted: int
-    omitted: int
+    inserted: int; omitted: int
     unit: int = 1
 
     @property
@@ -31,10 +30,8 @@ class _StructuralClass:
         return self.unit * self.omitted
 @dataclass(frozen=True, slots=True)
 class _Variant:
-    symbols: tuple[int, ...]
-    missing: frozenset[int]
-    deleted: tuple[tuple[int, str], ...]
-    unknowns: tuple[tuple[int, str], ...]
+    symbols: tuple[int, ...]; missing: frozenset[int]
+    deleted: tuple[tuple[int, str], ...]; unknowns: tuple[tuple[int, str], ...]
     erasure_indices: tuple[int, ...]
 _FIXED = _StructuralClass(0, 0)
 _CHARACTER_CLASSES = tuple(
@@ -208,12 +205,9 @@ def _capacities(erasures: int, _degree: int) -> range:
     return range((8 - erasures) // 2 + 1) if erasures <= 8 else range(0)
 @dataclass(frozen=True, slots=True)
 class _Target:
-    context: CorrectionContext
-    text: str
-    immutable: int
-    target: int
-    base: int
-    degree: int
+    context: CorrectionContext; text: str
+    immutable: int; target: int
+    base: int; degree: int
     counts: dict[_StructuralClass, dict[int, int]]
 def _prepare(context: CorrectionContext, damaged_text: str,
              classes: Sequence[_StructuralClass]) -> _Target | None:

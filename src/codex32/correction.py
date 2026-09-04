@@ -20,10 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-"""Fixed BCH correction derived from PR #70; coefficients are least-significant first.
-
-Correction coordinates are reverse indices from the final data/checksum symbol.
-"""
+"""Fixed BCH correction derived from PR #70, with reverse-indexed coordinates."""
 # ruff: noqa: I001
 
 from collections.abc import Callable, Sequence
@@ -43,28 +40,19 @@ from codex32.profiles import Profile, _profile_rules
 from codex32.profiles.ms32 import MasterSeed, _has_generation_padding
 @dataclass(frozen=True, slots=True)
 class WorksheetCorrection:
-    reverse_index: int
-    addend: str
+    reverse_index: int; addend: str
 @dataclass(frozen=True, slots=True)
 class CorrectionContext:
-    profile: Profile
-    expected_length: int | None = None
-    immutable_prefix: str | None = None
-    excluded_indices: tuple[str, ...] = ()
+    profile: Profile; expected_length: int | None = None
+    immutable_prefix: str | None = None; excluded_indices: tuple[str, ...] = ()
 @dataclass(frozen=True, slots=True)
 class CorrectionEdit:
-    kind: Literal["substitution", "erasure", "insertion", "deletion"]
-    reverse_index: int
-    observed: str
-    replacement: str
+    kind: Literal["substitution", "erasure", "insertion", "deletion"]; reverse_index: int
+    observed: str; replacement: str
 @dataclass(frozen=True, slots=True)
 class CorrectionCandidate:
-    artifact: Share | Secret
-    edits: tuple[CorrectionEdit, ...]
-    capture_volume: int
-    erasures_filled: int
-    addend_hamming_weight: int
-    crc_padding_match: bool | None
+    artifact: Share | Secret; edits: tuple[CorrectionEdit, ...]; capture_volume: int
+    erasures_filled: int; addend_hamming_weight: int; crc_padding_match: bool | None
 # --- Direct P70-derived field, polynomial, BCH, and linear algebra. ---
 # A GF(1024) value a + b*zeta is packed as a | b << 5, with
 # zeta^2 = zeta + 1.

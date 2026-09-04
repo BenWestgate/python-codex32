@@ -5,7 +5,7 @@
 The package uses one narrow dependency direction:
 
 ```text
-text -> bounded format/checksum -> fixed profile module -> immutable artifact
+text -> format/header/checksum -> fixed profile module -> immutable artifact
                                                    |-> BIP93 sharing
                                                    |-> ms/cl generation
                                                    |-> bounded correction
@@ -15,10 +15,11 @@ CLI -> public APIs above -> private bitcoin-cli subprocess adapter
 ```
 
 The format layer first validates ASCII, case, separator, characters, and the
-absolute size bound. The application parser uses the literal registered HRP
-only to reject impossible total and payload lengths before checking the outer
-checksum. It then validates the common header, checksum, and S-only application
-semantics. No artifact crosses the parsing boundary until every stage passes.
+absolute size bound. The application parser selects the checksum type from the
+generic encoded length and validates the common header before verifying the
+outer checksum. Only afterward does the HRP select a fixed application profile.
+The parser then checks application length and payload semantics. No artifact
+crosses the parsing boundary until every stage passes.
 
 ### Specification-to-code map
 
@@ -35,8 +36,8 @@ semantics. No artifact crosses the parsing boundary until every stage passes.
 | structural alignment | `indel.py` | `test_correction_indel.py` |
 | master-seed BIP32 adaptation | `profiles/ms32.py` | BIP32 and wallet vectors |
 | fixed wallet derivation and descriptors | `wallet.py` | `test_wallet.py` |
-| fresh Core target selection and subprocess state | `_bitcoin_core.py` | Core adapter and regtest |
-| bounded stdin and fixed-prefix TTY entry | `_cli_input.py` | `test_cli.py` |
+| Core target selection and subprocess state | `_bitcoin_core.py` | Core adapter and regtest |
+| bounded stdin, fixed-prefix TTY entry, and aligned suggestions | `_cli_input.py` | `test_cli.py` |
 | command grammar, dispatch, and presentation | `_cli_parser.py`, `cli.py` | `test_cli.py` |
 
 ### Boundaries
@@ -61,14 +62,20 @@ semantics. No artifact crosses the parsing boundary until every stage passes.
   dependency. `wallet.py` accepts only `MasterSeed` and has no state or generic
   parser.
 - `_cli_input.py` retains at most nine artifacts and delegates partial-set
-  compatibility to `bip93.py`. Its optional Readline hook restores only the
-  latest rejected entry, disables automatic history, and is removed after each
-  attempt. While reading, stdout's file descriptor is synchronously redirected
-  to the stderr terminal and restored in `finally`, keeping piped results clean.
-  There is no persistent history or raw-terminal layer.
+  compatibility to `bip93.py`. Card confirmation clears the terminal and saved
+  scrollback where supported, then displays only entered text after a mismatch.
+  Canonical text removes whitespace for comparison; presentation state retains
+  the exact entered spacing and case. Alignment favors the smallest affected
+  group set and never reveals expected characters.
+  Matching leading groups remain fixed while an optional Readline hook restores
+  the exact editable suffix with its cursor at the end. The hook disables
+  automatic history and is removed after each attempt. While reading, stdout's
+  file descriptor is synchronously redirected to the stderr terminal and
+  restored in `finally`, keeping piped results clean.
 - `_cli_parser.py` owns the complete non-abbreviating command grammar.
 - `_bitcoin_core.py` is the only Core process/state adapter. It invokes no
-  shell, opens no socket, and keeps wallet selection and private import out of
+  shell, opens no socket, discovers standard local chains through explicit
+  `bitcoin-cli` arguments, and keeps wallet selection and private import out of
   stateless `wallet.py`.
 - `cli.py` contains presentation and dispatch, with no domain algorithm or
   hidden state.
@@ -146,14 +153,17 @@ generate_core_lightning_secret(secret_bytes=None, *, identifier=None)
 Shared creation uses `CreationCeremony.master_seed(...)`,
 `CreationCeremony.core_lightning(...)`, or
 `CreationCeremony.from_secret(...)`. Exactly one of `share_count` and `indices`
-is required. `next_share()` returns one pending card, `confirm(text)` must accept
-its independently re-entered text, and `finish()` returns the secret only after
-every requested card is confirmed. There is no public one-shot sharing or
-`split_secret` function. Fresh Bitcoin CLI creation requires interactive input
-and output, preflights local Bitcoin Core before entropy, and initializes a
-user-selected wallet after every card is confirmed. Fresh Core Lightning and
-all `--existing` operations retain the backup-only path. Redirected recovery
-workflows remain available.
+is required. `next_share()` returns one pending share, `confirm(text)` must
+accept its independently re-entered string, and `finish()` returns the secret
+only after every requested share is confirmed. There is no public one-shot
+sharing or `split_secret` function. Fresh and existing Bitcoin CLI creation
+requires interactive input and output, preflights local Bitcoin Core before
+entropy or recovery input, and initializes a user-selected wallet after every
+share is confirmed. Core Lightning creation retains the backup-only path.
+With no Bitcoin header, the CLI creates an unshared master seed. Shared creation
+uses an explicit threshold or full backup header. Without an explicit share
+count or indices, thresholds 2 and 3 produce the reviewed 2-of-3 and 3-of-5
+presets; thresholds 4 through 9 require an explicit selection.
 
 The ceremony follows the two BIP93 constructions:
 
@@ -161,11 +171,18 @@ The ceremony follows the two BIP93 constructions:
 - an existing S uses S plus `k-1` independent complete u5 masks.
 
 Each direct share uses a separate `secrets.token_bytes` request and cannot be
-followed by another draw until its card is confirmed. The pause gives the OS an
+followed by another draw until its string is confirmed. The pause gives the OS an
 opportunity to mix fresh noise; Python cannot guarantee that new physical
 entropy arrives between calls. User input is never treated as entropy. Each
 byte is mapped with `value & 31`, which maps exactly eight byte values to each
 u5 value.
+
+Creation confirmation may align and highlight substitutions, insertions, and
+deletions, but it displays no expected character values and never corrects the
+entry. Retries are unlimited and only canonical equality confirms the pending
+share. This proves that the operator can reproduce the string during setup; it
+cannot prove that the physical card was corrected rather than the display
+feedback being used to infer an error.
 
 For a fresh set, the final direct share is rejection-sampled until the recovered
 S has the private CRC padding convention (`ms`) or zero discarded bits (CL).
@@ -380,11 +397,11 @@ plus two extra arbitrary characters, with about one million alignments. The
 generic pipeline parses once, reuses erasure state, prunes only provably
 impossible profile headers, and calls the same fixed corrector for every class.
 
-The API has no deadline. For a first `ms` card, the CLI searches all six valid
+The API has no deadline. For a first `ms` string, the CLI searches all six valid
 lengths. Automatic mode permits four character indels for 48-, 74-, and
 127-character targets and three for 54, 61, and 67; every target permits two
 whole-group indels. These searches share one capture frontier. After the first
-card is accepted, its length is immutable for later cards.
+string is accepted, its length is immutable for later strings in the set.
 
 Only an automatic search compatible with the 48-character target receives the
 ten-second deadline. A numeric `--bytes` value performs one full exact-length
@@ -399,9 +416,11 @@ zero-based reverse positions. It has no profile, HRP, or complete-string length.
 `()` means already correct, a tuple contains unique addends, and `None` means no
 unique correction. The CLI alone converts displayed positions to one-based.
 
-The frozen PR #70 corpus, malformed corpus, arithmetic evidence, structural
-tests, and benchmarks are described in the [security model](../security/model.md)
-and kept under `tests/` and `tools/`.
+The frozen PR #70 and malformed corpora are under `tests/data/`. Fixed and
+structural correction are checked by `tests/test_correction_bch.py`,
+`tests/test_correction_indel.py`, `tools/correction_capture.py`, and
+`tools/differential_correction.py --verify`. Performance can be measured with
+`tools/correction_benchmark.py`.
 
 ## Generation-only CRC padding
 
@@ -471,26 +490,31 @@ follow Bitcoin Core's root-key form: they contain the root xprv followed by the
 complete derivation path. They therefore grant authority over the entire root,
 not only the selected account. The CLI warns before printing them.
 
-Account, network, private/public mode, and timestamp are explicit inputs. The
-timestamp defaults to `0` so recovery scans from genesis. A nonnegative Unix
-time or the literal `now` may be supplied; `now` intentionally skips historical
-discovery. There is no account database, descriptor parser, policy language,
-RPC library, or network client.
+Account, private/public mode, and timestamp are explicit inputs. The connected
+Core chain selects the network; `--testnet` can require that it is not mainnet.
+The timestamp defaults to `0` so recovery scans from genesis. A nonnegative
+Unix time or the literal `now` may be supplied; `now` intentionally skips
+historical discovery. There is no account database, descriptor parser, policy
+language, RPC library, or network client.
 
-Fresh `ms` creation has an additional private CLI adapter. Before entropy it
-resolves `bitcoin-cli` from `PATH`, forces `-rpcconnect=127.0.0.1`, requires
-Core 30 or newer, and reads the connected chain. After confirmation it offers
-only loaded descriptor wallets with private keys enabled, no external signer,
+Bitcoin master-seed creation and restoration use a private CLI adapter. Before
+entropy or recovery input it resolves `bitcoin-cli` from `PATH` and probes the
+five standard chains with explicit `-chain` and `-rpcconnect=127.0.0.1`
+arguments. It requires Core 30 or newer, automatically selects one responsive
+chain, or asks the operator when several respond. Every later call retains the
+selected chain. After confirmation or recovery it offers only loaded, empty
+descriptor wallets of the requested private-key type, with no external signer,
 descriptors, transactions, keypool, or active scan. The operator selects by
 number and confirms the escaped exact name; the adapter never infers a wallet
 from list order or Bitcoin-Qt state.
 
-Immediately before import, every target property is checked again. The
-original `CreationCeremony.finish()` result supplies BIP44, BIP49, BIP84, and
-BIP86 account-0 private records with timestamp `"now"`. Confirmation text is
-never reparsed into this source. Private JSON is a single `bitcoin-cli -stdin`
-argument, raw Core errors are suppressed, and no passphrase interface exists.
-The adapter requires four successful imports and compares public
+Public descriptor expansion occurs before a locked wallet is opened.
+Immediately before import, every target property is checked again. The original
+`CreationCeremony.finish()` result or validated recovered master seed supplies
+BIP44, BIP49, BIP84, and BIP86 records. Confirmation text is never reparsed
+into this source. Private JSON is sent only through
+`bitcoin-cli -stdin`, raw Core errors are suppressed, and no passphrase
+interface exists. The adapter requires four successful imports and compares public
 `listdescriptors` output with the eight external/internal expansions returned
 by public `getdescriptorinfo`. It relocks wallets Core reports as encrypted.
 
@@ -499,19 +523,20 @@ The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
 and `walletlock`. Bitcoin Core alone creates wallets, selects encryption,
 handles passphrases, stores keys, and provides normal wallet behavior.
 
-The CLI makes the public/private choice a mandatory goal rather than a default:
+The CLI makes the public/private destination a mandatory choice:
 
 ```text
 codex32 wallet bitcoin-core watch-only
 codex32 wallet bitcoin-core restore
 ```
 
-Both commands print exactly one compact JSON line suitable for Bitcoin Core's
-`-stdin importdescriptors` input. Prompts stay on stderr. Before recovery input,
-`watch-only` warns against entering shares on a networked computer merely to
-create a public wallet. `restore` warns before recovery input and before
-emitting root-xprv descriptors. These standalone exports remain for existing
-wallet recovery; they do not select, inspect, or relock a destination.
+Both commands preflight Core before recovery input, recover one validated
+master seed, select and revalidate an empty destination, import through
+`bitcoin-cli -stdin`, and verify the exact accepted public descriptor set.
+`watch-only` requires private keys disabled and warns against entering shares
+on a networked computer merely to create a public wallet. `restore` requires
+private keys enabled and relocks an encrypted destination after success,
+failure, or interruption. Neither command handles a passphrase.
 
 `codex32 wallet multisig-xpub` emits only this seed's origin-qualified BIP48
 coordinator key. It does not define cosigners, threshold, descriptor, address,
@@ -519,10 +544,9 @@ or complete multisig policy. The direct `codex32 xprv` primitive remains
 top-level and carries an explicit secret-root warning.
 
 `tools/bitcoin_core_regtest.py` is the repeatable integration check. It starts
-an isolated Bitcoin Core regtest, exercises automatic fresh initialization and
-the standalone exports, reimports the accepted public descriptors into a
-watch-only wallet, proves matching address and balance discovery, refuses a
-watch-only spend, signs and broadcasts, and verifies relocking. It also checks
+an isolated Bitcoin Core regtest, exercises fresh and recovery initialization,
+proves matching watch-only and signing-wallet addresses and balance discovery,
+refuses a watch-only spend, signs and broadcasts, and verifies relocking. It also checks
 mainnet/testnet key separation and the narrow BIP48 coordinator export.
 
 ## Deliberate divergences and non-goals

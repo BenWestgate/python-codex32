@@ -1,88 +1,93 @@
 # python-codex32
 
-[codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki)
-helps you write down a Bitcoin wallet seed in a form designed to detect common
-copying mistakes. It can also split the backup into shares, so only a chosen
-number of shares together can recover the seed.
+[codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki) is a
+paper-backup format for Bitcoin master seeds. A master seed is the private
+recovery secret from which a Bitcoin wallet derives its keys.
 
-This project provides a command-line tool and Python library for:
+This project provides a command-line tool and Python library that can:
 
-- creating and checking codex32 master-seed backups;
-- splitting a backup into shares and recovering it;
-- suggesting corrections for damaged backup text;
-- checking or recovering other codex32 applications;
-- completing or correcting checksum worksheets; and
-- exporting Bitcoin Core wallet descriptors from a recovered master seed.
+- create an unshared master-seed backup or an M-of-N shared backup;
+- check backup text and suggest possible repairs after damage;
+- recover a master seed from the required shares;
+- add or replace shares for an existing backup;
+- set up a user-created blank Bitcoin Core wallet from a new or existing
+  codex32 backup.
 
-Creation adds the codex32 checksum. `codex32 check` detects damaged text;
-`codex32 correct` only suggests a repair for comparison with the paper backup.
-Shared backups use Shamir secret sharing. Splitting an existing secret creates
-a new M-of-N share set with a new backup identifier.
+With an M-of-N backup, any M of the N paper shares can recover the master seed.
+A set with fewer than M shares cannot recover it.
 
-This is not a Bitcoin wallet and it does not store your backup. It has no
-graphical interface, does not connect to the Bitcoin network, cannot show
-balances or send bitcoin, and does not produce BIP39 mnemonic words.
+This is not a Bitcoin wallet. It has no graphical interface, cannot show
+balances or send bitcoin, and does not produce BIP39 mnemonic words. codex32
+makes no network connection; it communicates with a local Bitcoin Core
+instance through `bitcoin-cli`.
 
-This is security-critical reference software. Use it offline and have it
-reviewed by someone you trust before relying on it with funds. See
+This is security-critical reference software. Use it on a trusted computer and
+obtain an independent review before relying on it with funds. See
 [SECURITY.md](SECURITY.md).
 
 ## Install
 
-Python 3.12 or 3.13 is required. From this folder:
+Python 3.12 or 3.13 is required. To install the project with its pinned
+dependencies, run these commands from the project folder:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 
-python -m pip install \
-  --require-hashes \
+python -m pip install --require-hashes \
   -r requirements/cli-build-dependencies.txt
-
-python -m pip install \
-  --no-build-isolation \
-  --require-hashes \
+python -m pip install --no-build-isolation --require-hashes \
   -r requirements/cli-dependencies.txt
-
-python -m pip install \
-  --no-build-isolation \
-  --no-deps \
-  .
-
+python -m pip install --no-build-isolation --no-deps .
 python -m pip check
 ```
 
 On Windows, activate the environment with `.venv\Scripts\activate` instead.
+
 The installed command is `codex32`.
 
-## Common commands
+## Start here
 
-Do not type recovery text on the same line as a command. Run the command first,
-then enter the master seed or shares only when prompted.
+Start Bitcoin Core 30 or newer with local RPC enabled. codex32 detects and
+reports the local Bitcoin Core network. To practice with Bitcoin-Qt on signet,
+start it with:
 
 ```bash
-codex32 check                 # check one backup or share
-codex32 secret                # recover a complete secret
-codex32 share d               # make share d from enough existing shares
-codex32 create 3              # create 3-of-5 shares and initialize Bitcoin Core
-codex32 correct               # suggest repairs for damaged text
-codex32 wallet multisig-xpub  # export a public multisig key
+bitcoin-qt -signet -server
 ```
 
-Fresh Bitcoin wallet creation requires Bitcoin Core 30 or newer with local RPC
-enabled. codex32 confirms each paper card before it asks you to select an empty
-Bitcoin Core wallet.
+Then run:
 
-A valid checksum means the text is internally consistent. It does not prove
-that the backup belongs to your wallet. Compare recovered identifiers,
-fingerprints, addresses, and wallet policy with wallet records kept separately
-from the shares.
+```bash
+codex32 create 2
+```
 
-Correction results are suggestions. Always compare them with the physical
-backup before using them.
+This creates three shares with a random identifier. Any two recover the seed, so
+one can be lost. Once the shares are confirmed, codex32 initializes the
+user-created blank Bitcoin Core wallet you select.
 
-See the [user guide](docs/user/guide.md) for setup, recovery, inheritance,
-offline signing, and Bitcoin Core instructions. Printable forms:
+For a 3-of-6 backup with the identifier `cash`, run:
+
+```bash
+codex32 create 3cash --shares 6
+```
+
+Follow the [user guide](docs/user/guide.md) for the complete setup, shared
+backups, recovery, inheritance, offline signing, and Bitcoin Core instructions.
+
+## Recovery and maintenance
+
+Run the command first. Enter the master seed or shares only when prompted;
+never put recovery text on the command line.
+
+```bash
+codex32 check    # check one secret or share
+codex32 secret   # recover a secret from shares
+codex32 share d  # add share d to an existing set of shares
+codex32 correct  # suggest repairs for damaged text
+```
+
+Printable forms:
 
 - [codex32 recovery card](docs/user/recovery-card.html)
 - [wallet-verification record](docs/user/wallet-verification-record.html)
@@ -103,5 +108,4 @@ python -m ruff check .
 python -m ruff format --check .
 ```
 
-Read [SECURITY.md](SECURITY.md) before reporting a vulnerability. Do not include
-a real seed, share, wallet descriptor, or funded-wallet data in a report.
+Read [SECURITY.md](SECURITY.md) before reporting a vulnerability.

@@ -2,8 +2,9 @@
 
 Choose the setup that fits you:
 
-- **Recommended: dedicated online spending wallet — easiest.** Bitcoin Core
-  stores encrypted signing keys and handles ordinary receiving and spending.
+- **Recommended: dedicated online spending wallet — easiest.** A normally
+  networked Bitcoin Core node stores encrypted signing keys, synchronizes the
+  wallet, and handles ordinary receiving and spending.
 - **More protection: online watch-only wallet plus offline signer — more
   steps.** The computer with signing keys stays disconnected from every
   network and signs PSBT files.
@@ -32,6 +33,21 @@ Run Bitcoin Core before starting. If practical, disconnect the computer from
 external networks while recovery text is on screen. codex32 talks only to the
 local Core instance at `127.0.0.1` during setup.
 
+For graphical practice on signet, start Bitcoin-Qt with:
+
+```bash
+bitcoin-qt -signet -server
+```
+
+codex32 detects and reports the local Bitcoin Core network. You do not need to
+change `bitcoin.conf` when using the standard local data directory and RPC
+port.
+
+Use a computer you believe is malware-free and whose other software you trust.
+Only codex32 and Bitcoin Core should perform recovery, derivation, wallet
+initialization, or signing. The QR tools below transport only public
+descriptors or PSBTs.
+
 Bitcoin Core wallet encryption is strongly recommended. Bitcoin Core owns the
 passphrase and its prompts; codex32 never asks for, reads, or forwards it.
 
@@ -42,40 +58,54 @@ service.
 
 ### 2. Choose a backup
 
-| Choice | Command | Write | Needed later |
-|---|---|---:|---:|
-| One complete seed | `codex32 create` | 1 card | That card |
-| 3-of-5 shares | `codex32 create 3` | 5 cards | Any 3 |
-| Custom shares | `codex32 create M --shares N` | N cards | Any M |
+Choose one command:
+
+- **2-of-3 shares (recommended):** `codex32 create 2` produces three shares;
+  any two recover the seed and one can be lost.
+- **3-of-5 shares:** `codex32 create 3` produces five shares; any three recover
+  the seed and any two can be lost.
+- **Unshared:** `codex32 create` produces one secret. You may make redundant
+  copies, but any copy can recover the seed.
+- **Custom:** thresholds 4 through 9 require `--shares` or `--indices`. For
+  example, `codex32 create 4cash --shares 7` produces seven `cash` shares; any
+  four recover the seed.
 
 More required shares make theft harder; fewer required shares make recovery
-easier. A 3-of-5 backup tolerates two lost cards.
+easier.
 
 ### 3. Make a Bitcoin Core wallet
 
-Run the command you chose. codex32 checks `bitcoin-cli` and the local Core
-instance before generating anything.
+Run the command you chose. codex32 finds the local Bitcoin Core network before
+generating anything. If more than one network is running, choose it by number.
 
-1. Write each result directly on its own recovery card.
-2. Re-enter that card when asked. If it differs, codex32 highlights the
-   four-character groups to check and changes nothing.
-3. After every card is confirmed, choose an eligible empty Bitcoin Core wallet
-   by number and confirm its exact name.
+1. Write each result on a new recovery card and press Enter. Where supported,
+   codex32 clears the terminal and its saved scrollback, then asks you to
+   re-enter the result from the card.
+2. If the re-entry differs, codex32 displays only what you entered and marks
+   the groups to check in red. A completely omitted group appears as `____`.
+   Check the card and edit your entry; codex32 does not reveal or apply the
+   expected text. Spaces and letter case do not affect confirmation.
+3. After every card is confirmed, approve the eligible blank Bitcoin Core
+   wallet shown. If there is more than one, choose by number and confirm its
+   exact name.
 
 If no eligible wallet is listed, choose **Create another wallet**. In
-Bitcoin-Qt, create a blank descriptor wallet with private keys enabled. Select
-encryption if this will be the online spending wallet. Return to codex32 and
-continue.
+Bitcoin-Qt, choose **File > Create Wallet...** and create a blank descriptor
+wallet with private keys enabled. Select encryption if this will be the online
+spending wallet. codex32 detects the new wallet automatically.
 
-If the selected encrypted wallet is locked, codex32 asks you to unlock it in
-Bitcoin Core and retry. It imports account 0, verifies the public descriptors
-Core accepted, and relocks an encrypted wallet. It does not create wallets,
-choose encryption, or handle a passphrase.
+After each shared card, codex32 reports how many cards you have confirmed. If
+the selected encrypted wallet is locked, open **Window > Console** in
+Bitcoin-Qt, select the named wallet, and enter
+`walletpassphrase "YOUR PASSPHRASE" 5`. codex32 waits and continues
+automatically. It imports account 0, verifies the public descriptors Core
+accepted, and relocks the wallet. It does not create wallets or choose
+encryption.
 
 You are done with this step when the terminal says:
 
 ```text
-Bitcoin Core wallet initialized and verified.
+Bitcoin Core spending wallet initialized.
 ```
 
 If you interrupt before every card is confirmed, mark the incomplete cards
@@ -84,8 +114,9 @@ wallet should be trusted until initialization completes.
 
 ### 4. Complete the record and store the cards
 
-Copy the displayed wallet name, Bitcoin Core version, master fingerprint,
-account 0, and policy information to the wallet record. Add the approximate
+Copy the displayed backup identifier, wallet name, Bitcoin Core version,
+master fingerprint, derivation standards, and account number to the wallet
+record. Add the approximate
 creation / earliest-use date. Do not put a descriptor timestamp on a recovery
 card; Core's public descriptor export preserves its stored timestamps.
 
@@ -94,7 +125,9 @@ Keep the wallet record separately from all cards.
 
 ### 5. Receive and spend normally
 
-Reconnect if needed and let Bitcoin Core synchronize. In Bitcoin-Qt:
+Reconnect if needed and let the normally networked Bitcoin Core node finish
+blockchain and wallet synchronization. Trust balances and history only after
+that finishes. In Bitcoin-Qt:
 
 1. Use **Receive** and send a small test amount to the new wallet.
 2. Confirm that the payment appears before receiving a larger amount.
@@ -112,19 +145,21 @@ worth the extra steps.
 
 Prepare a dedicated signing computer with Bitcoin Core, codex32, `jq`, `qr`,
 and a local ZBar reader before disconnecting it permanently. Tails includes
-`qr`; this guide uses it for local public-data and PSBT transfers.
+`qr`; this guide uses it for local public-data and PSBT transfers. Disable
+Ethernet, internet, Tor, Wi-Fi, Bluetooth, cellular, and every other network
+path on this computer.
 
 ### 1. Initialize the offline signer
 
-With every network disabled, follow the Recommended steps through **Make a
-Bitcoin Core wallet** on the offline computer. Name the blank encrypted wallet
-clearly, such as `offline-signer`. This computer and its Core wallet must remain
-offline.
+With every network path disabled, follow the Recommended steps through **Make
+a Bitcoin Core wallet** on the offline computer. Name the blank encrypted
+wallet clearly, such as `offline-signer`. This computer and its Core wallet
+must remain offline.
 
 ### 2. Transfer only Core's accepted public descriptors
 
-codex32 prints an optional public-export command after successful setup. For a
-wallet named `offline-signer`, it is:
+For a wallet named `offline-signer`, export Core's accepted public descriptors
+with:
 
 ```bash
 bitcoin-cli -rpcconnect=127.0.0.1 -rpcwallet=offline-signer listdescriptors | jq -c '[.descriptors[] | {desc,timestamp,active,internal,range,next_index}]' | qr
@@ -187,30 +222,34 @@ Verify it watch-only before exposing private keys.
 3. On Tails or another reviewed offline computer, check each card with
    `codex32 check`. If validation fails, recheck what you typed before assuming
    the paper is wrong.
-4. Display public recovery descriptors locally:
+4. Disable Ethernet, internet, Tor, Wi-Fi, Bluetooth, cellular, and every other
+   network path. Load a blank descriptor wallet with private keys disabled in
+   Bitcoin Core, and run:
 
    ```bash
-   codex32 wallet bitcoin-core watch-only | qr
+   codex32 wallet bitcoin-core watch-only --timestamp 0
    ```
 
-5. Import them into a new online, private-keys-disabled Core wallet with the
-   one-shot ZBar command above. Let its scan finish.
-6. Compare the recovered fingerprint, account, complete policy, balance, and
-   transaction history with the wallet record.
+5. Select and confirm the blank watch-only wallet. codex32 imports and verifies
+   its public descriptors. Reconnect the normally networked Bitcoin Core node
+   and let blockchain and wallet synchronization finish.
+6. Only then compare the recovered fingerprint, account, complete policy,
+   balance, and transaction history with the wallet record.
 
-Proceed to private restoration only when everything matches. Create a blank
-encrypted signing wallet on the intended computer, unlock it in Bitcoin Core,
-and import directly without saving or QR-transferring private descriptors:
+Proceed to private restoration only when everything matches. Disconnect the
+intended computer, create a blank encrypted descriptor wallet with private
+keys enabled, and run:
 
 ```bash
-codex32 wallet bitcoin-core restore --timestamp 0 |
-  bitcoin-cli -rpcwallet=recovery -stdin importdescriptors
-bitcoin-cli -rpcwallet=recovery walletlock
+codex32 wallet bitcoin-core restore --timestamp 0
 ```
 
-Every import result must say `"success": true`. A timestamp of zero safely
-scans all history and may take time; it belongs in this recovery command, not on
-a paper card. During an emergency recovery, move the funds to a newly
+Select and confirm that wallet. If it is locked, follow the displayed
+Bitcoin-Qt Console instructions; codex32 waits and continues automatically. It
+imports the private descriptors, verifies the public set, and relocks an
+encrypted wallet. A timestamp of zero
+safely scans all history and may take time; it belongs in this recovery command,
+not on a paper card. During an emergency recovery, move the funds to a newly
 established wallet after a small test payment when circumstances permit.
 
 Stop and get knowledgeable help instead of guessing when records are missing,
@@ -227,10 +266,15 @@ complete multisig policy or sign a transaction.
 codex32 wallet multisig-xpub | qr
 ```
 
-Import the xpub into the selected reviewed coordinator. Before receiving or
-signing, verify its exact fingerprint, derivation path, and xpub in the complete
-policy. Check every PSBT destination, amount, fee, policy, and cosigner. Never
-give a coordinator a codex32 share, complete master seed, or root xprv.
+Import the xpub into the selected reviewed coordinator. Use the coordinator only
+to assemble the policy and PSBT; use a Bitcoin Core descriptor wallet as the
+signer. Follow a reviewed Bitcoin Core multisig workflow; codex32 does not build
+the signing wallet.
+
+Before receiving or signing, verify the xpub's exact fingerprint, derivation
+path, and xpub in the complete policy. Check every PSBT destination, amount,
+fee, policy, and cosigner. Never give a coordinator a codex32 share, master
+seed, or root xprv.
 
 ### Card maintenance and damaged writing
 

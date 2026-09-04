@@ -1,4 +1,4 @@
-"""Measure the complete production Gate 3 search without candidate shortcuts."""
+"""Measure the complete structural-correction search without candidate shortcuts."""
 
 from __future__ import annotations
 

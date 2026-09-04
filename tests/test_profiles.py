@@ -32,6 +32,7 @@ from codex32.errors import (
     InvalidCharacter,
     InvalidChecksum,
     InvalidLength,
+    InvalidThreshold,
     MissingSeparator,
     UnknownProfile,
     UnsupportedOperation,
@@ -170,6 +171,12 @@ def test_checksum_is_verified_before_unknown_hrp_dispatch() -> None:
         parse_codex32(valid_generic)
     with pytest.raises(InvalidChecksum):
         parse_codex32("zz10tests" + "q" * 39)
+
+
+def test_common_header_is_validated_before_checksum() -> None:
+    malformed = VECTOR_2["secret_S"][:3] + "1" + VECTOR_2["secret_S"][4:]
+    with pytest.raises(InvalidThreshold):
+        parse_codex32(malformed)
 
 
 @pytest.mark.parametrize(

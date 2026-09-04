@@ -1,4 +1,4 @@
-"""Gate 3 structural-family, immutable-prefix, ranking, and completion evidence."""
+"""Structural-family, immutable-prefix, ranking, and completion evidence."""
 
 from itertools import combinations
 from math import comb
@@ -10,7 +10,7 @@ from data.sharing_vectors import SHARING_VECTORS
 from test_bip39 import BIP39_12W_ZERO, BIP39_24W_ZERO
 
 from codex32 import CorrectionContext, MasterSeed, Profile, correct
-from codex32._cli_input import _automatic_targets
+from codex32._cli_input import _correction_plan
 from codex32.correction import CorrectionCandidate, _best, _capture_volume, _erasure_state, _primary
 from codex32.generation import _fingerprint_identifier
 from codex32.indel import (
@@ -30,7 +30,7 @@ from codex32.indel import (
     _search_many,
 )
 from codex32.profiles.ms32 import TEXT_LENGTHS
-from tools.gate3_capture import cross_length_classes
+from tools.correction_capture import cross_length_classes
 
 SOURCE = VECTOR_1["secret_s"]
 CONTEXT = CorrectionContext(Profile.MS, expected_length=len(SOURCE))
@@ -128,7 +128,8 @@ def test_automatic_secondary_search_recovers_three_character_indels(
     source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = _character_damage(source, inserted, omitted)
     contexts = tuple(
-        CorrectionContext(Profile.MS, target, "ms1") for target in _automatic_targets(len(damaged))
+        CorrectionContext(Profile.MS, target, "ms1")
+        for target in _correction_plan(Profile.MS, None, len(damaged), None)[0]
     )
 
     candidates, complete = _search_many(
@@ -152,7 +153,8 @@ def test_automatic_secondary_search_recovers_two_group_indels(
     source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = _group_damage(source, inserted, omitted)
     contexts = tuple(
-        CorrectionContext(Profile.MS, target, "ms1") for target in _automatic_targets(len(damaged))
+        CorrectionContext(Profile.MS, target, "ms1")
+        for target in _correction_plan(Profile.MS, None, len(damaged), None)[0]
     )
 
     candidates, complete = _search_many(

@@ -1,4 +1,4 @@
-"""Independent arithmetic evidence for the final Gate 3 structural envelope."""
+"""Independent arithmetic evidence for the structural-correction envelope."""
 
 from fractions import Fraction
 from math import comb
@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tools.gate3_capture import (
+from tools.correction_capture import (
     FALSE_BOUND_DENOMINATOR,
     Shape,
     alignment_count,
@@ -22,7 +22,7 @@ from tools.gate3_capture import (
 
 def test_cross_length_cli_rejects_the_single_target_erasure_count() -> None:
     with (
-        patch("sys.argv", ["gate3_capture.py", "--observed-length", "48", "--erasures", "8"]),
+        patch("sys.argv", ["correction_capture.py", "--observed-length", "48", "--erasures", "8"]),
         pytest.raises(SystemExit) as failure,
     ):
         main()

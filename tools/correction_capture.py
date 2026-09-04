@@ -1,4 +1,4 @@
-"""Reproduce Gate 3 structural capture bounds with independent integer arithmetic."""
+"""Reproduce structural-correction capture bounds with independent integer arithmetic."""
 
 from __future__ import annotations
 

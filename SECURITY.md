@@ -2,7 +2,8 @@
 
 codex32 handles wallet recovery material. Use a trusted computer and have the
 software and recovery plan reviewed before relying on it with funds. For
-stronger isolation, keep the Bitcoin Core signing wallet permanently offline.
+stronger isolation, use codex32 and the Bitcoin Core signing wallet only on a
+computer kept permanently offline.
 
 A valid checksum detects many copying mistakes. It does not prove that a backup
 belongs to your wallet. A correction is only a suggestion; compare it with the
@@ -36,11 +37,11 @@ Examples of reportable security failures include:
 ## Project boundary
 
 codex32 has no graphical interface, wallet database, secret storage, direct RPC
-socket, or general network client. Fresh Bitcoin creation invokes a reviewed
-`bitcoin-cli` from `PATH`, restricted to `127.0.0.1`, to initialize a wallet the
-user created in Bitcoin Core. Bitcoin Core, its configuration, and that
-executable are part of the trusted destination. codex32 never handles the Core
-wallet passphrase.
+socket, or general network client. Bitcoin master-seed creation and restoration
+invoke a reviewed `bitcoin-cli` from `PATH`, restricted to `127.0.0.1`, to
+initialize a wallet the user created in Bitcoin Core. Bitcoin Core, its
+configuration, and that executable are part of the trusted destination.
+codex32 never handles the Core wallet passphrase.
 
 Security researchers and API developers should read the detailed
 [security model](docs/security/model.md), which records the threat boundaries,

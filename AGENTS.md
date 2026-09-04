@@ -30,7 +30,7 @@ Run the local CLI with `codex32 --help`. Python 3.12 is the minimum; CI also cov
 - Method definitions inside a class are surrounded by 1 blank line
 - Extra blank lines may be used (sparingly) to separate groups of related functions
 - Blank lines may be omitted between a bunch of related one-liners (e.g. a set of dummy implementations)
--Use blank lines in functions, sparingly, to indicate logical sections
+- Use blank lines in functions, sparingly, to indicate logical sections
 
 - Prefer f-strings over `str.format()` or `%` formatting
 
@@ -63,12 +63,22 @@ In text codex32 is always lowercase unless it refers to the Codex32 Book.
 
 ## Testing Guidelines
 
-Use pytest and Hypothesis. Name tests `test_<behavior>` and give test modules an evidence-focused docstring. Add normative vectors, negative cases, and regressions with behavioral changes. Never derive expected fixtures from production code, weaken assertions, or add skips to pass. Do not use real seeds or funded-wallet data.
+Use pytest and Hypothesis. Name tests `test_<behavior>` and give test modules an evidence-focused docstring. Add normative vectors, negative cases, and regressions with behavioral changes. Never derive expected fixtures from production code, weaken assertions, or add skips to pass. Do not use real seeds or funded-wallet data. Do not test the correction if the change could not affect it.
 
-## Security and Agent Instructions
+## Security
 
-Read `SECURITY.md`, `docs/security/model.md`, `docs/developer/api.md`, and `docs/developer/ai-policy.md` before security work. Preserve validated-artifact boundaries, symbol-only shares, OS-backed entropy, and stdout/stderr separation. Agents may edit and test locally, but must not push, open pull requests, post maintainer comments, or claim authorship. A human publishes every contribution.
+For security-sensitive or boundary changes, first read the mandatory
+`docs/security/invariants.md` contract. Then inspect the specification-to-code
+map in `docs/developer/api.md` and only the relevant sections of
+`docs/security/model.md`. Read the complete security model when changing the
+threat model, security guarantees, release posture, or multiple interacting
+boundaries.
 
-## Commit & Pull Request Guidelines
+Do not automatically run security-diff during intermediate implementation;
+run it once on stable security-sensitive diffs. If unsure, stop and ask first.
 
-Make atomic commits that pass independently. Do not mix formatting, code moves, and behavior. Use an imperative subject of at most 50 characters, then a blank line and paragraphs explaining rationale and security implications. Use `refs #123` or `fixes #123` when applicable. Pull requests need a clear use case, relevant test results, documentation updates, and focused peer review; include before/after CLI transcripts when useful.
+## Agent Instructions
+
+Agents may edit, test and commit locally, but must not commit/push to master, push to open pull request branches, open pull requests, post maintainer comments, or claim authorship. A human publishes every contribution.
+
+Commit atomic commits that pass independently. Do not mix formatting, code moves, and behavior. Use an imperative subject of at most 50 characters, then a blank line and paragraphs explaining rationale and security implications. Use `refs #123` or `fixes #123` when applicable. Pull requests need a clear use case, relevant test results, documentation updates, and focused peer review; include before/after CLI transcripts when useful.
