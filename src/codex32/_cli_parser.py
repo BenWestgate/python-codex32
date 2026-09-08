@@ -64,15 +64,15 @@ def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None
 def parser() -> argparse.ArgumentParser:
     result = _Parser(prog="codex32",
                      description="Create, check, recover, and use codex32 Bitcoin seed backups.",
-                     epilog="Do not type a seed or share into the command itself.\n"
-                            "Enter it when prompted, or pipe it into the command.",
+                     epilog="Never include a seed or share in command arguments.\n"
+                            "Enter it when prompted. Some commands also accept piped input.",
                      formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     result.add_argument("--version", action="version", version=f"%(prog)s {version('codex32')}",
                         help="show the installed version and exit")
     commands = result.add_subparsers(dest="command", required=True, title="commands", metavar="COMMAND")
 
-    check = _command(commands, "check", "check whether a secret or share is intact")
-    check.description = "Checks format, checksum, and application rules."
+    check = _command(commands, "check", "check a secret or share for errors")
+    check.description = "Check a secret or share for format, checksum, and content errors."
     secret = _command(commands, "secret", "recover a secret from shares")
     secret.description = ("Recover and display the complete secret. This removes the protection "
                           "provided by splitting it into shares.")
@@ -100,11 +100,10 @@ def parser() -> argparse.ArgumentParser:
         "header", nargs="?", metavar="HEADER", help="worksheet header; omit to enter it at the prompt"
     )
     _terminal_output(checksum)
-    create = _command(commands, "create", "create a new backup or split an existing secret")
-    create.description = "Create a backup. Fresh Bitcoin creation confirms cards and initializes Bitcoin Core."
+    create = _command(commands, "create", "create or confirm a backup, or split an existing secret")
+    create.description = "Create and confirm recovery cards, then initialize a Bitcoin Core wallet."
     create.add_argument("header", nargs="?", metavar="HEADER",
-        help="backup header or sharing threshold, such as 3cash or 3; omit to create a new "
-             "unshared Bitcoin master seed")
+        help="backup header or sharing threshold, such as 3cash or 3; omit for a single recovery card")
     create.add_argument("--bytes", dest="byte_length", type=_integer("bytes", 16, 64),
         choices=SEED_BYTE_LENGTHS, metavar="BYTES",
         help="length of a new Bitcoin master seed: 16, 20, 24, 28, 32, or 64 bytes (default: 16)")
@@ -113,9 +112,8 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--indices", metavar="INDICES", help="exact share indices, in output order")
     create.add_argument("--existing", action="store_true",
                         help="use an existing codex32 secret or hexadecimal seed")
-    _terminal_output(create)
 
-    wallet = _command(commands, "wallet", "initialize or export data for Bitcoin wallet software")
+    wallet = _command(commands, "wallet", "set up a Bitcoin Core wallet or export wallet data")
     wallet_commands = wallet.add_subparsers(dest="wallet_command", required=True)
     multisig = _command(wallet_commands, "multisig-xpub", "export an account xpub for multisig coordinators")
     _wallet_options(multisig, timestamp=False)

@@ -332,6 +332,7 @@ def test_encrypted_import_retries_without_a_passphrase_verifies_and_relocks(
         )
         == 1
     )
+    assert messages[-1] == ""
 
 
 def test_failed_import_is_generic_and_relocks_encrypted_wallet(
@@ -539,7 +540,9 @@ def test_unencrypted_wallet_imports_without_a_lock_call(monkeypatch: pytest.Monk
         lambda client, *args, wallet=None, stdin=None: rpc(client, *args, wallet=wallet, stdin=stdin),
     )
     client = BitcoinCore("bitcoin-cli", "main", 300000)
-    assert client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None) == "signer"
+    messages: list[str] = []
+    assert client.initialize(_SEED, lambda _prompt: "yes", messages.append) == "signer"
+    assert messages == []
     assert not any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
 
 

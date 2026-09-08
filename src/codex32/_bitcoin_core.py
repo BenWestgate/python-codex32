@@ -122,7 +122,7 @@ class BitcoinCore:
             name = self._select(ask, tell, private=private)
             state = self._target(name, private=private)
             if state is None: tell("That wallet is no longer eligible. Choose again."); continue
-            encrypted, locked = state; relock = encrypted
+            encrypted, locked = state; relock = encrypted; waited = False
             try:
                 public = core_descriptors(secret, account=account, testnet=self.chain != "main", timestamp=timestamp)
                 expected: list[tuple[str, bool, bool]] = []
@@ -135,7 +135,8 @@ class BitcoinCore:
                     expected.extend((descriptor, True, bool(position))
                                     for position, descriptor in enumerate(expansion))
                 while True:
-                    if locked: tell(
+                    if locked:
+                        waited = True; tell(
                         "In Bitcoin-Qt, open Window > Console and select wallet "
                         f"{json.dumps(name)}.\nType: walletpassphrase \"YOUR PASSPHRASE\" 5\n"
                         "Waiting; press Ctrl-C to stop.")
@@ -173,4 +174,5 @@ class BitcoinCore:
                     except BitcoinCoreError as error: raise BitcoinCoreError(warning) from error
                     if not isinstance(info, dict) or info.get("unlocked_until") != 0: raise BitcoinCoreError(warning)
                     relock = False
+            if waited: tell("")
             return name

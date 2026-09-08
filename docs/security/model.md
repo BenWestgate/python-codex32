@@ -65,8 +65,7 @@ The operator must:
   guarantee new physical entropy between calls.
 - A checksum, generation-padding hint, fingerprint, or correction candidate
   does not authenticate a backup or prove the operator's intent.
-- Creation feedback can locate transcription errors but cannot prove that the
-  operator corrected the physical recovery card.
+- Creation feedback identifies correct groups but does not prove the recovery card was corrected.
 - A fresh unshared master seed exposes a public 20-bit BIP32 fingerprint in its
   default identifier; fingerprints are metadata, not secrets.
 - Private Bitcoin Core descriptors contain the root xprv and temporarily exist
@@ -101,11 +100,14 @@ checksum, length, padding, or application validation.
 Fresh shared creation generates *k* random initial shares. Each uses a separate
 full-payload OS-CSPRNG request. The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
-text is never reparsed as the source secret and contributes no entropy.
+text is never reparsed as the source secret and contributes no entropy. Existing complete secrets are confirmed unchanged and initialize the wallet without new entropy.
 
-The CLI may align and highlight substitutions, insertions, and deletions in the
-entered text, but never supplies expected character values or applies a repair.
-Retries are unlimited; only exact canonical equality confirms a card.
+Creation retries show only entered text in contiguous regions: bold red means review the card, with reverse video added for the active region. Original card formatting is display-only; editable prefills retain entered case and spacing.
+Complete matching canonical groups freeze; local alignment preserves entered group ownership before edit minimization and proceeds without crossing frozen boundaries (see the API alignment rules).
+Empty retries fail; retries are unlimited. Correct full-string retries confirm; incorrect recognizable full-string retries preserve progress and clarify the active region. Only complete case/whitespace-normalized equality confirms, with no expected characters, error classifications, prescribed edits, or repairs.
+Progressive group-level correctness feedback is explicitly accepted and does not change the confirmation boundary.
+
+Confirmation shows that the operator can produce the correct recovery string during setup. It cannot prove that the physical backup was corrected rather than reconstructed using confirmation feedback.
 
 The API accepts neither caller-provided entropy nor padding values, partial
 bases, or resumable ceremony state. Fresh creation rejects final-share
@@ -170,4 +172,4 @@ initialization.
 | Creation, sharing, and recovery | [`test_generation.py`](../../tests/test_generation.py), [`test_sharing.py`](../../tests/test_sharing.py), and the BIP93 vectors under `tests/data/` |
 | Correction | [`test_correction_bch.py`](../../tests/test_correction_bch.py), [`test_correction_indel.py`](../../tests/test_correction_indel.py), [`correction_capture.py`](../../tools/correction_capture.py), and [`differential_correction.py --verify`](../../tools/differential_correction.py) |
 | Bitcoin Core and wallets | [`test_bitcoin_core.py`](../../tests/test_bitcoin_core.py), [`test_wallet.py`](../../tests/test_wallet.py), [`bitcoin_core_regtest.py`](../../tools/bitcoin_core_regtest.py), and [`differential_wallet.py`](../../tools/differential_wallet.py) |
-| CLI channels and input | [`test_cli.py`](../../tests/test_cli.py) and [`test_recovery_materials.py`](../../tests/test_recovery_materials.py) |
+| CLI channels and input | [`test_cli.py`](../../tests/test_cli.py) |

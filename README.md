@@ -66,11 +66,14 @@ This creates three shares with a random identifier. Any two recover the seed, so
 one can be lost. Once the shares are confirmed, codex32 initializes the
 user-created blank Bitcoin Core wallet you select.
 
-For a 3-of-6 backup with the identifier `cash`, run:
+For a 3-of-7 backup with the identifier `yete`, run:
 
 ```bash
-codex32 create 3cash --shares 6
+codex32 create 3yete --shares 7
 ```
+
+Any three shares recover the seed, so four can be lost. Each additional share
+is another recovery card to protect.
 
 Follow the [user guide](docs/user/guide.md) for the complete setup, shared
 backups, recovery, inheritance, offline signing, and Bitcoin Core instructions.

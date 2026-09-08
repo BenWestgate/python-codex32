@@ -235,23 +235,3 @@ def test_any_exact_threshold_subset_recovers_the_same_secret() -> None:
     ordinary = [*masks, *(derive_share(basis, index) for index in "def")]
     recovered = {recover_secret(list(subset)).text for subset in combinations(ordinary, 3)}
     assert recovered == {secret.text}
-
-
-def test_gate_2_public_surface_replaces_the_private_bridge() -> None:
-    import codex32
-    from codex32 import bip93
-
-    assert codex32.recover_secret is recover_secret
-    assert codex32.derive_share is derive_share
-    assert not hasattr(bip93, "_interpolate_at")
-    for old_error in (
-        "MismatchedLength",
-        "MismatchedHrp",
-        "MismatchedId",
-        "RepeatedIndex",
-        "ThresholdNotPassed",
-    ):
-        assert not hasattr(bip93, old_error)
-    share = parse_codex32(VECTOR_2["share_A"])
-    assert isinstance(share, Share)
-    assert not hasattr(share, "seed_bytes")

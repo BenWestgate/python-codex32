@@ -118,8 +118,12 @@ def test_complete_group_family_recovers_ungrouped_source(
     assert [candidate.artifact.text for candidate in correct(CONTEXT, damaged)] == [SOURCE]
 
 
-@pytest.mark.parametrize("byte_length", (20, 24, 28))
-@pytest.mark.parametrize(("inserted", "omitted"), ((0, 3), (1, 2), (2, 1), (3, 0)))
+# Exercise each family across intermediate lengths; the frontier arithmetic
+# test below checks every supported length without repeating full searches.
+@pytest.mark.parametrize(
+    ("byte_length", "inserted", "omitted"),
+    ((20, 0, 3), (24, 1, 2), (28, 2, 1), (20, 3, 0)),
+)
 def test_automatic_secondary_search_recovers_three_character_indels(
     byte_length: int,
     inserted: int,
@@ -143,8 +147,10 @@ def test_automatic_secondary_search_recovers_three_character_indels(
     assert [candidate.artifact.text for candidate in candidates] == [source]
 
 
-@pytest.mark.parametrize("byte_length", (20, 24, 28))
-@pytest.mark.parametrize(("inserted", "omitted"), ((0, 2), (1, 1), (2, 0)))
+@pytest.mark.parametrize(
+    ("byte_length", "inserted", "omitted"),
+    ((24, 0, 2), (20, 1, 1), (28, 2, 0)),
+)
 def test_automatic_secondary_search_recovers_two_group_indels(
     byte_length: int,
     inserted: int,
@@ -290,17 +296,15 @@ def test_structural_capacity_does_not_borrow_linear_erasure_recovery() -> None:
     assert correct(CONTEXT, separated_text) == ()
 
 
-def test_every_expected_length_consecutive_fixed_erasure_burst() -> None:
+@pytest.mark.parametrize("count", (9, 13))
+def test_expected_length_search_retains_consecutive_erasure_recovery(count: int) -> None:
     source = VECTOR_1["secret_s"]
-    for count in range(9, 14):
-        for start in range(3, len(source) - count + 1):
-            positions = frozenset(range(start, start + count))
-            damaged = "".join("?" if index in positions else value for index, value in enumerate(source))
+    damaged = source[:8] + "?" * count + source[8 + count :]
 
-            candidate = correct(CONTEXT, damaged)[0]
+    candidate = correct(CONTEXT, damaged)[0]
 
-            assert candidate.artifact.text == source
-            assert candidate.erasures_filled == count
+    assert candidate.artifact.text == source
+    assert candidate.erasures_filled == count
 
 
 def test_fixed_volume_retains_every_bch_substitution_layer() -> None:

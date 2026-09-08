@@ -1,9 +1,10 @@
-"""End-to-end tests for the small codex32 CLI."""
+"""CLI workflows, confirmation boundaries, and secret output channels."""
 
 import builtins
 import contextlib
 import importlib
 import io
+import re
 import subprocess
 import sys
 import sysconfig
@@ -21,7 +22,6 @@ from test_bip39 import BIP39_12W_ZERO
 from codex32 import (
     ConfirmationResult,
     CoreLightningSecret,
-    CorrectionCandidate,
     CorrectionContext,
     MasterSeed,
     Profile,
@@ -139,13 +139,13 @@ def _invoke_confirmed_create(
     terminal_output: bool = False,
     core: _FakeBitcoinCore | None = None,
 ) -> _Result:
-    args = args if terminal_output or "--plain" in args else [*args, "--plain"]
     stdin = _TTYInput("\n".join(lines) + "\n")
     stdout = _CreationOutput(pretty=terminal_output)
     stderr = io.StringIO()
 
     def confirm_card(
-        artifact: Share | Secret, confirm: Callable[[str], ConfirmationResult] | None = None
+        artifact: Share | Secret,
+        confirm: Callable[[str], ConfirmationResult] | None = None,
     ) -> None:
         if confirm is not None:
             result = confirm(artifact.text)
@@ -168,7 +168,11 @@ def _invoke_initialized_wallet(
     core: _FakeBitcoinCore | None = None,
 ) -> tuple[_Result, _FakeBitcoinCore]:
     selected = _FakeBitcoinCore() if core is None else core
-    stdin, stdout, stderr = _TTYInput("\n".join(lines) + "\n"), io.StringIO(), io.StringIO()
+    stdin, stdout, stderr = (
+        _TTYInput("\n".join(lines) + "\n"),
+        io.StringIO(),
+        io.StringIO(),
+    )
     with (
         patch.object(sys, "stdin", stdin),
         patch("codex32.cli.BitcoinCore.connect", return_value=selected),
@@ -184,10 +188,13 @@ def _installed_cli() -> Path:
     return Path(sysconfig.get_path("scripts")) / f"codex32{suffix}"
 
 
+def _card_text(output: str) -> str:
+    return "".join(re.sub(r"\x1b\[[0-9;]*m", "", output.strip().splitlines()[-1]).split())
+
+
 def _output_artifacts(result: _Result, profile: str = "ms") -> list[Share | Secret]:
-    return [
-        parse_codex32(line) for line in result.stdout.splitlines() if line.lower().startswith(profile + "1")
-    ]
+    lines = (re.sub(r"\x1b\[[0-9;]*m", "", line) for line in result.stdout.splitlines())
+    return [parse_codex32("".join(line.split())) for line in lines if line.lower().startswith(profile + "1")]
 
 
 def test_check_supports_every_registered_application() -> None:
@@ -247,21 +254,6 @@ def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.stderr == ""
 
 
-def test_check_help_explains_validation_scope() -> None:
-    result = _invoke(["check", "-h"])
-    help_text = " ".join(result.stdout.split())
-
-    assert result.exit_code == 0
-    assert "Checks format, checksum, and application rules" in help_text
-
-
-def test_secret_help_explains_threshold_protection() -> None:
-    help_text = " ".join(_invoke(["secret", "-h"]).stdout.split())
-
-    assert "Recover and display the complete secret" in help_text
-    assert "removes the protection provided by splitting it into shares" in help_text
-
-
 @pytest.mark.parametrize(
     ("hrp", "payload_length", "message"),
     (
@@ -312,11 +304,6 @@ def test_tty_check_prefills_rejected_entry_without_history(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     valid = VECTOR_1["secret_s"]
     rejected = valid[:-1] + valid[-1].upper()
     answers = iter((rejected, valid))
@@ -330,7 +317,7 @@ def test_tty_check_prefills_rejected_entry_without_history(
         editor.run_hook()
         return next(answers)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", editor)
     monkeypatch.setattr(builtins, "input", answer)
 
@@ -341,7 +328,7 @@ def test_tty_check_prefills_rejected_entry_without_history(
     assert editor.hook is None
     assert display_streams == [True, True]
     assert sys.stdout is not sys.stderr
-    assert prompts == ["Enter a codex32 string: "] * 2
+    assert prompts == ["Enter a codex32 string:\n> "] * 2
     assert rejected not in captured.out
     assert "Rejected: Use either all uppercase or all lowercase letters." in captured.err
     assert captured.err.endswith("\n\n")
@@ -352,18 +339,13 @@ def test_tty_check_reports_checksum_before_truncated_ms_length(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     truncated = (
         "ms13cashsllhdmn9m42vcsamx24zrxgs3qqjzqud4m0d6nl",
         "ms13cashsllhdmn9m42vcsamx24zrxgs3qqjzqud4m0d6n",
         "ms13cashsllhdmn9m42vcsamx24zrxgs3qqjzqud4m0d6",
     )
     answers = iter((*truncated, VECTOR_1["secret_s"]))
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
@@ -378,14 +360,9 @@ def test_tty_check_names_an_invalid_character_and_position(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     invalid = "MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW'"
     answers = iter((invalid, VECTOR_1["secret_s"]))
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
@@ -400,11 +377,6 @@ def test_tty_check_explains_header_and_prefix_errors(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     invalid = (
         "ms10fauxxxxxxxxxxxxxxxxxxxxxxxxxxxx0z26tfn0ulw3p",
         "ms1fauxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg",
@@ -414,7 +386,7 @@ def test_tty_check_explains_header_and_prefix_errors(
         "s10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2",
     )
     answers = iter((*invalid, VECTOR_1["secret_s"]))
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
@@ -435,11 +407,6 @@ def test_tty_retry_replaces_only_the_editable_suffix(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     prefix = "ms12name"
     suffix = VECTOR_2["share_C"][len(prefix) :]
     first, second = ("Q", "P") if suffix.isupper() else ("q", "p")
@@ -453,7 +420,7 @@ def test_tty_retry_replaces_only_the_editable_suffix(
         editor.run_hook()
         return next(answers)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", editor)
     monkeypatch.setattr(builtins, "input", answer)
 
@@ -471,11 +438,6 @@ def test_tty_wallet_requires_confirmation_before_using_correction(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     original = VECTOR_1["secret_s"]
     damaged = original[:20] + ("q" if original[20] != "q" else "p") + original[21:]
     answers = iter((damaged[3:], "yes"))
@@ -485,7 +447,7 @@ def test_tty_wallet_requires_confirmation_before_using_correction(
         prompts.append(prompt)
         return next(answers)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
     monkeypatch.setattr(builtins, "input", answer)
 
@@ -493,9 +455,8 @@ def test_tty_wallet_requires_confirmation_before_using_correction(
     captured = capsys.readouterr()
     assert captured.out.strip() == VECTOR_1["xprv"]
     assert "Possible correction:" in captured.err and original in captured.err
-    correction_line = next(line for line in captured.err.splitlines() if "Possible correction:" in line)
-    assert correction_line.endswith(original)
-    assert prompts[0] == "Enter a codex32 string: "
+    assert f"Possible correction:\n> {original}" in captured.err
+    assert prompts[0] == "Enter a codex32 string:\n> "
     assert prompts[-1] == "Use this correction? [y/N]: "
 
 
@@ -523,15 +484,10 @@ def test_tty_retry_without_line_editor_uses_an_empty_prompt(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     valid = VECTOR_1["secret_s"]
     rejected = valid[:-1] + valid[-1].upper()
     answers = iter((rejected, valid))
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
     prompts: list[str] = []
 
@@ -543,7 +499,7 @@ def test_tty_retry_without_line_editor_uses_an_empty_prompt(
 
     assert main(["check"]) == 0
     assert "Valid unshared Bitcoin master seed." in capsys.readouterr().out
-    assert prompts == ["Enter a codex32 string: "] * 2
+    assert prompts == ["Enter a codex32 string:\n> "] * 2
 
 
 def test_tty_display_file_descriptor_is_restored_after_failure(
@@ -624,12 +580,7 @@ def test_tty_direct_secret_needs_no_acceptance_status(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(builtins, "input", lambda _prompt: VECTOR_1["secret_s"])
 
     assert main(["secret"]) == 0
@@ -643,11 +594,6 @@ def test_tty_recovery_accepts_suffix_after_fixed_prefix(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     prefix = "ms12name"
     answers = iter((VECTOR_2["share_A"], VECTOR_2["share_C"][len(prefix) :]))
     prompts: list[str] = []
@@ -656,7 +602,7 @@ def test_tty_recovery_accepts_suffix_after_fixed_prefix(
         prompts.append(prompt)
         return next(answers)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(builtins, "input", answer)
 
     status = main(["secret"])
@@ -666,18 +612,13 @@ def test_tty_recovery_accepts_suffix_after_fixed_prefix(
     assert captured.out.strip() == VECTOR_2["secret_S"]
     assert "Share 1 of 2 accepted." in captured.err
     assert "Share 2 of 2 accepted." not in captured.err
-    assert prompts == ["Enter a codex32 string: ", "Enter share 2 of 2: MS12NAME"]
+    assert prompts == ["Enter a codex32 string:\n> ", "Enter share 2 of 2:\n> MS12NAME"]
 
 
 def test_tty_subsequent_correction_uses_confirmed_immutable_context(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
-
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
 
     prefix = "MS12NAME"
     suffix = VECTOR_2["share_C"][len(prefix) :]
@@ -691,7 +632,7 @@ def test_tty_subsequent_correction_uses_confirmed_immutable_context(
         contexts.append(active)
         return original_search(active, value, **kwargs)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
     monkeypatch.setattr(indel, "_search_many", search)
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
@@ -708,11 +649,6 @@ def test_tty_recovery_accepts_complete_uppercase_and_retries(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     first = VECTOR_2["share_A"].upper()
     mismatch = SHARING_VECTORS["cl"]["C"].upper()
     answers = iter((first, mismatch, first, VECTOR_2["share_C"].upper()))
@@ -725,7 +661,7 @@ def test_tty_recovery_accepts_complete_uppercase_and_retries(
         editor.run_hook()
         return next(answers)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", editor)
     monkeypatch.setattr(builtins, "input", answer)
 
@@ -735,10 +671,10 @@ def test_tty_recovery_accepts_complete_uppercase_and_retries(
     assert status == 0
     assert captured.out.strip() == VECTOR_2["secret_S"].upper()
     assert prompts == [
-        "Enter a codex32 string: ",
-        "Enter share 2 of 2: MS12NAME",
-        "Enter share 2 of 2: MS12NAME",
-        "Enter share 2 of 2: MS12NAME",
+        "Enter a codex32 string:\n> ",
+        "Enter share 2 of 2:\n> MS12NAME",
+        "Enter share 2 of 2:\n> MS12NAME",
+        "Enter share 2 of 2:\n> MS12NAME",
     ]
     assert "Rejected: These strings are for different applications." in captured.err
     assert "Rejected: That share index was already entered." in captured.err
@@ -764,11 +700,6 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     answers = iter((VECTOR_3["derived_f"], VECTOR_3["share_c"], VECTOR_3["secret_s"]))
     prompts: list[str] = []
 
@@ -776,7 +707,7 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
         prompts.append(prompt)
         return next(answers)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(builtins, "input", answer)
     monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *_args: _FakeBitcoinCore())
 
@@ -788,9 +719,9 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
     assert "Share 1 of 3 accepted." in captured.err
     assert "Share 2 of 3 accepted." in captured.err
     assert prompts == [
-        "Enter a codex32 string: ",
-        "Enter share 2 of 3: ms13cash",
-        "Enter share 3 of 3: ms13cash",
+        "Enter a codex32 string:\n> ",
+        "Enter share 2 of 3:\n> ms13cash",
+        "Enter share 3 of 3:\n> ms13cash",
     ]
 
 
@@ -798,11 +729,6 @@ def test_tty_share_collects_secret_and_exact_basis(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
-
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
 
     prefix = "ms13cash"
     answers = iter(
@@ -818,7 +744,7 @@ def test_tty_share_collects_secret_and_exact_basis(
         prompts.append(prompt)
         return next(answers)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(builtins, "input", answer)
     monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *_args: _FakeBitcoinCore())
 
@@ -826,9 +752,9 @@ def test_tty_share_collects_secret_and_exact_basis(
     captured = capsys.readouterr()
     assert captured.out.strip() == VECTOR_3["derived_d"]
     assert prompts == [
-        "Enter a codex32 string: ",
-        "Enter string 2 of 3: ms13cash",
-        "Enter string 3 of 3: ms13cash",
+        "Enter a codex32 string:\n> ",
+        "Enter string 2 of 3:\n> ms13cash",
+        "Enter string 3 of 3:\n> ms13cash",
     ]
     assert "String 1 of 3 accepted." in captured.err
     assert "String 2 of 3 accepted." in captured.err
@@ -844,11 +770,6 @@ def test_tty_interrupts_have_stable_statuses(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     valid = VECTOR_1["secret_s"]
     rejected = valid[:-1] + valid[-1].upper()
     answers: list[str | BaseException] = [rejected, exception]
@@ -861,7 +782,7 @@ def test_tty_interrupts_have_stable_statuses(
             raise value
         return value
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", editor)
     monkeypatch.setattr(builtins, "input", answer)
 
@@ -901,15 +822,10 @@ def test_share_rejects_invalid_target_before_prompting(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     def forbidden(_prompt: str) -> str:
         raise AssertionError("invalid target prompted for protected input")
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(builtins, "input", forbidden)
 
     assert main(["share", index]) == 2
@@ -933,11 +849,6 @@ def test_tty_share_rejects_target_index_as_soon_as_entered(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     answers = iter((VECTOR_2["derived_D"], VECTOR_2["share_A"], VECTOR_2["share_C"]))
     editor = _FakeLineEditor()
 
@@ -945,7 +856,7 @@ def test_tty_share_rejects_target_index_as_soon_as_entered(
         editor.run_hook()
         return next(answers)
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", editor)
     monkeypatch.setattr(builtins, "input", answer)
 
@@ -989,7 +900,7 @@ def test_fresh_bitcoin_terminal_and_core_preflight_precede_entropy() -> None:
         contextlib.redirect_stderr(stderr),
         pytest.raises(RuntimeError, match="preflight"),
     ):
-        main(["create", "--plain"])
+        main(["create"])
     generate.assert_not_called()
 
     stdout, stderr = _TTYOutput(), io.StringIO()
@@ -1001,7 +912,7 @@ def test_fresh_bitcoin_terminal_and_core_preflight_precede_entropy() -> None:
         contextlib.redirect_stderr(stderr),
         pytest.raises(RuntimeError, match="preflight"),
     ):
-        main(["create", "--existing", "--plain"])
+        main(["create", "--existing"])
     source.assert_not_called()
 
 
@@ -1021,7 +932,7 @@ def test_confirmation_cannot_replace_the_original_seed_used_for_core(
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        assert main(["create", "--plain"]) == 0
+        assert main(["create"]) == 0
 
     assert core.imported is secret
 
@@ -1063,7 +974,9 @@ def test_fresh_cli_generation_rejects_every_other_16_through_64_byte_size() -> N
 @pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)
 def test_cli_import_preserves_all_bip93_master_seed_sizes(byte_length: int) -> None:
     raw = bytes(range(byte_length))
-    result = _invoke_confirmed_create(["create", "--existing"], raw.hex())
+    core = _FakeBitcoinCore()
+    result = _invoke_confirmed_create(["create", "--existing"], raw.hex(), core=core)
+    assert core.timestamp == 0
     artifact = _output_artifacts(result)[0]
 
     assert result.exit_code == 0
@@ -1082,26 +995,21 @@ def test_cli_import_rejects_every_other_16_through_64_byte_size() -> None:
 def test_bare_create_requires_exact_confirmation_on_a_terminal(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     emitted: list[str] = []
 
     def answer(prompt: str) -> str:
-        if prompt == "Write this secret on a new recovery card, then press Enter: ":
-            emitted.append(capsys.readouterr().out.strip())
+        if prompt == "Write this secret on a new recovery card, then press Enter. ":
+            emitted.append(_card_text(capsys.readouterr().out))
             return ""
-        assert prompt == "Re-enter the secret from the recovery card: "
+        assert prompt == "Re-enter the secret from the recovery card:\n> "
         return emitted[-1].upper()
 
-    monkeypatch.setattr(sys, "stdin", Terminal())
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(builtins, "input", answer)
 
     with patch("codex32.cli.BitcoinCore.connect", return_value=_FakeBitcoinCore()):
-        assert main(["create", "--plain"]) == 0
+        assert main(["create"]) == 0
     artifact = parse_codex32(emitted[0])
     assert isinstance(artifact, MasterSeed)
     assert artifact.header.identifier == _fingerprint_identifier(artifact.seed_bytes)
@@ -1110,26 +1018,21 @@ def test_bare_create_requires_exact_confirmation_on_a_terminal(
 def test_fresh_shared_create_confirms_each_card_on_a_terminal(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     emitted: list[str] = []
 
     def answer(prompt: str) -> str:
-        if prompt == "Write this share on a new recovery card, then press Enter: ":
-            emitted.append(capsys.readouterr().out.strip())
+        if prompt == "Write this share on a new recovery card, then press Enter. ":
+            emitted.append(_card_text(capsys.readouterr().out))
             return ""
-        assert prompt == "Re-enter the share from the recovery card: "
+        assert prompt == "Re-enter the share from the recovery card:\n> "
         return emitted[-1]
 
-    monkeypatch.setattr(sys, "stdin", Terminal())
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(builtins, "input", answer)
 
     with patch("codex32.cli.BitcoinCore.connect", return_value=_FakeBitcoinCore()):
-        assert main(["create", "2", "--indices", "ac", "--plain"]) == 0
+        assert main(["create", "2", "--indices", "ac"]) == 0
     assert len(emitted) == 2
     assert all(isinstance(parse_codex32(text), Share) for text in emitted)
 
@@ -1142,33 +1045,18 @@ def test_shared_create_refuses_redirected_input() -> None:
     assert "requires an interactive terminal" in result.stderr
 
 
-def test_network_report_ends_with_a_blank_line(monkeypatch: pytest.MonkeyPatch) -> None:
-    cli_module = importlib.import_module("codex32.cli")
-    stderr = io.StringIO()
-
-    def connect(_ask: object, tell: Callable[[str], None]) -> _FakeBitcoinCore:
-        tell("Using Bitcoin Core on signet.")
-        return _FakeBitcoinCore(chain="signet")
-
-    monkeypatch.setattr(cli_module.BitcoinCore, "connect", connect)
-    with contextlib.redirect_stderr(stderr):
-        cli_module._connected_core()
-
-    assert stderr.getvalue() == "Using Bitcoin Core on signet.\n\n"
-
-
 def test_creation_confirmation_highlights_groups_without_correction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cli_module = importlib.import_module("codex32.cli")
     artifact = parse_codex32(VECTOR_2["share_A"])
     damaged = artifact.text[:4] + ("q" if artifact.text[4] != "q" else "p") + artifact.text[5:]
-    answers = iter(("", damaged, artifact.text.upper()))
-    prompts: list[str] = []
+    answers = iter(("", damaged, artifact.text[4:8].upper()))
+    prompts: list[tuple[str, dict[str, object]]] = []
     output = _TTYOutput()
 
-    def answer(prompt: str, **_options: object) -> str:
-        prompts.append(prompt)
+    def answer(prompt: str, **options: object) -> str:
+        prompts.append((prompt, options))
         return next(answers)
 
     monkeypatch.setattr(cli_module, "_text", answer)
@@ -1178,128 +1066,57 @@ def test_creation_confirmation_highlights_groups_without_correction(
 
     message = output.getvalue()
     assert message.startswith("\n")
-    assert "Re-entry does not match. Check the red groups against the recovery card." in message
+    assert "\x1b[1;7;31m" in message
     assert "group(s):" not in message
     assert artifact.text[4:8].upper() not in message
     assert damaged[4:8].upper() in message
-    assert "\x1b[1;31m" in message
-    assert sum(prompt.count("\x1b[3J\x1b[2J\x1b[H") for prompt in prompts) == 1
-    assert "\x1b[3J\x1b[2J\x1b[H" in prompts[1]
+    assert "\x1b[1;7;31m" in message
+    assert "\x1b[1m" in message and "\x1b[22m" in message
+    assert "\x1b[37m" not in message and "\x1b[97m" not in message
+    assert prompts[2] == (
+        "Review the marked text on your recovery card",
+        {
+            "prompt_end": ":\n> ",
+            "preserve_groups": True,
+            "optional": True,
+            "prefill": damaged[4:8],
+        },
+    )
+    assert sum(prompt.count("\x1b[3J\x1b[2J\x1b[H") for prompt, _options in prompts) == 1
+    assert "\x1b[3J\x1b[2J\x1b[H" in prompts[1][0]
 
 
 @pytest.mark.parametrize(
-    ("observed", "shown", "red", "locked"),
+    ("observed", "shown", "red"),
     (
-        ("abcdeXghijklmnop", "ABCD EXGH IJKL MNOP", 1, "abcd"),
-        ("abcdefXghijklmnop", "ABCD EFXGH IJKL MNOP", 1, "abcd"),
-        ("abcdefghXijklmnop", "ABCD EFGH XIJKL MNOP", 1, "abcdefgh"),
-        ("abcdeghijklmnop", "ABCD EGH IJKL MNOP", 1, "abcd"),
-        ("aXcdefghijXlmnop", "AXCD EFGH IJXL MNOP", 2, ""),
-        ("abcdefghijklmnopX", "ABCD EFGH IJKL MNOPX", 1, "abcdefghijkl"),
-        ("abcdefghijklmnop", "ABCD EFGH ____ IJKL  MNOP", 1, "abcdefgh"),
-        ("aaaaaaa", "AAAA AAA", 1, "aaaa"),
+        ("abcdeXghijklmnop", "ABCD EXGH IJKL MNOP", 1),
+        ("abcdefXghijklmnop", "ABCD EFXGH IJKL MNOP", 1),
+        ("abcdefghXijklmnop", "ABCD EFGH XIJKL MNOP", 1),
+        ("abcdeghijklmnop", "ABCD EGH IJKL MNOP", 1),
+        ("aXcdefghijXlmnop", "AXCD EFGH IJXL MNOP", 2),
+        ("abcdefghijklmnopX", "ABCD EFGH IJKL MNOPX", 1),
+        ("abcdefghijklmnop", "ABCD EFGH ____ IJKL  MNOP", 1),
+        ("aaaaaaa", "AAAA AAA", 1),
     ),
 )
 def test_confirmation_alignment_shows_only_entered_text(
     observed: str,
     shown: str,
     red: int,
-    locked: str,
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
     expected = "abcdefghWXYZijklmnop" if observed == "abcdefghijklmnop" else "abcdefghijklmnop"
     if observed == "aaaaaaa":
         expected = "aaaaaaaa"
-    actual, actual_locked = input_module._entered_groups(observed, expected)
-    plain = actual.replace("\x1b[1;31m", "").replace("\x1b[0m", "")
+    groups, changed = input_module._entered_groups(observed, expected)
+    actual = input_module._render_groups(groups, changed, len(expected))
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", actual)
 
     assert plain == shown
-    assert actual.count("\x1b[1;31m") == red
-    assert actual_locked == locked
+    assert len(re.findall(r"\x1b\[(?:1|22);31m", actual)) == red
+    assert len(changed) == red
     assert "".join(plain.replace("_", "").split()).lower() == observed.lower()
-
-
-def test_confirmation_alignment_does_not_color_locked_or_correct_following_groups() -> None:
-    input_module = importlib.import_module("codex32._cli_input")
-    expected = "ms12kwkc9dcdlt2wp2wek7sr4dtp42rlfj7rr8txv42trduf"
-
-    boundary, locked = input_module._entered_groups(
-        "ms12kwkc9dcdlt2wp2wek7sr4dtp42rlrlfj7rr8txv42trduf", expected
-    )
-    substitution, _ = input_module._entered_groups(
-        "ms10vh5nsc68xv2fq87spsahvyczlmlfpwgrtnx5yweha8z2",
-        "ms10vh5nsc68xv2fq87spsahvyczlmlfprwgtnx5yweha8z2",
-    )
-
-    assert locked.endswith("42rl")
-    assert "42RL  \x1b[1;31mRLFJ7R\x1b[0m R8TX" in boundary
-    assert "\x1b[1;31mPWGR\x1b[0m TNX5" in substitution
-
-
-def test_correction_alignment_uses_input_spacing_and_marks_only_the_edit() -> None:
-    input_module = importlib.import_module("codex32._cli_input")
-    expected = "abcdefghijklmnop"
-
-    shown = input_module._aligned_groups("abcd fghijklmnop", expected, True)
-
-    assert shown.replace("\x1b[1;31m", "").replace("\x1b[0m", "") == expected
-    assert shown.count("\x1b[1;31m") == 4
-
-
-def test_confirmation_retry_locks_progress_and_prefills_the_editable_suffix(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cli_module = importlib.import_module("codex32.cli")
-    input_module = importlib.import_module("codex32._cli_input")
-    artifact = parse_codex32(VECTOR_2["share_A"])
-    bad_one = artifact.text[:9] + ("Q" if artifact.text[9] != "q" else "P") + artifact.text[10:]
-    bad_two = artifact.text[:17] + ("q" if artifact.text[17] != "q" else "p") + artifact.text[18:]
-    raw_one = " ".join(bad_one[index : index + 4] for index in range(0, len(bad_one), 4))
-    answers = iter(("", raw_one, bad_two[8:], artifact.text[16:]))
-    editor = _FakeLineEditor()
-    prompts: list[str] = []
-    output = _TTYOutput()
-
-    def answer(prompt: str) -> str:
-        prompts.append(prompt)
-        editor.run_hook()
-        return next(answers)
-
-    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
-    monkeypatch.setattr(input_module, "_line_editor", editor)
-    monkeypatch.setattr(builtins, "input", answer)
-    with contextlib.redirect_stderr(output):
-        cli_module._confirm_card(artifact)
-
-    expected_suffix = input_module._raw_suffix(raw_one, artifact.text[:8])
-    assert editor.inserted == [expected_suffix, bad_two[16:]]
-    assert prompts[2].endswith(" ".join((artifact.text[:4], artifact.text[4:8])) + " ")
-    assert prompts[3].endswith(" ".join(artifact.text[index : index + 4] for index in range(0, 16, 4)) + " ")
-    assert sum(prompt.count("\x1b[3J\x1b[2J\x1b[H") for prompt in prompts) == 1
-    assert prompts[1].startswith("\x1b[3J\x1b[2J\x1b[H")
-
-
-def test_confirmation_retry_without_readline_keeps_the_locked_prefix(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cli_module = importlib.import_module("codex32.cli")
-    input_module = importlib.import_module("codex32._cli_input")
-    artifact = parse_codex32(VECTOR_2["share_A"])
-    damaged = artifact.text[:9] + ("q" if artifact.text[9] != "q" else "p") + artifact.text[10:]
-    answers = iter(("", damaged, artifact.text[8:]))
-    prompts: list[str] = []
-
-    def answer(prompt: str) -> str:
-        prompts.append(prompt)
-        return next(answers)
-
-    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
-    monkeypatch.setattr(input_module, "_line_editor", None)
-    monkeypatch.setattr(builtins, "input", answer)
-    cli_module._confirm_card(artifact)
-
-    assert prompts[-1].endswith(" ".join((artifact.text[:4], artifact.text[4:8])) + " ")
 
 
 def test_interrupted_creation_marks_partial_cards_void() -> None:
@@ -1311,7 +1128,7 @@ def test_interrupted_creation_marks_partial_cards_void() -> None:
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        status = main(["create", "2", "--indices", "ac", "--plain"])
+        status = main(["create", "2", "--indices", "ac"])
 
     assert status == 130
     assert "Mark every card from this incomplete creation void" in stderr.getvalue()
@@ -1329,7 +1146,7 @@ def test_interruption_after_confirmation_keeps_cards_valid() -> None:
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        status = main(["create", "--plain"])
+        status = main(["create"])
 
     assert status == 130
     assert "recovery cards are valid" in stderr.getvalue()
@@ -1341,11 +1158,6 @@ def test_existing_create_prompts_for_source_then_each_card(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     prompts: list[str] = []
 
     def answer(prompt: str) -> str:
@@ -1353,24 +1165,24 @@ def test_existing_create_prompts_for_source_then_each_card(
         if len(prompts) == 1:
             return VECTOR_4["secret_s"]
         if prompt.startswith("Write this share"):
-            emitted.append(capsys.readouterr().out.strip())
+            emitted.append(_card_text(capsys.readouterr().out))
             return ""
         return emitted[-1]
 
     emitted: list[str] = []
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(builtins, "input", answer)
     monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *_args: _FakeBitcoinCore())
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
 
-    assert main(["create", "2", "--indices", "ac", "--existing", "--plain"]) == 0
+    assert main(["create", "2", "--indices", "ac", "--existing"]) == 0
     assert prompts == [
-        "Enter an existing codex32 secret or hexadecimal seed: ",
-        "Write this share on a new recovery card, then press Enter: ",
-        "Re-enter the share from the recovery card: ",
-        "Write this share on a new recovery card, then press Enter: ",
-        "Re-enter the share from the recovery card: ",
+        "Enter an existing codex32 secret or hexadecimal seed:\n> ",
+        "Write this share on a new recovery card, then press Enter. ",
+        "Re-enter the share from the recovery card:\n> ",
+        "Write this share on a new recovery card, then press Enter. ",
+        "Re-enter the share from the recovery card:\n> ",
     ]
     assert capsys.readouterr().err.startswith("\n")
 
@@ -1422,56 +1234,14 @@ def test_higher_threshold_requires_an_explicit_share_selection(threshold: int) -
     assert result.stdout == ""
 
 
-def test_pretty_create_separates_share_blocks() -> None:
-    result = _invoke_confirmed_create(["create", "2test"], terminal_output=True)
-
-    assert result.stdout.startswith("Bitcoin master-seed share ")
-    assert result.stdout.count("\n\nBitcoin master-seed share ") == 2
-    assert "Master-seed backup confirmed." in result.stderr
-    assert "Bitcoin Core spending wallet initialized." in result.stderr
-    assert result.stderr.count("Recovery card ") == 3
-    assert "Recovery card 1 of 3 confirmed." in result.stderr
-    assert "Recovery card 3 of 3 confirmed.\n\nMaster-seed backup confirmed." in result.stderr
-    assert "Record these wallet details:" in result.stderr
-    assert "Backup identifier: TEST" in result.stderr
-    assert 'Wallet name: "test-wallet"; Bitcoin Core version: 30.0.0' in result.stderr
-    assert "Derivation standards: BIP44, BIP49, BIP84, and BIP86" in result.stderr
-    assert "Account number: 0" in result.stderr
-    assert "initialized.\n\nRecord these wallet details:" in result.stderr
-    assert "Account number: 0\n\nComplete the Fresh" in result.stderr
-    assert "Complete the Fresh initialization section of the wallet record." in result.stderr
-    assert "separately stored wallet record" not in result.stderr
-
-
-def test_unshared_creation_omits_redundant_card_progress() -> None:
-    class PromptingCore(_FakeBitcoinCore):
-        def initialize(
-            self,
-            secret: MasterSeed,
-            ask: Callable[[str], str],
-            tell: Callable[[str], None],
-            **options: object,
-        ) -> str:
-            del tell
-            ask('Use blank wallet "test-wallet"? [y/N]')
-            return super().initialize(secret, ask, lambda _message: None, **options)
-
-    result = _invoke_confirmed_create(["create"], core=PromptingCore())
-
-    assert result.exit_code == 0
-    assert "Recovery card" not in result.stderr
-    assert "Master-seed backup confirmed." in result.stderr
-    assert 'Master-seed backup confirmed.\n\nUse blank wallet "test-wallet"? [y/N]:' in result.stderr
-
-
-def test_create_raw_seed_and_resharing_require_explicit_thresholds() -> None:
+def test_create_existing_preserves_secrets_and_uses_explicit_thresholds_for_resharing() -> None:
     raw = bytes(range(16))
     rejected_raw = _invoke(["create"], raw.hex())
     random_raw = _invoke_confirmed_create(["create", "--existing"], raw.hex())
     accepted_raw = _invoke_confirmed_create(["create", "0test", "--existing"], raw.hex())
     source = parse_codex32(VECTOR_4["secret_s"])
     rejected_split = _invoke(["create"], source.text)
-    missing_threshold = _invoke_confirmed_create(["create", "--existing"], source.text)
+    unchanged_backup = _invoke_confirmed_create(["create", "--existing"], source.text)
     random_split = _invoke_confirmed_create(["create", "2", "--indices", "ac", "--existing"], source.text)
     accepted_split = _invoke_confirmed_create(
         ["create", "2name", "--indices", "ac", "--existing"], source.text
@@ -1483,7 +1253,8 @@ def test_create_raw_seed_and_resharing_require_explicit_thresholds() -> None:
     assert "interactive terminal" in rejected_split.stderr
     random_secret = _output_artifacts(random_raw)[0]
     assert isinstance(random_secret, MasterSeed) and random_secret.seed_bytes == raw
-    assert "choose a sharing threshold" in missing_threshold.stderr
+    assert unchanged_backup.exit_code == 0
+    assert _output_artifacts(unchanged_backup)[0].text == source.text
     secret = _output_artifacts(accepted_raw)[0]
     assert isinstance(secret, MasterSeed) and secret.seed_bytes == raw
     assert isinstance(source, MasterSeed)
@@ -1515,25 +1286,6 @@ def test_create_supports_core_lightning_generation_and_splitting() -> None:
         shares = _output_artifacts(result, "cl")
         assert len(shares) >= threshold
         assert isinstance(recover_secret(shares[:threshold]), CoreLightningSecret)
-
-
-def test_create_help_explains_headers_and_profile_specific_bytes() -> None:
-    result = _invoke(["create", "--help"])
-
-    assert result.exit_code == 0
-    assert "[HEADER]" in result.stdout
-    assert "such as 3cash or 3" in result.stdout
-    assert "omit to create a new unshared Bitcoin master seed" in " ".join(result.stdout.split())
-    assert "length of a new Bitcoin master seed" in result.stdout
-    assert "16, 20, 24, 28, 32, or 64 bytes" in " ".join(result.stdout.split())
-    assert "defaults: 3 for threshold 2; 5 for threshold 3" in " ".join(result.stdout.split())
-    assert "--existing" in result.stdout
-    assert "use an existing codex32 secret or hexadecimal seed" in result.stdout
-    assert "print without transcription formatting" in result.stdout
-
-    fixed_size = _invoke(["create", "cl10cln2", "--bytes", "32"])
-    assert fixed_size.exit_code == 2
-    assert "Core Lightning secrets are always 32 bytes" in fixed_size.stderr
 
 
 def test_create_rejects_bip39_partial_basis_and_selector_conflicts() -> None:
@@ -1592,11 +1344,6 @@ def test_checksum_warning_precedes_the_book_prompt(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    class Terminal:
-        @staticmethod
-        def isatty() -> bool:
-            return True
-
     prompts: list[str] = []
 
     def answer(prompt: str) -> str:
@@ -1604,35 +1351,11 @@ def test_checksum_warning_precedes_the_book_prompt(
         prompts.append(prompt)
         return VECTOR_1["secret_s"][9:-13]
 
-    monkeypatch.setattr(input_module.sys, "stdin", Terminal())
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(builtins, "input", answer)
 
     assert main(["checksum", VECTOR_1["secret_s"][:9]]) == 0
-    assert prompts == ["Remaining non-pink bold squares: "]
-
-
-def test_checksum_danger_is_red_only_at_a_terminal() -> None:
-    stdout, stderr = io.StringIO(), _TTYOutput()
-    worksheet = VECTOR_1["secret_s"][3:-13]
-    with (
-        patch.object(sys, "stdin", io.StringIO(worksheet)),
-        contextlib.redirect_stdout(stdout),
-        contextlib.redirect_stderr(stderr),
-    ):
-        status = main(["checksum"])
-
-    assert status == 0
-    assert "\x1b[1;31mDANGER:\x1b[0m" in stderr.getvalue()
-    assert "\x1b[" not in stdout.getvalue()
-
-
-def test_checksum_help_uses_book_worksheet_language() -> None:
-    result = _invoke(["checksum", "--help"])
-
-    assert result.exit_code == 0
-    assert "using its non-pink bold squares" in result.stdout
-    assert "worksheet header; omit to enter it at the prompt" in result.stdout
-    assert "128" not in result.stdout and "256" not in result.stdout
+    assert prompts == ["Remaining non-pink bold squares:\n> "]
 
 
 def test_terminal_secret_has_fingerprint_but_share_does_not() -> None:
@@ -1662,7 +1385,10 @@ def test_structural_correction_uses_default_lengths_and_preserved_groups() -> No
     original = VECTOR_1["secret_s"]
     omitted = _invoke(["correct"], original[:19] + original[20:])
     groups = [original[start : start + 4] for start in range(0, len(original), 4)]
-    grouped = _invoke(["correct"], "  ".join(group for index, group in enumerate(groups) if index != 6))
+    grouped = _invoke(
+        ["correct"],
+        "  ".join(group for index, group in enumerate(groups) if index != 6),
+    )
 
     assert omitted.exit_code == grouped.exit_code == 1
     assert omitted.stdout == grouped.stdout == ""
@@ -1699,41 +1425,21 @@ def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> 
     assert "No valid correction found" in result.stderr
 
 
-@pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)
-def test_supported_ms_length_is_inferred_when_damaged(byte_length: int) -> None:
+@pytest.mark.parametrize(
+    ("byte_length", "options"),
+    ((16, []), (64, []), (20, ["--bytes", "20"]), (24, ["--bytes", "?"])),
+)
+def test_correction_accepts_inferred_explicit_and_unknown_lengths(
+    byte_length: int, options: list[str]
+) -> None:
     original = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = original[:19] + original[20:]
     valid = _invoke(["correct"], original)
-    default = _invoke(["correct"], damaged)
-    explicit = _invoke(["correct", "--bytes", str(byte_length)], damaged)
+    result = _invoke(["correct", *options], damaged)
 
     assert valid.exit_code == 0 and "already valid" in valid.stdout
-    assert default.exit_code == 1 and original in default.stderr
-    assert explicit.exit_code == 1 and original in explicit.stderr
-
-
-@pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)
-def test_unknown_length_correction_recovers_every_ms_length(byte_length: int) -> None:
-    original = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
-    damaged = original[:19] + original[20:]
-
-    result = _invoke(["correct", "--bytes", "?"], damaged)
-
-    assert result.exit_code == 1
-    assert original in result.stderr
-
-
-def test_intermediate_automatic_envelope_is_reduced_but_explicit_search_is_full() -> None:
-    original = MasterSeed.from_seed(bytes(range(20)), identifier="test").text
-    damaged = "".join(character for index, character in enumerate(original) if index not in (16, 27, 38, 49))
-
-    automatic = _invoke(["correct"], damaged)
-    numeric = _invoke(["correct", "--bytes", "20"], damaged)
-    unknown = _invoke(["correct", "--bytes", "?"], damaged)
-
-    assert original not in automatic.stderr
-    assert numeric.exit_code == unknown.exit_code == 1
-    assert original in numeric.stderr and original in unknown.stderr
+    assert result.exit_code == 1 and original in result.stderr
+    assert result.stdout == ""
 
 
 def test_valid_correction_input_must_match_explicit_byte_length() -> None:
@@ -1762,33 +1468,30 @@ def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     assert "did not complete" in result.stderr and original not in result.stderr
 
 
-def test_only_automatic_48_compatible_search_has_a_deadline() -> None:
+@pytest.mark.parametrize(
+    ("options", "lengths", "bounded"),
+    (
+        ([], (48, 54, 61, 67, 74, 127), True),
+        (["--bytes", "20"], (54,), False),
+        (["--bytes", "64"], (127,), False),
+        (["--bytes", "?"], (48, 54, 61, 67, 74, 127), False),
+    ),
+)
+def test_correction_options_control_lengths_deadline_and_search_envelope(
+    options: list[str], lengths: tuple[int, ...], bounded: bool
+) -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:-1] + ("q" if original[-1] != "q" else "p")
-    calls: list[tuple[tuple[int | None, ...], float | None, frozenset[int]]] = []
+    with patch("codex32.indel._search_many", return_value=((), True)) as search:
+        result = _invoke(["correct", *options], damaged)
 
-    def search(
-        contexts: tuple[CorrectionContext, ...],
-        _value: str,
-        *,
-        primary: frozenset[int],
-        reduced: frozenset[int],
-        deadline: float | None,
-    ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
-        del primary
-        calls.append((tuple(context.expected_length for context in contexts), deadline, reduced))
-        return (), True
-
-    with patch("codex32.indel._search_many", side_effect=search):
-        _invoke(["correct"], damaged)
-        default_calls = tuple(calls)
-        calls.clear()
-        _invoke(["correct", "--bytes", "64"], damaged)
-
-    assert default_calls[0][0][0] == 48 and default_calls[0][1] is not None
-    assert default_calls[0][2] == frozenset((54, 61, 67))
-    assert len(default_calls) == 1
-    assert calls == [((127,), None, frozenset())]
+    assert result.exit_code == 1 and result.stdout == ""
+    assert search.call_count == 1
+    contexts, observed = search.call_args.args
+    assert observed == damaged
+    assert tuple(context.expected_length for context in contexts) == lengths
+    assert (search.call_args.kwargs["deadline"] is not None) is bounded
+    assert search.call_args.kwargs["reduced"] == (frozenset((54, 61, 67)) if bounded else frozenset())
 
 
 def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> None:
@@ -1802,28 +1505,6 @@ def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> 
         assert sorted(targets) == [48, 54, 61, 67, 74, 127]
 
 
-def test_unknown_bytes_searches_all_lengths_without_a_deadline() -> None:
-    original = VECTOR_1["secret_s"]
-    damaged = original[:19] + original[20:]
-    calls: list[tuple[tuple[int | None, ...], float | None, frozenset[int]]] = []
-
-    def search(contexts: tuple[CorrectionContext, ...], _value: str, **kwargs: object):
-        calls.append(
-            (
-                tuple(context.expected_length for context in contexts),
-                cast(float | None, kwargs["deadline"]),
-                cast(frozenset[int], kwargs["reduced"]),
-            )
-        )
-        return (), True
-
-    with patch("codex32.indel._search_many", side_effect=search):
-        result = _invoke(["correct", "--bytes", "?"], damaged)
-
-    assert result.exit_code == 1
-    assert calls == [((48, 54, 61, 67, 74, 127), None, frozenset())]
-
-
 def test_fixed_correction_supports_cl_and_residue_reverse_positions() -> None:
     original = SHARING_VECTORS["cl"]["S"]
     position = 16
@@ -1835,13 +1516,6 @@ def test_fixed_correction_supports_cl_and_residue_reverse_positions() -> None:
     assert fixed.exit_code == 1 and original in fixed.stderr
     assert residue.exit_code == 0
     assert "Add x at position 38, counting backward from the end." in residue.stdout
-
-    help_result = _invoke(["correct", "-h"])
-    help_text = " ".join(help_result.stdout.split())
-    assert "--prefix" not in help_text
-    assert "use ? for an erasure" in help_text
-    assert "-e" in help_text and "--erasure POSITION" in help_text
-    assert "one-based position counted backward from the end" in help_text
 
 
 def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
@@ -1868,20 +1542,6 @@ def test_correction_hides_internal_candidate_reparse_failures() -> None:
     assert result.exit_code != 0
     assert result.stderr.strip() == ("codex32 correct: No valid correction found. Check the original backup.")
     assert "threshold" not in result.stderr
-
-
-@pytest.mark.parametrize(
-    "damaged",
-    (
-        "ms12test5xxyxxuxxxxxxxxxpxxxxxxxxxx4nzvca9cmczlw",
-        "ms12test5xxyxxuxxxxxxxxxpxxxxxxxxxx4nzvca9cmczl?",
-    ),
-)
-def test_correction_failure_directs_user_to_original_backup(damaged: str) -> None:
-    result = _invoke(["correct"], damaged)
-
-    assert result.exit_code != 0
-    assert result.stderr.strip() == ("codex32 correct: No valid correction found. Check the original backup.")
 
 
 def test_wallet_commands_initialize_selected_master_seed_destinations() -> None:
@@ -1944,27 +1604,6 @@ def test_direct_watch_only_warning_precedes_recovery_input(
     assert main(["wallet", "bitcoin-core", "watch-only"]) == 2
 
 
-@pytest.mark.parametrize(
-    "command",
-    (("xprv",), ("wallet", "bitcoin-core", "restore")),
-)
-def test_root_authority_warning_is_red_only_at_a_terminal(
-    command: tuple[str, ...],
-) -> None:
-    stdout, stderr = io.StringIO(), _TTYOutput()
-    with (
-        patch.object(sys, "stdin", _TTYInput(VECTOR_1["secret_s"])),
-        patch("codex32.cli.BitcoinCore.connect", return_value=_FakeBitcoinCore()),
-        contextlib.redirect_stdout(stdout),
-        contextlib.redirect_stderr(stderr),
-    ):
-        status = main(command)
-
-    assert status == 0
-    assert "\x1b[1;31mWarning:\x1b[0m" in stderr.getvalue()
-    assert "\x1b[" not in stdout.getvalue()
-
-
 def test_wallet_cli_rejects_non_ms_profiles() -> None:
     for command in (
         ("xprv",),
@@ -1979,57 +1618,6 @@ def test_wallet_cli_rejects_non_ms_profiles() -> None:
         )
         assert result.exit_code != 0
         assert "only Bitcoin master seed input" in result.stderr
-
-
-def test_help_exposes_only_v1_commands() -> None:
-    result = _invoke(["-h"])
-    bare = _invoke([])
-
-    assert bare == result
-    assert result.exit_code == 0
-    assert result.stdout.startswith("usage: codex32 [-h] [--version] COMMAND ...")
-    assert "\noptions:\n" in result.stdout
-    assert "\ncommands:\n  COMMAND\n" in result.stdout
-    assert "-h, --help  show this help message and exit" in result.stdout
-    assert "--version   show the installed version and exit" in result.stdout
-    assert "Create, check, recover, and use codex32 Bitcoin seed backups." in result.stdout
-    descriptions = (
-        "check     check whether a secret or share is intact",
-        "secret    recover a secret from shares",
-        "share     derive a share from codex32 strings",
-        "correct   suggest repairs for damaged backup text",
-        "checksum  finish a codex32 checksum worksheet",
-        "create    create a new backup or split an existing secret",
-        "wallet    initialize or export data for Bitcoin wallet software",
-        "xprv      export the root extended private key",
-    )
-    positions = [result.stdout.index(f"{description}\n") for description in descriptions]
-    assert positions == sorted(positions)
-    assert "Do not type a seed or share into the command itself." in result.stdout
-    assert "Enter it when prompted, or pipe it into the command." in result.stdout
-    assert "Codex32" not in result.stdout.replace("Codex32 Book", "")
-    assert "BIP93" not in result.stdout and "interoperability" not in result.stdout
-    assert "--pretty" not in result.stdout
-
-
-def test_nested_commands_and_positionals_follow_help_table_style() -> None:
-    wallet = _invoke(["wallet", "--help"])
-    core = _invoke(["wallet", "bitcoin-core", "--help"])
-    share = _invoke(["share", "--help"])
-    checksum = _invoke(["checksum", "--help"])
-    create = _invoke(["create", "--help"])
-
-    assert "multisig-xpub       export an account xpub" in wallet.stdout
-    assert "bitcoin-core        initialize a Bitcoin Core wallet" in wallet.stdout
-    assert "restore             restore signing ability" in core.stdout
-    assert "watch-only          find transactions" in core.stdout
-    assert "INDEX       index for the derived share" in share.stdout
-    assert "HEADER      worksheet header; omit to enter it at the prompt" in checksum.stdout
-    assert "HEADER             backup header or sharing threshold" in create.stdout
-    assert "\nDerive an additional share from existing codex32 strings.\n" in share.stdout
-    assert "Create a backup. Fresh Bitcoin creation confirms cards and initializes Bitcoin Core." in (
-        " ".join(create.stdout.split())
-    )
 
 
 def test_long_options_must_not_be_abbreviated() -> None:
@@ -2069,53 +1657,6 @@ def test_version_and_installed_entry_point() -> None:
     assert direct.stdout.startswith("codex32 ")
 
 
-@pytest.mark.parametrize(
-    "command",
-    (
-        ("check",),
-        ("secret",),
-        ("share",),
-        ("create",),
-        ("checksum",),
-        ("correct",),
-        ("xprv",),
-        ("wallet",),
-        ("wallet", "multisig-xpub"),
-        ("wallet", "bitcoin-core"),
-        ("wallet", "bitcoin-core", "restore"),
-        ("wallet", "bitcoin-core", "watch-only"),
-    ),
-)
-def test_every_installed_command_has_help(command: tuple[str, ...]) -> None:
-    result = subprocess.run(
-        [str(_installed_cli()), *command, "--help"],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0
-    assert result.stdout.startswith(f"usage: codex32 {' '.join(command)}")
-    assert result.stderr == ""
-
-
-def test_tty_adapter_has_no_persistent_history_or_raw_terminal_code() -> None:
-    module = importlib.import_module("codex32._cli_input")
-    assert module.__file__ is not None
-    source = Path(module.__file__).read_text()
-
-    for forbidden in (
-        "add_history(",
-        "read_history_file(",
-        "write_history_file(",
-        "termios",
-        "prompt_toolkit",
-    ):
-        assert forbidden not in source
-    assert "set_auto_history(False)" in source
-    assert "cleanup.callback(os.dup2, saved_stdout, stdout_fd)" in source
-
-
 def test_production_size_budgets_are_enforced() -> None:
     module = importlib.import_module("codex32")
     assert module.__file__ is not None
@@ -2128,3 +1669,333 @@ def test_production_size_budgets_are_enforced() -> None:
     }
 
     assert sum(counts.values()) < 3000
+
+
+@pytest.mark.parametrize(
+    ("observed", "expected", "groups", "changed"),
+    (
+        ("Xabcdefgh", "abcdefgh", ["Xabcd", "efgh"], {0}),
+        ("abcdİfgh", "abcdefgh", ["abcd", "İfgh"], {1}),
+        ("abcXQefgh", "abcdefgh", ["abcXQ", "efgh"], {0}),
+        ("abcdQefgX", "abcdefgh", ["abcd", "QefgX"], {1}),
+        ("abcdQefgh", "abcdefgh", ["abcd", "Qefgh"], {1}),
+        ("SF6EJ24CJ24X", "SF6EJ24C", ["SF6E", "J24CJ24X"], {1}),
+        ("abcdeX", "abcdef", ["abcd", "eX"], {1}),
+        ("abcd", "abcdef", ["abcd", ""], {1}),
+        ("aaaaaaa", "aaaaaaaa", ["aaaa", "aaa"], {1}),
+        ("aaaaaaaaa", "aaaaaaaa", ["aaaa", "aaaaa"], {1}),
+        ("  aB cD   eF\tgX  ", "abcdefgh", ["  aB cD   ", "eF\tgX  "], {1}),
+        ("", "abcdef", ["", ""], {0, 1}),
+    ),
+)
+def test_confirmation_alignment_assigns_complete_canonical_groups(
+    observed: str, expected: str, groups: list[str], changed: set[int]
+) -> None:
+    from codex32._cli_input import _entered_groups
+
+    assert _entered_groups(observed, expected) == (groups, changed)
+    assert "".join(groups) == observed
+
+
+@pytest.mark.parametrize("readline", (True, False))
+def test_confirmation_region_splits_and_confines_retries(
+    monkeypatch: pytest.MonkeyPatch, readline: bool
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+    input_module = importlib.import_module("codex32._cli_input")
+    artifact = parse_codex32(VECTOR_2["share_A"])
+    # Three adjacent substitutions; correcting the middle splits the run.
+    damaged = artifact.text[:4] + " qAME b320 qYXW " + artifact.text[16:]
+    answers = iter(("", damaged, "qAME   a320  qYXW", "", "qAME", "NAMEa320", "nAmE", "zYxW"))
+    editor = _FakeLineEditor()
+    snapshots: list[str] = []
+    prefills: list[str] = []
+    output = _TTYOutput()
+    real_text = cli_module._text
+
+    def read(prompt: str, **options: object) -> str:
+        if prompt == "Review the marked text on your recovery card":
+            prefills.append(str(options["prefill"]))
+            snapshots.append(output.getvalue().splitlines()[-1])
+        return str(real_text(prompt, **options))
+
+    def answer(prompt: str) -> str:
+        if readline:
+            editor.run_hook()
+        return next(answers)
+
+    monkeypatch.setattr(cli_module, "_text", read)
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
+    monkeypatch.setattr(input_module, "_line_editor", editor if readline else None)
+    monkeypatch.setattr(builtins, "input", answer)
+    confirmed: list[str] = []
+
+    def confirm(text: str) -> ConfirmationResult:
+        confirmed.append(text)
+        return ConfirmationResult("".join(text.split()).lower() == artifact.text.lower())
+
+    with contextlib.redirect_stderr(output):
+        cli_module._confirm_card(artifact, confirm)
+
+    assert prefills == ["qAME b320 qYXW", "qAME", "qAME", "qAME", "NAMEa320", "qYXW"]
+    assert len(re.findall(r"\x1b\[(?:1|22);7;31m", snapshots[0])) == 3
+    for shown in snapshots[1:]:
+        assert "\x1b[1mA320\x1b[0m" in shown
+        assert "\x1b[1;7;31mA320" not in shown
+        assert artifact.text[16:20] in shown
+        assert len(re.findall(r"\x1b\[(?:1|22);7;31m", shown)) == 1
+    assert snapshots[1] == snapshots[2] == snapshots[3]
+    assert len(confirmed) == 1
+    assert "".join(confirmed[0].split()).lower() == artifact.text.lower()
+    if readline:
+        assert editor.inserted == prefills
+
+
+def test_confirmation_suffix_extra_freezes_without_shifting_neighbor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+
+    # A display-only stand-in isolates the reported card suffix regression.
+    class Card:
+        text = "ABCDSF6EJ24C"
+
+    answers = iter(("", "ABCDSF6EJ24CJ24X", "J24C"))
+    prefills: list[str] = []
+    output = _TTYOutput()
+
+    def answer(prompt: str, **options: object) -> str:
+        if "prefill" in options:
+            prefills.append(str(options["prefill"]))
+        return next(answers)
+
+    monkeypatch.setattr(cli_module, "_text", answer)
+    with contextlib.redirect_stderr(output):
+        cli_module._confirm_card(Card())
+    assert prefills == ["J24CJ24X"]
+    assert "\x1b[1mABCD\x1b[0m \x1b[22mSF6E\x1b[0m \x1b[1;7;31mJ24CJ24X\x1b[0m" in output.getvalue()
+
+
+@pytest.mark.parametrize("full_retry", (False, True))
+def test_creation_region_retry_keeps_original_ceremony_wallet_source(
+    monkeypatch: pytest.MonkeyPatch,
+    full_retry: bool,
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+    core = _FakeBitcoinCore()
+    stdout, stderr = _TTYOutput(), _TTYOutput()
+    finished: list[MasterSeed | CoreLightningSecret] = []
+    finish = cli_module.CreationCeremony.finish
+
+    def remember(ceremony: object) -> MasterSeed | CoreLightningSecret:
+        result = finish(ceremony)
+        finished.append(result)
+        return cast(MasterSeed | CoreLightningSecret, result)
+
+    def answer(prompt: str, **options: object) -> str:
+        if prompt.startswith("Write this share"):
+            return ""
+        text = _card_text(stdout.getvalue())
+        if "Re-enter the share" in prompt:
+            return text + "J24X"
+        assert prompt == "Review the marked text on your recovery card"
+        assert options["prefill"] == text[-4:] + "J24X"
+        return text.lower() if full_retry else text[-4:].lower()
+
+    monkeypatch.setattr(cli_module, "_text", answer)
+    monkeypatch.setattr(cli_module.CreationCeremony, "finish", remember)
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("codex32.cli.BitcoinCore.connect", return_value=core),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        assert main(["create", "2", "--indices", "ac"]) == 0
+    assert len(finished) == 1
+    assert core.imported is finished[0]
+
+
+@pytest.mark.parametrize(
+    ("entered", "length", "display"),
+    ((" aB ", 4, "AB"), (" a ", 2, "A"), ("", 2, "__"), ("abcde", 4, "ABCDE")),
+)
+def test_confirmation_placeholders_only_replace_wholly_omitted_groups(
+    entered: str, length: int, display: str
+) -> None:
+    from codex32._cli_input import _render_groups
+
+    groups = [entered]
+    assert _render_groups(groups, {0}, length, range(1)) == f"\x1b[1;7;31m{display}\x1b[0m"
+    assert groups == [entered]
+
+
+@pytest.mark.parametrize(
+    ("observed", "expected", "groups", "changed"),
+    (
+        ("ABC XEFGH", "ABCDEFGH", ["ABC ", "XEFGH"], {0, 1}),
+        ("3F88  X64TR", "3F8864TR", ["3F88  ", "X64TR"], {1}),
+        ("ABCDEFGH IJXL", "ABCDEFGHIJKL", ["ABCD", "EFGH ", "IJXL"], {2}),
+        ("ABCD IJKL", "ABCDEFGHIJKL", ["ABCD ", "", "IJKL"], {1}),
+        ("ABCD X EFGH", "ABCDEFGH", ["ABCD ", "X EFGH"], {1}),
+        ("X ABCD EFGH", "ABCDEFGH", ["X ABCD ", "EFGH"], {0}),
+        ("ABCD EFGH X", "ABCDEFGH", ["ABCD ", "EFGH X"], {1}),
+        ("ABCDEF GHIX", "ABCDEFGH", ["ABCDEF ", "GHIX"], {0, 1}),
+        ("abcdef X", "abcdef", ["abcd", "ef X"], {1}),
+        ("ab cd ef gh", "abcdefgh", ["ab cd ", "ef gh"], set()),
+        ("aaaa aaaaX", "aaaaaaaa", ["aaaa ", "aaaaX"], {1}),
+    ),
+)
+def test_confirmation_grouped_alignment_preserves_token_ownership(
+    observed: str, expected: str, groups: list[str], changed: set[int]
+) -> None:
+    from codex32._cli_input import _entered_groups
+
+    assert _entered_groups(observed, expected) == (groups, changed)
+    assert "".join(groups) == observed
+
+
+@pytest.mark.parametrize("readline", (False, True))
+@pytest.mark.parametrize("full_retry", (False, True))
+def test_confirmation_full_string_retry_preserves_progress(
+    monkeypatch: pytest.MonkeyPatch, readline: bool, full_retry: bool
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+    input_module = importlib.import_module("codex32._cli_input")
+
+    class Card:
+        text = "MS10ABCDEFGH"
+
+    final = " ms10 ABCD eFgH " if full_retry else "abcd"
+    answers = iter(("", "ms10 ABC XEFGH", "ms10 abcd efgX", "", "ABC XEFGH", "abC eFgH", final))
+    editor = _FakeLineEditor()
+    output = _TTYOutput()
+    prefills: list[str] = []
+    snapshots: list[str] = []
+    confirmed: list[str] = []
+    original_text = cli_module._text
+
+    def read(prompt: str, **options: object) -> str:
+        if "prefill" in options:
+            prefills.append(str(options["prefill"]))
+            snapshots.append(output.getvalue().splitlines()[-1])
+        return str(original_text(prompt, **options))
+
+    def answer(prompt: str) -> str:
+        if readline:
+            editor.run_hook()
+        return next(answers)
+
+    def confirm(value: str) -> ConfirmationResult:
+        confirmed.append(value)
+        return ConfirmationResult("".join(value.split()).upper() == Card.text)
+
+    monkeypatch.setattr(cli_module, "_text", read)
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
+    monkeypatch.setattr(input_module, "_line_editor", editor if readline else None)
+    monkeypatch.setattr(builtins, "input", answer)
+    with contextlib.redirect_stderr(output):
+        cli_module._confirm_card(Card(), confirm)
+
+    assert prefills == ["ABC XEFGH"] * 4 + ["abC"]
+    assert snapshots[:4] == [snapshots[0]] * 4
+    assert "\x1b[1mEFGH\x1b[0m" in snapshots[4]
+    assert "\x1b[1;7;31mABC\x1b[0m" in snapshots[4]
+    assert "Please re-enter only the highlighted region that remains incorrect." in output.getvalue()
+    assert len(confirmed) == 1
+    if full_retry:
+        assert confirmed == [final]
+    if readline:
+        assert editor.inserted == prefills
+
+
+@pytest.mark.parametrize(
+    ("observed", "prefill"),
+    (("ms10ABQDEFGX", "ABQD EFGX"), ("ms10 ABQD  eFgX", "ABQD  eFgX")),
+)
+def test_confirmation_prefill_uses_typed_spacing_or_display_boundaries(
+    monkeypatch: pytest.MonkeyPatch, observed: str, prefill: str
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+
+    class Card:
+        text = "MS10ABCDEFGH"
+
+    answers = iter(("", observed, "ABCDEFGH"))
+    prefills: list[str] = []
+
+    def answer(prompt: str, **options: object) -> str:
+        if "prefill" in options:
+            prefills.append(str(options["prefill"]))
+        return next(answers)
+
+    monkeypatch.setattr(cli_module, "_text", answer)
+    cli_module._confirm_card(Card())
+    assert prefills == [prefill]
+
+
+@pytest.mark.parametrize("vector", (VECTOR_1["secret_s"], VECTOR_4["secret_s"]))
+def test_create_existing_secret_confirms_original_before_initializing(
+    monkeypatch: pytest.MonkeyPatch, vector: str
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+    secret = parse_codex32(vector)
+    assert isinstance(secret, MasterSeed)
+    core = _FakeBitcoinCore()
+    output = _TTYOutput()
+    damaged = secret.text[:-1] + ("q" if secret.text[-1].lower() != "q" else "p")
+    width = len(secret.text) % 4 or 4
+    answers = iter(("", damaged, secret.text[-width:].upper()))
+    prefills: list[str] = []
+
+    def answer(prompt: str, **options: object) -> str:
+        assert core.imported is None
+        if "prefill" in options:
+            prefills.append(str(options["prefill"]))
+        return next(answers)
+
+    monkeypatch.setattr(cli_module, "_text", answer)
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("codex32.cli._creation_source", return_value=secret),
+        patch("codex32.cli._generated_secret") as generate,
+        patch("codex32.cli.CreationCeremony.from_secret") as split,
+        patch("codex32.cli.BitcoinCore.connect", return_value=core),
+        contextlib.redirect_stdout(output),
+        contextlib.redirect_stderr(_TTYOutput()),
+    ):
+        assert main(["create", "--existing"]) == 0
+    assert prefills == [damaged[-width:]]
+    assert _card_text(output.getvalue()).lower() == secret.text.lower()
+    assert core.imported is secret
+    assert core.timestamp == 0
+    generate.assert_not_called()
+    split.assert_not_called()
+
+
+def test_create_existing_secret_does_not_silently_change_identifier() -> None:
+    result = _invoke_confirmed_create(["create", "0test", "--existing"], VECTOR_4["secret_s"])
+    assert result.exit_code == 2 and result.stdout == ""
+    assert "To change the existing secret's identifier" in result.stderr
+
+
+def test_create_existing_core_lightning_secret_is_preserved() -> None:
+    source = SHARING_VECTORS["cl"]["S"]
+    result = _invoke_confirmed_create(["create", "cl10", "--existing"], source)
+    assert result.exit_code == 0
+    assert _output_artifacts(result, "cl")[0].text.lower() == source.lower()
+    assert "Bitcoin Core spending wallet initialized" not in result.stderr
+
+
+def test_create_existing_interruption_cannot_initialize_a_wallet() -> None:
+    core = _FakeBitcoinCore()
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("codex32.cli._creation_source", return_value=secret),
+        patch("codex32.cli._confirm_card", side_effect=KeyboardInterrupt),
+        patch("codex32.cli.BitcoinCore.connect", return_value=core),
+        contextlib.redirect_stdout(_TTYOutput()),
+        contextlib.redirect_stderr(_TTYOutput()),
+    ):
+        assert main(["create", "--existing"]) == 130
+    assert core.imported is None

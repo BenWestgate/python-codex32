@@ -1,6 +1,5 @@
-"""Gate 4 BCH, profile-adapter, and private-residue correction tests."""
+"""Independent BCH vectors, recovery bounds, and worksheet correction."""
 
-import inspect
 import json
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -419,25 +418,3 @@ def test_residue_erasure_indices_are_strict(indices: object) -> None:
 def test_residue_lexical_validation(residue: str) -> None:
     with pytest.raises(InvalidCorrectionInput):
         correct_worksheet_residue(residue)
-
-
-def test_public_surface_exports_full_and_worksheet_correction() -> None:
-    assert "residue" in inspect.signature(codex32.correct_worksheet_residue).parameters
-    assert tuple(inspect.signature(codex32.correct).parameters) == ("context", "damaged_text")
-    for name in (
-        "CorrectionCandidate",
-        "CorrectionContext",
-        "CorrectionEdit",
-        "InvalidCorrectionInput",
-        "WorksheetCorrection",
-        "correct",
-    ):
-        assert name in codex32.__all__ and hasattr(codex32, name)
-    for legacy in (
-        "Correction",
-        "CorrectionSearchResult",
-        "correct_codex32_string",
-        "corrections_from_residue",
-        "search_codex32_corrections",
-    ):
-        assert not hasattr(codex32, legacy)

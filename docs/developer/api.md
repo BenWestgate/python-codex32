@@ -65,10 +65,12 @@ crosses the parsing boundary until every stage passes.
   compatibility to `bip93.py`. Card confirmation clears the terminal and saved
   scrollback where supported, then displays only entered text after a mismatch.
   Canonical text removes whitespace for comparison; presentation state retains
-  the exact entered spacing and case. Alignment favors the smallest affected
-  group set and never reveals expected characters.
-  Matching leading groups remain fixed while an optional Readline hook restores
-  the exact editable suffix with its cursor at the end. The hook disables
+  entered spacing and case. Grouped alignment preserves entered ownership;
+  unspaced alignment minimizes character edits before disturbed groups.
+  Codex32 entry and correction suggestions use a separate `> ` line;
+  fixed prefixes follow that marker. Wallet selection prompts stay inline.
+  Recovery input keeps matching leading groups fixed while an optional
+  Readline hook restores the exact editable suffix with its cursor at the end. The hook disables
   automatic history and is removed after each attempt. While reading, stdout's
   file descriptor is synchronously redirected to the stderr terminal and
   restored in `finally`, keeping piped results clean.
@@ -160,7 +162,13 @@ sharing or `split_secret` function. Fresh and existing Bitcoin CLI creation
 requires interactive input and output, preflights local Bitcoin Core before
 entropy or recovery input, and initializes a user-selected wallet after every
 share is confirmed. Core Lightning creation retains the backup-only path.
-With no Bitcoin header, the CLI creates an unshared master seed. Shared creation
+Without `--existing`, omitting the Bitcoin header creates an unshared master
+seed. With `--existing` and no sharing threshold, a supplied codex32 secret is
+emitted and confirmed unchanged, and the original validated artifact initializes
+the wallet. No entropy is drawn for this path; raw hexadecimal seeds retain
+the generation path. Existing imports use timestamp zero to include prior
+history. Changing a supplied secret's identifier requires a sharing threshold.
+Shared creation
 uses an explicit threshold or full backup header. Without an explicit share
 count or indices, thresholds 2 and 3 produce the reviewed 2-of-3 and 3-of-5
 presets; thresholds 4 through 9 require an explicit selection.
@@ -177,12 +185,44 @@ entropy arrives between calls. User input is never treated as entropy. Each
 byte is mapped with `value & 31`, which maps exactly eight byte values to each
 u5 value.
 
-Creation confirmation may align and highlight substitutions, insertions, and
-deletions, but it displays no expected character values and never corrects the
-entry. Retries are unlimited and only canonical equality confirms the pending
-share. This proves that the operator can reproduce the string during setup; it
-cannot prove that the physical card was corrected rather than the display
-feedback being used to infer an error.
+Creation confirmation preserves whitespace-separated entered groups as units,
+even when moving characters between groups would reduce edits or red groups.
+A token may span multiple canonical groups only when it exactly matches their
+complete concatenation, ignoring case. Within those boundary constraints,
+alignment minimizes character-edit distance with deterministic edit-order ties:
+exact pairs, substitutions, observed insertions, then expected omissions.
+Omitted canonical groups remain empty. Surplus tokens attach to the following
+group, or the last group for suffix extras; there are no insertion-only regions.
+Unspaced input retains character-edit distance, then disturbed-group scoring,
+with the same edit-order ties and preference for already-disturbed neighbors.
+Only entered text is displayed. Adjacent disturbed groups form contiguous retry
+regions. Display formatting matches the original card: uppercase, single
+spaces between groups, an extra space after every fourth group, and alternating
+bold and normal weights for correct groups. Unresolved groups are bold red; the active region adds
+reverse video. Only wholly omitted groups use display-only underscores,
+matching their canonical width. Partially entered groups are not padded;
+no character positions are implied, and extras are never truncated. Editable
+prefills preserve entered case and internal whitespace without added placeholders.
+When active text has no internal whitespace, prefill uses the displayed group
+boundaries with single spaces; extras are not repartitioned into four characters.
+Red means review this part of the recovery card. Anything corrected
+stays corrected. Retries locally realign only the active region, preserving
+case and useful spacing without crossing frozen boundaries. Every newly
+matching complete group freezes immediately, and the leftmost remaining run
+is next. Empty and unchanged retries are unsuccessful; retries are unlimited.
+A completely correct full-string retry confirms through the same callback.
+An incorrect retry beginning with the expected profile and separator and longer
+than the active canonical region is recognized as a full-string attempt. It
+preserves current progress, clarifies which region remains incorrect, and
+redisplays that region. Other submissions are aligned locally.
+No expected characters, error classifications, prescribed edits, or repairs
+are supplied. Only complete case/whitespace-normalized equality confirms.
+Progressive group-level correctness feedback is explicitly accepted and does
+not change the confirmation boundary.
+
+Confirmation shows that the operator can produce the correct recovery
+string during setup. It cannot prove that the physical backup was
+corrected rather than reconstructed using confirmation feedback.
 
 For a fresh set, the final direct share is rejection-sampled until the recovered
 S has the private CRC padding convention (`ms`) or zero discarded bits (CL).

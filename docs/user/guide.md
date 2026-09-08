@@ -29,6 +29,10 @@ You will need:
 - one blank [codex32 recovery card](recovery-card.html) per secret or share; and
 - a separately stored [wallet-verification record](wallet-verification-record.html).
 
+Before running `create` for a real wallet, have your blank cards, a pen, and
+wallet record ready, and choose separate trusted places for shared cards.
+If you want to try the process first, use the signet practice setup below.
+
 Run Bitcoin Core before starting. If practical, disconnect the computer from
 external networks while recovery text is on screen. codex32 talks only to the
 local Core instance at `127.0.0.1` during setup.
@@ -52,7 +56,9 @@ Bitcoin Core wallet encryption is strongly recommended. Bitcoin Core owns the
 passphrase and its prompts; codex32 never asks for, reads, or forwards it.
 
 Do not type recovery text on the same line as a command. Run the command first,
-then enter a master seed or shares only when prompted. Never photograph
+then enter a master seed or shares on the separate `>` line when prompted.
+This keeps a 48-character string grouped in fours within an 80-column terminal.
+Later share prompts may show a fixed common header after `>`. Never photograph
 recovery text or put it in a website, chat, cloud clipboard, or online QR
 service.
 
@@ -73,6 +79,12 @@ Choose one command:
 More required shares make theft harder; fewer required shares make recovery
 easier.
 
+Already have a complete codex32 secret? Run `codex32 create --existing` to
+write and confirm its recovery card and initialize a Bitcoin Core wallet.
+The existing secret is preserved unchanged. To split it into three cards
+requiring any two, use `codex32 create 2 --existing` instead. Enter the secret
+only when prompted. Bitcoin Core also scans for prior transactions.
+
 ### 3. Make a Bitcoin Core wallet
 
 Run the command you chose. codex32 finds the local Bitcoin Core network before
@@ -80,14 +92,37 @@ generating anything. If more than one network is running, choose it by number.
 
 1. Write each result on a new recovery card and press Enter. Where supported,
    codex32 clears the terminal and its saved scrollback, then asks you to
-   re-enter the result from the card.
+   re-enter the result from the card. Type the recovery text on the next line,
+   after `>`.
 2. If the re-entry differs, codex32 displays only what you entered and marks
-   the groups to check in red. A completely omitted group appears as `____`.
-   Check the card and edit your entry; codex32 does not reveal or apply the
-   expected text. Spaces and letter case do not affect confirmation.
+   the groups to check in bold red. The display uses the original uppercase text,
+   group spacing, and alternating bold and normal weights. A completely
+   omitted group appears as `____` (fewer underscores for a shorter final
+   group). Partially entered groups are not padded, so the display does not
+   suggest where missing characters belong. Extras remain visible, and
+   placeholders never enter the editable prefill.
+   Correct groups are frozen. Review the active contiguous region, shown in
+   bold red reverse video, against your recovery card. Other unresolved regions
+   remain bold red. The prompt says “Review the marked text on your recovery card:”
+   and prefills only your entered text when line editing is available. Typed
+   groups keep their characters, case, and spacing. Without typed spaces, the
+   prefill follows the displayed groups.
+   Correct any subset of that region; every matching group freezes immediately.
+   Remaining regions are reviewed from left to right, without changing frozen
+   neighbors. You can also re-enter the entire correct string to confirm. If
+   a recognizable full-string retry is incorrect, your progress is kept and
+   the prompt directs you back to the region that remains incorrect.
+   Empty or unchanged answers simply retry. codex32 never reveals
+   expected characters or prescribes edits. Spaces and case do not affect
+   confirmation, and retries are unlimited. Extra text belongs to a card group,
+   including trailing extras in the final group; omitted groups need re-entry.
 3. After every card is confirmed, approve the eligible blank Bitcoin Core
    wallet shown. If there is more than one, choose by number and confirm its
    exact name.
+
+Confirmation shows that the operator can produce the correct recovery
+string during setup. It cannot prove that the physical backup was
+corrected rather than reconstructed using confirmation feedback.
 
 If no eligible wallet is listed, choose **Create another wallet**. In
 Bitcoin-Qt, choose **File > Create Wallet...** and create a blank descriptor

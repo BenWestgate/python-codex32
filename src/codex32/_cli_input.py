@@ -68,10 +68,9 @@ def _input_display() -> Iterator[None]:
         yield
 
 def read_text(prompt: str, *, optional: bool = False, preserve_groups: bool = False,
-              locked: str = "", prefill: str = "") -> str:
+              prefill: str = "", prompt_end: str = ": ") -> str:
     if sys.stdin.isatty():
-        shown = " ".join(locked[start : start + 4] for start in range(0, len(locked), 4))
-        value = locked + _editable_input(f"{prompt}: {shown}{' ' if shown else ''}", prefill)
+        value = _editable_input(prompt + prompt_end, prefill)
         _stderr("")
     else: value = _stdin().strip()
     if not preserve_groups: value = "".join(value.split())
@@ -106,69 +105,57 @@ def _aligned_groups(observed: str, expected: str, highlight: bool) -> str:
         styled.append(f"\x1b[1;31m{character}\x1b[0m" if marked else character)
     return "".join(styled)
 
-def _entered_groups(observed: str, expected: str) -> tuple[str, str]:
-    # Align without copying any expected character into the displayed entry.
-    observed = "".join(observed.split()); expected = "".join(expected.split())
-    rows = [[0] * (len(expected) + 1) for _ in range(len(observed) + 1)]
-    for left in range(len(observed), -1, -1): rows[left][-1] = len(observed) - left
-    for right in range(len(expected), -1, -1): rows[-1][right] = len(expected) - right
-    for left in range(len(observed) - 1, -1, -1):
-        for right in range(len(expected) - 1, -1, -1):
-            rows[left][right] = min(rows[left + 1][right] + 1, rows[left][right + 1] + 1,
-                rows[left + 1][right + 1] + (observed[left].lower() != expected[right].lower()))
-    slots: list[list[str]] = [[] for _ in range((len(expected) + 3) // 4)]
-    missing = [0] * len(slots); changed: set[int] = set(); pending = [(0, 0)]; seen = set()
-    while pending:
-        point = pending.pop()
-        if point in seen: continue
-        seen.add(point); left, right = point; cost = rows[left][right]
-        if left < len(observed) and right < len(expected):
-            edit = observed[left].lower() != expected[right].lower()
-            if rows[left + 1][right + 1] + edit == cost:
-                pending.append((left + 1, right + 1)); changed.update((right // 4,) if edit else ()); continue
-        if left < len(observed) and rows[left + 1][right] + 1 == cost:
-            pending.append((left + 1, right)); changed.add(min(right // 4, len(slots) - 1))
-        if right < len(expected) and rows[left][right + 1] + 1 == cost:
-            pending.append((left, right + 1)); changed.add(right // 4)
-    left = right = 0
-    while left < len(observed) or right < len(expected):
-        active = left < len(observed) and right < len(expected)
-        equal = active and observed[left].lower() == expected[right].lower()
-        if active and (equal or rows[left][right] == rows[left + 1][right + 1] + 1):
-            entered, position = observed[left], right; left += 1; right += 1
-        elif left < len(observed) and rows[left][right] == rows[left + 1][right] + 1:
-            entered, position = observed[left], right; left += 1
-        else: entered, position = "", right; right += 1
-        group = min(position // 4, len(slots) - 1)
-        if entered: slots[group].append(entered)
-        if not entered: missing[group] += 1
-    locked_groups = next((group for group in range(len(slots)) if
-                          observed[group * 4 : group * 4 + 4].lower()
-                          != expected[group * 4 : group * 4 + 4].lower()), len(slots))
-    if len(observed) != len(expected) and locked_groups == len(slots): locked_groups -= 1
-    positional = {index for index in range(len(slots)) if
-                  observed[index * 4 : index * 4 + 4].lower()
-                  != expected[index * 4 : index * 4 + 4].lower()}
-    if len(observed) == len(expected) and len(positional) < len(changed):
-        slots = [list(observed[index : index + 4]) for index in range(0, len(observed), 4)]
-        missing, changed = [0] * len(slots), positional
-    changed.difference_update(range(locked_groups)); shown = []
-    for index, characters in enumerate(slots):
-        value = "".join(characters).upper(); width = min(4, len(expected) - index * 4)
-        if not value and missing[index] == width: value = "_" * width
-        shown.append(f"\x1b[1;31m{value}\x1b[0m" if index in changed else value)
-    grouped = " ".join(value + (" " if (index + 1) % 4 == 0 else "")
-                       for index, value in enumerate(shown)).rstrip()
-    return grouped, observed[: locked_groups * 4]
+def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
+    # Keep entered tokens whole unless they exactly span complete groups.
+    # Unspaced input retains edit/group minimization and edit-order ties.
+    positions = [i for i, char in enumerate(observed) if not char.isspace()]
+    compact = "".join(observed.split()); expected = "".join(expected.split()).lower()
+    tokens = observed.split(); grouped = len(tokens) > 1 and compact.lower() != expected
+    boundaries = {0}; splits: set[tuple[int, int]] = set(); position = 0
+    for token in tokens:
+        for offset in range(0, len(expected), 4):
+            if expected[offset:offset + len(token)] == token.lower() and (
+                len(token) % 4 == 0 or offset + len(token) == len(expected)
+            ): splits.update((position + i, offset + i) for i in range(4, len(token), 4))
+        position += len(token); boundaries.add(position)
+    scores = {0: (0, 0, b"", ())}  # type: dict[int, tuple[int, int, bytes, tuple[int, ...]]]
+    for offset in range(0, len(expected), 4):
+        canonical = expected[offset:offset + 4]
+        following: dict[int, tuple[int, int, bytes, tuple[int, ...]]] = {}
+        for start, (edits, disturbed, trace, ends) in scores.items():
+            row = [(j, b"\x03" * j) for j in range(len(canonical) + 1)]
+            for end in range(start, len(compact) + 1):
+                if end > start:
+                    current = [(end - start, b"\x02" * (end - start))]
+                    for j, char in enumerate(canonical, 1):
+                        edit = compact[end - 1].lower() != char
+                        current.append(min((row[j - 1][0] + edit, row[j - 1][1] + bytes([edit])),
+                            (row[j][0] + 1, row[j][1] + b"\x02"),
+                            (current[j - 1][0] + 1, current[j - 1][1] + b"\x03")))
+                    row = current
+                if grouped and end not in boundaries and (end, offset + len(canonical)) not in splits: continue
+                score = (edits + row[-1][0], disturbed + (not grouped and compact[start:end].lower() != canonical),
+                         trace + row[-1][1], (*ends, end))
+                if end not in following or score < following[end]: following[end] = score
+        scores = following
+    groups = []; start = 0
+    for end in scores[len(compact)][3]:
+        stop = positions[end] if end < len(positions) else len(observed)
+        groups.append(observed[start:stop]); start = stop
+    changed = {i for i, value in enumerate(groups)
+               if "".join(value.split()).lower() != expected[i * 4:i * 4 + 4]}
+    return groups, changed
 
-def _raw_suffix(value: str, prefix: str) -> str:
-    if not prefix: return value
-    compact = "".join(value.split()); count = 0
-    if not compact.lower().startswith(prefix.lower()): return ""
-    for position, character in enumerate(value):
-        count += not character.isspace()
-        if count == len(prefix): return value[position + 1 :]
-    return ""
+def _render_groups(groups: list[str], changed: set[int], length: int,
+                   active: range = range(0)) -> str:
+    shown = []
+    for index, value in enumerate(groups):
+        value = "".join(value.split()).upper() or "_" * min(4, length - index * 4)
+        style = "1" if index % 2 == 0 else "22"
+        if index in changed: style = "1;7;31" if index in active else "1;31"
+        shown.append(f"\x1b[{style}m{value}\x1b[0m")
+    return " ".join(value + (" " if (index + 1) % 4 == 0 else "")
+                    for index, value in enumerate(shown)).rstrip()
 
 def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
     try: artifact = parse_codex32(value)
@@ -182,7 +169,10 @@ def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
 def _retry_text(value: str, prefix: str) -> str:
     compact = "".join(value.split())
     if not (prefix and "1" in compact): return value
-    return _raw_suffix(value, prefix)
+    if not compact.lower().startswith(prefix.lower()): return ""
+    positions = (position for position, character in enumerate(value) if not character.isspace())
+    for _character in prefix: position = next(positions)
+    return value[position + 1 :]
 
 _PRIMARY_MS = (48, 74, 127)
 _REDUCED_MS = frozenset((54, 61, 67))
@@ -266,7 +256,7 @@ def _interactive(
             else (f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}")
         )
         displayed_prefix = prefix if accepted else ""
-        entered = _editable_input(f"{label}: {displayed_prefix}", prefill)
+        entered = _editable_input(f"{label}:\n> {displayed_prefix}", prefill)
         value = "".join(entered.split())
         complete_value = value if "1" in value else prefix + value
         try: artifact = _parse(complete_value, profiles)
@@ -275,7 +265,7 @@ def _interactive(
             for candidate in candidates:
                 shown = _aligned_groups(
                     displayed_prefix + entered, candidate.artifact.text, sys.stderr.isatty())
-                _stderr(f"Possible correction:{' ' * max(1, len(label) - 18)}{shown}")
+                _stderr(f"Possible correction:\n> {shown}")
             confirmed = len(candidates) == 1 and _editable_input(
                 "Use this correction? [y/N]: "
             ).strip().lower() in ("y", "yes")

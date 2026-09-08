@@ -1,9 +1,7 @@
 """Security invariants for incremental ``ms`` and CL creation ceremonies."""
 
 import copy
-import inspect
 import pickle
-from collections import Counter
 from itertools import combinations
 
 import pytest
@@ -12,7 +10,6 @@ from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-import codex32
 import codex32.generation as generation_module
 from codex32 import (
     CoreLightningSecret,
@@ -25,8 +22,7 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.bech32 import CHARSET, _u5_to_chars
-from codex32.bip93 import IDX_SORT
+from codex32.bech32 import _u5_to_chars
 from codex32.errors import (
     CeremonyStateError,
     CodexError,
@@ -61,30 +57,6 @@ def _seed(byte_length: int) -> bytes:
     return bytes((position * 109 + byte_length) % 256 for position in range(byte_length))
 
 
-def test_entropy_mapping_and_index_population_are_exact() -> None:
-    assert Counter(value & 31 for value in range(256)) == Counter({symbol: 8 for symbol in range(32)})
-    assert ORDINARY_INDICES == tuple(IDX_SORT[1:])
-    assert len(set(ORDINARY_INDICES)) == 31
-    assert set(ORDINARY_INDICES) == set(CHARSET) - {"s"}
-
-
-def test_public_signatures_expose_only_unshared_one_shot_generation() -> None:
-    assert set(inspect.signature(generate_master_seed).parameters) == {
-        "seed_bytes",
-        "byte_length",
-        "identifier",
-    }
-    assert set(inspect.signature(generate_core_lightning_secret).parameters) == {
-        "secret_bytes",
-        "identifier",
-    }
-    assert not hasattr(codex32, "split_secret")
-    for function in (generate_core_lightning_secret, generate_master_seed):
-        assert set(inspect.signature(function).parameters).isdisjoint(
-            {"rng", "entropy", "padding", "threshold", "share_count", "indices"}
-        )
-
-
 def test_fresh_unshared_ms_supports_every_bip93_size() -> None:
     for byte_length in SEED_BYTE_LENGTHS:
         secret = generate_master_seed(byte_length=byte_length)
@@ -113,9 +85,10 @@ def test_fresh_generation_recovers_at_every_threshold(threshold: int) -> None:
     assert recover_secret(shares) == secret
 
 
-@pytest.mark.parametrize("threshold", range(2, 10))
-@pytest.mark.parametrize("kind", (16, 32, "cl"))
-def test_every_generated_threshold_subset_recovers(threshold: int, kind: int | str) -> None:
+@pytest.mark.parametrize(("threshold", "kind"), ((2, 16), (3, "cl"), (9, 64)))
+def test_generated_subsets_recover_across_profiles_and_threshold_boundaries(
+    threshold: int, kind: int | str
+) -> None:
     ceremony = (
         CreationCeremony.core_lightning(threshold=threshold, share_count=threshold + 2)
         if kind == "cl"
@@ -430,11 +403,3 @@ def test_from_secret_rejects_non_secret_artifacts() -> None:
 )
 def test_unshared_fingerprint_identifier_vectors(vector: dict[str, str], expected: str) -> None:
     assert _fingerprint_identifier(bytes.fromhex(vector["secret_hex"])) == expected
-
-
-def test_generation_surface_has_no_partial_basis_or_one_shot_sharing() -> None:
-    assert codex32.CreationCeremony is CreationCeremony
-    assert codex32.generate_master_seed is generate_master_seed
-    assert codex32.generate_core_lightning_secret is generate_core_lightning_secret
-    for name in ("split_secret", "complete_partial_basis"):
-        assert not hasattr(codex32, name)

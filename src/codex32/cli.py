@@ -12,7 +12,7 @@ from typing import Literal, cast
 
 from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
 from codex32._cli_input import InputError as _UsageError
-from codex32._cli_input import _correction_candidates, _entered_groups, _raw_suffix
+from codex32._cli_input import _correction_candidates, _entered_groups, _render_groups
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
@@ -52,18 +52,13 @@ def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
     lines = [f"{'Valid ' if valid else ''}{heading}.", f"Backup identifier: {header.identifier.upper()}"]
     if header.threshold: lines.append(f"Shares needed for recovery: {header.threshold}")
     return lines
-def _group(text: str) -> str:
-    groups = [text[start : start + 4].upper() for start in range(0, len(text), 4)]
-    for index, group in enumerate(groups):
-        style = "\x1b[1m" if index % 2 == 0 else "\x1b[22m"
-        gap = " " if (index + 1) % 4 == 0 and index + 1 < len(groups) else ""; groups[index] = style + group + gap
-    return " ".join(groups) + "\x1b[0m"
 def _render(artifact: Artifact, pretty: bool) -> str:
     if not pretty: return artifact.text
     lines = _summary(artifact)
     if isinstance(artifact, MasterSeed): lines.append(
         f"Master fingerprint: {_fingerprint_from_seed(artifact.seed_bytes).hex().upper()}")
-    lines.extend(("", _group(artifact.text)))
+    groups = [artifact.text[start:start + 4] for start in range(0, len(artifact.text), 4)]
+    lines.extend(("", _render_groups(groups, set(), len(artifact.text)).replace("\x1b[0m ", " ")))
     return "\n".join(lines)
 def _emit(artifact: Artifact, plain: bool, *, err: bool = False, gap: bool = False) -> None:
     pretty = (sys.stderr if err else sys.stdout).isatty() and not plain
@@ -100,26 +95,40 @@ def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None
     except CodexError as error: raise _UsageError(f"Invalid backup header: {error}") from error
     return profile, threshold, identifier
 def _creation_source() -> bytes | Artifact:
-    value = _text("Enter an existing codex32 secret or hexadecimal seed")
+    value = _text("Enter an existing codex32 secret or hexadecimal seed", prompt_end=":\n> ")
     try: return bytes.fromhex(value)
     except ValueError:
         try: return parse_codex32(value)
         except CodexError as error: raise _UsageError(str(error)) from error
 def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResult] | None = None) -> None:
     kind = "share" if isinstance(artifact, Share) else "secret"; _print("", err=True)
-    _text(f"Write this {kind} on a new recovery card, then press Enter", optional=True)
-    clear = "\x1b[3J\x1b[2J\x1b[H" if sys.stderr.isatty() else ""; locked = prefill = ""
-    while True:
-        entered = _text(clear + f"Re-enter the {kind} from the recovery card",
-                        preserve_groups=True, locked=locked, prefill=prefill)
-        clear = ""
-        observed, expected = "".join(entered.split()), artifact.text
-        if (confirm(entered).accepted if confirm is not None else observed.lower() == expected.lower()): return
-        _print("Re-entry does not match. Check the red groups against the recovery card.", err=True)
-        shown, locked = _entered_groups(observed, expected)
-        if sys.stderr.isatty(): _print(shown, err=True)
-        _print("", err=True)
-        prefill = _raw_suffix(entered, locked)
+    _text(f"Write this {kind} on a new recovery card, then press Enter", optional=True, prompt_end=". ")
+    clear = "\x1b[3J\x1b[2J\x1b[H" if sys.stderr.isatty() else ""
+    entered = _text(clear + f"Re-enter the {kind} from the recovery card", prompt_end=":\n> ",
+                    preserve_groups=True); expected = artifact.text
+    groups, changed = _entered_groups(entered, expected)
+    while changed:
+        start = min(changed); end = start + 1
+        while end in changed: end += 1
+        _print(_render_groups(groups, changed, len(expected), range(start, end)), err=True)
+        prefill = "".join(groups[start:end]).strip()
+        if len(prefill.split()) < 2: prefill = " ".join(groups[start:end]).strip()
+        replacement = _text("Review the marked text on your recovery card",
+                            prompt_end=":\n> ", preserve_groups=True, optional=True,
+                            prefill=prefill)
+        compact = "".join(replacement.split())
+        if compact.lower() == expected.lower(): groups = [replacement]; break
+        if len(compact) > len(expected[start * 4:end * 4]) and compact.lower().startswith(
+            (expected.split("1", 1)[0] + "1").lower()):
+            _print("Please re-enter only the highlighted region that remains incorrect.", err=True)
+            continue
+        if not compact: continue
+        groups[start:end], remaining = _entered_groups(replacement, expected[start * 4:end * 4])
+        changed.difference_update(range(start, end)); changed.update(start + i for i in remaining)
+    entered = "".join(groups)
+    if "".join(entered.split()).lower() != expected.lower(): raise RuntimeError("Confirmation mismatch.")
+    if confirm is not None and not confirm(entered).accepted: raise RuntimeError("Confirmation rejected.")
+
 def _generated_secret(profile: Profile, source: bytes | None, byte_length: int | None,
                       identifier: str | None) -> MasterSeed | CoreLightningSecret:
     return (generate_master_seed(source, byte_length=byte_length, identifier=identifier)
@@ -127,10 +136,11 @@ def _generated_secret(profile: Profile, source: bytes | None, byte_length: int |
     )
 def _initialize_wallet(core: BitcoinCore, secret: MasterSeed | CoreLightningSecret, *,
                        private: bool = True, account: int = 0,
-                       timestamp: int | Literal["now"] = "now", fresh: bool = True) -> int:
+                       timestamp: int | Literal["now"] = "now", fresh: bool = True,
+                       confirmed: bool = True) -> int:
     assert isinstance(secret, MasterSeed)
     try:
-        if fresh: _print(("\n" if secret.header.threshold else "") + "Master-seed backup confirmed.\n", err=True)
+        if confirmed: _print(("\n" if secret.header.threshold else "") + "Master-seed backup confirmed.\n", err=True)
         name = core.initialize(secret, lambda prompt: _text(prompt, optional=True),
             lambda message: _print(message, err=True), private=private, account=account, timestamp=timestamp)
         version = f"{core.version // 10000}.{core.version // 100 % 100}.{core.version % 100}"
@@ -155,7 +165,7 @@ def _connected_core() -> BitcoinCore:
     except KeyboardInterrupt as error: raise _CoreSelectionInterrupted from error
     except BitcoinCoreError as error: raise _CommandError(str(error)) from error
 def _create(header: str | None, byte_length: int | None, shares: int | None,
-            indices: str | None, existing: bool, plain: bool) -> int:
+            indices: str | None, existing: bool) -> int:
     profile, selected_threshold, identifier = _creation_header(header)
     threshold = 0 if selected_threshold is None else selected_threshold
     if profile not in (Profile.MS, Profile.CL): raise _UsageError("Only Bitcoin and Core Lightning can be created.")
@@ -179,13 +189,14 @@ def _create(header: str | None, byte_length: int | None, shares: int | None,
     try:
         if threshold == 0:
             if isinstance(source, (MasterSeed, CoreLightningSecret)):
-                raise _UsageError(
-                    "The supplied secret is already complete; choose a sharing threshold from 2 through 9."
-                )
-            secret = _generated_secret(profile, source, byte_length, identifier)
-            _emit(secret, plain)
+                if identifier is not None and identifier != source.header.identifier: raise _UsageError(
+                    "To change the existing secret's identifier, choose a sharing threshold from 2 through 9.")
+                secret = source
+            else: secret = _generated_secret(profile, source, byte_length, identifier)
+            _emit(secret, False)
             if sys.stdin.isatty(): _confirm_card(secret)
-            return _initialize_wallet(core, secret, fresh=not existing) if core is not None else 0
+            return _initialize_wallet(core, secret, timestamp=0 if existing else "now",
+                                      fresh=not existing) if core is not None else 0
         if isinstance(source, (MasterSeed, CoreLightningSecret)):
             ceremony = CreationCeremony.from_secret(
                 source, threshold=threshold, identifier=identifier,
@@ -210,7 +221,7 @@ def _create(header: str | None, byte_length: int | None, shares: int | None,
     except CodexError as error: raise _CommandError(str(error)) from error
     output_count = shares if shares is not None else len(indices or "")
     for position in range(output_count):
-        artifact = ceremony.next_share(); _emit(artifact, plain, gap=position > 0)
+        artifact = ceremony.next_share(); _emit(artifact, False, gap=position > 0)
         _confirm_card(artifact, ceremony.confirm)
         _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
     secret = ceremony.finish()
@@ -230,7 +241,7 @@ def _checksum(header: str | None, plain: bool) -> int:
         "Checksum worksheet non-pink bold squares" if header is None else "Remaining non-pink bold squares"
     )
     try:
-        value = (header or "") + _text(prompt); text = value if "1" in value else "ms1" + value
+        value = (header or "") + _text(prompt, prompt_end=":\n> "); text = value if "1" in value else "ms1" + value
         if Profile(text[: text.rfind("1")].lower()) not in (Profile.MS, Profile.CL): raise ValueError
         artifact = complete_checksum(text)
     except (CodexError, ValueError) as error:
@@ -243,7 +254,7 @@ def _checksum(header: str | None, plain: bool) -> int:
 def _correct(residue: bool, erasures: tuple[int, ...],
              byte_length: int | Literal["?"] | None, plain: bool) -> int:
     prompt = "Enter the worksheet residue" if residue else "Enter the damaged codex32 string"
-    value = _text(prompt, preserve_groups=not residue)
+    value = _text(prompt, preserve_groups=not residue, prompt_end=":\n> ")
     if residue:
         if byte_length is not None:
             raise _UsageError("--bytes cannot be used with --residue.")
@@ -324,7 +335,7 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"],
         raise _UsageError("The connected Bitcoin Core is mainnet; remove --testnet.")
     secret = _master_seed()
     return _initialize_wallet(core, secret, private=private, account=account,
-                              timestamp=timestamp, fresh=False)
+                              timestamp=timestamp, fresh=False, confirmed=False)
 
 def _dispatch(arguments: argparse.Namespace) -> int:
     command = cast(str, arguments.command)
@@ -338,7 +349,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         return _create(
             cast(str | None, arguments.header), cast(int | None, arguments.byte_length),
             cast(int | None, arguments.shares), cast(str | None, arguments.indices),
-            bool(arguments.existing), plain,
+            bool(arguments.existing),
         )
     if command == "checksum": return _checksum(cast(str | None, arguments.header), plain)
     if command == "correct":
