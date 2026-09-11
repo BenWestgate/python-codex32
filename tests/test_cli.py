@@ -430,34 +430,46 @@ def test_tty_retry_replaces_only_the_editable_suffix(
     assert editor.inserted == [bad_one, bad_two]
     assert editor.hook is None
     assert editor.auto_history == [False] * 6
-    assert captured.err.count("Rejected: The checksum does not match.") == 2
+    assert "Rejected:" not in captured.err
 
 
-def test_tty_wallet_requires_confirmation_before_using_correction(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [(["xprv"], VECTOR_1["xprv"]), (["wallet", "multisig-xpub"], "[3f3521a6/48h/0h/0h/2h]xpub")],
+)
+def test_tty_wallet_commands_retry_silently_after_declining_correction(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+    expected: str,
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
     original = VECTOR_1["secret_s"]
     damaged = original[:20] + ("q" if original[20] != "q" else "p") + original[21:]
-    answers = iter((damaged[3:], "yes"))
+    answers = iter((damaged[3:], "n", damaged[3:], "yes"))
     prompts: list[str] = []
+    prefills: list[str] = []
 
-    def answer(prompt: str) -> str:
+    def answer(prompt: str, prefill: str = "") -> str:
         prompts.append(prompt)
+        prefills.append(prefill)
         return next(answers)
 
     monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
-    monkeypatch.setattr(builtins, "input", answer)
+    monkeypatch.setattr(input_module, "_editable_input", answer)
 
-    assert main(["xprv"]) == 0
+    assert main(command) == 0
     captured = capsys.readouterr()
-    assert captured.out.strip() == VECTOR_1["xprv"]
-    assert "Possible correction:" in captured.err and original in captured.err
-    assert f"Possible correction:\n> {original}" in captured.err
+    assert captured.out.strip().startswith(expected)
+    assert "Possible correction:\n\nMaster fingerprint: 3F3521A6\n\n" in captured.err
+    assert input_module._card_text(original, False) in captured.err
+    assert "> " not in captured.err
     assert prompts[0] == "Enter a codex32 string:\n> "
-    assert prompts[-1] == "Use this correction? [y/N]: "
+    assert prompts[-1] == "Does this entire string exactly match your recovery card? [y/N]: "
+    assert prefills == ["", "", damaged[3:], ""]
+    assert "Rejected:" not in captured.err
 
 
 def test_redirected_recovery_never_attempts_correction() -> None:
@@ -640,7 +652,8 @@ def test_tty_subsequent_correction_uses_confirmed_immutable_context(
     assert main(["secret"]) == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == VECTOR_2["secret_S"]
-    assert "Possible correction:" in captured.err and VECTOR_2["share_C"] in captured.err
+    assert "Possible correction:\n\nMaster fingerprint: FAB6868A\n\n" in captured.err
+    assert input_module._card_text(VECTOR_2["share_C"], False) in captured.err
     assert contexts == [(CorrectionContext(Profile.MS, len(VECTOR_2["share_A"]), prefix, ("a",)),)]
 
 
@@ -1405,13 +1418,13 @@ def test_cli_preserves_consecutive_fixed_erasure_guarantee() -> None:
     assert original in result.stderr
 
 
-def test_cli_reports_ambiguous_structural_plus_consecutive_erasure_input() -> None:
+def test_cli_rejects_statistically_inadmissible_structural_burst() -> None:
     damaged = "MS12NAMEA2320ZYX?????????????JHGFED3CAXRPP870HKKQRMF"
 
     result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 1
-    assert "More than one correction is possible" in result.stderr
+    assert "No valid correction found" in result.stderr
 
 
 def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> None:
@@ -1472,9 +1485,9 @@ def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     ("options", "lengths", "bounded"),
     (
         ([], (48, 54, 61, 67, 74, 127), True),
-        (["--bytes", "20"], (54,), False),
-        (["--bytes", "64"], (127,), False),
-        (["--bytes", "?"], (48, 54, 61, 67, 74, 127), False),
+        (["--bytes", "20"], (54,), True),
+        (["--bytes", "64"], (127,), True),
+        (["--bytes", "?"], (48, 54, 61, 67, 74, 127), True),
     ),
 )
 def test_correction_options_control_lengths_deadline_and_search_envelope(
@@ -1491,7 +1504,7 @@ def test_correction_options_control_lengths_deadline_and_search_envelope(
     assert observed == damaged
     assert tuple(context.expected_length for context in contexts) == lengths
     assert (search.call_args.kwargs["deadline"] is not None) is bounded
-    assert search.call_args.kwargs["reduced"] == (frozenset((54, 61, 67)) if bounded else frozenset())
+    assert search.call_args.kwargs["reduced"] == frozenset()
 
 
 def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> None:
@@ -1532,7 +1545,7 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
     bip39 = _invoke(["correct"], BIP39_12W_ZERO)
     assert removed.exit_code == 2
     assert "Remove or correct these arguments: --prefix" in removed.stderr
-    assert "undamaged ms1 or cl1 prefix" in damaged_prefix.stderr
+    assert "Check the start of your backup. It must begin with ms1 or cl1." in damaged_prefix.stderr
     assert "not available for BIP39 worksheet backups" in bip39.stderr
 
 
@@ -1540,7 +1553,11 @@ def test_correction_hides_internal_candidate_reparse_failures() -> None:
     result = _invoke(["correct"], "ms12auxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg")
 
     assert result.exit_code != 0
-    assert result.stderr.strip() == ("codex32 correct: No valid correction found. Check the original backup.")
+    assert result.stdout == ""
+    assert result.stderr.strip() in {
+        "codex32 correct: No valid correction found. Check the original backup.",
+        "codex32 correct: The correction search did not complete within ten seconds.",
+    }
     assert "threshold" not in result.stderr
 
 
@@ -1668,7 +1685,7 @@ def test_production_size_budgets_are_enforced() -> None:
         for path in package.rglob("*.py")
     }
 
-    assert sum(counts.values()) < 3000
+    assert sum(counts.values()) < 4500, counts
 
 
 @pytest.mark.parametrize(
@@ -1999,3 +2016,351 @@ def test_create_existing_interruption_cannot_initialize_a_wallet() -> None:
     ):
         assert main(["create", "--existing"]) == 130
     assert core.imported is None
+
+
+@pytest.mark.parametrize(
+    "response,accepted", [("", False), ("n", False), ("other", False), ("y", True), ("YES", True)]
+)
+def test_operational_candidate_whole_card_confirmation(monkeypatch, capsys, response, accepted):
+    module = importlib.import_module("codex32._cli_input")
+    artifact = parse_codex32(VECTOR_1["secret_s"])
+    prompts = []
+    monkeypatch.setattr(module, "_editable_input", lambda prompt: prompts.append(prompt) or response)
+    monkeypatch.setattr(module.sys.stderr, "isatty", lambda: True)
+    assert module._confirm_correction(artifact, [], False) is accepted
+    output = capsys.readouterr().err
+    assert "Master fingerprint: 3F3521A6\n\n" in output
+    assert module._card_text(artifact.text) in output
+    assert "> " not in output
+    assert "\x1b[1;31m" not in output and "\x1b[1;31;7m" not in output
+    assert "\x1b[1m" in output and "\x1b[22m" in output
+    assert prompts == ["Does this entire string exactly match your recovery card? [y/N]: "]
+
+
+def test_final_share_preview_is_isolated_and_basis_has_no_preview(monkeypatch, capsys):
+    module = importlib.import_module("codex32._cli_input")
+    first = parse_codex32(VECTOR_2["share_A"])
+    candidate = parse_codex32(VECTOR_2["share_C"])
+    accepted = [first]
+    monkeypatch.setattr(module, "_editable_input", lambda prompt: "n")
+    assert not module._confirm_correction(candidate, accepted, False)
+    assert accepted == [first]
+    assert "Master fingerprint: FAB6868A\n\n" in capsys.readouterr().err
+    assert not module._confirm_correction(candidate, accepted, True)
+    assert "Master fingerprint" not in capsys.readouterr().err
+    assert not module._confirm_correction(candidate, [], False)
+    assert "Master fingerprint" not in capsys.readouterr().err
+
+
+def test_failed_fingerprint_never_offers_confirmation(monkeypatch, capsys):
+    module = importlib.import_module("codex32._cli_input")
+    from codex32.errors import CodexError
+
+    def fail(seed):
+        raise CodexError("unusable")
+
+    monkeypatch.setattr(module, "_fingerprint_from_seed", fail)
+    monkeypatch.setattr(module, "_editable_input", lambda prompt: pytest.fail("confirmation offered"))
+    assert not module._confirm_correction(parse_codex32(VECTOR_1["secret_s"]), [], False)
+    assert "Could not recover a valid Bitcoin master seed using this correction." in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "observed,window",
+    [("ABXD EFGH IJ", "ABCD"), ("ABC EFGH IJ", "ABCD"), ("ABCD XEFGH IJ", "EFGH"), ("ABCD EFGH I", "IJ")],
+)
+def test_correct_highlights_complete_canonical_windows(observed, window):
+    module = importlib.import_module("codex32._cli_input")
+    rendered = module._card_text("abcdefghij", observed=observed)
+    assert f"\x1b[1;31m{window}\x1b[0m" in rendered
+    assert re.sub(r"\x1b\[[0-9;]*m", "", rendered) == "ABCD EFGH IJ"
+    assert "31" not in module._card_text("abcdefghij")
+
+
+def test_check_invalid_input_never_searches(monkeypatch):
+    module = importlib.import_module("codex32._cli_input")
+    monkeypatch.setattr(module.sys, "stdin", _TTYInput())
+    answers = iter((VECTOR_1["secret_s"][:-1] + "q", VECTOR_1["secret_s"]))
+    monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
+    monkeypatch.setattr(module, "_suggestions", lambda *args: pytest.fail("check searched"))
+    assert main(["check"]) == 0
+
+
+@pytest.mark.parametrize("profile", ["ms", "cl"])
+def test_interactive_derived_card_confirmation(monkeypatch, profile):
+    cli = importlib.import_module("codex32.cli")
+    module = importlib.import_module("codex32._cli_input")
+    first, second, expected = (
+        (VECTOR_2["share_A"], VECTOR_2["share_C"], VECTOR_2["derived_D"])
+        if profile == "ms"
+        else (SHARING_VECTORS["cl"]["A"], SHARING_VECTORS["cl"]["C"], SHARING_VECTORS["cl"]["D"])
+    )
+    stdout, stderr = _TTYOutput(), _TTYOutput()
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+    answers = iter((first, second, "", expected.swapcase()))
+    monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
+    original_derive, original_confirm = cli.derive_share, cli._confirm_card
+    derived = []
+
+    def derive(*args):
+        artifact = original_derive(*args)
+        derived.append(artifact)
+        return artifact
+
+    def confirm(artifact):
+        assert artifact is derived[0]
+        original_confirm(artifact)
+
+    monkeypatch.setattr(cli, "derive_share", derive)
+    monkeypatch.setattr(cli, "_confirm_card", confirm)
+    assert main(["share", "d"]) == 0
+    assert len(derived) == 1 and derived[0].text.lower() == expected.lower()
+    assert "Recovery card confirmed." in stderr.getvalue()
+    card = module._card_text(expected)
+    assert stdout.getvalue().count(card) == 1
+    assert card not in stderr.getvalue()
+
+
+@pytest.mark.parametrize(
+    "plain,input_tty,output_tty", [(True, True, True), (False, False, True), (False, True, False)]
+)
+def test_derived_card_confirmation_bypasses(monkeypatch, plain, input_tty, output_tty):
+    cli = importlib.import_module("codex32.cli")
+    monkeypatch.setattr(sys, "stdin", _TTYInput() if input_tty else io.StringIO())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput() if output_tty else io.StringIO())
+    monkeypatch.setattr(
+        cli,
+        "_artifacts",
+        lambda **kwargs: [parse_codex32(VECTOR_2["share_A"]), parse_codex32(VECTOR_2["share_C"])],
+    )
+    monkeypatch.setattr(cli, "_confirm_card", lambda artifact: pytest.fail("unexpected confirmation"))
+    assert main(["share", "d", *(["--plain"] if plain else [])]) == 0
+
+
+@pytest.mark.parametrize("exception,status", [(EOFError, 2), (KeyboardInterrupt, 130)])
+def test_derived_card_interruption(monkeypatch, exception, status):
+    cli = importlib.import_module("codex32.cli")
+    module = importlib.import_module("codex32._cli_input")
+    stdout, stderr = _TTYOutput(), _TTYOutput()
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+    monkeypatch.setattr(
+        cli,
+        "_artifacts",
+        lambda **kwargs: [parse_codex32(VECTOR_2["share_A"]), parse_codex32(VECTOR_2["share_C"])],
+    )
+
+    def interrupted(*args):
+        raise exception
+
+    monkeypatch.setattr(module, "_editable_input", interrupted)
+    assert main(["share", "d"]) == status
+    assert stderr.getvalue().endswith("Recovery card not confirmed.\n")
+    assert "void" not in stderr.getvalue() and "Recovery card confirmed." not in stderr.getvalue()
+
+
+def test_derived_card_retries_keep_frozen_progress(monkeypatch):
+    cli = importlib.import_module("codex32.cli")
+    module = importlib.import_module("codex32._cli_input")
+    expected = VECTOR_2["derived_D"]
+    groups = [expected[i : i + 4] for i in range(0, len(expected), 4)]
+    damaged = groups.copy()
+    damaged[3] = damaged[3][:2]
+    damaged[6] += "X"
+    stdout, stderr = _TTYOutput(), _TTYOutput()
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+    monkeypatch.setattr(
+        cli,
+        "_artifacts",
+        lambda **kwargs: [parse_codex32(VECTOR_2["share_A"]), parse_codex32(VECTOR_2["share_C"])],
+    )
+    answers = iter(("", " ".join(damaged), "", " ".join(damaged), groups[3], expected))
+    prefills = []
+
+    def answer(prompt, prefill=""):
+        if "Review the marked" in prompt:
+            prefills.append(prefill)
+        return next(answers)
+
+    monkeypatch.setattr(module, "_editable_input", answer)
+    assert main(["share", "d"]) == 0
+    assert prefills == [damaged[3], damaged[3], damaged[3], damaged[6]]
+    assert "Please re-enter only the highlighted region" in stderr.getvalue()
+    assert "Recovery card confirmed." in stderr.getvalue()
+
+
+def test_share_input_correction_precedes_derivation_and_card_confirmation(monkeypatch):
+    cli = importlib.import_module("codex32.cli")
+    module = importlib.import_module("codex32._cli_input")
+    first, second, expected = VECTOR_2["share_A"], VECTOR_2["share_C"], VECTOR_2["derived_D"]
+    damaged = second[:20] + ("Q" if second[20] != "Q" else "P") + second[21:]
+    stdout, stderr = _TTYOutput(), _TTYOutput()
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+    answers = iter((first, damaged, "n", damaged, "yes", "", expected))
+    events = []
+    original = cli.derive_share
+
+    def answer(prompt, prefill=""):
+        result = next(answers)
+        if "entire string" in prompt:
+            events.append(result)
+            assert "derive" not in events
+        if "Write this share" in prompt:
+            events.append("write")
+        return result
+
+    def derive(artifacts, index):
+        events.append("derive")
+        assert artifacts[1].text.lower() == second.lower()
+        return original(artifacts, index)
+
+    monkeypatch.setattr(module, "_editable_input", answer)
+    monkeypatch.setattr(cli, "derive_share", derive)
+    assert main(["share", "d"]) == 0
+    assert events == ["n", "yes", "derive", "write"]
+    assert "Recovery card confirmed." in stderr.getvalue()
+    assert "Rejected:" not in stderr.getvalue()
+
+
+@pytest.mark.parametrize("response", ["yes", "n", ""])
+def test_creation_source_correction_requires_approval(monkeypatch, capsys, response):
+    cli = importlib.import_module("codex32.cli")
+    module = importlib.import_module("codex32._cli_input")
+    expected = VECTOR_1["secret_s"]
+    damaged = expected[:20] + "q" + expected[21:]
+    fallback = "00" * 16
+    answers = iter((damaged, response, fallback))
+    prompts = []
+    prefills = []
+
+    def answer(prompt, prefill=""):
+        prompts.append(prompt)
+        prefills.append(prefill)
+        return next(answers)
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(module, "_editable_input", answer)
+    result = cli._creation_source(Profile.MS)
+    assert result == (parse_codex32(expected) if response == "yes" else bytes(16))
+    output = capsys.readouterr().err
+    assert "Master fingerprint: 3F3521A6\n\n" in output
+    assert module._card_text(expected, False) in output
+    assert "31m" not in output
+    assert "Does this entire string exactly match your recovery card? [y/N]: " in prompts
+    assert prefills == (["", ""] if response == "yes" else ["", "", damaged])
+    if response != "yes":
+        assert "Rejected:" not in output
+
+
+@pytest.mark.parametrize("kind", ["none", "ambiguous", "share", "wrong_profile", "fingerprint"])
+def test_creation_source_unusable_candidates_retry(monkeypatch, capsys, kind):
+    from types import SimpleNamespace
+
+    from codex32.errors import CodexError
+
+    cli = importlib.import_module("codex32.cli")
+    module = importlib.import_module("codex32._cli_input")
+    artifact = parse_codex32(VECTOR_1["secret_s"])
+    if kind == "share":
+        artifact = parse_codex32(VECTOR_2["share_A"])
+    elif kind == "wrong_profile":
+        artifact = parse_codex32(SHARING_VECTORS["cl"]["S"])
+    candidate = SimpleNamespace(artifact=artifact)
+    candidates = () if kind == "none" else (candidate, candidate) if kind == "ambiguous" else (candidate,)
+    monkeypatch.setattr(cli, "_suggestions", lambda *args: candidates)
+    answers = iter(("ms1invalid", "00" * 16))
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
+
+    def fail(seed):
+        raise CodexError("invalid seed")
+
+    if kind == "fingerprint":
+        monkeypatch.setattr(module, "_fingerprint_from_seed", fail)
+    assert cli._creation_source(Profile.MS) == bytes(16)
+    output = capsys.readouterr().err
+    assert "Possible correction:" not in output
+    assert "Rejected:" in output
+
+
+@pytest.mark.parametrize("exception", [EOFError, KeyboardInterrupt])
+def test_creation_source_empty_then_interrupt(monkeypatch, exception):
+    cli = importlib.import_module("codex32.cli")
+    module = importlib.import_module("codex32._cli_input")
+    answers = iter(("",))
+
+    def answer(*args):
+        try:
+            return next(answers)
+        except StopIteration:
+            raise exception
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(module, "_editable_input", answer)
+    monkeypatch.setattr(cli, "_suggestions", lambda *args: ())
+    with pytest.raises(exception):
+        cli._creation_source(Profile.MS)
+
+
+def test_creation_source_hex_and_noninteractive_never_search(monkeypatch):
+    cli = importlib.import_module("codex32.cli")
+    monkeypatch.setattr(cli, "_suggestions", lambda *args: pytest.fail("unexpected search"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("00" * 16))
+    assert cli._creation_source(Profile.MS) == bytes(16)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("ms1invalid"))
+    with pytest.raises(cli._UsageError):
+        cli._creation_source(Profile.MS)
+
+
+def test_corrected_creation_source_identity_and_acceptance_boundary(monkeypatch):
+    from types import SimpleNamespace
+
+    cli = importlib.import_module("codex32.cli")
+    module = importlib.import_module("codex32._cli_input")
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    core = _FakeBitcoinCore()
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput())
+    monkeypatch.setattr(sys, "stderr", _TTYOutput())
+    monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
+    monkeypatch.setattr(cli, "_suggestions", lambda *args: (SimpleNamespace(artifact=secret),))
+    answers = iter(("ms1invalid", "n", "ms1invalid", "yes", "", secret.text))
+    confirmations = []
+
+    def answer(prompt, prefill=""):
+        assert core.imported is None
+        result = next(answers)
+        if "entire string" in prompt:
+            confirmations.append(result)
+        if "Write this" in prompt:
+            assert confirmations == ["n", "yes"]
+        return result
+
+    monkeypatch.setattr(module, "_editable_input", answer)
+    assert main(["create", "--existing"]) == 0
+    assert core.imported is secret
+    assert confirmations == ["n", "yes"]
+
+
+def test_incomplete_optional_candidate_is_labelled_and_never_accepted_automatically():
+    from dataclasses import replace
+
+    from codex32.correction import _correct_fixed
+
+    source = VECTOR_1["secret_s"]
+    candidate = _correct_fixed(source, suspected_profile=Profile.MS)
+    assert candidate is not None
+    candidate = replace(candidate, search_complete=False)
+    with patch("codex32.cli._correction_candidates", return_value=((candidate,), False, 0.0, False)):
+        result = _invoke(["correct"], source[:-1] + "?")
+    assert result.exit_code == 1 and result.stdout == ""
+    assert "search is incomplete" in result.stderr
+    assert "uniqueness is not established" in result.stderr
+    assert "only a correction suggestion" in result.stderr

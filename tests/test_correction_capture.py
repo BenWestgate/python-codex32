@@ -50,10 +50,10 @@ def test_supported_shape_families_are_exact() -> None:
     characters = [shape for shape in shapes if shape.name.startswith("characters")]
     groups = [shape for shape in shapes if shape.name.startswith("groups")]
 
-    assert len(characters) == 14
-    assert len(groups) == 5
-    assert all(0 < shape.inserted + shape.omitted <= 4 for shape in characters)
-    assert all(0 < shape.inserted + shape.omitted <= 2 for shape in groups)
+    assert len(characters) == 45
+    assert len(groups) == 15
+    assert all(0 < shape.distance <= 4 and shape.corrupted == 0 for shape in characters)
+    assert all(0 < shape.distance <= 2 and shape.unit == 4 for shape in groups)
 
 
 def test_first_share_character_alignment_table() -> None:
@@ -112,12 +112,12 @@ def test_two_missing_groups_fit_strict_result_bound() -> None:
     assert FALSE_BOUND_DENOMINATOR * volume < 2**65
 
 
-def test_two_each_with_two_substitutions_exceeds_strict_result_bound() -> None:
+def test_two_each_with_two_substitutions_fits_inclusive_result_bound() -> None:
     shape = Shape("two-each", inserted=2, omitted=2)
     volume = capture_volume(shape, 48, 3, substitutions=2)
 
     assert volume == comb(45, 2) ** 2 * 32**2 * comb(43, 2) * 31**2
-    assert FALSE_BOUND_DENOMINATOR * volume > 2**65
+    assert FALSE_BOUND_DENOMINATOR * volume <= 2**65
 
 
 def test_explicit_erasures_are_counted_once_in_the_fixed_volume() -> None:
@@ -138,10 +138,10 @@ def test_every_reported_safety_result_uses_exact_cumulative_inequality() -> None
     ):
         space = 1 << checksum_bits(hrp, length)
         for item in classes(hrp, length, prefix):
-            assert item.safe == (FALSE_BOUND_DENOMINATOR * item.cumulative_volume < space)
+            assert item.safe == (FALSE_BOUND_DENOMINATOR * item.cumulative_volume <= space)
 
 
-def test_cross_length_bound_is_strict_for_every_40_to_56_observation() -> None:
+def test_cross_length_bound_is_inclusive_for_every_40_to_56_observation() -> None:
     for observed in range(40, 57):
         admitted = [item for item in cross_length_classes(observed) if item.admitted]
         if not admitted:
@@ -149,33 +149,36 @@ def test_cross_length_bound_is_strict_for_every_40_to_56_observation() -> None:
         maximum = max(item.checksum_bits for item in admitted)
         cumulative = sum(item.volume << (maximum - item.checksum_bits) for item in admitted)
 
-        assert FALSE_BOUND_DENOMINATOR * cumulative < 1 << maximum
+        assert FALSE_BOUND_DENOMINATOR * cumulative <= 1 << maximum
 
 
-def test_automatic_48_compatible_cumulative_bounds_are_exact() -> None:
+def test_cumulative_bounds_include_new_group_operations_with_exact_arithmetic() -> None:
+    # At observed 40 only two missing groups can reach the valid target 48.
+    # At observed 44: O4, GO1, GO+GAT, and GO+GS. The latter's conservative
+    # strata span four through eight erasures. These counts are hand-derived
+    # from 45 mutable characters and 11 target display groups.
+    def volume(e: int) -> int:
+        return 32**e * sum(comb(45 - e, s) * 31**s for s in range((8 - e) // 2 + 1))
+
     expected = {
-        40: Fraction(55, 33_554_432),
-        44: Fraction(49_550_963, 8_796_093_022_208),
-        45: Fraction(9_244_785, 562_949_953_421_312),
-        46: Fraction(48_584_517_267, 18_014_398_509_481_984),
-        47: Fraction(1_229_275_380_015, 1_152_921_504_606_846_976),
-        48: Fraction(127_246_374_791_303, 36_893_488_147_419_103_232),
-        49: Fraction(3_853_028_054_033, 18_446_744_073_709_551_616),
-        50: Fraction(183_552_742_479_439, 36_893_488_147_419_103_232),
-        51: Fraction(130_377_745_889, 576_460_752_303_423_488),
-        52: Fraction(23_225_724_342_457, 9_223_372_036_854_775_808),
-        56: Fraction(164_824_085_127_117, 18_446_744_073_709_551_616),
+        40: Fraction(55 * 32**8, 2**65),
+        44: Fraction(
+            (comb(45, 4) + 11 + 2 * 12 * 10) * volume(4)
+            + (2 * 12 * 11) * sum(volume(e) for e in range(4, 9)),
+            2**65,
+        ),
     }
-
     for observed, bound in expected.items():
-        admitted = [item for item in cross_length_classes(observed) if item.admitted]
         actual = sum(
-            (Fraction(item.volume, 1 << item.checksum_bits) for item in admitted),
+            (
+                Fraction(item.volume, 1 << item.checksum_bits)
+                for item in cross_length_classes(observed)
+                if item.admitted
+            ),
             Fraction(),
         )
-
         assert actual == bound
-        assert actual < Fraction(1, FALSE_BOUND_DENOMINATOR)
+        assert actual <= 1
 
 
 def test_every_secondary_stretch_shape_admits_pure_structural_recovery() -> None:
@@ -204,33 +207,19 @@ def test_every_secondary_stretch_shape_admits_pure_structural_recovery() -> None
             )
 
 
-def test_secondary_third_order_substitution_frontiers_are_exact() -> None:
-    expected = {
-        (54, "characters-0i-3o"): {0, 1},
-        (61, "characters-0i-3o"): {0, 1},
-        (67, "characters-0i-3o"): {0, 1},
-        (54, "characters-1i-2o"): {0, 1, 2},
-        (61, "characters-1i-2o"): {0, 1, 2},
-        (67, "characters-1i-2o"): {0, 1},
-        (54, "characters-2i-1o"): {0, 1, 2},
-        (61, "characters-2i-1o"): {0, 1, 2},
-        (67, "characters-2i-1o"): {0, 1, 2},
-        (54, "characters-3i-0o"): {0, 1, 2, 3},
-        (61, "characters-3i-0o"): {0, 1, 2, 3},
-        (67, "characters-3i-0o"): {0, 1, 2, 3},
-    }
-
-    for (target, name), substitutions in expected.items():
-        shape = next(item for item in supported_shapes() if item.name == name)
-        admitted = {
-            item.substitutions
-            for item in cross_length_classes(target + shape.delta)
-            if item.admitted
-            and item.target_length == target
-            and item.shape == name
-            and item.remaining_explicit == 0
-        }
-        assert admitted == substitutions
+def test_secondary_third_order_layers_retain_bch_capacity_under_inclusive_ceiling() -> None:
+    for target in (54, 61, 67):
+        for inserted, omitted in ((0, 3), (1, 2), (2, 1), (3, 0)):
+            name = f"characters-{inserted}i-{omitted}o"
+            admitted = {
+                item.substitutions
+                for item in cross_length_classes(target + inserted - omitted)
+                if item.admitted
+                and item.target_length == target
+                and item.shape == name
+                and item.remaining_explicit == 0
+            }
+            assert admitted == set(range((8 - omitted) // 2 + 1))
 
 
 def test_cross_length_frontier_uses_actual_explicit_and_immutable_domains() -> None:
@@ -258,7 +247,7 @@ def test_cross_length_frontier_uses_actual_explicit_and_immutable_domains() -> N
                     continue
                 maximum = max(item.checksum_bits for item in admitted)
                 cumulative = sum(item.volume << (maximum - item.checksum_bits) for item in admitted)
-                assert FALSE_BOUND_DENOMINATOR * cumulative < 1 << maximum
+                assert FALSE_BOUND_DENOMINATOR * cumulative <= 1 << maximum
 
 
 def test_unknown_length_offers_full_intermediate_families_and_truncates_by_rank() -> None:

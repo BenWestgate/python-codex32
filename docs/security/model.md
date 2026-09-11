@@ -129,13 +129,13 @@ output is an untrusted proposal, never authenticated recovery material.
 |---|---|
 | Context | The HRP, separator, and program-supplied context are immutable and outside the correction domain. |
 | Target lengths | `ms` searches only 48, 54, 61, 67, 74, or 127 characters; an accepted first string fixes the length of later strings in that recovery set. |
-| Character indels | Automatic first-string search permits up to four total character insertions and deletions for targets 48, 74, and 127, and three for 54, 61, and 67. |
-| Group indels | Every `ms` target permits up to two total insertions and deletions of complete four-character groups. |
-| Fixed erasures | The BCH core supports `E + 2S <= 8`; exact-length consecutive erasures retain separate guarantees of 13 symbols for regular codex32 and 15 for Long codex32. |
-| False reconstruction | The cumulative bound for every eligible structural rank must be strictly below `1e-5`. |
-| Ambiguity | Equal best candidates, multiple consecutive-erasure witnesses, or an incomplete competitive frontier produce no suggestion. |
-| Resources | Input and retained caches are bounded, structural views stream, and a deadline may reject automatic 48-character searches without accepting provisional results. |
-| Output | Suggestions are reparsed, written to standard error, require explicit confirmation, and leave the command with a nonzero status and no secret on standard output. |
+| Character alignment | `A = I + O + AT + 2*T <= 4`; the measured required baseline is `A<=2`, with deeper search bounded by the deadline. |
+| Group alignment | `G = GI + GO + GS + GAT + 2*GT <= 2`; only complete displayed four-character groups participate, and character/group families never mix. |
+| Fixed erasures | BCH repairs substitutions and explicit/generated erasures after alignment, with `E + 2S <= 8`; fixed consecutive erasures retain the 13/15-symbol linear path. |
+| False reconstruction | All target lengths and all admitted fixed/character/group layers share cumulative mass at or below `1`, including fixed consecutive erasures. |
+| Ambiguity | Required work must complete. One primary-best-so-far candidate from interrupted optional work may be shown with incomplete status and no uniqueness claim. Multiple primary ties from incomplete work are suppressed. |
+| Resources | Piece tables and shifted syndrome prefixes avoid whole-body scans per alignment. The deadline is checked inside enumeration. No MITM is used. Public cutoffs require valid-profile benchmark evidence. |
+| Output | Operational candidates require explicit whole-card confirmation before acceptance; isolated Bitcoin reconstruction may only preview a fingerprint. `correct` suggestions remain nonzero-status stderr output. `check` never suggests repairs. |
 
 ## Bitcoin Core controls
 

@@ -94,28 +94,10 @@ generating anything. If more than one network is running, choose it by number.
    codex32 clears the terminal and its saved scrollback, then asks you to
    re-enter the result from the card. Type the recovery text on the next line,
    after `>`.
-2. If the re-entry differs, codex32 displays only what you entered and marks
-   the groups to check in bold red. The display uses the original uppercase text,
-   group spacing, and alternating bold and normal weights. A completely
-   omitted group appears as `____` (fewer underscores for a shorter final
-   group). Partially entered groups are not padded, so the display does not
-   suggest where missing characters belong. Extras remain visible, and
-   placeholders never enter the editable prefill.
-   Correct groups are frozen. Review the active contiguous region, shown in
-   bold red reverse video, against your recovery card. Other unresolved regions
-   remain bold red. The prompt says “Review the marked text on your recovery card:”
-   and prefills only your entered text when line editing is available. Typed
-   groups keep their characters, case, and spacing. Without typed spaces, the
-   prefill follows the displayed groups.
-   Correct any subset of that region; every matching group freezes immediately.
-   Remaining regions are reviewed from left to right, without changing frozen
-   neighbors. You can also re-enter the entire correct string to confirm. If
-   a recognizable full-string retry is incorrect, your progress is kept and
-   the prompt directs you back to the region that remains incorrect.
-   Empty or unchanged answers simply retry. codex32 never reveals
-   expected characters or prescribes edits. Spaces and case do not affect
-   confirmation, and retries are unlimited. Extra text belongs to a card group,
-   including trailing extras in the final group; omitted groups need re-entry.
+2. If the text differs, check the red groups against your recovery card and
+   correct the highlighted section. Correct groups stay confirmed. You can also
+   enter the entire card again. Spaces and letter case do not affect
+   confirmation, and you can retry as often as needed.
 3. After every card is confirmed, approve the eligible blank Bitcoin Core
    wallet shown. If there is more than one, choose by number and confirm its
    exact name.
@@ -318,7 +300,10 @@ seed, or root xprv.
 - `codex32 correct` suggests a repair. Compare any suggestion character by
   character with the physical backup before confirming it.
 - `codex32 share d` derives a replacement at unused index `d`. Confirm and
-  store the new card before retiring an old one.
+  store the new card before retiring an old one. Interactive use displays the
+  share, then asks you to write and re-enter it. Matching groups stay confirmed
+  while you recheck highlighted regions. Success prints “Recovery card
+  confirmed.” `--plain` or redirected input/output skips card confirmation.
 
 ### Worksheets and migration formats
 
@@ -341,3 +326,18 @@ public descriptors, xpubs, and PSBTs may cross the offline boundary by QR.
 Automation, low-level private exports, parser behavior, correction mathematics,
 and exact limits are documented in the [API and architecture guide](../developer/api.md).
 Auditors should also read the [security model](../security/model.md).
+
+Interactive `create --existing` offers bounded correction for a mistyped codex32
+secret of the selected profile. Compare the entire proposed string with the
+original recovery card before answering yes. Bitcoin candidates show their master
+fingerprint above the text. Declining or finding no usable correction returns to
+source entry; hexadecimal seeds are never corrected. Confirmation of newly
+created cards is a separate step after accepting the source.
+
+A correction suggestion may be labelled **best effort / search incomplete**.
+This means the search found that candidate but did not establish uniqueness.
+Compare and confirm the entire string against the original backup before use.
+Correction separates missing, extra or swapped characters from BCH repair of
+wrong or unreadable characters. Four-character display groups have a separate
+alignment search. Both searches stop within a ten-second computation budget;
+deeper character searches are best effort.

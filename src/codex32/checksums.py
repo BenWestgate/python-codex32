@@ -1,17 +1,23 @@
-# fmt: off
 """Immutable checksum specifications used by codex32 and descriptors."""
 
 from dataclasses import dataclass
 
 _CODEX32_GEN = (
-    0x19DC500CE73FDE210, 0x1BFAE00DEF77FE529, 0x1FBD920FFFE7BEE52,
-    0x1739640BDEEE3FDAD, 0x07729A039CFC75F5A,
+    0x19DC500CE73FDE210,
+    0x1BFAE00DEF77FE529,
+    0x1FBD920FFFE7BEE52,
+    0x1739640BDEEE3FDAD,
+    0x07729A039CFC75F5A,
 )
 _CODEX32_LONG_GEN = (
-    0x3D59D273535EA62D897, 0x7A9BECB6361C6C51507, 0x543F9B7E6C38D8A2A0E,
-    0x0C577EAECCF1990D13C, 0x1887F74F8DC71B10651,
+    0x3D59D273535EA62D897,
+    0x7A9BECB6361C6C51507,
+    0x543F9B7E6C38D8A2A0E,
+    0x0C577EAECCF1990D13C,
+    0x1887F74F8DC71B10651,
 )
 _DESCSUM_GEN = (0xF5DEE51989, 0xA9FDCA3312, 0x1BAB10E32D, 0x3706B1677A, 0x644D626FFD)
+
 
 @dataclass(frozen=True, slots=True)
 class _Checksum:
@@ -60,8 +66,9 @@ _CRC = (
     _Checksum("CRC4", (3,), 4, 0),
 )
 
+
 def _crc_pad(data: bytes) -> int:
-    """Return generation-only CRC padding; this private hint is not validity semantics."""
+    """Compute CRC padding for a new seed; parsing accepts other padding values."""
     bit_length = len(data) * 8
     padding_bits = (-bit_length) % 5
     if not padding_bits:

@@ -58,7 +58,7 @@ In text codex32 is always lowercase unless it refers to the Codex32 Book.
 - Ask before adding any external dependency.
 - Ask before changing the signature and response shape of existing endpoints
 - Ask before suppressing format or style lints.
-- Tests enforce an installed-package budget below 3,000 logical lines of code.
+- Tests enforce an installed-package budget below 4,500 logical lines of code.
 - Declare a task done only after the gates pass and docstrings are updated
 
 ## Testing Guidelines

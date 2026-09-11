@@ -1,4 +1,3 @@
-# fmt: off
 # The complete, non-abbreviating command-line grammar.
 
 from __future__ import annotations
@@ -15,13 +14,18 @@ from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         if message.startswith("the following arguments are required: "):
-            message = "Choose an index for the additional share." if message.endswith("INDEX") else "Choose a command."
+            message = (
+                "Choose an index for the additional share."
+                if message.endswith("INDEX")
+                else "Choose a command."
+            )
         elif message.startswith("unrecognized arguments: "):
             message = "Remove or correct these arguments: " + message.removeprefix("unrecognized arguments: ")
         else:
             message = message[0].upper() + message[1:]
         self.print_usage(sys.stderr)
         self.exit(2, f"{self.prog}: {message}\n")
+
 
 def _integer(label: str, minimum: int, maximum: int | None = None) -> Callable[[str], int]:
     def parse(value: str) -> int:
@@ -36,86 +40,154 @@ def _integer(label: str, minimum: int, maximum: int | None = None) -> Callable[[
 
     return parse
 
+
 def _timestamp(value: str) -> int | Literal["now"]:
     return "now" if value == "now" else _integer("timestamp", 0)(value)
 
+
 def _correction_bytes(value: str) -> int | Literal["?"]:
-    if value == "?": return "?"
+    if value == "?":
+        return "?"
     parsed = _integer("bytes", 16, 64)(value)
-    if parsed not in SEED_BYTE_LENGTHS: raise argparse.ArgumentTypeError(
-        "bytes must be 16, 20, 24, 28, 32, 64, or ?")
+    if parsed not in SEED_BYTE_LENGTHS:
+        raise argparse.ArgumentTypeError("bytes must be 16, 20, 24, 28, 32, 64, or ?")
     return parsed
+
 
 def _command(parsers: argparse._SubParsersAction[_Parser], name: str, summary: str) -> _Parser:
     description = summary[0].upper() + summary[1:] + "."
     return parsers.add_parser(name, help=summary, description=description, allow_abbrev=False)
 
+
 def _terminal_output(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--plain", action="store_true", help="print without transcription formatting")
+    parser.add_argument("--plain", action="store_true", help="print unformatted backup text")
+
 
 def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None:
-    parser.add_argument("--account", type=_integer("account", 0, 2**31 - 1), default=0,
-                        help="account number (default: 0)")
+    parser.add_argument(
+        "--account",
+        type=_integer("account", 0, 2**31 - 1),
+        default=0,
+        help="account number (default: 0)",
+    )
     if timestamp:
-        parser.add_argument("--timestamp", type=_timestamp, default=0,
-                            help="earliest descriptor time or now for Bitcoin Core (default: 0)")
+        parser.add_argument(
+            "--timestamp",
+            type=_timestamp,
+            default=0,
+            help="search for transactions since this Unix timestamp; use 0 for all history or now for a new wallet",
+        )
     parser.add_argument("--testnet", action="store_true", help="use testnet keys")
 
+
 def parser() -> argparse.ArgumentParser:
-    result = _Parser(prog="codex32",
-                     description="Create, check, recover, and use codex32 Bitcoin seed backups.",
-                     epilog="Never include a seed or share in command arguments.\n"
-                            "Enter it when prompted. Some commands also accept piped input.",
-                     formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
-    result.add_argument("--version", action="version", version=f"%(prog)s {version('codex32')}",
-                        help="show the installed version and exit")
+    result = _Parser(
+        prog="codex32",
+        description="Create, check, recover, and use codex32 Bitcoin seed backups.",
+        epilog="Never include a seed or share in command arguments.\n"
+        "Enter it when prompted. Some commands also accept piped input.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    result.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {version('codex32')}",
+        help="show the installed version and exit",
+    )
     commands = result.add_subparsers(dest="command", required=True, title="commands", metavar="COMMAND")
 
     check = _command(commands, "check", "check a secret or share for errors")
     check.description = "Check a secret or share for format, checksum, and content errors."
     secret = _command(commands, "secret", "recover a secret from shares")
-    secret.description = ("Recover and display the complete secret. This removes the protection "
-                          "provided by splitting it into shares.")
+    secret.description = (
+        "Recover and display the complete secret. This removes the protection "
+        "provided by splitting it into shares."
+    )
     _terminal_output(secret)
     share = _command(commands, "share", "derive a share from codex32 strings")
-    share.description = "Derive an additional share from existing codex32 strings."
+    share.description = (
+        "Derive an additional share from existing codex32 strings. "
+        "Interactive use confirms the new recovery card; --plain or redirected input/output skips confirmation."
+    )
     share.add_argument("index", metavar="INDEX", help="index for the derived share")
     _terminal_output(share)
 
     correct = _command(commands, "correct", "suggest repairs for damaged backup text")
-    correct.description = ("Suggest repairs for damaged backup text. Corrects up to four arbitrary missing "
+    correct.description = (
+        "Suggest repairs for damaged backup text. Corrects up to four arbitrary missing "
         "or extra characters, including mixtures; up to two skipped or extra four-character groups, "
-        "including one of each; use ? for an erasure.")
-    correct.add_argument("--residue", action="store_true", help="correct only the final worksheet residue")
-    correct.add_argument("-e", "--erasure", dest="erasures", action="append", default=[],
-        type=_integer("erasure", 1), metavar="POSITION",
-        help="one-based position counted backward from the end; repeat as needed")
-    correct.add_argument("--bytes", dest="byte_length", type=_correction_bytes, metavar="BYTES",
-        help="expected master-seed bytes: 16, 20, 24, 28, 32, or 64; ? searches every size")
+        "including one of each; replace each unreadable character with ?."
+    )
+    correct.add_argument(
+        "--residue",
+        action="store_true",
+        help="correct only the final worksheet residue",
+    )
+    correct.add_argument(
+        "-e",
+        "--erasure",
+        dest="erasures",
+        action="append",
+        default=[],
+        type=_integer("erasure", 1),
+        metavar="POSITION",
+        help="one-based position counted backward from the end; repeat as needed",
+    )
+    correct.add_argument(
+        "--bytes",
+        dest="byte_length",
+        type=_correction_bytes,
+        metavar="BYTES",
+        help="expected master-seed bytes: 16, 20, 24, 28, 32, or 64; ? searches every size",
+    )
     _terminal_output(correct)
 
     checksum = _command(commands, "checksum", "finish a codex32 checksum worksheet")
     checksum.description = "Finish a codex32 checksum worksheet using its non-pink bold squares."
     checksum.add_argument(
-        "header", nargs="?", metavar="HEADER", help="worksheet header; omit to enter it at the prompt"
+        "header",
+        nargs="?",
+        metavar="HEADER",
+        help="worksheet header; omit to enter it at the prompt",
     )
     _terminal_output(checksum)
     create = _command(commands, "create", "create or confirm a backup, or split an existing secret")
     create.description = "Create and confirm recovery cards, then initialize a Bitcoin Core wallet."
-    create.add_argument("header", nargs="?", metavar="HEADER",
-        help="backup header or sharing threshold, such as 3cash or 3; omit for a single recovery card")
-    create.add_argument("--bytes", dest="byte_length", type=_integer("bytes", 16, 64),
-        choices=SEED_BYTE_LENGTHS, metavar="BYTES",
-        help="length of a new Bitcoin master seed: 16, 20, 24, 28, 32, or 64 bytes (default: 16)")
-    create.add_argument("--shares", type=_integer("shares", 2, 31), metavar="COUNT",
-        help="number of shares to output (defaults: 3 for threshold 2; 5 for threshold 3)")
+    create.add_argument(
+        "header",
+        nargs="?",
+        metavar="HEADER",
+        help="backup header or sharing threshold, such as 3cash or 3; omit for a single recovery card",
+    )
+    create.add_argument(
+        "--bytes",
+        dest="byte_length",
+        type=_integer("bytes", 16, 64),
+        choices=SEED_BYTE_LENGTHS,
+        metavar="BYTES",
+        help="length of a new Bitcoin master seed: 16, 20, 24, 28, 32, or 64 bytes (default: 16)",
+    )
+    create.add_argument(
+        "--shares",
+        type=_integer("shares", 2, 31),
+        metavar="COUNT",
+        help="number of shares to output (defaults: 3 for threshold 2; 5 for threshold 3)",
+    )
     create.add_argument("--indices", metavar="INDICES", help="exact share indices, in output order")
-    create.add_argument("--existing", action="store_true",
-                        help="use an existing codex32 secret or hexadecimal seed")
+    create.add_argument(
+        "--existing",
+        action="store_true",
+        help="use an existing codex32 secret or hexadecimal seed",
+    )
 
     wallet = _command(commands, "wallet", "set up a Bitcoin Core wallet or export wallet data")
     wallet_commands = wallet.add_subparsers(dest="wallet_command", required=True)
-    multisig = _command(wallet_commands, "multisig-xpub", "export an account xpub for multisig coordinators")
+    multisig = _command(
+        wallet_commands,
+        "multisig-xpub",
+        "export an account xpub for multisig coordinators",
+    )
     _wallet_options(multisig, timestamp=False)
     bitcoin_core = _command(wallet_commands, "bitcoin-core", "initialize a Bitcoin Core wallet")
     core_modes = bitcoin_core.add_subparsers(dest="core_mode", required=True)

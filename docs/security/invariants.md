@@ -10,8 +10,10 @@ and evidence.
 3. Shared creation uses a separate OS-CSPRNG call for each random initial share,
    gated by confirmation. Input cannot replace entropy or the original secret.
 4. Wallet setup uses the original ceremony result or a validated recovered seed.
-5. Correction is bounded and fail-closed. Ambiguous or incomplete work gives no
-   suggestion; suggestions are untrusted and require confirmation.
+5. Correction is bounded and fail-closed for incomplete required work. Interrupted
+   optional work may surface one best-so-far candidate with incomplete-search
+   status, never a uniqueness claim. Tied incomplete results give no suggestion;
+   suggestions are untrusted and require exact-string confirmation.
 6. Secrets stay out of arguments, logs, ordinary output, and public transfers.
    Private descriptors exist only in Python memory and child stdin.
 7. Bitcoin Core chains are discovered before entropy or recovery input. The

@@ -1,5 +1,6 @@
 """Structural-family, immutable-prefix, ranking, and completion evidence."""
 
+from dataclasses import replace
 from itertools import combinations
 from math import comb
 from unittest.mock import patch
@@ -28,6 +29,7 @@ from codex32.indel import (
     _reductions,
     _required_header_substitutions,
     _search_many,
+    _search_target,
 )
 from codex32.profiles.ms32 import TEXT_LENGTHS
 from tools.correction_capture import cross_length_classes
@@ -85,24 +87,20 @@ def test_complete_character_family_recovers_source(inserted: int, omitted: int) 
 
 
 def test_character_class_set_is_exact() -> None:
-    pairs = {(shape.inserted, shape.omitted) for shape in _CHARACTER_CLASSES}
-
-    assert len(pairs) == 14
-    assert pairs == {
-        (inserted, omitted) for inserted in range(5) for omitted in range(5) if 0 < inserted + omitted <= 4
+    actual = {(s.inserted, s.omitted, s.adjacent, s.distant) for s in _CHARACTER_CLASSES}
+    assert actual == {
+        (i, o, at, t)
+        for i in range(5)
+        for o in range(5)
+        for at in range(5)
+        for t in range(3)
+        if 0 < i + o + at + 2 * t <= 4
     }
+    assert all(s.unit == 1 and not s.corrupted for s in _CHARACTER_CLASSES)
 
 
 def test_automatic_secondary_class_set_is_exact() -> None:
-    characters = {
-        (shape.inserted, shape.omitted) for shape in _REDUCED_CLASSES if shape.unit == 1 and shape != _FIXED
-    }
-    groups = {(shape.inserted, shape.omitted) for shape in _REDUCED_CLASSES if shape.unit == 4}
-
-    assert characters == {
-        (inserted, omitted) for inserted in range(4) for omitted in range(4) if 0 < inserted + omitted <= 3
-    }
-    assert groups == {(0, 1), (1, 0), (0, 2), (1, 1), (2, 0)}
+    assert set(_REDUCED_CLASSES) == {s for s in _CLASSES if s.unit == 4 or s.distance <= 3}
 
 
 @pytest.mark.parametrize(
@@ -124,27 +122,28 @@ def test_complete_group_family_recovers_ungrouped_source(
     ("byte_length", "inserted", "omitted"),
     ((20, 0, 3), (24, 1, 2), (28, 2, 1), (20, 3, 0)),
 )
-def test_automatic_secondary_search_recovers_three_character_indels(
+def test_optional_three_character_indels_recover_intermediate_lengths(
     byte_length: int,
     inserted: int,
     omitted: int,
 ) -> None:
     source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = _character_damage(source, inserted, omitted)
-    contexts = tuple(
-        CorrectionContext(Profile.MS, target, "ms1")
-        for target in _correction_plan(Profile.MS, None, len(damaged), None)[0]
+    states = tuple(
+        state
+        for target in TEXT_LENGTHS
+        if (state := _prepare(CorrectionContext(Profile.MS, target, "ms1"), damaged, _CLASSES)) is not None
     )
-
-    candidates, complete = _search_many(
-        contexts,
-        damaged,
-        primary=frozenset((48, 74, 127)),
-        reduced=frozenset((54, 61, 67)),
+    frontier = _frontier(states, frozenset(TEXT_LENGTHS))
+    state = next(s for s in states if s.target == len(source))
+    shape = next(
+        s
+        for s in state.counts
+        if s.inserted == inserted and s.omitted == omitted and not (s.adjacent or s.distant or s.corrupted)
     )
-
-    assert complete
-    assert [candidate.artifact.text for candidate in candidates] == [source]
+    results = {}
+    assert _search_target(replace(state, counts={shape: state.counts[shape]}), frontier, results, None)
+    assert source in results
 
 
 @pytest.mark.parametrize(
@@ -167,7 +166,7 @@ def test_automatic_secondary_search_recovers_two_group_indels(
         contexts,
         damaged,
         primary=frozenset((48, 74, 127)),
-        reduced=frozenset((54, 61, 67)),
+        max_character_depth=2,
     )
 
     assert complete
@@ -175,10 +174,20 @@ def test_automatic_secondary_search_recovers_two_group_indels(
 
 
 def test_group_class_set_and_first_share_counts_are_exact() -> None:
-    pairs = {(shape.inserted, shape.omitted) for shape in _GROUP_CLASSES}
+    assert {(s.inserted, s.omitted, s.corrupted, s.adjacent, s.distant) for s in _GROUP_CLASSES} == {
+        (i, o, gs, at, t)
+        for i in range(3)
+        for o in range(3)
+        for gs in range(3)
+        for at in range(3)
+        for t in range(2)
+        if 0 < i + o + gs + at + 2 * t <= 2
+    }
+    pure = tuple(s for s in _GROUP_CLASSES if not (s.adjacent or s.distant or s.corrupted))
+    pairs = {(shape.inserted, shape.omitted) for shape in pure}
     counts = {
         pair: _alignment_count(shape, 48 + shape.delta, 48, 3)
-        for shape in _GROUP_CLASSES
+        for shape in pure
         if (pair := (shape.inserted, shape.omitted))
     }
 
@@ -204,7 +213,7 @@ def test_group_search_does_not_depend_on_spaces() -> None:
 
     assert [candidate.artifact.text for candidate in plain] == [SOURCE]
     assert [candidate.artifact.text for candidate in presented] == [SOURCE]
-    assert plain[0].capture_volume == presented[0].capture_volume == 121 * 32**4
+    assert plain[0].capture_volume == presented[0].capture_volume == 11 * 32**4
 
 
 def test_immutable_confirmed_header_reduces_domains_and_cannot_be_repaired() -> None:
@@ -297,7 +306,7 @@ def test_structural_capacity_does_not_borrow_linear_erasure_recovery() -> None:
 
 
 @pytest.mark.parametrize("count", (9, 13))
-def test_expected_length_search_retains_consecutive_erasure_recovery(count: int) -> None:
+def test_expected_length_search_admits_safe_consecutive_erasure_recovery(count: int) -> None:
     source = VECTOR_1["secret_s"]
     damaged = source[:8] + "?" * count + source[8 + count :]
 
@@ -317,10 +326,10 @@ def test_fixed_volume_retains_every_bch_substitution_layer() -> None:
     ]
 
 
-def test_structural_search_requires_an_exact_target_length() -> None:
+def test_unknown_target_search_recovers_reachable_valid_length() -> None:
     damaged = SOURCE[:19] + SOURCE[20:]
 
-    assert correct(CorrectionContext(Profile.MS), damaged) == ()
+    assert correct(CorrectionContext(Profile.MS), damaged)[0].artifact.text == SOURCE
     assert correct(CONTEXT, damaged)[0].artifact.text == SOURCE
 
 
@@ -341,7 +350,7 @@ def test_structural_search_supports_every_profile(profile: Profile, source: str)
     assert [candidate.artifact.text for candidate in result] == [source]
 
 
-def test_two_each_with_two_substitutions_exceeds_result_bound() -> None:
+def test_two_each_with_two_substitutions_is_admitted_by_shared_bound() -> None:
     source = MasterSeed.from_seed(bytes(range(16)), identifier="test").text
     damaged = list(source)
     damaged.pop(34)
@@ -351,9 +360,12 @@ def test_two_each_with_two_substitutions_exceeds_result_bound() -> None:
     damaged[3] = "2"
     damaged[41] = "q" if damaged[41] != "q" else "p"
 
-    candidates = correct(CorrectionContext(Profile.MS, 48), "".join(damaged))
-
-    assert all(candidate.artifact.text != source for candidate in candidates)
+    state = _prepare(CorrectionContext(Profile.MS, 48), "".join(damaged), _CLASSES)
+    assert state is not None
+    shape = next(s for s in state.counts if s.inserted == s.omitted == 2)
+    frontier = _frontier((state,), frozenset((48,)))
+    assert (48, shape, 0, 2) in frontier
+    assert sum(frontier.values()) <= 2**65
 
 
 def test_two_each_with_one_substitution_uses_the_generic_fixed_core() -> None:
@@ -365,10 +377,27 @@ def test_two_each_with_one_substitution_uses_the_generic_fixed_core() -> None:
         damaged.insert(position, character)
     damaged[37] = "q" if damaged[37] != "q" else "p"
 
-    candidate = correct(CorrectionContext(Profile.MS, 48), "".join(damaged))[0]
+    from codex32._alignment import _View
+    from codex32.bech32 import CHARSET
 
-    assert candidate.artifact.text == source
+    text = "".join(damaged)
+    symbols = tuple(CHARSET.index(c) for c in text[3:])
+    view = _View(symbols, ((0, len(symbols)),), len(symbols))
+    view = view.splice(28 - 3, 1, 0).splice(14 - 3, 1, 0)
+    view = view.splice(18 - 3, 0, 1).splice(32 - 3, 0, 1)
+    state = _prepare(CorrectionContext(Profile.MS, 48), text, _CLASSES)
+    assert state is not None
+    shape = next(s for s in state.counts if s.inserted == s.omitted == 2)
+    frontier = _frontier((state,), frozenset((48,)))
+    results = {}
+    # Deep enumeration is best effort. Exhaustive small-domain tests cover the
+    # generator; this test isolates the BCH integration of its surviving view.
+    with patch("codex32.indel._views", side_effect=lambda *_args: iter((view,))):
+        assert _search_target(replace(state, counts={shape: state.counts[shape]}), frontier, results, None)
+    candidate = results[source]
     assert [edit.kind for edit in candidate.edits].count("substitution") == 1
+    assert [edit.kind for edit in candidate.edits].count("insertion") == 2
+    assert [edit.kind for edit in candidate.edits].count("deletion") == 2
 
 
 def test_duplicate_reconstruction_keeps_lower_hamming_path() -> None:
@@ -420,7 +449,6 @@ def test_unknown_length_preference_is_secondary_to_capture_volume() -> None:
 
 def test_production_cross_length_frontier_matches_independent_arithmetic() -> None:
     primary = frozenset((48, 74, 127))
-    reduced = frozenset((54, 61, 67))
     for observed in range(40, 136):
         text = "ms1" + "q" * (observed - 3)
         states = tuple(
@@ -430,7 +458,7 @@ def test_production_cross_length_frontier_matches_independent_arithmetic() -> No
                 state := _prepare(
                     CorrectionContext(Profile.MS, target, "ms1"),
                     text,
-                    _REDUCED_CLASSES if target in reduced else _CLASSES,
+                    _CLASSES,
                 )
             )
             is not None
@@ -440,7 +468,12 @@ def test_production_cross_length_frontier_matches_independent_arithmetic() -> No
                 target,
                 "fixed"
                 if shape == _FIXED
-                else f"{'characters' if shape.unit == 1 else 'groups'}-{shape.inserted}{'i' if shape.unit == 1 else 'gi'}-{shape.omitted}{'o' if shape.unit == 1 else 'go'}",
+                else f"{'characters' if shape.unit == 1 else 'groups'}-{shape.inserted}{'i' if shape.unit == 1 else 'gi'}-{shape.omitted}{'o' if shape.unit == 1 else 'go'}"
+                + (
+                    f"-{shape.adjacent}at-{shape.distant}t-{shape.corrupted}gs"
+                    if shape.adjacent or shape.distant or shape.corrupted
+                    else ""
+                ),
                 remaining,
                 substitutions,
             ): volume
@@ -479,7 +512,7 @@ def test_primary_target_runs_first_and_secondary_search_is_proof_driven() -> Non
         return calls
 
     assert run(1) == [48]
-    assert run(1 << 200) == [48, 54]
+    assert run(1 << 200) == [48, 54, 48, 54]
 
 
 def test_cross_target_paths_deduplicate_the_same_final_string_globally() -> None:
@@ -516,3 +549,11 @@ def test_structural_input_and_deadline_are_bounded() -> None:
         )
 
     assert candidates == () and not complete
+
+
+def test_full_checksum_burst_is_admitted_at_the_shared_mass_ceiling():
+    from codex32.correction import _correct_fixed
+
+    damaged = SOURCE[:8] + "?" * 13 + SOURCE[21:]
+    assert _correct_fixed(damaged, suspected_profile=Profile.MS).artifact.text == SOURCE
+    assert correct(CONTEXT, damaged)[0].artifact.text == SOURCE

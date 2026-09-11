@@ -1,4 +1,4 @@
-"""Focused tests for the bounded internal lexical/u5 codec."""
+"""Check Bech32 encoding, decoding, and invalid input handling."""
 
 import pytest
 

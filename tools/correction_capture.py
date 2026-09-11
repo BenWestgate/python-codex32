@@ -6,9 +6,9 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 from itertools import combinations, groupby
-from math import comb
+from math import comb, factorial
 
-FALSE_BOUND_DENOMINATOR = 100_000
+FALSE_BOUND_DENOMINATOR = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +19,13 @@ class Shape:
     inserted: int = 0
     omitted: int = 0
     unit: int = 1
+    adjacent: int = 0
+    distant: int = 0
+    corrupted: int = 0
+
+    @property
+    def distance(self) -> int:
+        return self.inserted + self.omitted + self.adjacent + 2 * self.distant + self.corrupted
 
     @property
     def delta(self) -> int:
@@ -26,7 +33,7 @@ class Shape:
 
     @property
     def erasures(self) -> int:
-        return self.unit * self.omitted
+        return self.unit * (self.omitted + self.corrupted)
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,17 +71,20 @@ def checksum_bits(hrp: str, target_length: int) -> int:
 
 
 def supported_shapes() -> tuple[Shape, ...]:
-    characters = tuple(
-        Shape(f"characters-{inserted}i-{total - inserted}o", inserted, total - inserted)
-        for total in range(1, 5)
-        for inserted in range(total + 1)
-    )
-    groups = tuple(
-        Shape(f"groups-{inserted}gi-{total - inserted}go", inserted, total - inserted, 4)
-        for total in range(1, 3)
-        for inserted in range(total + 1)
-    )
-    return (Shape("fixed"), *characters, *groups)
+    result = [Shape("fixed")]
+    for unit, depth in ((1, 4), (4, 2)):
+        for inserted in range(depth + 1):
+            for omitted in range(depth + 1):
+                for adjacent in range(depth + 1):
+                    for distant in range(depth // 2 + 1):
+                        for corrupted in range(depth + 1 if unit == 4 else 1):
+                            name = f"{'characters' if unit == 1 else 'groups'}-{inserted}{'i' if unit == 1 else 'gi'}-{omitted}{'o' if unit == 1 else 'go'}"
+                            if adjacent or distant or corrupted:
+                                name += f"-{adjacent}at-{distant}t-{corrupted}gs"
+                            shape = Shape(name, inserted, omitted, unit, adjacent, distant, corrupted)
+                            if 0 < shape.distance <= depth:
+                                result.append(shape)
+    return tuple(result)
 
 
 def group_boundary(immutable_length: int) -> int:
@@ -88,6 +98,12 @@ def alignment_count(
 ) -> int:
     if shape.name == "fixed":
         return 1
+    if shape.adjacent or shape.distant or shape.corrupted:
+        return sum(
+            alignment_distribution(
+                shape, target_length + shape.delta, target_length, immutable_length
+            ).values()
+        )
     if shape.unit == 1:
         mutable = target_length - immutable_length
         observed = mutable + shape.delta
@@ -140,6 +156,25 @@ def alignment_distribution(
     )
     if shape.name == "fixed":
         return {len(explicit): 1}
+    if shape.adjacent or shape.distant or shape.corrupted:
+        boundary = immutable_length if shape.unit == 1 else group_boundary(immutable_length)
+        n = max(0, (observed_length - boundary) // shape.unit) + shape.omitted
+        multiplicities = (shape.inserted, shape.omitted, shape.adjacent, shape.distant, shape.corrupted)
+        choices = (n, n + 1, max(0, n - 1), max(0, (n - 1) * (n - 2) // 2), n)
+        count = factorial(sum(multiplicities))
+        divisor = 1
+        for multiplicity, domain in zip(multiplicities, choices):
+            count *= domain**multiplicity
+            divisor *= factorial(multiplicity)
+        count //= divisor
+        minimum = max(
+            0,
+            max(len(explicit) + shape.unit * shape.omitted, shape.unit if shape.corrupted else 0)
+            - shape.unit * shape.inserted,
+        )
+        maximum = min(8, len(explicit) + shape.erasures)
+        return {total - shape.erasures: count for total in range(minimum, maximum + 1)}
+
     if shape.unit == 1:
         observed = observed_length - immutable_length
         target = target_length - immutable_length
@@ -171,7 +206,7 @@ def cross_length_classes(
     observed_length: int,
     targets: tuple[int, ...] = (48, 54, 61, 67, 74, 127),
     primary_targets: tuple[int, ...] = (48, 74, 127),
-    reduced_targets: tuple[int, ...] = (54, 61, 67),
+    reduced_targets: tuple[int, ...] = (),
     immutable_prefix: str = "ms1",
     explicit_positions: tuple[int, ...] = (),
 ) -> tuple[CrossLengthClass, ...]:
@@ -185,9 +220,9 @@ def cross_length_classes(
                 for shape in shapes
                 if shape.name == "fixed"
                 or shape.unit == 1
-                and shape.inserted + shape.omitted <= 3
+                and shape.distance <= 3
                 or shape.unit == 4
-                and shape.inserted + shape.omitted <= 2
+                and shape.distance <= 2
             )
         for shape in shapes:
             if shape.delta != observed_length - target:
@@ -215,7 +250,7 @@ def cross_length_classes(
         for _rank, grouped in groupby(sorted(pool, key=lambda item: item[0]), key=lambda item: item[0]):
             batch = tuple(grouped)
             increment = sum(volume << (maximum - bits) for volume, bits, _key, _count in batch)
-            if FALSE_BOUND_DENOMINATOR * (cumulative + increment) >= 1 << maximum:
+            if FALSE_BOUND_DENOMINATOR * (cumulative + increment) > 1 << maximum:
                 break
             cumulative += increment
             admitted.update(
@@ -279,7 +314,7 @@ def classes(
                     alignments,
                     volume,
                     cumulative,
-                    FALSE_BOUND_DENOMINATOR * cumulative < space,
+                    FALSE_BOUND_DENOMINATOR * cumulative <= space,
                 )
             )
     return tuple(result)

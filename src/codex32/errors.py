@@ -1,4 +1,4 @@
-"""Public error taxonomy for codex32 parsing and safe domain construction."""
+"""codex32 exceptions for invalid input and failed operations."""
 
 
 class CodexError(Exception):
@@ -32,7 +32,7 @@ WrongShareCount = _error("WrongShareCount", InvalidShareSet, "The share count di
 MismatchedProfile = _error("MismatchedProfile", InvalidShareSet, "Profiles differ.")
 MismatchedThreshold = _error("MismatchedThreshold", InvalidShareSet, "Thresholds differ.")
 MismatchedIdentifier = _error("MismatchedIdentifier", InvalidShareSet, "Identifiers differ.")
-MismatchedPayloadLength = _error("MismatchedPayloadLength", InvalidShareSet, "Payload shapes differ.")
+MismatchedPayloadLength = _error("MismatchedPayloadLength", InvalidShareSet, "Payload lengths differ.")
 DuplicateShareIndex = _error("DuplicateShareIndex", InvalidShareSet, "Share indices repeat.")
 SecretInRecoverySet = _error("SecretInRecoverySet", InvalidShareSet, "Recovery received S.")
 InvalidTargetIndex = _error("InvalidTargetIndex", InvalidShareSet, "The target is not an ordinary index.")

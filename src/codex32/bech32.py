@@ -1,10 +1,14 @@
-# fmt: off
 """Bech32 character, container, and bit-conversion helpers."""
-# ruff: noqa: I001
 
 from codex32.checksums import _Checksum
-from codex32.errors import InvalidCase, InvalidCharacter, InvalidChecksum, InvalidLength
-from codex32.errors import InvalidPadding, MissingSeparator
+from codex32.errors import (
+    InvalidCase,
+    InvalidCharacter,
+    InvalidChecksum,
+    InvalidLength,
+    InvalidPadding,
+    MissingSeparator,
+)
 
 CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 _MAX_LENGTH = 1024

@@ -1,4 +1,3 @@
-# fmt: off
 """Stateless Bitcoin wallet interoperability for validated master seeds."""
 
 from typing import Any, Literal
@@ -10,7 +9,13 @@ from codex32.profiles.ms32 import MasterSeed, _bip32_node
 _DESCRIPTOR_CHARSET = (
     "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~ijklmnopqrstuvwxyzABCDEFGH`#\"\\ "
 )
-_TEMPLATES = (("pkh({key})", 44), ("sh(wpkh({key}))", 49), ("wpkh({key})", 84), ("tr({key})", 86))
+_TEMPLATES = (
+    ("pkh({key})", 44),
+    ("sh(wpkh({key}))", 49),
+    ("wpkh({key})", 84),
+    ("tr({key})", 86),
+)
+
 
 def _master(secret: MasterSeed, testnet: bool) -> Any:
     if not isinstance(secret, MasterSeed):
@@ -19,10 +24,12 @@ def _master(secret: MasterSeed, testnet: bool) -> Any:
         raise TypeError("testnet must be bool")
     return _bip32_node(secret.seed_bytes, testnet=testnet)
 
+
 def _account(value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 2**31:
         raise ValueError("account must be an integer from 0 through 2^31-1")
     return value
+
 
 def _descriptor_symbols(text: str) -> list[int]:
     groups: list[int] = []
@@ -40,12 +47,15 @@ def _descriptor_symbols(text: str) -> list[int]:
         symbols.append(groups[0] if len(groups) == 1 else groups[0] * 3 + groups[1])
     return symbols
 
+
 def _with_checksum(descriptor: str) -> str:
     return descriptor + "#" + _u5_to_chars(DESCSUM.create(_descriptor_symbols(descriptor)))
+
 
 def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:
     """Return the root BIP32 extended private key with authority over all children."""
     return _master(secret, testnet).get_xpriv()  # type: ignore[no-any-return]
+
 
 def multisig_account_xpub(secret: MasterSeed, *, account: int = 0, testnet: bool = False) -> str:
     """Return a public BIP48 native-SegWit account key with its key origin."""
@@ -56,8 +66,13 @@ def multisig_account_xpub(secret: MasterSeed, *, account: int = 0, testnet: bool
     origin = f"{node.get_fingerprint().hex()}{path[1:]}"
     return f"[{origin}]{node.get_xpub_from_path(path)}"
 
+
 def core_descriptors(
-    secret: MasterSeed, *, account: int = 0, testnet: bool = False, private: bool = False,
+    secret: MasterSeed,
+    *,
+    account: int = 0,
+    testnet: bool = False,
+    private: bool = False,
     timestamp: int | Literal["now"] = 0,
 ) -> tuple[dict[str, object], ...]:
     """Return fixed Bitcoin Core records; ``private=True`` includes the signing xprv."""

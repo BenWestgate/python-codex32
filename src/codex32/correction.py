@@ -1,4 +1,3 @@
-# fmt: off
 # Copyright (c) 2025 Blockstream
 # Copyright (c) 2026 Ben Westgate <benwestgate@protonmail.com>
 #
@@ -21,43 +20,77 @@
 # THE SOFTWARE.
 
 """Fixed BCH correction derived from PR #70, with reverse-indexed coordinates."""
-# ruff: noqa: I001
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 from math import comb
+from time import monotonic
 from typing import Literal
 
-from codex32.bech32 import CHARSET, _chars_to_u5, _u5_to_chars, _validate_single_case_ascii
-from codex32.bech32 import bech32_hrp_expand
-from codex32.bip93 import IDX_SORT, Header, Secret, Share, _checksum_for_encoded_length, parse_codex32
+from codex32.bech32 import (
+    CHARSET,
+    _chars_to_u5,
+    _u5_to_chars,
+    _validate_single_case_ascii,
+    bech32_hrp_expand,
+)
+from codex32.bip93 import (
+    IDX_SORT,
+    Header,
+    Secret,
+    Share,
+    _checksum_for_encoded_length,
+    parse_codex32,
+)
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
 from codex32.profiles import Profile, _profile_rules
 from codex32.profiles.ms32 import MasterSeed, _has_generation_padding
+
+
 @dataclass(frozen=True, slots=True)
 class WorksheetCorrection:
-    reverse_index: int; addend: str
+    reverse_index: int
+    addend: str
+
+
 @dataclass(frozen=True, slots=True)
 class CorrectionContext:
-    profile: Profile; expected_length: int | None = None
-    immutable_prefix: str | None = None; excluded_indices: tuple[str, ...] = ()
+    profile: Profile
+    expected_length: int | None = None
+    immutable_prefix: str | None = None
+    excluded_indices: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True, slots=True)
 class CorrectionEdit:
-    kind: Literal["substitution", "erasure", "insertion", "deletion"]; reverse_index: int
-    observed: str; replacement: str
+    kind: Literal["substitution", "erasure", "insertion", "deletion", "transposition"]
+    reverse_index: int
+    observed: str
+    replacement: str
+
+
 @dataclass(frozen=True, slots=True)
 class CorrectionCandidate:
-    artifact: Share | Secret; edits: tuple[CorrectionEdit, ...]; capture_volume: int
-    erasures_filled: int; addend_hamming_weight: int; crc_padding_match: bool | None
+    artifact: Share | Secret
+    edits: tuple[CorrectionEdit, ...]
+    capture_volume: int
+    erasures_filled: int
+    addend_hamming_weight: int
+    crc_padding_match: bool | None
+    search_complete: bool = True
+
+
 # --- Direct P70-derived field, polynomial, BCH, and linear algebra. ---
 # A GF(1024) value a + b*zeta is packed as a | b << 5, with
 # zeta^2 = zeta + 1.
 def _gf1024(a: int, b: int = 0) -> int:
     return a | (b << 5)
+
+
 def _gf1024_mul_raw(left: int, right: int) -> int:
     a0, b0 = left & 31, left >> 5
     a1, b1 = right & 31, right >> 5
@@ -66,6 +99,8 @@ def _gf1024_mul_raw(left: int, right: int) -> int:
         _gf32_multiply(a0, a1) ^ b0b1,
         _gf32_multiply(a0, b1) ^ _gf32_multiply(a1, b0) ^ b0b1,
     )
+
+
 def _field_tables() -> tuple[tuple[int, ...], tuple[int, ...]]:
     values = [1]
     for _ in range(1022):
@@ -74,19 +109,31 @@ def _field_tables() -> tuple[tuple[int, ...], tuple[int, ...]]:
     for exponent, value in enumerate(values):
         logarithms[value] = exponent
     return tuple(values * 2), tuple(logarithms)
+
+
 _GF1024_EXP, _GF1024_LOG = _field_tables()
+
+
 def _gf1024_mul(left: int, right: int) -> int:
     return 0 if not left or not right else _GF1024_EXP[_GF1024_LOG[left] + _GF1024_LOG[right]]
+
+
 def _gf1024_inv(value: int) -> int:
     return _GF1024_EXP[1023 - _GF1024_LOG[value]]
+
+
 def _gf1024_pow(value: int, exponent: int) -> int:
     return 0 if not value else _GF1024_EXP[(_GF1024_LOG[value] * exponent) % 1023]
+
+
 def _poly_sum(left: list[int], right: list[int]) -> list[int]:
     size = max(len(left), len(right))
     return [
         (left[index] if index < len(left) else 0) ^ (right[index] if index < len(right) else 0)
         for index in range(size)
     ]
+
+
 def _poly_mul(left: list[int], right: list[int], multiply: Callable[[int, int], int]) -> list[int]:
     if not left or not right:
         return []
@@ -95,14 +142,23 @@ def _poly_mul(left: list[int], right: list[int], multiply: Callable[[int, int], 
         for right_index, right_value in enumerate(right):
             result[left_index + right_index] ^= multiply(left_value, right_value)
     return result
-def _horner(polynomial: list[int] | tuple[int, ...], value: int,
-            multiply: Callable[[int, int], int]) -> int:
+
+
+def _horner(
+    polynomial: list[int] | tuple[int, ...],
+    value: int,
+    multiply: Callable[[int, int], int],
+) -> int:
     result = 0
     for coefficient in reversed(polynomial):
         result = multiply(result, value) ^ coefficient
     return result
+
+
 def _poly_diff(polynomial: list[int]) -> list[int]:
     return [coefficient if power & 1 else 0 for power, coefficient in enumerate(polynomial[1:], 1)]
+
+
 def _poly_mod(polynomial: list[int], modulus: tuple[int, ...]) -> list[int]:
     degree = len(modulus)
     work = list(polynomial)
@@ -116,6 +172,8 @@ def _poly_mod(polynomial: list[int], modulus: tuple[int, ...]) -> list[int]:
             for index, value in enumerate(modulus_le):
                 work[offset + index] ^= _gf32_multiply(coefficient, value)
     return work[:degree]
+
+
 def _poly_powers(modulus: tuple[int, ...], count: int) -> list[list[int]]:
     degree = len(modulus)
     powers: list[list[int]] = []
@@ -131,6 +189,8 @@ def _poly_powers(modulus: tuple[int, ...], count: int) -> list[list[int]]:
                 for coefficient, reduction in zip(value, modulus_le)
             ]
     return powers
+
+
 @dataclass(frozen=True, slots=True)
 class _Spec:
     base: int
@@ -139,6 +199,8 @@ class _Spec:
     roots: tuple[int, ...]
     generator: tuple[int, ...]
     period: int
+
+
 _SHORT_SPEC = _Spec(
     256,
     77,
@@ -155,26 +217,35 @@ _LONG_SPEC = _Spec(
     (15, 10, 25, 26, 9, 25, 21, 6, 23, 21, 6, 5, 22, 4, 23),
     1023,
 )
+
+
 def _spec_for_checksum(checksum: _Checksum) -> _Spec:
     if checksum is _CODEX32:
         return _SHORT_SPEC
     if checksum is _CODEX32_LONG:
         return _LONG_SPEC
     raise AssertionError("registered profile selected a non-codex32 checksum")
+
+
 def _residue(spec: _Spec, hrp: str, body: list[int]) -> list[int]:
     initial_and_hrp = [1, *bech32_hrp_expand(hrp)]
     return _poly_mod(list(reversed(initial_and_hrp + body)), spec.generator)
+
+
 def _syndromes(spec: _Spec, residue: list[int], *, target: bool) -> tuple[int, ...]:
     coefficients = [
         _gf1024(value ^ bias)
         for value, bias in zip(residue, reversed(spec.target) if target else (0,) * len(residue))
     ]
     return tuple(_horner(coefficients, root, _gf1024_mul) for root in spec.roots)
+
+
 def _pack_syndromes(values: tuple[int, ...]) -> int:
     return sum(value << (10 * index) for index, value in enumerate(values))
+
+
 @cache
-def _syndrome_alignment(spec: _Spec, hrp: str,
-                        length: int) -> tuple[int, tuple[tuple[int, ...], ...]]:
+def _syndrome_alignment(spec: _Spec, hrp: str, length: int) -> tuple[int, tuple[tuple[int, ...], ...]]:
     base = _pack_syndromes(_syndromes(spec, _residue(spec, hrp, [0] * length), target=True))
     powers = _poly_powers(spec.generator, length)
     effects = tuple(
@@ -192,6 +263,8 @@ def _syndrome_alignment(spec: _Spec, hrp: str,
         for position in range(length)
     )
     return base, effects
+
+
 def _aligned_syndromes(
     alignment: tuple[int, tuple[tuple[int, ...], ...]],
     body: Sequence[int],
@@ -201,11 +274,15 @@ def _aligned_syndromes(
     for position, value in enumerate(body):
         packed ^= effects[position][value]
     return [(packed >> (10 * index)) & 1023 for index in range(degree)]
+
+
 def _generate_next(coefficients: list[int], values: list[int]) -> int:
     result = 0
     for coefficient, value in zip(coefficients, values):
         result ^= _gf1024_mul(coefficient, value)
     return result
+
+
 def _synthesize_rec(values: list[int]) -> tuple[list[int], list[int]]:
     if not values:
         return [], [0]
@@ -222,6 +299,8 @@ def _synthesize_rec(values: list[int]) -> tuple[list[int], list[int]]:
         inverse = _gf1024_inv(discrepancy)
         updated_adjustment = [_gf1024_mul(value, inverse) for value in [1] + coefficients]
     return updated, updated_adjustment
+
+
 def _small_locator(sequence: list[int], maximum: int) -> list[int] | None:
     if not any(sequence):
         return [1]
@@ -263,8 +342,12 @@ def _small_locator(sequence: list[int], maximum: int) -> list[int] | None:
             return [1, coefficient]
     coefficients, _adjustment = _synthesize_rec(list(reversed(sequence)))
     return [1, *coefficients] if len(coefficients) <= maximum else None
+
+
 def _locator_poly(
-    syndromes: list[int], erasure_poly: list[int], maximum: int | None,
+    syndromes: list[int],
+    erasure_poly: list[int],
+    maximum: int | None,
     erasure_products: tuple[tuple[int, ...], ...] | None = None,
 ) -> list[int] | None:
     degree = len(erasure_poly) - 1
@@ -287,19 +370,27 @@ def _locator_poly(
         return _small_locator(modified, maximum)
     coefficients, _adjustment = _synthesize_rec(list(reversed(modified)))
     return [1] + coefficients
+
+
 @cache
 def _word_roots(spec: _Spec, length: int) -> tuple[int, ...]:
     return tuple(_gf1024_inv(_gf1024_pow(spec.base, index)) for index in range(length))
-def _erasure_state(spec: _Spec, length: int,
-                   indices: tuple[int, ...]) -> tuple[tuple[int, ...], list[int]]:
+
+
+def _erasure_state(spec: _Spec, length: int, indices: tuple[int, ...]) -> tuple[tuple[int, ...], list[int]]:
     word_roots = _word_roots(spec, length)
     roots = tuple(word_roots[index] for index in indices)
     polynomial = [1]
     for root in roots:
         polynomial = _poly_mul(polynomial, [root, 1], _gf1024_mul)
     return roots, polynomial
+
+
 def _bch_syndrome_corrections(
-    spec: _Spec, erasure_indices: list[int], syndromes: list[int], word_length: int,
+    spec: _Spec,
+    erasure_indices: list[int],
+    syndromes: list[int],
+    word_length: int,
     max_substitutions: int | None,
     erasure_state: tuple[tuple[int, ...], list[int]] | None = None,
     erasure_products: tuple[tuple[int, ...], ...] | None = None,
@@ -332,12 +423,18 @@ def _bch_syndrome_corrections(
             return None
         corrections.append((index, error & 31))
     return corrections
+
+
 def _repair_body(
-    spec: _Spec, hrp: str, body: Sequence[int], max_substitutions: int | None,
+    spec: _Spec,
+    hrp: str,
+    body: Sequence[int],
+    max_substitutions: int | None,
     alignment: tuple[int, tuple[tuple[int, ...], ...]],
     erasure_indices: Sequence[int] | None,
     erasure_state: tuple[tuple[int, ...], list[int]] | None,
     erasure_products: tuple[tuple[int, ...], ...] | None,
+    packed_syndromes: int | None = None,
 ) -> tuple[list[int], list[tuple[int, int]]] | None:
     erasures = (
         tuple(index for index, value in enumerate(reversed(body)) if value < 0)
@@ -346,13 +443,22 @@ def _repair_body(
     )
     result = (
         _bch_syndrome_corrections(
-            spec, list(erasures), _aligned_syndromes(alignment, body, len(spec.roots)), len(body),
-            max_substitutions, erasure_state, erasure_products,
+            spec,
+            list(erasures),
+            (
+                _aligned_syndromes(alignment, body, len(spec.roots))
+                if packed_syndromes is None
+                else [(packed_syndromes >> (10 * i)) & 1023 for i in range(len(spec.roots))]
+            ),
+            len(body),
+            max_substitutions,
+            erasure_state,
+            erasure_products,
         )
         if len(erasures) <= len(spec.roots)
         else None
     )
-    if result is None and max_substitutions is not None and max_substitutions > 0:
+    if result is None and max_substitutions is not None:
         return None
     zeroed = [max(value, 0) for value in body]
     residue: list[int] | None = None
@@ -366,20 +472,38 @@ def _repair_body(
         if result is not None and not _corrections_reach_target(spec, residue, result):
             result = None
     return None if result is None else (zeroed, result)
+
+
 def _capture_volume(mutable_symbols: int, erasures: int, substitutions: int) -> int:
     """Return the fixed decoder volume without structural alignment cost."""
     known = mutable_symbols - erasures
     if known < substitutions:
         return 0
     return int(32**erasures * comb(known, substitutions) * 31**substitutions)
+
+
 class _FixedCorrector:
     """Repair fixed-length symbols; structural alignment remains outside this class."""
+
     __slots__ = (
-        "alignment", "erasure_indices", "erasure_products", "erasure_state", "max_substitutions",
-        "mutable_start", "prefix", "profile", "spec", "uppercase",
+        "alignment",
+        "erasure_indices",
+        "erasure_products",
+        "erasure_state",
+        "max_substitutions",
+        "mutable_start",
+        "prefix",
+        "profile",
+        "spec",
+        "uppercase",
     )
+
     def __init__(
-        self, profile: Profile, body_length: int, uppercase: bool, max_substitutions: int | None,
+        self,
+        profile: Profile,
+        body_length: int,
+        uppercase: bool,
+        max_substitutions: int | None,
         mutable_start: int = 0,
     ) -> None:
         profile_rules = _profile_rules(profile)
@@ -395,12 +519,15 @@ class _FixedCorrector:
         self.erasure_indices: tuple[int, ...] | None = None
         self.erasure_products: tuple[tuple[int, ...], ...] | None = None
         self.erasure_state: tuple[tuple[int, ...], list[int]] | None = None
+
     def correct(
-        self, body: list[int] | tuple[int, ...],
+        self,
+        body: Sequence[int],
         unknowns: tuple[tuple[int, str], ...] = (),
         erasure_indices: Sequence[int] | None = None,
+        packed_syndromes: int | None = None,
     ) -> CorrectionCandidate | None:
-        values = body if isinstance(body, list) else list(body)
+        values = body
         if any(value < 0 for value in values[: self.mutable_start]):
             return None
         if erasure_indices is not None and erasure_indices != self.erasure_indices:
@@ -408,27 +535,26 @@ class _FixedCorrector:
                 return None
             self.erasure_indices = tuple(erasure_indices)
             self.erasure_state = _erasure_state(self.spec, len(values), self.erasure_indices)
-            coefficients = self.erasure_state[1][:-1]
-            self.erasure_products = (
-                tuple(
-                    tuple(_gf1024_mul(coefficient, value) for value in range(1024))
-                    for coefficient in coefficients
-                )
-                if len(coefficients) == 2
-                else None
-            )
+            # Alignment locations change frequently. Building 2048 products per
+            # pair costs more than the handful of GF(1024) multiplies per call.
+            self.erasure_products = None
         repair = _repair_body(
-            self.spec, self.profile.value, values, self.max_substitutions, self.alignment, erasure_indices,
+            self.spec,
+            self.profile.value,
+            values,
+            self.max_substitutions,
+            self.alignment,
+            erasure_indices,
             self.erasure_state if erasure_indices is not None else None,
             self.erasure_products if erasure_indices is not None else None,
+            packed_syndromes,
         )
         if repair is None:
             return None
         zeroed, result = repair
         corrected_reversed = list(reversed(zeroed))
         if any(
-            index >= len(corrected_reversed)
-            or len(corrected_reversed) - index - 1 < self.mutable_start
+            index >= len(corrected_reversed) or len(corrected_reversed) - index - 1 < self.mutable_start
             for index, _value in result
         ):
             return None
@@ -442,12 +568,14 @@ class _FixedCorrector:
             return None
         unknown_by_position = dict(unknowns)
         corrections = sorted(result)
+
         def observed(index: int) -> str:
             value = values[-index - 1]
             character = (
                 CHARSET[value] if value >= 0 else unknown_by_position.get(len(values) - index - 1, "?")
             )
             return character.upper() if self.uppercase else character
+
         edits = tuple(
             CorrectionEdit(
                 "substitution" if values[-index - 1] >= 0 else "erasure",
@@ -470,8 +598,10 @@ class _FixedCorrector:
                 for (_index, value), edit in zip(corrections, edits)
                 if edit.kind == "substitution"
             ),
-            _has_generation_padding(artifact) if isinstance(artifact, MasterSeed) else None,
+            (_has_generation_padding(artifact) if isinstance(artifact, MasterSeed) else None),
         )
+
+
 def _solve_linear(vectors: list[list[int]], target: list[int]) -> list[int] | None:
     columns = len(vectors)
     if not columns:
@@ -497,6 +627,8 @@ def _solve_linear(vectors: list[list[int]], target: list[int]) -> list[int] | No
     if any(not any(row[:columns]) and row[-1] for row in matrix):
         return None
     return [matrix[row][-1] for row in range(columns)]
+
+
 def _linear_error_corrections(
     spec: _Spec, erasure_indices: list[int], residue: list[int]
 ) -> list[tuple[int, int]] | None:
@@ -504,6 +636,8 @@ def _linear_error_corrections(
     powers = _poly_powers(spec.generator, max(erasure_indices, default=-1) + 1)
     solution = _solve_linear([powers[index] for index in erasure_indices], checksum_error)
     return None if solution is None else list(zip(erasure_indices, solution))
+
+
 def _error_corrections(
     spec: _Spec,
     erasure_indices: list[int],
@@ -529,14 +663,20 @@ def _error_corrections(
         return None
     linear = _linear_error_corrections(spec, erasure_indices, residue)
     return linear if linear is not None and _corrections_reach_target(spec, residue, linear) else None
-def _corrections_reach_target(spec: _Spec, residue: list[int],
-                              corrections: list[tuple[int, int]]) -> bool:
+
+
+def _corrections_reach_target(spec: _Spec, residue: list[int], corrections: list[tuple[int, int]]) -> bool:
     count = max((index for index, _addend in corrections), default=-1) + 1
     powers = _poly_powers(spec.generator, count)
     corrected = list(residue)
     for reverse_index, addend in corrections:
-        corrected = _poly_sum(corrected, [_gf32_multiply(addend, value) for value in powers[reverse_index]])
+        corrected = _poly_sum(
+            corrected,
+            [_gf32_multiply(addend, value) for value in powers[reverse_index]],
+        )
     return corrected == list(reversed(spec.target))
+
+
 def _correct_fixed(
     damaged_text: str,
     *,
@@ -554,7 +694,11 @@ def _correct_fixed(
         return None
     prefix = f"{suspected_profile.value}1"
     locked = prefix if immutable_prefix is None else immutable_prefix
-    matches = damaged_text.lower().startswith(prefix) if immutable_prefix is None else damaged_text.startswith(locked)
+    matches = (
+        damaged_text.lower().startswith(prefix)
+        if immutable_prefix is None
+        else damaged_text.startswith(locked)
+    )
     if not matches:
         return None
     body_text = damaged_text[len(prefix) :]
@@ -573,6 +717,8 @@ def _correct_fixed(
         body,
         tuple((index, character) for index, character in enumerate(body_text) if body[index] < 0),
     )
+
+
 def _validate_context(context: CorrectionContext) -> None:
     try:
         if not isinstance(context.profile, Profile):
@@ -590,7 +736,10 @@ def _validate_context(context: CorrectionContext) -> None:
                 raise TypeError("immutable_prefix must be str or None")
             _validate_single_case_ascii(prefix)
             base = f"{context.profile.value}1"
-            if not prefix.lower().startswith(base) or len(prefix) not in (len(base), len(base) + 5):
+            if not prefix.lower().startswith(base) or len(prefix) not in (
+                len(base),
+                len(base) + 5,
+            ):
                 raise ValueError("immutable_prefix must be the profile prefix with an optional header")
             if len(prefix) > len(base):
                 header = prefix[len(base) :]
@@ -607,39 +756,56 @@ def _validate_context(context: CorrectionContext) -> None:
             raise ValueError("excluded_indices must contain distinct ordinary indices")
     except (CodexError, TypeError, ValueError) as error:
         raise InvalidCorrectionInput(str(error)) from error
+
+
 def _allowed(context: CorrectionContext, candidate: CorrectionCandidate) -> bool:
     artifact = candidate.artifact
     return not (
         isinstance(artifact, Share)
         and artifact.header.index in (index.lower() for index in context.excluded_indices)
     )
+
+
 def _fingerprint_match(candidate: CorrectionCandidate) -> bool | None:
     artifact = candidate.artifact
     if not isinstance(artifact, MasterSeed) or artifact.header.threshold:
         return None
     try:
         from codex32.generation import _fingerprint_identifier
+
         return _fingerprint_identifier(artifact.seed_bytes) == artifact.header.identifier
     except CodexError:
         return None
+
+
 def _candidate_order(candidate: CorrectionCandidate) -> tuple[object, ...]:
     return (
         candidate.addend_hamming_weight,
         candidate.crc_padding_match is not True,
         _fingerprint_match(candidate) is not True,
         candidate.artifact.text.lower(),
-        tuple(
-            (edit.reverse_index, edit.kind, edit.observed, edit.replacement)
-            for edit in candidate.edits
-        ),
+        tuple((edit.reverse_index, edit.kind, edit.observed, edit.replacement) for edit in candidate.edits),
     )
-def _primary(candidates: Sequence[CorrectionCandidate]) -> tuple[CorrectionCandidate, ...]:
+
+
+def _primary(
+    candidates: Sequence[CorrectionCandidate],
+) -> tuple[CorrectionCandidate, ...]:
     if not candidates:
         return ()
     rank = min(item.capture_volume for item in candidates)
-    return tuple(sorted((item for item in candidates if item.capture_volume == rank), key=_candidate_order))
+    return tuple(
+        sorted(
+            (item for item in candidates if item.capture_volume == rank),
+            key=_candidate_order,
+        )
+    )
+
+
 def _best(
-    candidates: Sequence[CorrectionCandidate], *, prefer_common: bool = False,
+    candidates: Sequence[CorrectionCandidate],
+    *,
+    prefer_common: bool = False,
 ) -> tuple[CorrectionCandidate, ...]:
     """Apply the CLI-only Hamming, CRC, and fingerprint tie breakers."""
     tied = list(_primary(candidates))
@@ -653,6 +819,8 @@ def _best(
         if any(hint(item) is True for item in tied):
             tied = [item for item in tied if hint(item) is True]
     return tuple(sorted(tied, key=_candidate_order))
+
+
 def _correct_complete(
     context: CorrectionContext, damaged_text: str, *, deadline: float | None = None
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
@@ -661,22 +829,41 @@ def _correct_complete(
     if not isinstance(damaged_text, str):
         raise TypeError("damaged_text must be str")
     _validate_context(context)
-    if context.expected_length is not None:
-        from codex32.indel import _search_many
+    # Bound unknown-length input before whitespace normalization, too. Public
+    # displayed strings are no longer than the largest expanded codeword.
+    if len(damaged_text) > 2 * (_LONG_SPEC.period + 8):
+        return (), True
+    from codex32.indel import _search_many
 
-        return _search_many(
-            (context,),
-            damaged_text,
-            primary=frozenset((context.expected_length,)),
-            deadline=deadline,
-        )
-    fixed = _correct_fixed(damaged_text, suspected_profile=context.profile,
-                           immutable_prefix=context.immutable_prefix)
-    candidates = () if fixed is None or not _allowed(context, fixed) else (fixed,)
-    return candidates, True
+    deadline = monotonic() + 10 if deadline is None else deadline
+    contexts: tuple[CorrectionContext, ...]
+    if context.expected_length is not None:
+        contexts = (context,)
+    else:
+        # Only lengths reachable by either disjoint family are eligible.
+        observed = len(damaged_text.replace(" ", ""))
+        contexts_list = []
+        for target in sorted({observed + delta for delta in (*range(-4, 5), -8, 8)}):
+            candidate_context = replace(context, expected_length=target)
+            try:
+                _validate_context(candidate_context)
+            except InvalidCorrectionInput:
+                continue
+            contexts_list.append(candidate_context)
+        contexts = tuple(contexts_list)
+    return _search_many(
+        contexts,
+        damaged_text,
+        primary=frozenset(c.expected_length for c in contexts if c.expected_length is not None),
+        deadline=deadline,
+    )
+
+
 def correct(context: CorrectionContext, damaged_text: str) -> tuple[CorrectionCandidate, ...]:
-    """Return every equally best complete correction as an untrusted candidate."""
+    """Return untrusted best corrections; search_complete marks optional truncation."""
     return _correct_complete(context, damaged_text)[0]
+
+
 def correct_worksheet_residue(
     residue: str, *, erasure_indices: Sequence[int] = ()
 ) -> tuple[WorksheetCorrection, ...] | None:

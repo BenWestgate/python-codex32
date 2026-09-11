@@ -1,5 +1,5 @@
-# fmt: off
 """Canonical arithmetic for the Bech32 finite field GF(32)."""
+
 
 def _multiply_raw(left: int, right: int) -> int:
     result = 0
@@ -11,14 +11,20 @@ def _multiply_raw(left: int, right: int) -> int:
             left ^= 41  # x^5 + x^3 + 1
     return result
 
+
 _MULTIPLICATION = tuple(tuple(_multiply_raw(left, right) for right in range(32)) for left in range(32))
 _INVERSE = tuple(
-    next((candidate for candidate in range(32) if _MULTIPLICATION[value][candidate] == 1), 0)
+    next(
+        (candidate for candidate in range(32) if _MULTIPLICATION[value][candidate] == 1),
+        0,
+    )
     for value in range(32)
 )
 
+
 def _multiply(left: int, right: int) -> int:
     return _MULTIPLICATION[left][right]
+
 
 def _inverse(value: int) -> int:
     return _INVERSE[value]

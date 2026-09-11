@@ -33,11 +33,12 @@ crosses the parsing boundary until every stage passes.
 | entropy, masks, identifiers, output indices | `generation.py` | `test_generation.py` |
 | shared GF(32) arithmetic | `gf32.py` | sharing vectors and correction corpus |
 | fixed BCH and worksheet correction | `correction.py` | `test_correction_bch.py` |
-| structural alignment | `indel.py` | `test_correction_indel.py` |
+| structural alignment and admission | `indel.py` | `test_correction_indel.py`, `test_correction_capture.py` |
+| incremental alignment syndromes | `_alignment.py` | `test_alignment.py` |
 | master-seed BIP32 adaptation | `profiles/ms32.py` | BIP32 and wallet vectors |
 | fixed wallet derivation and descriptors | `wallet.py` | `test_wallet.py` |
 | Core target selection and subprocess state | `_bitcoin_core.py` | Core adapter and regtest |
-| bounded stdin, fixed-prefix TTY entry, and aligned suggestions | `_cli_input.py` | `test_cli.py` |
+| bounded stdin, fixed-prefix TTY entry, and whole-card confirmation | `_cli_input.py` | `test_cli.py` |
 | command grammar, dispatch, and presentation | `_cli_parser.py`, `cli.py` | `test_cli.py` |
 
 ### Boundaries
@@ -67,7 +68,7 @@ crosses the parsing boundary until every stage passes.
   Canonical text removes whitespace for comparison; presentation state retains
   entered spacing and case. Grouped alignment preserves entered ownership;
   unspaced alignment minimizes character edits before disturbed groups.
-  Codex32 entry and correction suggestions use a separate `> ` line;
+  Codex32 entry uses a separate `> ` line; correction candidates use ordinary card formatting without a prompt marker;
   fixed prefixes follow that marker. Wallet selection prompts stay inline.
   Recovery input keeps matching leading groups fixed while an optional
   Readline hook restores the exact editable suffix with its cursor at the end. The hook disables
@@ -324,130 +325,104 @@ profile. The context fixes the profile and may supply:
 - `immutable_prefix`, program-supplied text outside the correction domain; and
 - `excluded_indices`, ordinary share indices already accepted in a recovery.
 
-Without `expected_length`, the API attempts only fixed-length BCH correction.
-An exact expected length enables bounded structural correction. The public API
-has no deadline and returns every final reconstruction tied at the best primary
-rank. A valid unchanged string returns one candidate with no edits, no result
-returns `()`, and malformed context raises `InvalidCorrectionInput`.
+With or without `expected_length`, correction searches only existing valid
+profile lengths reachable by a supported structural family. An unknown target
+considers character offsets -4 through +4 and group offsets -8/-4/0/+4/+8,
+filtered through the ordinary context/profile validation. Public profile length
+validation is unchanged. Every attempt has a ten-second deadline.
 
-The HRP and separator are immutable. For a first share, `immutable_prefix` is
-the profile prefix, such as `ms1`. After a share has been validated and the
-operator confirms it, an interactive recovery may prefill `ms1` plus its
-threshold and identifier. That longer prefix admits no structural edits,
-erasures, or substitutions, and its symbols do not enter alignment or capture
-counts. A suggested correction never establishes or changes this context.
+The HRP, separator, and any confirmed five-character threshold/identifier header
+are immutable. A candidate never establishes this context. Every returned
+artifact crosses `parse_codex32`; suggestions remain untrusted and require
+exact whole-string confirmation before operational use.
 
-Every candidate crosses the ordinary `parse_codex32` validation boundary.
-`capture_volume` is its exact integer primary rank. `addend_hamming_weight` is
-a secondary transcription hint, `erasures_filled` counts recovered unknown
-symbols, and `crc_padding_match` exposes the generation-padding hint when
-applicable. Edit positions count backward from the final data/checksum symbol.
+`capture_volume` is the integer primary rank; `addend_hamming_weight` and
+`crc_padding_match` retain their secondary diagnostic meanings.
+`search_complete=False` identifies a unique-so-far result from interrupted
+optional search. It does not establish uniqueness or global best rank. No
+candidate is released if required search is interrupted, or if an interrupted
+optional search already has multiple primary-rank ties. Completed searches
+retain primary ties for the existing CLI tie-breakers. A valid unchanged input
+returns a candidate with no edits; malformed context raises
+`InvalidCorrectionInput`.
 
-### Structural promise
+### Structural model
 
-Corrects up to four arbitrary missing or extra characters, including mixtures;
-up to two skipped or extra four-character groups, including one of each.
+The families are disjoint:
 
-There are exactly two independent structural families:
+- Character alignment: `A = I + O + AT + 2*T <= 4`.
+- Displayed four-character groups: `G = GI + GO + GS + GAT + 2*GT <= 2`.
 
-- arbitrary characters with `inserted + omitted <= 4`; and
-- whole four-character groups with `inserted + omitted <= 2`.
+`I/GI` delete extra observed text; `O/GO` insert missing symbols as erasures;
+`AT/GAT` swap adjacent units; `T/GT` swap nonadjacent units. `GS` masks a corrupted
+four-character group as erasures. Group boundaries come from canonical display
+positions, independent of entered spaces. Partial edge groups and immutable
+prefix characters are never selected as whole-group operations.
 
-Only a class whose net length change reaches the expected target is generated.
-The families are never mixed. There are no special burst, duplication, or
-transposition generators. An adjacent swap remains two fixed substitutions.
+Substitutions and explicit erasures belong to the fixed BCH decoder after
+alignment. Ordinary mixed repair obeys `E + 2*S <= 8`. Exact-length consecutive
+explicit erasures retain the fixed 13/15-symbol linear completion path.
+Transpositions and removal of extra text consume alignment work but no BCH
+erasures. Omitted or corrupted groups consume up to four erasures each.
 
-Group phase is derived from the canonical four-character display layout; input
-spaces are not evidence and are optional. Because group search admits only
-whole-group edits, its phase cannot shift. Character-indel search never relies
-on group boundaries.
+The generator preserves operation order where it affects adjacency. It skips
+identity swaps and canonicalizes equal-unit deletion runs; other duplicate
+scripts are conservatively charged. Final corrected strings are deduplicated.
 
-An invalid body character such as `?` is considered both ways when the length
-permits: it may be an extra character deleted by structural alignment, or an
-explicit erasure retained for fixed correction. Equivalent structural views
-are deduplicated before BCH work. Final reconstructions are deduplicated again
-before ambiguity handling.
+### Coordinates and incremental syndromes
 
-The ownership invariant is:
+For HRP `h`, displayed length `D`, and full BCH body length `B`:
 
-```text
-indel.py enumerates alignments
-correction.py performs all symbol repair
-```
+- `B = D - len(h + "1")`, including header, payload and checksum.
+- Expanded length is `len(bech32_hrp_expand(h)) + B`. The existing checksum
+  selector chooses 13 checksum symbols through 93, rejects 94–95, and chooses
+  15 checksum symbols through 1023.
+- BCH `word_length` means `B`; reverse positions are `0..B-1`.
+- Mutable body length is `D - immutable_length`. Freezing the five-character
+  header shortens this domain, but preserves the full syndrome coordinates.
 
-An omitted character becomes one BCH erasure and an omitted group becomes four.
-Deleting extra text consumes no BCH capacity after alignment. The fixed core
-continues to enforce `erasures + 2 * substitutions <= 8` for mixed errors. Its
-13-consecutive-erasure regular and 15-consecutive-erasure Long behavior remains
-a separate fixed-length feature. For exact-length input, that solver returns its
-unique checksum-valid completion directly when 9 through 13 (regular) or 15
-(Long) explicit erasures are contiguous. It never admits nonconsecutive
-erasures above eight or an insertion/deletion hypothesis.
+`_alignment.py` uses small piece tables and shifted prefix contributions.
+Unchanged segments require two prefix lookups; moved units require only local
+positional effects. No candidate-wide syndrome scan or full candidate tuple is
+needed before a BCH hypothesis survives. `correction.py` performs the BCH work
+and reparses survivors. No meet-in-the-middle search is used.
 
-### Capture bound and ordering
+### Shared capture bound and computation
 
-For one exact correction class, the primary decoder-capture volume is:
+Each layer is charged `alignment_count * 32**E * C(M-E,S) * 31**S`, with `M`
+the mutable body length. All fixed, character, group and target-length layers
+share one admission ledger. Complete equal-volume batches are admitted only
+while their cumulative mass is at or below `1`. Integer scaling handles
+65-bit and 75-bit checksum spaces together. Consecutive fixed erasures are
+included in this ledger, with no independent allowance. Profile validation,
+CRC and fingerprint hints do not enlarge it.
 
-```text
-structural alignments * fixed-core BCH capture volume
-```
+The inclusive ceiling permits full 13/15-erasure completion, whose capture
+volume occupies the entire selected checksum space. It is not a small
+false-positive probability guarantee. It is an engineering accounting bound,
+not authentication or a claim about the operator's intended backup. The admitted
+bound includes unsearched portions, so it also bounds any optional search prefix.
 
-The fixed-core term already includes erased symbol values, so omissions are not
-multiplied by `32` a second time. For an exact-length request, the runtime sums
-every admitted class with primary volume no worse than a proposed result. For
-an unknown-length CLI request, all reachable target lengths share one cumulative
-budget rather than receiving independent allowances. Structural eligibility
-requires the strict integer bound:
+Fixed BCH repair runs first. Required character/group work precedes optional
+character expansion, with lower capture-volume layers first within each
+phase. A layer can be omitted once its rank is strictly worse than the
+current best result. Otherwise the deadline is checked during enumeration.
 
-```text
-100_000 * cumulative_volume < 2 ** checksum_bits
-```
+The required baseline is `A<=2` and `G<=2` at every current public profile
+length. Host restarts prevented an uninterrupted timing certification; the
+recorded capped measurements do not promote a wall-time guarantee. Deeper `A=3/4` work is best effort within the deadline. No tentative
+40/66/93/127 cutoff is a protocol constant or a promoted deeper guarantee.
+See [alignment benchmark evidence](alignment-benchmarks.md) for measured public
+workloads and hardware. Synthetic body/period experiments cannot promote a
+public cutoff. Unexpected interruption of the required phase remains
+fail-closed, including on slower or overloaded hardware.
 
-This is a conservative `P_false < 1e-5` envelope. The checksum space is 65 bits
-for regular codex32 and 75 bits for Long. Optional profile semantics, CRC, and
-fingerprint hints do not enlarge it. In particular, two omitted groups remain
-inside the regular envelope at a conservative class bound of about `1.97e-6`.
-
-The separately guaranteed consecutive-erasure completion is not a structural
-capture-ranked result and is explicitly exempt from that envelope. Its erased
-locations are supplied, its fixed linear system has one checksum-valid
-completion, and it remains an untrusted, nonzero-exit CLI suggestion requiring
-comparison with the backup.
-
-Combining an above-eight burst with extra-character deletion is not part of the
-fixed guarantee. The CLI may nevertheless prove that such input is ambiguous
-by finding two distinct parsed completions through the same fixed core. It then
-reports ambiguity rather than selecting or emitting either completion.
-
-Search classes are ordered by their theoretical minimum primary volume. A best
-candidate does not stop the search: every remaining class with a floor equal to
-or better than that rank is exhausted. A class may be skipped only when its
-floor is strictly worse. Thus an early result cannot hide a tied reconstruction.
-
-The API retains all primary-volume ties. The interactive CLI first refines such
-ties by Bech32 addend Hamming weight, then by generation CRC, then by matching
-the BIP32 fingerprint identifier of an unshared master seed. If a tie remains,
-the CLI reports ambiguity instead of selecting by enumeration or lexical order.
-
-### Runtime boundary
-
-The 48-character reference target must complete every advertised class within
-ten seconds on the documented fast-laptop CPU. The largest class is two missing
-plus two extra arbitrary characters, with about one million alignments. The
-generic pipeline parses once, reuses erasure state, prunes only provably
-impossible profile headers, and calls the same fixed corrector for every class.
-
-The API has no deadline. For a first `ms` string, the CLI searches all six valid
-lengths. Automatic mode permits four character indels for 48-, 74-, and
-127-character targets and three for 54, 61, and 67; every target permits two
-whole-group indels. These searches share one capture frontier. After the first
-string is accepted, its length is immutable for later strings in the set.
-
-Only an automatic search compatible with the 48-character target receives the
-ten-second deadline. A numeric `--bytes` value performs one full exact-length
-search, while `--bytes ?` performs full search of all six lengths without a
-deadline. CL targets 74 characters. BIP39 full-string correction remains
-API-only. Every no-deadline search is normally interruptible.
+`tools/alignment_benchmark.py --public` exercises valid profile lengths, target
+knowledge, header freezing, reachable offsets and explicit erasures.
+`--kernel` separately samples BCH-body lengths 40/66/93/127/1015/1023, character
+depths 2/3/4 and group depth 2, and reports generation, syndrome, BCH, locator,
+dedup and allocation measurements. Kernel checksum selection is explicit and
+may represent a synthetic word that is not a valid public application string.
 
 ### Worksheet residue API
 
@@ -631,3 +606,24 @@ The four-character identifier is public metadata, not authentication.
 Changing a header does not authenticate a polynomial. Users must not combine
 same-header shares from separate ceremonies. Caller-supplied partial-basis
 completion remains unsupported.
+
+Operational correction in `secret`, `share`, `xprv`, and `wallet` displays the
+canonical uppercase candidate with ordinary alternating group weights, without
+difference highlighting. Only `correct` highlights corrected four-character
+windows; creation retains its separate transcription-error localization.
+Acceptance requires “Does this entire string exactly match your recovery card?
+[y/N]:” with explicit `y` or `yes`; rejection preserves the input flow. `check`
+never searches for corrections. An intact first-entry profile prefix is immutable.
+
+Bitcoin secret candidates display their master fingerprint above the card text.
+Final-share candidates in recovery commands provisionally reconstruct an isolated
+secret solely for this preview; share derivation and intermediate shares do not.
+Preview failures reject the candidate. No candidate enters accepted state, key
+export, descriptor construction, or wallet initialization before confirmation.
+
+Interactive `create --existing` offers bounded correction for a mistyped codex32
+secret of the selected profile. Compare the entire proposed string with the
+original recovery card before answering yes. Bitcoin candidates show their master
+fingerprint above the text. Declining or finding no usable correction returns to
+source entry; hexadecimal seeds are never corrected. Confirmation of newly
+created cards is a separate step after accepting the source.
