@@ -1,11 +1,13 @@
 """Electronic generation for ``ms`` and Core Lightning share sets."""
 
-# ruff: noqa: I001
 from __future__ import annotations
+
 import secrets
-from collections.abc import Sequence, Set as AbstractSet
+from collections.abc import Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import Never, SupportsIndex, cast
+
 from codex32.bech32 import CHARSET, _u5_to_chars, convertbits
 from codex32.bip93 import (
     IDX_SORT,
@@ -29,16 +31,20 @@ from codex32.profiles import Profile
 from codex32.profiles.cl32 import PAYLOAD_LENGTH as CL_PAYLOAD_LENGTH
 from codex32.profiles.cl32 import (
     CoreLightningSecret,
-    _has_generation_padding as _cl_padding,
     _secret_from_bytes,
+)
+from codex32.profiles.cl32 import (
+    _has_generation_padding as _cl_padding,
 )
 from codex32.profiles.ms32 import (
     DEFAULT_SEED_BYTES,
     SEED_BYTE_LENGTHS,
     MasterSeed,
     _fingerprint_from_seed,
-    _has_generation_padding as _ms_padding,
     _payload_length,
+)
+from codex32.profiles.ms32 import (
+    _has_generation_padding as _ms_padding,
 )
 
 ORDINARY_INDICES = tuple(IDX_SORT[1:])
@@ -56,7 +62,9 @@ def _threshold(value: object, *, allow_zero: bool = True) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise InvalidThreshold("threshold must be an integer")
     if value not in ((0, *range(2, 10)) if allow_zero else tuple(range(2, 10))):
-        raise InvalidThreshold(f"threshold must be {'0 or ' if allow_zero else ''}2 through 9")
+        raise InvalidThreshold(
+            f"threshold must be {'0 or ' if allow_zero else ''}2 through 9"
+        )
     return value
 
 
@@ -79,25 +87,33 @@ def _index(value: object) -> str:
 
 
 def _indices(values: Sequence[str] | str) -> tuple[str, ...]:
-    if not isinstance(values, str) and (isinstance(values, AbstractSet) or not isinstance(values, Sequence)):
+    if not isinstance(values, str) and (
+        isinstance(values, AbstractSet) or not isinstance(values, Sequence)
+    ):
         raise TypeError("indices must be an ordered sequence")
     if len(values) > 31:
         raise InvalidShareSelection("at most 31 shares may be requested")
-    copied: tuple[object, ...] = tuple(values[position] for position in range(len(values)))
+    copied: tuple[object, ...] = tuple(
+        values[position] for position in range(len(values))
+    )
     normalized = tuple(_index(value) for value in copied)
     if len(set(normalized)) != len(normalized):
         raise InvalidShareSelection("output indices must be distinct")
     return normalized
 
 
-def _selection(threshold: int, share_count: object, indices: Sequence[str] | str | None) -> tuple[str, ...]:
+def _selection(
+    threshold: int, share_count: object, indices: Sequence[str] | str | None
+) -> tuple[str, ...]:
     if (share_count is None) == (indices is None):
         raise InvalidShareSelection("choose exactly one of share_count or indices")
     if share_count is not None:
         if isinstance(share_count, bool) or not isinstance(share_count, int):
             raise InvalidShareSelection("share_count must be an integer")
         if not threshold <= share_count <= 31:
-            raise InvalidShareSelection(f"share_count must be from threshold {threshold} through 31")
+            raise InvalidShareSelection(
+                f"share_count must be from threshold {threshold} through 31"
+            )
         return tuple(secrets.SystemRandom().sample(ORDINARY_INDICES, share_count))
     assert indices is not None
     selected = _indices(indices)
@@ -111,27 +127,39 @@ def _random_identifier() -> str:
 
 
 def _fingerprint_identifier(seed: bytes) -> str:
-    return _u5_to_chars(tuple(convertbits(_fingerprint_from_seed(seed), 8, 5, pad=True)[:4]))
+    return _u5_to_chars(
+        tuple(convertbits(_fingerprint_from_seed(seed), 8, 5, pad=True)[:4])
+    )
 
 
-def _random_share(profile: Profile, threshold: int, identifier: str, index: str, length: int) -> Share:
+def _random_share(
+    profile: Profile, threshold: int, identifier: str, index: str, length: int
+) -> Share:
     symbols = tuple(value & 31 for value in secrets.token_bytes(length))
     artifact = _from_parts(profile, Header(threshold, identifier, index), symbols)
     assert isinstance(artifact, Share)
     return artifact
 
 
-def _seed_input(seed_bytes: bytes | None, byte_length: int | None) -> tuple[bytes | None, int]:
+def _seed_input(
+    seed_bytes: bytes | None, byte_length: int | None
+) -> tuple[bytes | None, int]:
     if seed_bytes is not None:
         if not isinstance(seed_bytes, bytes):
             raise TypeError("seed_bytes must be bytes")
         if byte_length is not None:
             raise InvalidLength("byte_length cannot accompany seed_bytes")
         if len(seed_bytes) not in SEED_BYTE_LENGTHS:
-            raise InvalidLength("master seed must contain 16, 20, 24, 28, 32, or 64 bytes")
+            raise InvalidLength(
+                "master seed must contain 16, 20, 24, 28, 32, or 64 bytes"
+            )
         return seed_bytes, len(seed_bytes)
     length = DEFAULT_SEED_BYTES if byte_length is None else byte_length
-    if isinstance(length, bool) or not isinstance(length, int) or length not in SEED_BYTE_LENGTHS:
+    if (
+        isinstance(length, bool)
+        or not isinstance(length, int)
+        or length not in SEED_BYTE_LENGTHS
+    ):
         raise InvalidLength("byte_length must be 16, 20, 24, 28, 32, or 64")
     return None, length
 
@@ -145,7 +173,9 @@ def generate_master_seed(
     """Generate or encode one unshared ``ms`` secret."""
     supplied, length = _seed_input(seed_bytes, byte_length)
     if supplied is not None:
-        identifier = _random_identifier() if identifier is None else _identifier(identifier)
+        identifier = (
+            _random_identifier() if identifier is None else _identifier(identifier)
+        )
         return MasterSeed.from_seed(supplied, identifier=identifier)
     while True:
         fresh = secrets.token_bytes(length)
@@ -153,7 +183,9 @@ def generate_master_seed(
             default_identifier = _fingerprint_identifier(fresh)
         except CodexError:
             continue
-        identifier = default_identifier if identifier is None else _identifier(identifier)
+        identifier = (
+            default_identifier if identifier is None else _identifier(identifier)
+        )
         return MasterSeed.from_seed(fresh, identifier=identifier)
 
 
@@ -162,7 +194,9 @@ def generate_core_lightning_secret(
 ) -> CoreLightningSecret:
     """Generate or encode one unshared Core Lightning HSM secret."""
     identifier = _random_identifier() if identifier is None else _identifier(identifier)
-    return _secret_from_bytes(secrets.token_bytes(32) if secret_bytes is None else secret_bytes, identifier)
+    return _secret_from_bytes(
+        secrets.token_bytes(32) if secret_bytes is None else secret_bytes, identifier
+    )
 
 
 class CreationCeremony:
@@ -205,7 +239,9 @@ class CreationCeremony:
         if secret is None:
             self._secret, self._basis, self._direct_count = None, [], threshold
         else:
-            reheadered = _from_parts(profile, Header(threshold, identifier, "s"), secret.payload_symbols)
+            reheadered = _from_parts(
+                profile, Header(threshold, identifier, "s"), secret.payload_symbols
+            )
             assert isinstance(reheadered, (MasterSeed, CoreLightningSecret))
             self._secret, self._basis, self._direct_count = (
                 reheadered,
@@ -227,7 +263,9 @@ class CreationCeremony:
         """Start a ceremony for a fresh shared Bitcoin master seed."""
         threshold = _threshold(threshold, allow_zero=False)
         _supplied, byte_length = _seed_input(None, byte_length)
-        identifier = _random_identifier() if identifier is None else _identifier(identifier)
+        identifier = (
+            _random_identifier() if identifier is None else _identifier(identifier)
+        )
         return cls._start(
             Profile.MS,
             _payload_length(byte_length),
@@ -249,7 +287,9 @@ class CreationCeremony:
     ) -> CreationCeremony:
         """Start a ceremony for a fresh shared Core Lightning secret."""
         threshold = _threshold(threshold, allow_zero=False)
-        identifier = _random_identifier() if identifier is None else _identifier(identifier)
+        identifier = (
+            _random_identifier() if identifier is None else _identifier(identifier)
+        )
         return cls._start(
             Profile.CL,
             CL_PAYLOAD_LENGTH,
@@ -272,10 +312,14 @@ class CreationCeremony:
     ) -> CreationCeremony:
         """Start a ceremony that shares an existing validated secret."""
         if not isinstance(secret, (MasterSeed, CoreLightningSecret)):
-            raise TypeError("from_secret accepts only MasterSeed or CoreLightningSecret")
+            raise TypeError(
+                "from_secret accepts only MasterSeed or CoreLightningSecret"
+            )
         threshold = _threshold(threshold, allow_zero=False)
         random_identifier = identifier is None
-        identifier = _random_identifier() if random_identifier else _identifier(identifier)
+        identifier = (
+            _random_identifier() if random_identifier else _identifier(identifier)
+        )
         while (threshold, identifier) == (
             secret.header.threshold,
             secret.header.identifier,
@@ -307,7 +351,9 @@ class CreationCeremony:
         if self._finished:
             raise CeremonyStateError("this creation ceremony is finished")
         if self._pending is not None:
-            raise CeremonyStateError("confirm the pending card before requesting another")
+            raise CeremonyStateError(
+                "confirm the pending card before requesting another"
+            )
         if self._position == len(self._indices):
             raise CeremonyStateError("all cards are confirmed; finish the ceremony")
         index = self._indices[self._position]
@@ -345,7 +391,8 @@ class CreationCeremony:
         mismatched = tuple(
             group + 1
             for group in range((max(len(observed), len(expected)) + 3) // 4)
-            if observed[group * 4 : group * 4 + 4] != expected[group * 4 : group * 4 + 4]
+            if observed[group * 4 : group * 4 + 4]
+            != expected[group * 4 : group * 4 + 4]
         )
         if mismatched:
             return ConfirmationResult(False, mismatched)
