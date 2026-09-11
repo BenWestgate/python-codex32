@@ -10,6 +10,7 @@ def _error(name: str, base: type[CodexError], doc: str) -> type[CodexError]:
     return type(name, (base,), {"__doc__": doc, "__module__": __name__})
 
 
+# fmt: off
 InvalidCharacter = _error("InvalidCharacter", CodexError, "Input contains an invalid character.")
 MissingSeparator = _error("MissingSeparator", CodexError, "Input lacks a Bech32 separator.")
 InvalidCase = _error("InvalidCase", CodexError, "Input mixes upper- and lowercase characters.")
@@ -42,3 +43,4 @@ InvalidShareSelection = _error("InvalidShareSelection", CodexError, "Output shar
 HeaderCollision = _error("HeaderCollision", InvalidShareSelection, "A new set reuses its source header.")
 CeremonyStateError = _error("CeremonyStateError", CodexError, "A creation ceremony is out of sequence.")
 InvalidCorrectionInput = _error("InvalidCorrectionInput", CodexError, "Correction input is unsupported.")
+# fmt: on
