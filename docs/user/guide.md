@@ -2,24 +2,35 @@
 
 `codex32` checks, corrects, recovers, and derives shares across application
 prefixes. `ms32` provides Bitcoin master-seed workflows, including secure
-creation and checksum worksheets. Use `ms32 create` for new Bitcoin backups.
+creation. Use `ms32 create` for new Bitcoin backups.
 BIP39 worksheet profiles are
 [not recommended for creation](https://secretcodex32.com/docs/index.html),
 but existing backups can be recovered and corrected.
 
-When correction has little checksum evidence left, either executable asks:
+When correction has little checksum evidence left, either executable warns:
 
 ```text
-Warning: With this much correction, incorrect or insecure data can appear
-to be a valid backup.
+Warning: If you are generating new data and attempting to fill in the missing
+squares to complete a checksum, ensure that you have transcribed the data
+exactly as it will be used. There is no way to detect or correct transcription
+errors, so any errors you have made up to this point will be "locked in" by
+completing the checksum.
 
-Are you recovering an existing backup? [y/N]:
+If you are recovering data with this many missing characters, understand that
+the completion may be incorrect and you may need to resort to other methods
+(e.g. grinding through possible typos) to recover your data.
+
+If you understand this, type YES to attempt to correct the data:
 ```
 
-Only an interactive yes reveals the suggestion. No, blank input, or EOF ends
-the command without showing it. This also applies to worksheet-residue repairs
-and `--plain`. After disclosure, compare the whole string with the original
-card before accepting it. A checksum cannot make weak input secure.
+Only literal uppercase `YES` reveals the suggestion. Other case variants, blank
+input, or EOF end the command without showing it. This also applies to
+worksheet-residue repairs and `--plain`. Redirected damaged input can be read,
+and redirected `correct` output is plain by default, but protected disclosure
+still requires an interactive terminal. After
+disclosure, workflows that consume the repaired artifact ask the usual `[y/N]`
+whole-card confirmation. `correct` only reports a suggestion, so it does not ask
+that second question. A checksum cannot make weak input secure.
 
 Choose the setup that fits you:
 
@@ -324,22 +335,27 @@ seed, or root xprv.
   store the new card before retiring an old one. Interactive use displays the
   share, then asks you to write and re-enter it. Matching groups stay confirmed
   while you recheck highlighted regions. Success prints “Recovery card
-  confirmed.” `--plain` or redirected input/output skips card confirmation.
+  confirmed.” `--plain` skips card confirmation. Redirected damaged input can
+  still require an interactive correction confirmation.
 
-### Worksheets and migration formats
+### Advanced: completing missing trailing characters
 
-`ms32 checksum` completes the non-pink bold squares from a Codex32 Book
-checksum worksheet. It does not turn arbitrary dice rolls, words, passwords,
-or hexadecimal text into a safe wallet.
+The correction command can fill trailing erasures when the final characters
+are actually unknown. For a normal codex32 string, replace the final 13 missing
+characters with `?`; a long-checksum string uses 15. Thirteen genuinely
+unreadable characters at the end of an existing backup are therefore a valid
+recovery case. The same mechanism can complete newly generated worksheet data
+whose final 13 squares have not yet been filled.
 
-An interactive terminal is required; piped input is rejected, even with
-`--plain`. Enter the worksheet input twice independently. The display is
-cleared before the second entry where supported. The completed string is only
-shown if both entries agree. On a mismatch, restart and consult the worksheet.
-This confirmation does not establish that the Book's procedure was followed.
+Never intentionally delete or replace the existing final characters from a
+backup that merely fails validation. Doing so can hide a transcription or
+corruption error by locking it into a newly valid result. Preserve the observed
+text and use normal correction instead.
 
-Follow the Codex32 Book procedure exactly. There is no positional header
-argument; the prompt refers to the Book's worksheet.
+Enter sensitive material only through the prompt. Run `ms32 correct` and then
+enter the damaged string with trailing `?` characters when asked; do not place a
+secret or share in the command arguments. The strong warning and literal `YES`
+gate apply before the completed suggestion is shown.
 
 The generic `codex32` façade can check, correct, recover, and derive shares for
 compatible Core Lightning, BIP39 worksheet, and opaque-HRP artifacts. It does

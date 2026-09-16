@@ -7,7 +7,7 @@ import io
 import shlex
 import sys
 
-from codex32 import CorrectionContext, Profile, complete_checksum, correct, parse_codex32, recover_secret
+from codex32 import CorrectionContext, Profile, correct, parse_codex32, recover_secret
 from codex32._cli_parser import parser
 from codex32.errors import CodexError
 
@@ -19,18 +19,16 @@ def LLVMFuzzerTestOneInput(data: bytes) -> int:
     """Exercise one selected boundary; validation failures are expected."""
     if not data or len(data) > MAX_INPUT:
         return 0
-    mode, payload = data[0] % 5, data[1:]
+    mode, payload = data[0] % 4, data[1:]
     text = payload.decode("utf-8", "surrogateescape")
     try:
         if mode == 0:
             parse_codex32(text)
         elif mode == 1:
-            complete_checksum(text)
-        elif mode == 2:
             profile = _PROFILES[payload[0] % len(_PROFILES)] if payload else Profile.MS
             target = {Profile.MS: 48, Profile.CL: 74, Profile.BIP39_12W: 56, Profile.BIP39_24W: 82}
             correct(CorrectionContext(profile, target[profile]), text)
-        elif mode == 3:
+        elif mode == 2:
             artifacts = [parse_codex32(token) for token in text.split()[:10]]
             recover_secret(artifacts)
         else:

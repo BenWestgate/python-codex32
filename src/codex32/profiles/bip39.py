@@ -28,7 +28,6 @@ class _Bip39Rules:
     checksum_bits: int
     outer_padding: int
     secret_type = Bip39Secret
-    completion_error: str | None = None
     basis_secret_type: type[Secret] | None = Bip39Secret
     basis_error = "BIP39 basis did not imply a valid BIP39 secret"
 

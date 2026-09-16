@@ -55,7 +55,7 @@ class InputError(Exception):
     pass
 
 
-class RecoveryDeclined(Exception):
+class CorrectionDeclined(Exception):
     pass
 
 
@@ -63,21 +63,47 @@ class InteractiveConfirmationRequired(Exception):
     pass
 
 
-def _require_recovery(low_discrimination: bool) -> None:
+def _confirmation_input(prompt: str) -> str:
+    if sys.stdin.isatty():
+        return _editable_input(prompt)
+    if not sys.stderr.isatty():
+        raise InteractiveConfirmationRequired
+    terminal_name = "CONIN$" if os.name == "nt" else "/dev/tty"
+    try:
+        with open(terminal_name, encoding="utf-8", buffering=1) as terminal:
+            if not terminal.isatty():
+                raise InteractiveConfirmationRequired
+            print(prompt, end="", file=sys.stderr, flush=True)
+            answer = terminal.readline()
+    except OSError:
+        raise InteractiveConfirmationRequired from None
+    if not answer:
+        raise EOFError
+    return answer.rstrip("\r\n")
+
+
+def _require_correction_confirmation(low_discrimination: bool) -> None:
     if not low_discrimination:
         return
-    if not sys.stdin.isatty():
+    if not sys.stderr.isatty():
         raise InteractiveConfirmationRequired
-    label = "\x1b[1;31mWarning:\x1b[0m" if sys.stderr.isatty() else "Warning:"
+    label = "\x1b[1;31mWarning:\x1b[0m"
     _stderr(
-        f"{label} With this much correction, incorrect or insecure data can appear\nto be a valid backup.\n"
+        f"{label} If you are generating new data and attempting to fill in the missing\n"
+        "squares to complete a checksum, ensure that you have transcribed the data\n"
+        "exactly as it will be used. There is no way to detect or correct transcription\n"
+        'errors, so any errors you have made up to this point will be "locked in" by\n'
+        "completing the checksum.\n\n"
+        "If you are recovering data with this many missing characters, understand that\n"
+        "the completion may be incorrect and you may need to resort to other methods\n"
+        "(e.g. grinding through possible typos) to recover your data.\n"
     )
     try:
-        answer = _editable_input("Are you recovering an existing backup? [y/N]: ")
+        answer = _confirmation_input("If you understand this, type YES to attempt to correct the data: ")
     except EOFError:
-        raise RecoveryDeclined from None
-    if answer.strip().lower() not in ("y", "yes"):
-        raise RecoveryDeclined
+        raise CorrectionDeclined from None
+    if answer.strip() != "YES":
+        raise CorrectionDeclined
 
 
 def _stderr(text: str, *, end: str = "\n") -> None:
@@ -177,7 +203,7 @@ def _confirm_correction(
     basis: bool,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
 ) -> bool | None:
-    _require_recovery(candidate.low_checksum_discrimination)
+    _require_correction_confirmation(candidate.low_checksum_discrimination)
     artifact = candidate.artifact
     # Provisional recovery is exclusively for this fingerprint preview.
     preview = artifact
@@ -198,7 +224,7 @@ def _confirm_correction(
         _stderr("Rejected: Could not recover a valid Bitcoin master seed using this correction.")
         return None
     _stderr(f"Possible correction:\n\n{fingerprint_text}{_card_text(artifact.text, sys.stderr.isatty())}\n")
-    return _editable_input(
+    return _confirmation_input(
         "Does this entire string exactly match your recovery card? [y/N]: "
     ).strip().lower() in ("y", "yes")
 
@@ -542,13 +568,78 @@ def _suggestions(
     )[0]
 
 
-def _redirected(profiles: tuple[Profile, ...] | None) -> list[Artifact]:
+def _validate_operational_artifact(
+    artifact: Artifact,
+    accepted: list[Artifact],
+    *,
+    basis: bool,
+    one: bool,
+    excluded_index: str | None,
+) -> None:
+    if basis and artifact.header.index == excluded_index:
+        raise ExistingTargetIndex("That index was requested for the additional share.")
+    if not one and (accepted or isinstance(artifact, Share) or basis):
+        recovering = not basis and isinstance(artifact, Share)
+        validator = _validate_recovery_prefix if recovering else _validate_basis_prefix
+        validator([*accepted, artifact])
+
+
+def _redirected(
+    profiles: tuple[Profile, ...] | None,
+    *,
+    basis: bool,
+    one: bool,
+    excluded_index: str | None,
+    fingerprint: Callable[[MasterSeed], bytes] | None,
+) -> list[Artifact]:
     tokens = _stdin().split()
     if not tokens:
         raise InputError("No input was provided.")
     if len(tokens) > 9:
         raise InputError("At most nine codex32 strings may be provided at once.")
-    return [_parse(token, profiles) for token in tokens]
+    accepted: list[Artifact] = []
+    for token in tokens:
+        try:
+            artifact = _parse(token, profiles)
+        except InputError as error:
+            if one:
+                raise
+
+            def allowed(candidate: CorrectionCandidate) -> bool:
+                try:
+                    _validate_operational_artifact(
+                        candidate.artifact,
+                        accepted,
+                        basis=basis,
+                        one=one,
+                        excluded_index=excluded_index,
+                    )
+                except CodexError:
+                    return False
+                return True
+
+            candidates = _suggestions(
+                token,
+                "",
+                profiles,
+                accepted,
+                allowed=allowed,
+                fingerprint=fingerprint,
+            )
+            if len(candidates) != 1:
+                raise error
+            if not _confirm_correction(candidates[0], accepted, basis, fingerprint):
+                raise CorrectionDeclined
+            artifact = candidates[0].artifact
+        _validate_operational_artifact(
+            artifact,
+            accepted,
+            basis=basis,
+            one=one,
+            excluded_index=excluded_index,
+        )
+        accepted.append(artifact)
+    return accepted
 
 
 _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
@@ -611,12 +702,13 @@ def _interactive(
     prefill, required, grouped_prefix = "", 1, False
 
     def validate(artifact: Artifact) -> None:
-        if basis and artifact.header.index == excluded_index:
-            raise ExistingTargetIndex("That index was requested for the additional share.")
-        if not one and (accepted or isinstance(artifact, Share) or basis):
-            recovering = not basis and isinstance(artifact, Share)
-            validator = _validate_recovery_prefix if recovering else _validate_basis_prefix
-            validator([*accepted, artifact])
+        _validate_operational_artifact(
+            artifact,
+            accepted,
+            basis=basis,
+            one=one,
+            excluded_index=excluded_index,
+        )
 
     def allowed(candidate: CorrectionCandidate) -> bool:
         try:
@@ -704,7 +796,13 @@ def read_artifacts(
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
 ) -> list[Artifact]:
     if not sys.stdin.isatty():
-        return _redirected(profiles)
+        return _redirected(
+            profiles,
+            basis=basis,
+            one=one,
+            excluded_index=excluded_index,
+            fingerprint=fingerprint,
+        )
     result = _interactive(
         basis=basis,
         one=one,

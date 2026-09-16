@@ -16,7 +16,6 @@ MissingSeparator = _error("MissingSeparator", CodexError, "Input lacks a Bech32 
 InvalidCase = _error("InvalidCase", CodexError, "Input mixes upper- and lowercase characters.")
 InvalidLength = _error("InvalidLength", CodexError, "Input length is not permitted by its profile.")
 UnknownProfile = _error("UnknownProfile", CodexError, "The HRP is not a registered profile.")
-UnsupportedOperation = _error("UnsupportedOperation", CodexError, "The profile omits this operation.")
 InvalidChecksum = _error("InvalidChecksum", CodexError, "The outer checksum does not validate.")
 
 InvalidHeader = _error("InvalidHeader", CodexError, "The six-symbol header is invalid.")

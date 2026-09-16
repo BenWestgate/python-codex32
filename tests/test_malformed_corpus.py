@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from codex32 import CorrectionContext, Profile, complete_checksum, correct, parse_codex32, recover_secret
+from codex32 import CorrectionContext, Profile, correct, parse_codex32, recover_secret
 from codex32._cli_parser import parser
 from codex32.errors import CodexError
 
@@ -17,12 +17,6 @@ assert _DOCUMENT["schema"] == 1
 def test_malformed_parse_corpus(case: dict[str, str]) -> None:
     with pytest.raises(CodexError):
         parse_codex32(case["text"])
-
-
-@pytest.mark.parametrize("case", _DOCUMENT["checksum_completion"], ids=lambda case: case["id"])
-def test_malformed_completion_corpus(case: dict[str, str]) -> None:
-    with pytest.raises(CodexError):
-        complete_checksum(case["text"])
 
 
 @pytest.mark.parametrize("case", _DOCUMENT["interpolation"], ids=lambda case: case["id"])

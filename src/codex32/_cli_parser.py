@@ -156,12 +156,6 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
     if not master_seed:
         return result
 
-    checksum = _command(commands, "checksum", "complete a Codex32 Book checksum worksheet")
-    checksum.description = (
-        "Complete a Codex32 Book checksum worksheet. "
-        "Requires an interactive terminal and two matching entries."
-    )
-    _terminal_output(checksum)
     create = _command(commands, "create", "create or confirm a backup, or split an existing secret")
     create.description = "Create and confirm recovery cards, then initialize a Bitcoin Core wallet."
     create.add_argument(

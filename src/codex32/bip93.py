@@ -28,7 +28,6 @@ from codex32.errors import (
     MismatchedPayloadLength,
     MismatchedThreshold,
     SecretInRecoverySet,
-    UnsupportedOperation,
     WrongShareCount,
 )
 from codex32.gf32 import _inverse as _gf32_inverse
@@ -197,22 +196,6 @@ def _from_parts(
     _checksum_for_encoded_length(normalized_hrp, len(body) + checksum.length)
     text = bech32_encode(normalized_hrp, body, checksum)
     return parse_codex32(text.upper() if uppercase else text)
-
-
-def complete_checksum(unchecksummed_text: str) -> Share | Secret:
-    """Add the checksum. This does not make arbitrary input safe to use as a wallet seed."""
-    hrp, body_values = bech32_decode(unchecksummed_text)
-    profile_rules = _optional_profile_rules(hrp)
-    if profile_rules is not None and profile_rules.completion_error is not None:
-        raise UnsupportedOperation(profile_rules.completion_error)
-    body = tuple(body_values)
-    if profile_rules is not None:
-        profile_rules.validate_payload_length(len(body) - 6)
-    header = Header._from_symbols(body[:6])
-    payload = body[6:]
-    if profile_rules is not None:
-        _validate_payload(profile_rules.profile, header, payload)
-    return _from_parts(hrp, header, payload, uppercase=unchecksummed_text.isupper())
 
 
 def _lagrange_weights(points: tuple[int, ...], target: int) -> tuple[int, ...]:

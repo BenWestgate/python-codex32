@@ -1,6 +1,7 @@
 """Independent profile-length, checksum-boundary, and CL tests."""
 
 import pytest
+from _codex32_oracle import oracle_encode as _oracle_encode
 from data.bip93_vectors import (
     BIP93_ADDITIONAL_MASTER_SEEDS,
     FORMERLY_VALID_UNSUPPORTED_MS,
@@ -16,7 +17,6 @@ from codex32 import (
     CoreLightningSecret,
     MasterSeed,
     Share,
-    complete_checksum,
     parse_codex32,
 )
 from codex32.bech32 import (
@@ -37,51 +37,6 @@ from codex32.errors import (
     MissingSeparator,
 )
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, TEXT_LENGTHS
-
-_SHORT_GENERATORS = (
-    0x19DC500CE73FDE210,
-    0x1BFAE00DEF77FE529,
-    0x1FBD920FFFE7BEE52,
-    0x1739640BDEEE3FDAD,
-    0x07729A039CFC75F5A,
-)
-_LONG_GENERATORS = (
-    0x3D59D273535EA62D897,
-    0x7A9BECB6361C6C51507,
-    0x543F9B7E6C38D8A2A0E,
-    0x0C577EAECCF1990D13C,
-    0x1887F74F8DC71B10651,
-)
-
-
-def _polymod(values: list[int], generators: tuple[int, ...], length: int) -> int:
-    residue = 1
-    shift = 5 * (length - 1)
-    mask = (1 << shift) - 1
-    for value in values:
-        top = residue >> shift
-        residue = ((residue & mask) << 5) ^ value
-        for index, generator in enumerate(generators):
-            if (top >> index) & 1:
-                residue ^= generator
-    return residue
-
-
-def _oracle_encode(hrp: str, body: str, *, force_long: bool | None = None) -> str:
-    use_long = 2 * len(hrp) + 1 + len(body) > 80 if force_long is None else force_long
-    generators = _LONG_GENERATORS if use_long else _SHORT_GENERATORS
-    length = 15 if use_long else 13
-    constant = 0x43381E570BF4798AB26 if use_long else 0x10CE0795C2FD1E62A
-    values = (
-        [ord(character) >> 5 for character in hrp]
-        + [0]
-        + [ord(character) & 31 for character in hrp]
-        + [CHARSET.index(character) for character in body]
-    )
-    residue = _polymod(values + [0] * length, generators, length) ^ constant
-    checksum = "".join(CHARSET[(residue >> (5 * (length - 1 - index))) & 31] for index in range(length))
-    return f"{hrp}1{body}{checksum}"
-
 
 def _payload(data: bytes, padding: int) -> str:
     accumulator = int.from_bytes(data, "big")
@@ -213,16 +168,6 @@ def test_core_lightning_constructor_and_parsed_padding() -> None:
     parsed = parse_codex32(nonzero)
     assert isinstance(parsed, CoreLightningSecret)
     assert parsed.secret_bytes == original.secret_bytes
-
-
-def test_profile_completion_capabilities() -> None:
-    share = parse_codex32(VECTOR_2["share_A"])
-    assert isinstance(share, Share)
-    assert complete_checksum(share.text[:-13]).text == share.text
-    with pytest.raises(InvalidBip39Checksum):
-        complete_checksum("bip39_12w10tests" + "q" * 27)
-    with pytest.raises(InvalidLength):
-        complete_checksum("cl10testsq")
 
 
 @pytest.mark.parametrize(

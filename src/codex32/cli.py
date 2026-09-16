@@ -11,15 +11,15 @@ from typing import Literal, NamedTuple, cast
 from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
 from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import (
+    CorrectionDeclined,
     InteractiveConfirmationRequired,
-    RecoveryDeclined,
     _card_text,
     _confirm_correction,
     _correction_candidates,
     _entered_groups,
     _fingerprint_matcher,
     _render_groups,
-    _require_recovery,
+    _require_correction_confirmation,
     _suggestions,
 )
 from codex32._cli_input import read_artifacts as _artifacts
@@ -31,7 +31,6 @@ from codex32.bip93 import (
     Secret,
     Share,
     _normalize_target,
-    complete_checksum,
     derive_share,
     parse_codex32,
     recover_secret,
@@ -500,38 +499,6 @@ def _create(
     return 0
 
 
-def _checksum(plain: bool) -> int:
-    if not sys.stdin.isatty():
-        raise _UsageError("Checksum completion requires an interactive terminal.")
-    warning = (
-        "DANGER: Incorrect input can cause permanent loss of funds.\n"
-        "Follow the Codex32 Book procedure and its Dice De-biasing Worksheet exactly.\n"
-        "This command cannot verify how your data was generated.\n"
-        "Do not enter raw dice rolls, seed words, hexadecimal seeds, or passwords.\n"
-    )
-    _print(warning, err=True, danger=True)
-    prompt = "Checksum worksheet non-pink bold squares"
-    try:
-        value = _text(prompt, prompt_end=":\n\n> MS1")
-        prefix = "MS1" if value.isupper() else "ms1"
-        text = value if "1" in value else prefix + value
-        if Profile(text[: text.rfind("1")].lower()) is not Profile.MS:
-            raise ValueError
-        artifact = complete_checksum(text)
-    except (CodexError, ValueError) as error:
-        raise _UsageError(
-            "The worksheet input is not in the expected format.\n"
-            "Consult the Codex32 Book and check the non-pink bold squares."
-        ) from error
-    clear = "\x1b[3J\x1b[2J\x1b[H" if sys.stderr.isatty() else ""
-    repeated = _text(clear + "Re-enter the worksheet non-pink bold squares", prompt_end=":\n\n> MS1")
-    repeated = repeated if "1" in repeated else "ms1" + repeated
-    if repeated.lower() != text.lower():
-        raise _CommandError("Entries do not match. Restart and re-enter the worksheet.")
-    _emit(artifact, plain)
-    return 0
-
-
 def _correct(
     residue: bool,
     erasures: tuple[int, ...],
@@ -561,7 +528,9 @@ def _correct(
         if not result:
             _print("The worksheet residue is already correct.")
         else:
-            _require_recovery(_residue_low_discrimination(value, tuple(p - 1 for p in erasures), result))
+            _require_correction_confirmation(
+                _residue_low_discrimination(value, tuple(p - 1 for p in erasures), result)
+            )
         for correction in result:
             _print(
                 f"Add {correction.addend} at position "
@@ -604,7 +573,7 @@ def _correct(
     if len(candidates) != 1:
         raise _CommandError("Several corrections are possible. Check the original backup.")
     fixed = candidates[0]
-    _require_recovery(fixed.low_checksum_discrimination)
+    _require_correction_confirmation(fixed.low_checksum_discrimination)
     if context.master_seed:
         core = core or _connected_core("correct")
     warning = (
@@ -650,7 +619,7 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"], testnet: bool, 
 
 def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
     command = cast(str, arguments.command)
-    plain = bool(getattr(arguments, "plain", False))
+    plain = bool(getattr(arguments, "plain", False)) or (command == "correct" and not sys.stdin.isatty())
     fingerprint_core: BitcoinCore | None = None
     if context.master_seed and command in ("secret", "share"):
         fingerprint_core = _connected_core(command)
@@ -685,8 +654,6 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
             cast(str | None, arguments.indices),
             bool(arguments.existing),
         )
-    if command == "checksum":
-        return _checksum(plain)
     if command == "correct":
         return _correct(
             bool(arguments.residue),
@@ -742,7 +709,7 @@ def _main(context: _CliContext, argv: Sequence[str] | None = None) -> int:
     scope = f"{context.prog} {arguments.command}"
     try:
         return _dispatch(arguments, context)
-    except RecoveryDeclined:
+    except CorrectionDeclined:
         return 1
     except InteractiveConfirmationRequired:
         _print(f"{context.prog}: interactive confirmation required", err=True)

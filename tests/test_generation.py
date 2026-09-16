@@ -5,6 +5,7 @@ import pickle
 from itertools import combinations
 
 import pytest
+from _codex32_oracle import oracle_encode
 from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
@@ -16,7 +17,6 @@ from codex32 import (
     CreationCeremony,
     MasterSeed,
     Share,
-    complete_checksum,
     generate_core_lightning_secret,
     generate_master_seed,
     parse_codex32,
@@ -361,7 +361,7 @@ def test_resharing_preserves_nonzero_core_lightning_padding() -> None:
     source = parse_codex32(VECTOR_6["codex32_peev"])
     assert isinstance(source, CoreLightningSecret)
     payload = (*source.payload_symbols[:-1], source.payload_symbols[-1] | 15)
-    nonzero = complete_checksum("cl10peevs" + _u5_to_chars(payload))
+    nonzero = parse_codex32(oracle_encode("cl", "0peevs" + _u5_to_chars(payload)))
     assert isinstance(nonzero, CoreLightningSecret)
     secret, shares = _complete(
         CreationCeremony.from_secret(nonzero, threshold=2, indices="ac", identifier="name")

@@ -134,9 +134,7 @@ def _invoke(args: list[str], *lines: str) -> _Result:
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        entrypoint = (
-            ms_main if args[0] in {"create", "checksum", "xprv", "wallet"} or "--bytes" in args else main
-        )
+        entrypoint = ms_main if args[0] in {"create", "xprv", "wallet"} or "--bytes" in args else main
         status = entrypoint(args)
     return _Result(status, stdout.getvalue(), stderr.getvalue())
 
@@ -1671,158 +1669,6 @@ def test_create_rejects_bip39_partial_basis_and_selector_conflicts() -> None:
         assert result.exit_code != 0
 
 
-def _invoke_checksum(value: str) -> _Result:
-    stdout, stderr = io.StringIO(), io.StringIO()
-    with (
-        patch.object(sys, "stdin", _TTYInput()),
-        patch("builtins.input", return_value=value),
-        patch("codex32._cli_input._line_editor", None),
-        contextlib.redirect_stdout(stdout),
-        contextlib.redirect_stderr(stderr),
-    ):
-        status = ms_main(["checksum"])
-    return _Result(status, stdout.getvalue(), stderr.getvalue())
-
-
-@pytest.mark.parametrize("plain", [False, True])
-def test_checksum_rejects_noninteractive_input_before_reading(plain: bool) -> None:
-    with patch("codex32.cli._text") as read:
-        result = _invoke(["checksum", *(["--plain"] if plain else [])], VECTOR_1["secret_s"][:-13])
-    assert result.exit_code == 2
-    assert result.stdout == ""
-    assert result.stderr == "ms32 checksum: Checksum completion requires an interactive terminal.\n"
-    read.assert_not_called()
-
-
-def test_checksum_defaults_to_ms_and_rejects_explicit_cl() -> None:
-    ms = parse_codex32(VECTOR_1["secret_s"])
-    ms_body = ms.text[3:-13]
-    default = _invoke_checksum(ms_body)
-    prefixed = _invoke_checksum(ms.text[:-13])
-
-    cl = SHARING_VECTORS["cl"]["S"]
-    cl_result = _invoke_checksum(cl[:-13])
-
-    assert default.exit_code == prefixed.exit_code == 0
-    assert cl_result.exit_code == 2
-    assert default.stdout.strip() == prefixed.stdout.strip() == ms.text
-    assert cl_result.stdout == ""
-    assert "is not in the expected format" in cl_result.stderr
-    assert "DANGER: Incorrect input can cause permanent loss of funds." in default.stderr
-    assert "Dice De-biasing Worksheet exactly" in default.stderr
-    assert default.stdout == ms.text + "\n"
-
-
-def test_checksum_enforces_published_sizes_and_capabilities() -> None:
-    invalid = (
-        _invoke_checksum("ms10tests" + "x" * 25),
-        _invoke_checksum("0tests" + "x" * 25),
-        _invoke_checksum("0tests" + "x" * 27),
-        _invoke_checksum("Ms10tests" + "x" * 26),
-        _invoke_checksum("bip39_12w10tests" + "q" * 27),
-        _invoke_checksum("not-a-header" + "x" * 26),
-    )
-    expected = (
-        "The worksheet input is not in the expected format.\n"
-        "Consult the Codex32 Book and check the non-pink bold squares."
-    )
-
-    for result in invalid:
-        assert result.exit_code == 2
-        assert expected in result.stderr
-        assert not any(detail in result.stderr for detail in ("128", "256", "payload", "unknown prefix"))
-
-
-def test_checksum_rejects_positional_header_before_reading_input() -> None:
-    with patch("codex32.cli._text") as read:
-        result = _invoke(["checksum", "2testa"])
-    assert result.exit_code == 2
-    assert "Remove or correct these arguments: 2testa" in result.stderr
-    read.assert_not_called()
-
-
-@pytest.mark.parametrize("uppercase", [False, True])
-@pytest.mark.parametrize("include_prefix", [False, True])
-def test_checksum_prompt_supplies_ms1_and_accepts_full_or_suffix_input(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], uppercase: bool, include_prefix: bool
-) -> None:
-    input_module = importlib.import_module("codex32._cli_input")
-    expected = VECTOR_1["secret_s"]
-    if uppercase:
-        expected = expected.upper()
-    entered = expected[:-13] if include_prefix else expected[3:-13]
-    prompts: list[str] = []
-
-    def answer(prompt: str) -> str:
-        prompts.append(prompt)
-        return entered
-
-    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
-    monkeypatch.setattr(input_module, "_line_editor", None)
-    monkeypatch.setattr(builtins, "input", answer)
-
-    assert ms_main(["checksum", "--plain"]) == 0
-    assert prompts == [
-        "Checksum worksheet non-pink bold squares:\n\n> MS1",
-        "Re-enter the worksheet non-pink bold squares:\n\n> MS1",
-    ]
-    assert capsys.readouterr().out == expected + "\n"
-
-
-def test_checksum_warning_precedes_the_book_prompt(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    input_module = importlib.import_module("codex32._cli_input")
-
-    prompts: list[str] = []
-
-    def answer(prompt: str) -> str:
-        if not prompts:
-            assert "DANGER: Incorrect input" in capsys.readouterr().err
-        prompts.append(prompt)
-        return VECTOR_1["secret_s"][3:-13]
-
-    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
-    monkeypatch.setattr(builtins, "input", answer)
-
-    assert ms_main(["checksum"]) == 0
-    assert prompts == [
-        "Checksum worksheet non-pink bold squares:\n\n> MS1",
-        "Re-enter the worksheet non-pink bold squares:\n\n> MS1",
-    ]
-
-
-@pytest.mark.parametrize("ending", ["match", "mismatch", "eof", "interrupt"])
-def test_checksum_requires_independent_reentry_before_output(monkeypatch, ending):
-    cli = importlib.import_module("codex32.cli")
-    original = VECTOR_1["secret_s"]
-    calls = []
-    stdout, stderr = io.StringIO(), _TTYOutput()
-
-    def read(prompt, *, prompt_end):
-        assert stdout.getvalue() == ""
-        calls.append((prompt, prompt_end))
-        if len(calls) == 1:
-            return original[3:-13]
-        assert prompt.startswith("\x1b[3J\x1b[2J\x1b[H")
-        if ending == "eof":
-            raise EOFError
-        if ending == "interrupt":
-            raise KeyboardInterrupt
-        if ending == "mismatch":
-            return original[:-14] + "q"
-        return original[:-13].upper()
-
-    monkeypatch.setattr(cli.sys, "stdin", _TTYInput())
-    monkeypatch.setattr(cli, "_text", read)
-    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        status = ms_main(["checksum", "--plain"])
-    assert len(calls) == 2
-    assert status == {"match": 0, "mismatch": 1, "eof": 2, "interrupt": 130}[ending]
-    assert stdout.getvalue() == (original + "\n" if ending == "match" else "")
-    assert original not in stderr.getvalue()
-
-
 def test_terminal_secret_has_fingerprint_but_share_does_not() -> None:
     secret = _invoke_terminal(["secret"], VECTOR_1["secret_s"])
     share = _invoke_terminal(["share", "d"], VECTOR_2["share_A"], VECTOR_2["share_C"])
@@ -2491,6 +2337,7 @@ def test_operational_candidate_whole_card_confirmation(monkeypatch, capsys, resp
     module = importlib.import_module("codex32._cli_input")
     artifact = parse_codex32(VECTOR_1["secret_s"])
     prompts = []
+    monkeypatch.setattr(module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", lambda prompt: prompts.append(prompt) or response)
     monkeypatch.setattr(module.sys.stderr, "isatty", lambda: True)
     candidate = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=65)
@@ -2511,6 +2358,7 @@ def test_final_share_preview_is_isolated_and_basis_has_no_preview(monkeypatch, c
         parse_codex32(VECTOR_2["share_C"]), (), 1, 0, 0, None, capture_space_bits=65
     )
     accepted = [first]
+    monkeypatch.setattr(module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", lambda prompt: "n")
     assert not module._confirm_correction(candidate, accepted, False, _FakeBitcoinCore().fingerprint)
     assert accepted == [first]

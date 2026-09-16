@@ -88,9 +88,9 @@ lengths or interpret payload semantics.
 
 Only parsers and profile-specific factories construct immutable validated
 artifacts. A share has symbol semantics and cannot be converted to bytes.
-Registration adds semantics but is not required for generic parsing, checksum
-completion, recovery, derivation, or correction. Wallet and profile-specific
-generation APIs do not accept opaque artifacts or raw strings.
+Registration adds semantics but is not required for generic parsing, recovery,
+derivation, or correction. Wallet and profile-specific generation APIs do not
+accept opaque artifacts or raw strings.
 
 Every derived, recovered, or corrected result is reparsed through the same
 boundary. This prevents internal arithmetic from bypassing format, header,
@@ -107,16 +107,6 @@ without a frozen prefix require the HRP and separator. In particular,
 complete explicit `ms1` string.
 
 ## Creation, sharing, and recovery controls
-
-Interactive checksum completion requires two independently entered worksheet
-inputs before releasing the completed string. Between entries, the terminal
-and scrollback are cleared where supported; the second entry has no editable
-prefill. Comparison ignores case, whitespace, and the optional MS1 prefix.
-A mismatch, EOF, or interruption releases no completed string. `--plain` and
-redirecting output do not skip confirmation when input is interactive.
-Noninteractive input is rejected before it is read, including with `--plain`.
-Agreement cannot establish how the worksheet data was generated or detect an
-error already present on the worksheet. Terminal clearing remains best effort.
 
 Fresh shared creation generates *k* random initial shares. Each uses a separate
 full-payload OS-CSPRNG request. The current share string must be re-entered
@@ -179,10 +169,10 @@ reallocate the ledger's mass to additional hypotheses.
 
 `codex32` checks, corrects, recovers, and derives shares for compatible CL,
 BIP39, and opaque-HRP sets. `ms32` applies an `ms` input filter and alone owns
-Bitcoin creation, checksum worksheet, xprv, and wallet commands. Both façades
-offer worksheet-residue correction; only `ms32 correct` offers `--bytes`.
+Bitcoin creation, xprv, and wallet commands. Both façades offer worksheet-residue
+correction; only `ms32 correct` offers `--bytes`.
 
-### Recovery-only disclosure
+### Low-discrimination correction disclosure
 
 The disclosure gate uses the cumulative conservative volume of every admitted
 class ranked equal to or better than the candidate, including classes that
@@ -197,13 +187,18 @@ union-bound engineering measure, not authentication, an entropy estimate, or a
 posterior probability that the candidate is correct.
 
 All HRPs, including `ms`, use the gate. The CLI privately computes the candidate
-and asks whether an existing backup is being recovered before printing any
-candidate text, metadata, fingerprint, or residue addends. Only interactive
-`y` or `yes` permits disclosure. No, blank input, or EOF silently terminates
-the command with status 1. Without interactive stdin the sole message is
-`codex32: interactive confirmation required` (or `ms32:`). Output formatting
-and redirection cannot bypass this boundary. Existing card acceptance remains
-required after disclosure. The gate does not verify the operator's answer.
+before printing any candidate text, metadata, fingerprint, or residue addends.
+It then prints a conspicuous warning covering both deliberate completion of
+newly transcribed data and recovery with many missing characters. Literal
+uppercase `YES` is required before disclosure; other case variants, blank input,
+or EOF terminate the command with status 1. Redirected damaged data may still
+reach this gate, but disclosure requires an interactive terminal channel. If no
+such channel is available, the sole message is `codex32: interactive confirmation
+required` (or `ms32:`). Output formatting and `--plain` cannot bypass the gate.
+Existing whole-card `[y/N]` acceptance remains required after disclosure when a
+workflow will consume the corrected artifact. `correct` only displays the
+suggestion, so it has no second acceptance prompt. The gate does not verify the
+operator's answer.
 
 Residue mode has no application length. It conservatively accounts over the
 full checksum period and all equal-or-better decoder classes, including the
@@ -212,9 +207,8 @@ The Python API remains an expert, noninteractive primitive: candidate objects
 carry cumulative volume and its denominator exponent for clients to inspect.
 
 BIP39 worksheet profiles are compatibility formats and are not recommended
-for creation. Generic checksum completion accepts their structurally and
-semantically valid bodies, but does not add entropy or endorse them. New
-Bitcoin backups should use the secure random generation in `ms32 create`.
+for creation. New Bitcoin backups should use the secure random generation in
+`ms32 create`.
 
 ## Bitcoin Core controls
 

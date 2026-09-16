@@ -108,7 +108,7 @@ def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
     assert stderr.getvalue() == f"{prog}: interactive confirmation required\n"
 
 
-@pytest.mark.parametrize("answer", ("n", "", "other", None))
+@pytest.mark.parametrize("answer", ("y", "Y", "yes", "Yes", "n", "", "other", None))
 @pytest.mark.parametrize("command", ("correct", "secret", "share", "create"))
 def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, command):
     source = VECTOR_2["share_A"] if command == "share" else VECTOR_1["secret_s"]
@@ -119,7 +119,7 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
         prompts.append(prompt)
         if len(prompts) == 1:
             return source[:-1] + "?"
-        assert prompt == "Are you recovering an existing backup? [y/N]: "
+        assert prompt == "If you understand this, type YES to attempt to correct the data: "
         if answer is None:
             raise EOFError
         return answer
@@ -142,22 +142,21 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
         status = (cli.ms_main if command == "create" else cli.main)(args)
     assert status == 1 and stdout.getvalue() == ""
     assert len(prompts) == 2 and core.imported is None
-    assert stderr.getvalue().strip() == (
-        "\x1b[1;31mWarning:\x1b[0m With this much correction, incorrect or insecure data can appear\n"
-        "to be a valid backup."
-    )
+    warning = stderr.getvalue()
+    assert "\x1b[1;31mWarning:\x1b[0m If you are generating new data" in warning
+    assert 'errors, so any errors you have made up to this point will be "locked in" by' in warning
+    assert "If you are recovering data with this many missing characters" in warning
+    assert source not in warning and "Master fingerprint" not in warning
 
 
-@pytest.mark.parametrize("answer", ("y", "YES"))
-@pytest.mark.parametrize("tty_output", (False, True))
-def test_yes_reveals_candidate_after_gate_with_plain_output(monkeypatch, answer, tty_output):
+def test_yes_reveals_candidate_after_gate_with_plain_output(monkeypatch):
     source = VECTOR_1["secret_s"]
     candidate = _candidate(source)
-    stdout, stderr = io.StringIO(), _TTYOutput() if tty_output else io.StringIO()
-    responses = iter((source[:-1] + "?", answer))
+    stdout, stderr = io.StringIO(), _TTYOutput()
+    responses = iter((source[:-1] + "?", "YES"))
 
     def respond(prompt, prefill=""):
-        if prompt.startswith("Are you"):
+        if prompt.startswith("If you understand"):
             assert source not in stderr.getvalue()
             assert "Master fingerprint" not in stderr.getvalue()
         return next(responses)
@@ -173,22 +172,106 @@ def test_yes_reveals_candidate_after_gate_with_plain_output(monkeypatch, answer,
     ):
         assert cli.main(["correct", "--plain"]) == 1
     assert source in stderr.getvalue() and stdout.getvalue() == ""
-    assert ("\x1b[1;31mWarning:\x1b[0m" in stderr.getvalue()) is tty_output
-    if not tty_output:
-        assert "\x1b" not in stderr.getvalue()
+    assert "\x1b[1;31mWarning:\x1b[0m" in stderr.getvalue()
+
+
+def test_redirected_stderr_blocks_low_discrimination_disclosure(monkeypatch):
+    source = VECTOR_1["secret_s"]
+    candidate = _candidate(source)
+    responses = iter((source[:-1] + "?",))
+    monkeypatch.setattr(_cli_input, "_editable_input", lambda *args, **kwargs: next(responses))
+    monkeypatch.setattr(
+        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+    )
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        assert cli.main(["correct", "--plain"]) == 1
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue().strip() == "codex32: interactive confirmation required"
 
 
 def test_yes_still_requires_independent_whole_card_acceptance(monkeypatch):
     candidate = _candidate()
     prompts = []
-    answers = iter(("yes", "n"))
+    answers = iter(("YES", "n"))
     monkeypatch.setattr(_cli_input, "_editable_input", lambda prompt: prompts.append(prompt) or next(answers))
-    with patch.object(sys, "stdin", _TTYInput()), contextlib.redirect_stderr(io.StringIO()):
+    with patch.object(sys, "stdin", _TTYInput()), contextlib.redirect_stderr(_TTYOutput()):
         assert _cli_input._confirm_correction(candidate, [], False) is False
     assert prompts == [
-        "Are you recovering an existing backup? [y/N]: ",
+        "If you understand this, type YES to attempt to correct the data: ",
         "Does this entire string exactly match your recovery card? [y/N]: ",
     ]
+
+
+def test_redirected_correct_uses_terminal_gate_without_second_confirmation(monkeypatch):
+    source = VECTOR_1["secret_s"]
+    candidate = _candidate(source)
+    prompts = []
+
+    def confirm(prompt):
+        prompts.append(prompt)
+        return "YES"
+
+    monkeypatch.setattr(_cli_input, "_confirmation_input", confirm)
+    monkeypatch.setattr(
+        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+    )
+    stdout, stderr = io.StringIO(), _TTYOutput()
+    with (
+        patch.object(sys, "stdin", io.StringIO(source[:-1] + "?")),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        assert cli.main(["correct"]) == 1
+    assert prompts == ["If you understand this, type YES to attempt to correct the data: "]
+    assert source in stderr.getvalue() and stdout.getvalue() == ""
+    assert _cli_input._card_text(source) not in stderr.getvalue()
+
+
+def test_redirected_recovery_uses_terminal_gate_then_whole_card_confirmation(monkeypatch):
+    source = VECTOR_1["secret_s"]
+    candidate = _candidate(source)
+    prompts = []
+    answers = iter(("YES", "y"))
+
+    def confirm(prompt):
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr(_cli_input, "_confirmation_input", confirm)
+    monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
+    stdout, stderr = io.StringIO(), _TTYOutput()
+    with (
+        patch.object(sys, "stdin", io.StringIO(source[:-1] + "?")),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        assert cli.main(["secret", "--plain"]) == 0
+    assert prompts == [
+        "If you understand this, type YES to attempt to correct the data: ",
+        "Does this entire string exactly match your recovery card? [y/N]: ",
+    ]
+    assert stdout.getvalue() == source + "\n"
+    assert "Possible correction:" in stderr.getvalue()
+
+
+def test_redirected_recovery_without_terminal_reveals_nothing(monkeypatch):
+    source = VECTOR_1["secret_s"]
+    candidate = _candidate(source)
+    monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with (
+        patch.object(sys, "stdin", io.StringIO(source[:-1] + "?")),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        assert cli.main(["secret", "--plain"]) == 1
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == "codex32: interactive confirmation required\n"
 
 
 @pytest.mark.parametrize("degree", (13, 15))

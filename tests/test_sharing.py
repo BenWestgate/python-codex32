@@ -3,6 +3,7 @@
 from itertools import combinations, permutations
 
 import pytest
+from _codex32_oracle import oracle_encode
 from data.bip93_vectors import VECTOR_2, VECTOR_3
 from data.sharing_vectors import INVALID_BIP39_IMPLIED_SECRET, SHARING_VECTORS
 from hypothesis import given, settings
@@ -12,7 +13,6 @@ from codex32 import (
     CoreLightningSecret,
     MasterSeed,
     Share,
-    complete_checksum,
     derive_share,
     parse_codex32,
     recover_secret,
@@ -44,7 +44,9 @@ def _ms_basis(byte_length: int = 16, threshold: int = 2):
     seed = bytes((position * 37 + byte_length) % 256 for position in range(byte_length))
     secret = MasterSeed.from_seed(seed, identifier="test", threshold=threshold)
     masks = [
-        complete_checksum(f"ms1{threshold}test{index}" + CHARSET[offset + 1] * len(secret.payload_symbols))
+        parse_codex32(
+            oracle_encode("ms", f"{threshold}test{index}" + CHARSET[offset + 1] * len(secret.payload_symbols))
+        )
         for offset, index in enumerate(IDX_SORT[1:threshold])
     ]
     assert all(isinstance(mask, Share) for mask in masks)
@@ -110,20 +112,20 @@ def test_every_threshold_recovers_exactly_k_shares(threshold: int) -> None:
 
 def test_share_set_mismatches_have_distinct_errors() -> None:
     ms_secret, ms_masks = _ms_basis()
-    cl = complete_checksum("cl12testa" + "q" * 52)
+    cl = parse_codex32(oracle_encode("cl", "2testa" + "q" * 52))
     with pytest.raises(MismatchedProfile):
         derive_share([ms_secret, cl], "c")  # type: ignore[list-item]
 
-    threshold_three = complete_checksum("ms13testc" + "q" * len(ms_secret.payload_symbols))
+    threshold_three = parse_codex32(oracle_encode("ms", "3testc" + "q" * len(ms_secret.payload_symbols)))
     with pytest.raises(MismatchedThreshold):
         derive_share([ms_secret, threshold_three], "d")  # type: ignore[list-item]
 
-    other_id = complete_checksum("ms12namec" + "q" * len(ms_secret.payload_symbols))
+    other_id = parse_codex32(oracle_encode("ms", "2namec" + "q" * len(ms_secret.payload_symbols)))
     with pytest.raises(MismatchedIdentifier):
         derive_share([ms_secret, other_id], "d")  # type: ignore[list-item]
 
     longer = MasterSeed.from_seed(bytes(20), identifier="test", threshold=2)
-    longer_mask = complete_checksum("ms12testc" + "q" * len(longer.payload_symbols))
+    longer_mask = parse_codex32(oracle_encode("ms", "2testc" + "q" * len(longer.payload_symbols)))
     with pytest.raises(MismatchedPayloadLength):
         derive_share([ms_secret, longer_mask], "d")  # type: ignore[list-item]
 
@@ -179,7 +181,7 @@ def test_every_ordinary_index_can_be_a_fresh_target() -> None:
     ordinary = tuple(character for character in CHARSET if character != "s")
     for target in ordinary:
         mask_index = next(index for index in ordinary if index != target)
-        mask = complete_checksum(f"ms12test{mask_index}" + "p" * len(secret.payload_symbols))
+        mask = parse_codex32(oracle_encode("ms", f"2test{mask_index}" + "p" * len(secret.payload_symbols)))
         derived = derive_share([secret, mask], target)  # type: ignore[list-item]
         assert derived.header.index == target
 

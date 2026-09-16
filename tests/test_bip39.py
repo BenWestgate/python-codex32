@@ -1,9 +1,9 @@
 """Migration-only BIP39 profile validation."""
 
 import pytest
-from test_profiles import _oracle_encode
+from _codex32_oracle import oracle_encode as _oracle_encode
 
-from codex32 import Bip39Secret, Profile, Share, complete_checksum, parse_codex32
+from codex32 import Bip39Secret, Profile, Share, parse_codex32
 from codex32.errors import (
     InvalidBip39Checksum,
     InvalidChecksum,
@@ -28,8 +28,6 @@ def test_frozen_bip39_zero_entropy_fixtures(text: str, profile: Profile, payload
     assert secret.profile is profile
     assert len(secret.payload_symbols) == payload_length
     assert parse_codex32(text.upper()).text == text.upper()
-    assert complete_checksum(text[:-13]).text == text
-    assert complete_checksum(text[:-13].upper()).text == text.upper()
 
 
 @pytest.mark.parametrize(
@@ -39,8 +37,6 @@ def test_frozen_bip39_zero_entropy_fixtures(text: str, profile: Profile, payload
 def test_valid_outer_checksum_does_not_mask_bad_bip39_checksum(hrp: str, payload: str) -> None:
     with pytest.raises(InvalidBip39Checksum):
         parse_codex32(_oracle_encode(hrp, "0tests" + payload))
-    with pytest.raises(InvalidBip39Checksum):
-        complete_checksum(hrp + "10tests" + payload)
 
 
 def test_outer_checksum_precedes_bip39_secret_semantics() -> None:
@@ -65,7 +61,6 @@ def test_bip39_share_is_only_a_uniform_symbol_mask() -> None:
     assert not hasattr(share, "seed_bytes")
     assert not hasattr(share, "entropy")
     assert not hasattr(share, "mnemonic")
-    assert complete_checksum(share.text[:-13]).text == share.text
 
 
 @pytest.mark.parametrize(

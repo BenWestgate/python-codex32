@@ -95,7 +95,7 @@ generic parse-length failure.
   hidden state.
 
 Private Python names are convention rather than access control. The supported
-surface is the 26-name package `__all__`; direct use of private helpers is
+surface is the 25-name package `__all__`; direct use of private helpers is
 unsupported but remains in the review scope.
 
 ### Size budget
@@ -114,7 +114,6 @@ base artifact types rather than falling back to a registered application.
 |---|---:|---:|---:|---:|
 | parse S/share | yes | yes | yes | yes |
 | semantic S bytes | no | 16, 20, 24, 28, 32, or 64 | exactly 32 | no |
-| checksum completion API | yes | yes | yes | yes |
 | recovery and API share derivation | yes | yes | yes | yes |
 | `codex32` recovery/share/correction | yes | yes | yes | yes |
 | unshared generation / shared ceremony API | no | six supported sizes | exactly 32 bytes | no |
@@ -146,8 +145,6 @@ valid and are preserved when re-sharing.
 
 The generic `codex32` façade supports CL and BIP39 inspection, correction,
 recovery, and share derivation. The `ms32` façade accepts only `ms` artifacts.
-Its checksum worksheet command may infer the MS prefix because its input is
-worksheet material rather than recovery text.
 
 ## Secret generation
 
@@ -321,13 +318,10 @@ Ordinary BIP39 shares are validated only as exact-length codex32 symbol masks.
 A recovered S must additionally have zero outer padding and a valid embedded
 BIP39 checksum. Derivation validates the implied S before propagating the set.
 The public API may recover or derive codex32 artifacts; it never exposes BIP39
-entropy, a mnemonic, generation, or wallet derivation. Generic
-`complete_checksum()` also accepts BIP39 worksheet bodies; S still requires
-zero outer padding and a valid embedded BIP39 checksum. It is an expert
-protocol primitive and does not establish safe entropy or endorse creation.
-The generic `codex32` CLI exposes BIP39 recovery and derivation. Derivation
-first reconstructs and validates the implied BIP39 S. BIP39 construction,
-mnemonic output, and wallet interpretation remain unavailable.
+entropy, a mnemonic, generation, or wallet derivation. The generic `codex32`
+CLI exposes BIP39 recovery and derivation. Derivation first reconstructs and
+validates the implied BIP39 S. BIP39 construction, mnemonic output, and wallet
+interpretation remain unavailable.
 
 ### Deliberate Rust-reference differences
 
@@ -378,7 +372,7 @@ For included classes `(V, b)`, let `B = max(b)` and
 bits and does not trigger. Candidate ranking remains based on its own volume.
 No profile semantics, CRC, fingerprint, pruning, or timeout discount this sum.
 The API remains noninteractive. Clients displaying candidates can use this
-property to enforce the CLI's recovery-only disclosure boundary.
+property to enforce the CLI's low-discrimination disclosure boundary.
 `search_complete=False` identifies a unique-so-far result from interrupted
 optional search. It does not establish uniqueness or global best rank. No
 candidate is released if required search is interrupted, or if an interrupted
@@ -445,12 +439,15 @@ not authentication or a claim about the operator's intended backup. The admitted
 bound includes unsearched portions, so it also bounds any optional search prefix.
 
 Before revealing a candidate with fewer than five bits of cumulative checksum
-discrimination, every CLI correction flow asks whether the operator is
-recovering an existing backup. This includes `ms` and corrected existing-source
-entry. Only interactive `y` or `yes` permits disclosure; ordinary whole-card
-acceptance still follows where applicable. No, blank input, and EOF abort
-silently with status 1. Noninteractive input receives only an executable-named
-`interactive confirmation required` error. `--plain` does not bypass the gate.
+discrimination, every CLI correction flow prints the high-risk warning and
+requires literal uppercase `YES`. This includes `ms`, redirected damaged input,
+and corrected existing-source entry. Candidate text, metadata, fingerprints,
+and residue addends remain hidden until that confirmation succeeds. Ordinary
+whole-card `[y/N]` acceptance still follows where the corrected artifact will be
+consumed; the `correct` command only reports the suggestion and therefore does
+not ask a second confirmation. If no interactive confirmation channel is
+available, the CLI emits only the executable-named `interactive confirmation
+required` error. `--plain` does not bypass the gate.
 
 Fixed BCH repair runs first. Required character/group work precedes optional
 character expansion, with lower capture-volume layers first within each

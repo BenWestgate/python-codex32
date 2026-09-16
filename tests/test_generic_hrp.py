@@ -6,12 +6,12 @@ import sys
 from unittest.mock import patch
 
 import pytest
+from _codex32_oracle import oracle_encode
 
 from codex32 import (
     CorrectionContext,
     Secret,
     Share,
-    complete_checksum,
     correct,
     derive_share,
     parse_codex32,
@@ -46,8 +46,6 @@ def test_opaque_hrp_parse_complete_recover_and_derive(vector: dict[str, str]) ->
     assert secret.hrp == a.hrp == c.hrp == "zz"
     assert secret.profile is a.profile is c.profile is None
     assert secret.text.isupper()
-    checksum_length = 15 if len(vector["S"]) > 93 else 13
-    assert complete_checksum(vector["S"][:-checksum_length]).text == vector["S"]
     assert recover_secret([a, c]).text == vector["S"].upper()
     assert derive_share([secret, a], "d").text == vector["D"].upper()
 
@@ -55,7 +53,7 @@ def test_opaque_hrp_parse_complete_recover_and_derive(vector: dict[str, str]) ->
 def test_sharing_compares_normalized_hrp_and_keeps_compatibility_error_name() -> None:
     assert MismatchedProfile is MismatchedHrp
     zz = parse_codex32(UNKNOWN["short"]["S"])
-    yy = complete_checksum("yy12testa" + "p" * 26)
+    yy = parse_codex32(oracle_encode("yy", "2testa" + "p" * 26))
     with pytest.raises(MismatchedHrp):
         derive_share([zz, yy], "c")
 
@@ -103,7 +101,7 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
     )
     assert _invoke(main, ["create"])[0] == 2
     assert _invoke(ms_main, ["check"], UNKNOWN["short"]["C"])[0] == 2
-    unshared = complete_checksum("zz10tests" + "q" * 26)
+    unshared = parse_codex32(oracle_encode("zz", "0tests" + "q" * 26))
     assert _invoke(main, ["check"], unshared.text)[1] == (
         "Valid unshared codex32 secret.\nHRP: ZZ\nBackup identifier: TEST\n"
     )
@@ -112,8 +110,9 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
     ms_help = _invoke(ms_main, ["--help"])[1]
     for command in ("check", "correct", "secret", "share"):
         assert command in generic_help and command in ms_help
-    for command in ("create", "checksum", "xprv", "wallet"):
+    for command in ("create", "xprv", "wallet"):
         assert command not in generic_help and command in ms_help
+    assert "checksum" not in generic_help and "checksum" not in ms_help
     assert "--bytes" not in _invoke(main, ["correct", "--help"])[1]
     assert "--bytes" in _invoke(ms_main, ["correct", "--help"])[1]
     assert _invoke(main, ["--version"])[1].startswith("codex32 ")

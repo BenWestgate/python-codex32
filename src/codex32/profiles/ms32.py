@@ -59,7 +59,6 @@ class MasterSeed(Secret):
 
 class _Ms32Rules:
     profile, label, secret_type = Profile.MS, "Bitcoin master seed", MasterSeed
-    completion_error: str | None = None
     basis_secret_type: type[Secret] | None = None
     basis_error = ""
 

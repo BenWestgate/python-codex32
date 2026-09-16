@@ -3,10 +3,16 @@
 from dataclasses import FrozenInstanceError
 
 import pytest
+import codex32
 from data.bip93_vectors import VECTOR_2
 
 from codex32 import Header, MasterSeed, Share, parse_codex32
 from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshold
+
+
+def test_checksum_completion_is_not_public_api() -> None:
+    assert "complete_checksum" not in codex32.__all__
+    assert not hasattr(codex32, "complete_checksum")
 
 
 def test_share_has_symbols_but_no_byte_or_padding_api() -> None:

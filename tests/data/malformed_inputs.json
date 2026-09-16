@@ -8,13 +8,6 @@
     {"id": "non-ascii", "text": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlé"},
     {"id": "embedded-newline", "text": "ms10testsxxxxxxxxxxxxxxxx\nxxxxxxxxxx4nzvca9cmczlw"}
   ],
-  "checksum_completion": [
-    {"id": "invalid-symbol", "text": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxx!"},
-    {"id": "mixed-case", "text": "Ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx"},
-    {"id": "short-ms", "text": "ms10testsqq"},
-    {"id": "short-cl", "text": "cl10testsqq"},
-    {"id": "bip39-disabled", "text": "bip39_12w10testsqqqqqqqqqqqqqqqqqqqqqqqqqqq"}
-  ],
   "interpolation": [
     {
       "id": "duplicate-index",

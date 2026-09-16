@@ -20,9 +20,10 @@ and evidence.
    A syntactically present HRP and separator are immutable correction context;
    registration never ranks or transforms one namespace into another.
    Before any candidate metadata or residue addends are disclosed, a search
-   leaving fewer than five checksum-discrimination bits requires interactive
-   recovery confirmation for every HRP. The bound includes all admitted classes
-   ranked equal to or better than the candidate, independently of execution order.
+   leaving fewer than five checksum-discrimination bits requires an interactive
+   warning and literal `YES` confirmation for every HRP. The bound includes all
+   admitted classes ranked equal to or better than the candidate, independently
+   of execution order.
 6. Secrets stay out of arguments, logs, ordinary output, and public transfers.
    Private descriptors exist only in Python memory and child stdin.
 7. Bitcoin Core chains are discovered before entropy or recovery input. The

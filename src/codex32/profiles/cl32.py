@@ -43,7 +43,6 @@ def _secret_from_bytes(
 class _Cl32Rules:
     profile, label = Profile.CL, "Core Lightning HSM secret"
     secret_type = CoreLightningSecret
-    completion_error: str | None = None
     basis_secret_type: type[Secret] | None = None
     basis_error = ""
 

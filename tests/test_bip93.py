@@ -25,7 +25,6 @@ from codex32 import (
     MasterSeed,
     Profile,
     Share,
-    complete_checksum,
     derive_share,
     parse_codex32,
     recover_secret,
@@ -83,11 +82,7 @@ def test_vector_4_all_arbitrary_parsed_padding() -> None:
 
 
 def test_vector_5_long_uppercase_and_completion() -> None:
-    unchecksummed = (
-        f"{VECTOR_5['hrp']}1{VECTOR_5['k']}{VECTOR_5['identifier']}"
-        f"{VECTOR_5['share_idx']}{VECTOR_5['payload']}"
-    )
-    secret = complete_checksum(unchecksummed)
+    secret = parse_codex32(VECTOR_5["secret_s"])
     assert isinstance(secret, MasterSeed)
     assert secret.text == VECTOR_5["secret_s"]
     assert secret.seed_bytes.hex() == VECTOR_5["secret_hex"]
