@@ -210,7 +210,6 @@ def test_public_context_constrains_length_prefix_and_used_indices() -> None:
 @pytest.mark.parametrize(
     "context",
     (
-        CorrectionContext("ms"),  # type: ignore[arg-type]
         CorrectionContext(Profile.MS, expected_length=True),  # type: ignore[arg-type]
         CorrectionContext(Profile.MS, expected_length=49),
         CorrectionContext(Profile.MS, immutable_prefix="ms11test"),
@@ -319,8 +318,7 @@ def test_suspected_profile_is_not_inferred() -> None:
         suspected_profile=Profile.MS,
     )
     assert result is None
-    with pytest.raises(TypeError):
-        _correct_fixed(VECTOR_1["secret_s"], suspected_profile="ms")  # type: ignore[arg-type]
+    assert _correct_fixed(VECTOR_1["secret_s"], suspected_profile="ms") is not None
 
 
 def test_private_book_residue_uses_reverse_index() -> None:

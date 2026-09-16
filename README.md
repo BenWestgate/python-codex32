@@ -1,11 +1,11 @@
 # python-codex32
 
 [codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki) is a
-paper-backup format for Bitcoin master seeds. A master seed is the private
-recovery secret from which a Bitcoin wallet derives its keys.
+checksummed, secret-sharing-aware Base32 format for Bitcoin master seeds. A
+master seed is the private recovery secret from which a Bitcoin wallet derives
+its keys.
 
 This project provides a command-line tool and Python library that can:
-
 - create an unshared master-seed backup or an M-of-N shared backup;
 - check backup text and suggest possible repairs after damage;
 - recover a master seed from the required shares;
@@ -44,7 +44,18 @@ python -m pip check
 
 On Windows, activate the environment with `.venv\Scripts\activate` instead.
 
-The installed command is `codex32`.
+The installed commands are `codex32` and `ms32`.
+
+`codex32` checks, corrects, recovers, and derives shares for registered or opaque
+application prefixes. `ms32` creates, checks, recovers, and uses codex32 backups
+of Bitcoin master seeds, including checksum worksheets, keys, and wallet setup.
+The generic command has no checksum-completion or creation command.
+
+BIP39 worksheet profiles are supported for existing-backup recovery but are
+[not recommended for creating backups](https://secretcodex32.com/docs/index.html).
+Use `ms32 create` for new Bitcoin backups. Powerful correction searches require
+interactive confirmation that you are recovering an existing backup before
+showing a suggestion. A valid checksum does not establish secure entropy.
 
 ## Start here
 
@@ -59,7 +70,7 @@ bitcoin-qt -signet -server
 Then run:
 
 ```bash
-codex32 create 2
+ms32 create 2
 ```
 
 This creates three shares with a random identifier. Any two recover the seed, so
@@ -69,7 +80,7 @@ user-created blank Bitcoin Core wallet you select.
 For a 3-of-7 backup with the identifier `yete`, run:
 
 ```bash
-codex32 create 3yete --shares 7
+ms32 create 3yete --shares 7
 ```
 
 Any three shares recover the seed, so four can be lost. Each additional share
@@ -84,11 +95,14 @@ Run the command first. Enter the master seed or shares only when prompted;
 never put recovery text on the command line.
 
 ```bash
-codex32 check    # check one secret or share
-codex32 secret   # recover a secret from shares
-codex32 share d  # add share d to an existing set of shares
-codex32 correct  # suggest repairs for damaged text
+ms32 check    # check one secret or share
+ms32 secret   # recover a secret from shares
+ms32 share d  # add share d to an existing set of shares
+ms32 correct  # suggest repairs for damaged text
 ```
+
+Use the corresponding `codex32` commands for generic human-readable part
+codex32 strings.
 
 Printable forms:
 

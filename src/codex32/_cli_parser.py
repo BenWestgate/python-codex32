@@ -80,11 +80,15 @@ def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None
     parser.add_argument("--testnet", action="store_true", help="use testnet keys")
 
 
-def parser() -> argparse.ArgumentParser:
+def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.ArgumentParser:
     result = _Parser(
-        prog="codex32",
-        description="Create, check, recover, and use codex32 Bitcoin seed backups.",
-        epilog="Never include a seed or share in command arguments.\n"
+        prog=prog,
+        description=(
+            "Create, check, and recover codex32 backups and restore wallets from them."
+            if master_seed
+            else "Check, correct, recover, and derive shares from codex32 backups."
+        ),
+        epilog="Never include a secret or share in command arguments.\n"
         "Enter it when prompted. Some commands also accept piped input.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -101,23 +105,28 @@ def parser() -> argparse.ArgumentParser:
     check.description = "Check a secret or share for format, checksum, and content errors."
     secret = _command(commands, "secret", "recover a secret from shares")
     secret.description = (
-        "Recover and display the complete secret. This removes the protection "
-        "provided by splitting it into shares."
+        "Recover the secret from exactly the threshold number of shares from the same set. "
+        "Use different share indices. You can also enter an existing secret to display it."
     )
     _terminal_output(secret)
-    share = _command(commands, "share", "derive a share from codex32 strings")
+    share = _command(
+        commands,
+        "share",
+        "derive a share from codex32 strings",
+    )
     share.description = (
-        "Derive an additional share from existing codex32 strings. "
-        "Interactive use confirms the new recovery card; --plain or redirected input/output skips confirmation."
+        "Derive a share at INDEX from exactly the threshold number of strings from the same set. "
+        "Use different input indices; one input may be the secret. "
+        "INDEX must differ from S and the input indices."
     )
     share.add_argument("index", metavar="INDEX", help="index for the derived share")
-    _terminal_output(share)
+    share.add_argument("--plain", action="store_true", help="print without formatting or card confirmation")
 
-    correct = _command(commands, "correct", "suggest repairs for damaged backup text")
+    correct = _command(commands, "correct", "suggest repairs for a damaged codex32 string")
     correct.description = (
-        "Suggest repairs for damaged backup text. Corrects up to four arbitrary missing "
-        "or extra characters, including mixtures; up to two skipped or extra four-character groups, "
-        "including one of each; replace each unreadable character with ?."
+        "Suggest repairs for wrong, unreadable, missing, extra, or swapped characters, "
+        "and damaged, missing, extra, or swapped four-character groups. "
+        "Use ? for each unreadable character. Check suggested repairs against the original backup."
     )
     correct.add_argument(
         "--residue",
@@ -134,22 +143,23 @@ def parser() -> argparse.ArgumentParser:
         metavar="POSITION",
         help="one-based position counted backward from the end; repeat as needed",
     )
-    correct.add_argument(
-        "--bytes",
-        dest="byte_length",
-        type=_correction_bytes,
-        metavar="BYTES",
-        help="expected master-seed bytes: 16, 20, 24, 28, 32, or 64; ? searches every size",
-    )
+    if master_seed:
+        correct.add_argument(
+            "--bytes",
+            dest="byte_length",
+            type=_correction_bytes,
+            metavar="BYTES",
+            help="expected master-seed bytes: 16, 20, 24, 28, 32, or 64; ? searches every size",
+        )
     _terminal_output(correct)
 
-    checksum = _command(commands, "checksum", "finish a codex32 checksum worksheet")
-    checksum.description = "Finish a codex32 checksum worksheet using its non-pink bold squares."
-    checksum.add_argument(
-        "header",
-        nargs="?",
-        metavar="HEADER",
-        help="worksheet header; omit to enter it at the prompt",
+    if not master_seed:
+        return result
+
+    checksum = _command(commands, "checksum", "complete a Codex32 Book checksum worksheet")
+    checksum.description = (
+        "Complete a Codex32 Book checksum worksheet. "
+        "Requires an interactive terminal and two matching entries."
     )
     _terminal_output(checksum)
     create = _command(commands, "create", "create or confirm a backup, or split an existing secret")
@@ -178,7 +188,7 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument(
         "--existing",
         action="store_true",
-        help="use an existing codex32 secret or hexadecimal seed",
+        help="use an existing Bitcoin codex32 secret or hexadecimal seed",
     )
 
     wallet = _command(commands, "wallet", "set up a Bitcoin Core wallet or export wallet data")

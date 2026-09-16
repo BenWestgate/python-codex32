@@ -7,8 +7,8 @@ immutable Python object created after all required checks pass.
 The [security invariants](invariants.md) are the mandatory high-level contract.
 This document gives their controls, limitations, and verification evidence.
 
-This model covers the `ms` master-seed profile, the `cl` Core Lightning
-profile, and supported BIP39 migration artifacts. Creation and wallet controls
+This model covers generic opaque-HRP codex32 artifacts, the `ms` master-seed
+profile, the `cl` Core Lightning profile, and supported BIP39 migration artifacts. Creation and wallet controls
 focus on Bitcoin master seeds. User safety and vulnerability reporting belong
 in [SECURITY.md](../../SECURITY.md); procedures belong in the
 [user guide](../user/guide.md).
@@ -88,19 +88,44 @@ lengths or interpret payload semantics.
 
 Only parsers and profile-specific factories construct immutable validated
 artifacts. A share has symbol semantics and cannot be converted to bytes.
-Profile dispatch is fixed: unknown HRPs have no fallback. Recovery, derivation,
-sharing, and wallet APIs do not accept raw strings.
+Registration adds semantics but is not required for generic parsing, checksum
+completion, recovery, derivation, or correction. Wallet and profile-specific
+generation APIs do not accept opaque artifacts or raw strings.
 
 Every derived, recovered, or corrected result is reparsed through the same
 boundary. This prevents internal arithmetic from bypassing format, header,
 checksum, length, padding, or application validation.
 
+Interactive `ms32` check, correction, sharing, `xprv`, and wallet recovery display a frozen initial `MS1`; later
+entries display the validated set header. A pasted complete string keeps its
+case, while suffix-only input re-cases the reconstructed frozen header to the
+suffix. The displayed header is uppercase only when every accepted artifact is
+uppercase and lowercase otherwise. Correction uses the effective entered-case
+context, not an assumption that display case and entry case match. Prompts
+without a frozen prefix require the HRP and separator. In particular,
+`create --existing` tries raw hexadecimal first and otherwise requires a
+complete explicit `ms1` string.
+
 ## Creation, sharing, and recovery controls
+
+Interactive checksum completion requires two independently entered worksheet
+inputs before releasing the completed string. Between entries, the terminal
+and scrollback are cleared where supported; the second entry has no editable
+prefill. Comparison ignores case, whitespace, and the optional MS1 prefix.
+A mismatch, EOF, or interruption releases no completed string. `--plain` and
+redirecting output do not skip confirmation when input is interactive.
+Noninteractive input is rejected before it is read, including with `--plain`.
+Agreement cannot establish how the worksheet data was generated or detect an
+error already present on the worksheet. Terminal clearing remains best effort.
 
 Fresh shared creation generates *k* random initial shares. Each uses a separate
 full-payload OS-CSPRNG request. The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
-text is never reparsed as the source secret and contributes no entropy. Existing complete secrets are confirmed unchanged and initialize the wallet without new entropy.
+text is never reparsed as the source secret and contributes no entropy. Existing
+complete Bitcoin master seeds are confirmed unchanged and initialize the wallet
+without new entropy. The `ms32` façade rejects CL; CL generation remains
+Python-API-only. Generic sharing, recovery, inspection, and correction are
+available through `codex32`.
 
 Creation retries show only entered text in contiguous regions: bold red means review the card, with reverse video added for the active region. Original card formatting is display-only; editable prefills retain entered case and spacing.
 Complete matching canonical groups freeze; local alignment preserves entered group ownership before edit minimization and proceeds without crossing frozen boundaries (see the API alignment rules).
@@ -127,20 +152,74 @@ output is an untrusted proposal, never authenticated recovery material.
 
 | Control | Required behavior |
 |---|---|
-| Context | The HRP, separator, and program-supplied context are immutable and outside the correction domain. |
+| Context | The syntactically present HRP, separator, and program-supplied context are immutable and outside the correction domain. Unknown HRPs are never corrected or ranked toward registered namespaces. |
 | Target lengths | `ms` searches only 48, 54, 61, 67, 74, or 127 characters; an accepted first string fixes the length of later strings in that recovery set. |
-| Character alignment | `A = I + O + AT + 2*T <= 4`; the measured required baseline is `A<=2`, with deeper search bounded by the deadline. |
+| Character alignment | `A = I + O + AT + 2*T <= 4`; the public API retains its `A<=2` required baseline. CLI scheduling prioritizes single structural mistakes, paired indels, then other combinations. |
 | Group alignment | `G = GI + GO + GS + GAT + 2*GT <= 2`; only complete displayed four-character groups participate, and character/group families never mix. |
 | Fixed erasures | BCH repairs substitutions and explicit/generated erasures after alignment, with `E + 2S <= 8`; fixed consecutive erasures retain the 13/15-symbol linear path. |
 | False reconstruction | All target lengths and all admitted fixed/character/group layers share cumulative mass at or below `1`, including fixed consecutive erasures. |
-| Ambiguity | Required work must complete. One primary-best-so-far candidate from interrupted optional work may be shown with incomplete status and no uniqueness claim. Multiple primary ties from incomplete work are suppressed. |
-| Resources | Piece tables and shifted syndrome prefixes avoid whole-body scans per alignment. The deadline is checked inside enumeration. No MITM is used. Public cutoffs require valid-profile benchmark evidence. |
+| Ambiguity | API required work must complete. CLI searches may return one primary-best-so-far eligible candidate at the deadline; incomplete primary ties are suppressed. Completeness metadata remains accurate, with no CLI search warning or uniqueness claim. |
+| Resources | One ten-second deadline covers preparation and search, without restarting when a candidate is found. CLI competitors share one CPU and run until none can improve the result or the deadline expires. Piece tables and shifted syndrome prefixes avoid whole-body scans per alignment. No MITM is used. |
 | Output | Operational candidates require explicit whole-card confirmation before acceptance; isolated Bitcoin reconstruction may only preview a fingerprint. `correct` suggestions remain nonzero-status stderr output. `check` never suggests repairs. |
+
+Command eligibility and recovery-set compatibility are checked before a
+candidate can affect CLI ranking or pruning. Fixed BCH runs first; a usable
+candidate found through alignment receives the same competitor search. Every
+reachable target length remains eligible under the one shared admission ledger.
+Equal-volume competitors remain searchable because secondary ranking can matter.
+
+Pruning must preserve both discovery and ranking. Fixed BCH coverage includes
+explicit erasures and residual substitutions. The minimum-distance proof uses
+only candidates with the same HRP and length; it never excludes another
+length. A layer that cannot discover another artifact can still improve a known
+artifact's capture volume or Hamming rank. Directed swap classification preserves
+those explanations; unproven scoring work is retained. Repeated masks and
+cancelled operations are removed only with a coverage proof. Pruning does not
+reallocate the ledger's mass to additional hypotheses.
+
+`codex32` checks, corrects, recovers, and derives shares for compatible CL,
+BIP39, and opaque-HRP sets. `ms32` applies an `ms` input filter and alone owns
+Bitcoin creation, checksum worksheet, xprv, and wallet commands. Both façades
+offer worksheet-residue correction; only `ms32 correct` offers `--bytes`.
+
+### Recovery-only disclosure
+
+The disclosure gate uses the cumulative conservative volume of every admitted
+class ranked equal to or better than the candidate, including classes that
+yielded nothing, were pruned, or remain unsearched at the deadline. It excludes
+worse-ranked classes. Overlap remains conservatively charged. Short and long
+checksum spaces use the admission ledger's integer scaling; no application
+validation, CRC, or fingerprint adds discrimination to this calculation.
+
+With scaled volume `C` and checksum exponent `B`, disclosure requires recovery
+confirmation exactly when `32*C > 2**B`. Equality leaves five bits. This is a
+union-bound engineering measure, not authentication, an entropy estimate, or a
+posterior probability that the candidate is correct.
+
+All HRPs, including `ms`, use the gate. The CLI privately computes the candidate
+and asks whether an existing backup is being recovered before printing any
+candidate text, metadata, fingerprint, or residue addends. Only interactive
+`y` or `yes` permits disclosure. No, blank input, or EOF silently terminates
+the command with status 1. Without interactive stdin the sole message is
+`codex32: interactive confirmation required` (or `ms32:`). Output formatting
+and redirection cannot bypass this boundary. Existing card acceptance remains
+required after disclosure. The gate does not verify the operator's answer.
+
+Residue mode has no application length. It conservatively accounts over the
+full checksum period and all equal-or-better decoder classes, including the
+supplied erasure positions. It uses the same threshold before releasing addends.
+The Python API remains an expert, noninteractive primitive: candidate objects
+carry cumulative volume and its denominator exponent for clients to inspect.
+
+BIP39 worksheet profiles are compatibility formats and are not recommended
+for creation. Generic checksum completion accepts their structurally and
+semantically valid bodies, but does not add entropy or endorse them. New
+Bitcoin backups should use the secure random generation in `ms32 create`.
 
 ## Bitcoin Core controls
 
 Automatic initialization applies to fresh Bitcoin master-seed creation,
-sharing an existing master seed, and `codex32 wallet bitcoin-core` restoration.
+sharing an existing master seed, and `ms32 wallet bitcoin-core` restoration.
 Watch-only mode initializes a private-keys-disabled destination with public
 descriptors.
 

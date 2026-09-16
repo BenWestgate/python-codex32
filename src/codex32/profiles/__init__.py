@@ -37,3 +37,11 @@ def _profile_rules(hrp: str | Profile) -> _ProfileRules:
     from codex32.profiles.bip39 import BIP39_12W_RULES, BIP39_24W_RULES
 
     return BIP39_12W_RULES if profile is Profile.BIP39_12W else BIP39_24W_RULES
+
+
+def _optional_profile_rules(hrp: str | Profile) -> _ProfileRules | None:
+    """Return registered application rules without rejecting an opaque HRP."""
+    try:
+        return _profile_rules(hrp)
+    except UnknownProfile:
+        return None

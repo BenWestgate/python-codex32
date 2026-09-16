@@ -6,13 +6,14 @@ import contextlib
 import difflib
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from time import monotonic
 from typing import Any, Literal, cast
 
 from codex32.bip93 import (
     Secret,
     Share,
+    _checksum_for_encoded_length,
     _validate_basis_prefix,
     _validate_recovery_prefix,
     parse_codex32,
@@ -24,22 +25,24 @@ from codex32.errors import (
     DuplicateShareIndex,
     ExistingTargetIndex,
     InvalidChecksum,
+    InvalidLength,
+    InvalidThreshold,
     MismatchedIdentifier,
     MismatchedPayloadLength,
     MismatchedProfile,
     MismatchedThreshold,
     SecretInRecoverySet,
 )
-from codex32.profiles import Profile, _profile_rules
+from codex32.profiles import Profile, _optional_profile_rules, _profile_rules
 from codex32.profiles.ms32 import (
     TEXT_LENGTHS,
     MasterSeed,
-    _fingerprint_from_seed,
     _text_length,
 )
 
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
+_MAX_CORRECTION_LENGTH_DELTA = 8
 
 _line_editor: Any
 try:
@@ -50,6 +53,31 @@ except ImportError:
 
 class InputError(Exception):
     pass
+
+
+class RecoveryDeclined(Exception):
+    pass
+
+
+class InteractiveConfirmationRequired(Exception):
+    pass
+
+
+def _require_recovery(low_discrimination: bool) -> None:
+    if not low_discrimination:
+        return
+    if not sys.stdin.isatty():
+        raise InteractiveConfirmationRequired
+    label = "\x1b[1;31mWarning:\x1b[0m" if sys.stderr.isatty() else "Warning:"
+    _stderr(
+        f"{label} With this much correction, incorrect or insecure data can appear\nto be a valid backup.\n"
+    )
+    try:
+        answer = _editable_input("Are you recovering an existing backup? [y/N]: ")
+    except EOFError:
+        raise RecoveryDeclined from None
+    if answer.strip().lower() not in ("y", "yes"):
+        raise RecoveryDeclined
 
 
 def _stderr(text: str, *, end: str = "\n") -> None:
@@ -143,7 +171,14 @@ def _card_text(text: str, highlight: bool = True, observed: str = "") -> str:
     return rendered if changed else rendered.replace("\x1b[0m ", " ")
 
 
-def _confirm_correction(artifact: Artifact, accepted: list[Artifact], basis: bool) -> bool | None:
+def _confirm_correction(
+    candidate: CorrectionCandidate,
+    accepted: list[Artifact],
+    basis: bool,
+    fingerprint: Callable[[MasterSeed], bytes] | None = None,
+) -> bool | None:
+    _require_recovery(candidate.low_checksum_discrimination)
+    artifact = candidate.artifact
     # Provisional recovery is exclusively for this fingerprint preview.
     preview = artifact
     try:
@@ -154,15 +189,15 @@ def _confirm_correction(artifact: Artifact, accepted: list[Artifact], basis: boo
             and (len(accepted) + 1 == artifact.header.threshold)
         ):
             preview = recover_secret(cast(list[Share], [*accepted, artifact]))
-        fingerprint = (
-            f"Master fingerprint: {_fingerprint_from_seed(preview.seed_bytes).hex().upper()}\n\n"
-            if isinstance(preview, MasterSeed)
+        fingerprint_text = (
+            f"Master fingerprint: {fingerprint(preview).hex().upper()}\n\n"
+            if isinstance(preview, MasterSeed) and fingerprint is not None
             else ""
         )
     except CodexError:
         _stderr("Rejected: Could not recover a valid Bitcoin master seed using this correction.")
         return None
-    _stderr(f"Possible correction:\n\n{fingerprint}{_card_text(artifact.text, sys.stderr.isatty())}\n")
+    _stderr(f"Possible correction:\n\n{fingerprint_text}{_card_text(artifact.text, sys.stderr.isatty())}\n")
     return _editable_input(
         "Does this entire string exactly match your recovery card? [y/N]: "
     ).strip().lower() in ("y", "yes")
@@ -249,12 +284,23 @@ def _render_groups(
     ).rstrip()
 
 
-def _parse(value: str, profiles: tuple[Profile, ...]) -> Artifact:
+def _parse(value: str, profiles: tuple[Profile, ...] | None) -> Artifact:
     try:
         artifact = parse_codex32(value)
     except CodexError as error:
-        raise InputError(_FRIENDLY_SET_ERRORS.get(type(error), str(error))) from error
-    if artifact.profile not in profiles:
+        message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
+        if isinstance(error, InvalidChecksum):
+            # Parsing has already checked the container and generic length.
+            # Explain an unsupported profile length without validating input
+            # or changing the parser's checksum-before-profile boundary.
+            try:
+                _profile_rules(value[: value.rfind("1")]).validate_text_length(len(value))
+            except InvalidLength as length_error:
+                message = str(length_error)
+            except CodexError:
+                pass
+        raise InputError(message) from error
+    if profiles is not None and artifact.profile not in profiles:
         allowed = " or ".join(_profile_rules(profile).label for profile in profiles)
         raise InputError(f"This command accepts only {allowed} input.")
     return artifact
@@ -272,11 +318,75 @@ def _retry_text(value: str, prefix: str) -> str:
     return value[position + 1 :]
 
 
+def _prefix_for_suffix(prefix: str, suffix: str) -> str:
+    """Match a fixed prefix to the editable suffix's prevailing case."""
+    cased = [character for character in suffix if character.lower() != character.upper()]
+    uppercase = sum(character.isupper() for character in cased)
+    if uppercase > len(cased) / 2:
+        return prefix.upper()
+    if uppercase < len(cased) / 2:
+        return prefix.lower()
+    return prefix
+
+
+def _accepted_prefix(accepted: list[Artifact]) -> str:
+    first = accepted[0]
+    prefix = f"{first.hrp}1{first.header.threshold}{first.header.identifier}"
+    return prefix.upper() if all(artifact.text.isupper() for artifact in accepted) else prefix
+
+
+def _display_prefix(prefix: str, grouped: bool) -> str:
+    if not grouped:
+        return prefix
+    groups = [prefix[index : index + 4] for index in range(0, len(prefix), 4)]
+    displayed = " ".join(groups)
+    if len(prefix) % 4 == 0:
+        displayed += "  " if len(groups) % 4 == 0 else " "
+    return displayed
+
+
+def _case_interpretation(
+    value: str,
+    prefix: str,
+    profiles: tuple[Profile, ...] | None,
+    allowed: Callable[[CorrectionCandidate], bool] | None,
+) -> tuple[CorrectionCandidate | None, str, str, str] | None:
+    """Normalize likely casing and mark contrary-case data as erasures."""
+    if value.upper() == value or value.lower() == value:
+        return None
+    separator = value.find("1")
+    base_length = separator + 1 if separator >= 0 else 0
+    immutable_length = len(prefix) if prefix and value.lower().startswith(prefix.lower()) else base_length
+    letters = [character for character in value[immutable_length:] if character.lower() != character.upper()]
+    uppercase = sum(character.isupper() for character in letters) > len(letters) / 2
+    corrected = value.upper() if uppercase else value.lower()
+    corrected_prefix = prefix.upper() if uppercase else prefix.lower()
+    try:
+        artifact = _parse(corrected, profiles)
+    except InputError:
+        candidate = None
+    else:
+        bits = (
+            5 * _checksum_for_encoded_length(artifact.hrp, len(artifact.text) - len(artifact.hrp) - 1).length
+        )
+        proposed = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=bits)
+        candidate = proposed if allowed is None or allowed(proposed) else None
+    erased = "".join(
+        corrected[index]
+        if index < immutable_length
+        or character.lower() == character.upper()
+        or character.isupper() == uppercase
+        else "?"
+        for index, character in enumerate(value)
+    )
+    return candidate, corrected, erased, corrected_prefix
+
+
 _PRIMARY_MS = (48, 74, 127)
 
 
 def _correction_plan(
-    profile: Profile,
+    hrp: str | Profile,
     byte_length: int | Literal["?"] | None,
     count: int,
     target: int | None,
@@ -288,7 +398,8 @@ def _correction_plan(
             frozenset(),
             True,
         )
-    if profile is Profile.CL:
+    normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
+    if normalized_hrp == Profile.CL.value:
         return (74,), frozenset((74,)), frozenset(), True
     if isinstance(byte_length, int):
         return (
@@ -299,23 +410,34 @@ def _correction_plan(
         )
     if byte_length == "?":
         return TEXT_LENGTHS, frozenset(TEXT_LENGTHS), frozenset(), True
-    nearest = min(_PRIMARY_MS, key=lambda length: abs(count - length))
-    targets = (nearest, *(length for length in TEXT_LENGTHS if length != nearest))
+    if normalized_hrp == Profile.MS.value:
+        nearest = min(_PRIMARY_MS, key=lambda length: abs(count - length))
+        targets = (nearest, *(length for length in TEXT_LENGTHS if length != nearest))
+        return targets, frozenset(targets), frozenset(), True
+    rules = _optional_profile_rules(normalized_hrp)
+    if rules is not None and hasattr(rules, "text_length"):
+        targets = (rules.text_length,)
+        return targets, frozenset(targets), frozenset(), True
+    targets = tuple(sorted({count + delta for delta in (*range(-4, 5), -8, 8)}))
     return targets, frozenset(targets), frozenset(), True
 
 
 def _correction_candidates(
     value: str,
-    profile: Profile,
+    profile: str | Profile,
     byte_length: int | Literal["?"] | None,
     immutable: str,
     excluded: tuple[str, ...] = (),
     *,
     target: int | None = None,
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
+    deadline: float | None = None,
+    capture_layers: list[tuple[int, int]] | None = None,
+    fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool, float | None, bool]:
     count = len(value.replace(" ", ""))
     targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
-    deadline = monotonic() + 10
+    deadline = monotonic() + 10 if deadline is None else deadline
     contexts = tuple(CorrectionContext(profile, length, immutable, excluded) for length in targets)
     from codex32.indel import _search_many
 
@@ -325,9 +447,14 @@ def _correction_candidates(
         primary=primary,
         reduced=reduced,
         deadline=deadline,
+        competitors=True,
+        allowed=allowed,
+        capture_layers=capture_layers,
     )
+    if allowed is not None:
+        candidates = tuple(candidate for candidate in candidates if allowed(candidate))
     results = (
-        _best(candidates, prefer_common=byte_length == "?")
+        _best(candidates, prefer_common=byte_length == "?", fingerprint_match=fingerprint_match)
         if complete
         else candidates
         if len(candidates) == 1 and not candidates[0].search_complete
@@ -336,26 +463,86 @@ def _correction_candidates(
     return results, complete, deadline, False
 
 
+def _fingerprint_matcher(
+    fingerprint: Callable[[MasterSeed], bytes] | None,
+) -> Callable[[CorrectionCandidate], bool | None] | None:
+    if fingerprint is None:
+        return None
+    from codex32.generation import _fingerprint_identifier
+
+    def matches(candidate: CorrectionCandidate) -> bool | None:
+        artifact = candidate.artifact
+        if not isinstance(artifact, MasterSeed) or artifact.header.threshold:
+            return None
+        try:
+            return _fingerprint_identifier(fingerprint(artifact)) == artifact.header.identifier
+        except CodexError:
+            return None
+
+    return matches
+
+
 def _suggestions(
     value: str,
     prefix: str,
-    profiles: tuple[Profile, ...],
+    profiles: tuple[Profile, ...] | None,
     accepted: list[Artifact],
+    *,
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
+    fingerprint: Callable[[MasterSeed], bytes] | None = None,
 ) -> tuple[CorrectionCandidate, ...]:
-    profile = next((p for p in (Profile.MS, Profile.CL) if value.lower().startswith(f"{p}1")), None)
-    if profile is None or profile not in profiles:
+    fingerprint_match = _fingerprint_matcher(fingerprint)
+    erased = value
+    if interpretation := _case_interpretation(value, prefix, profiles, allowed):
+        candidate, value, erased, prefix = interpretation
+        if candidate is not None:
+            return (candidate,)
+    separator = value.lower().rfind("1")
+    if separator <= 0:
+        return ()
+    hrp = value[:separator].lower()
+    rules = _optional_profile_rules(hrp)
+    profile = rules.profile if rules is not None else None
+    if profiles is not None and profile not in profiles:
         return ()
     excluded = tuple(artifact.header.index for artifact in accepted)
     target = len(accepted[0].text) if accepted else None
+    immutable = (
+        value[: len(prefix)]
+        if prefix and value.lower().startswith(prefix.lower())
+        else prefix or value[: separator + 1]
+    )
+    deadline = monotonic() + 10
+    capture_layers: list[tuple[int, int]] = []
     candidates = _correction_candidates(
-        value, profile, None, prefix or value[: len(profile.value) + 1], excluded, target=target
+        value,
+        hrp,
+        None,
+        immutable,
+        excluded,
+        target=target,
+        allowed=allowed,
+        deadline=deadline,
+        capture_layers=capture_layers,
+        fingerprint_match=fingerprint_match,
     )[0]
-    if candidates and not candidates[0].search_complete:
-        _stderr("Best-effort suggestion: the search is incomplete; uniqueness is not established.")
-    return candidates
+    if candidates or erased == value:
+        return candidates
+    return _correction_candidates(
+        erased,
+        hrp,
+        None,
+        immutable,
+        excluded,
+        target=target,
+        allowed=allowed,
+        deadline=deadline,
+        capture_layers=capture_layers,
+        fingerprint_match=fingerprint_match,
+    )[0]
 
 
-def _redirected(profiles: tuple[Profile, ...]) -> list[Artifact]:
+def _redirected(profiles: tuple[Profile, ...] | None) -> list[Artifact]:
     tokens = _stdin().split()
     if not tokens:
         raise InputError("No input was provided.")
@@ -375,48 +562,120 @@ _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
 }
 
 
+def _prefixed_input_error(
+    error: InputError,
+    value: str,
+    prefix: str,
+    accepted: list[Artifact],
+) -> str:
+    cause = error.__cause__
+    if isinstance(cause, InvalidThreshold) and prefix.lower() == "ms1":
+        found = value[len(prefix) : len(prefix) + 1].lower()
+        if found:
+            return f"After the prefilled {prefix}, enter a threshold of 0 or 2 through 9; found {found!r}."
+    if not isinstance(cause, InvalidChecksum):
+        return str(error)
+    if accepted:
+        if accepted[0].profile is not Profile.MS:
+            return str(error)
+        target = len(accepted[0].text)
+        difference = len(value) - target
+        if abs(difference) <= _MAX_CORRECTION_LENGTH_DELTA:
+            return str(error)
+        direction = "too long for" if difference > 0 else "short of"
+        return (
+            f"The string is {abs(difference)} characters {direction} the required {target}-character length."
+        )
+    if prefix.lower() != "ms1":
+        return str(error)
+    if min(abs(len(value) - target) for target in TEXT_LENGTHS) <= _MAX_CORRECTION_LENGTH_DELTA:
+        return str(error)
+    lengths = ", ".join(str(length) for length in TEXT_LENGTHS[:-1]) + f", or {TEXT_LENGTHS[-1]}"
+    return (
+        f"The string has {len(value)} characters; valid Bitcoin master-seed codex32 lengths are "
+        f"{lengths} characters."
+    )
+
+
 def _interactive(
-    *, basis: bool, one: bool, excluded_index: str | None, profiles: tuple[Profile, ...]
+    *,
+    basis: bool,
+    one: bool,
+    excluded_index: str | None,
+    profiles: tuple[Profile, ...] | None,
+    initial_prefix: str,
+    fingerprint: Callable[[MasterSeed], bytes] | None,
 ) -> list[Artifact]:
     accepted: list[Artifact] = []
-    prefix = "ms1" if profiles == (Profile.MS,) else ""
-    prefill, required = "", 1
+    prefix = initial_prefix
+    prefill, required, grouped_prefix = "", 1, False
+
+    def validate(artifact: Artifact) -> None:
+        if basis and artifact.header.index == excluded_index:
+            raise ExistingTargetIndex("That index was requested for the additional share.")
+        if not one and (accepted or isinstance(artifact, Share) or basis):
+            recovering = not basis and isinstance(artifact, Share)
+            validator = _validate_recovery_prefix if recovering else _validate_basis_prefix
+            validator([*accepted, artifact])
+
+    def allowed(candidate: CorrectionCandidate) -> bool:
+        try:
+            validate(candidate.artifact)
+        except CodexError:
+            return False
+        return True
+
     while len(accepted) < required:
         label = (
             "Enter a codex32 string"
             if not accepted
             else (f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}")
         )
-        displayed_prefix = prefix if accepted else ""
-        entered = _editable_input(f"{label}:\n> {displayed_prefix}", prefill)
+        entered = _editable_input(f"{label}:\n> {_display_prefix(prefix, grouped_prefix)}", prefill)
         value = "".join(entered.split())
-        complete_value = value if "1" in value else prefix + value
+        supplied_prefix = bool(prefix) and "1" not in value
+        complete_value = value if not supplied_prefix else _prefix_for_suffix(prefix, value) + value
         try:
             artifact = _parse(complete_value, profiles)
         except InputError as error:
-            candidates = () if one else _suggestions(complete_value, prefix, profiles, accepted)
+            candidates = (
+                ()
+                if one
+                else _suggestions(
+                    complete_value,
+                    prefix,
+                    profiles,
+                    accepted,
+                    allowed=allowed,
+                    fingerprint=fingerprint,
+                )
+            )
             confirmation = (
-                _confirm_correction(candidates[0].artifact, accepted, basis) if len(candidates) == 1 else None
+                _confirm_correction(candidates[0], accepted, basis, fingerprint)
+                if len(candidates) == 1
+                else None
             )
             if confirmation is False:
                 _stderr("")
                 prefill = _retry_text(entered, prefix)
+                prefix = _prefix_for_suffix(prefix, prefill)
                 continue
             if confirmation is True:
                 artifact = candidates[0].artifact
             else:
-                _stderr(f"Rejected: {error}")
+                message = (
+                    _prefixed_input_error(error, complete_value, prefix, accepted)
+                    if supplied_prefix
+                    else str(error)
+                )
+                _stderr(f"Rejected: {message}\n")
                 prefill = _retry_text(entered, prefix)
+                prefix = _prefix_for_suffix(prefix, prefill)
                 continue
         try:
-            if basis and artifact.header.index == excluded_index:
-                raise ExistingTargetIndex("That index was requested for the additional share.")
-            if not one and (accepted or isinstance(artifact, Share) or basis):
-                recovering = not basis and isinstance(artifact, Share)
-                validator = _validate_recovery_prefix if recovering else _validate_basis_prefix
-                validator([*accepted, artifact])
+            validate(artifact)
         except CodexError as error:
-            _stderr(f"Rejected: {_FRIENDLY_SET_ERRORS.get(type(error), str(error))}")
+            _stderr(f"Rejected: {_FRIENDLY_SET_ERRORS.get(type(error), str(error))}\n")
             duplicate = isinstance(error, (DuplicateShareIndex, ExistingTargetIndex))
             prefill = "" if duplicate else _retry_text(entered, prefix)
             continue
@@ -427,10 +686,9 @@ def _interactive(
             return [artifact]
         if not accepted:
             required = artifact.header.threshold
-            prefix = f"{artifact.profile.value}1{required}{artifact.header.identifier}"
-            if artifact.text.isupper():
-                prefix = prefix.upper()
         accepted.append(artifact)
+        prefix = _accepted_prefix(accepted)
+        grouped_prefix = len(entered.split()) > 1
         if len(accepted) < required:
             _stderr(f"{'String' if basis else 'Share'} {len(accepted)} of {required} accepted.")
     return accepted
@@ -441,10 +699,19 @@ def read_artifacts(
     basis: bool = False,
     one: bool = False,
     excluded_index: str | None = None,
-    profiles: tuple[Profile, ...] = tuple(Profile),
+    profiles: tuple[Profile, ...] | None = None,
+    initial_prefix: str = "",
+    fingerprint: Callable[[MasterSeed], bytes] | None = None,
 ) -> list[Artifact]:
     if not sys.stdin.isatty():
         return _redirected(profiles)
-    result = _interactive(basis=basis, one=one, excluded_index=excluded_index, profiles=profiles)
+    result = _interactive(
+        basis=basis,
+        one=one,
+        excluded_index=excluded_index,
+        profiles=profiles,
+        initial_prefix=initial_prefix,
+        fingerprint=fingerprint,
+    )
     _stderr("")
     return result

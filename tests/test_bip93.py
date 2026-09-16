@@ -125,7 +125,7 @@ def test_mixed_case_is_rejected(value: str) -> None:
         *INVALID_LENGTHS,
         *INVALID_SHARE_INDEX,
         *INVALID_THRESHOLD,
-        *INVALID_PREFIX_OR_SEPARATOR,
+        *INVALID_PREFIX_OR_SEPARATOR[:-2],
     ],
 )
 def test_all_official_invalid_ms_examples_are_rejected(value: str) -> None:
@@ -137,3 +137,10 @@ def test_registered_profile_reinterprets_official_wrong_application_example() ->
     # BIP93 lists this as invalid when an ms decoder was explicitly expected;
     # the fixed registry recognizes that it is instead a valid CL secret.
     assert isinstance(parse_codex32(INVALID_MASTER_SEED[0]), CoreLightningSecret)
+
+
+@pytest.mark.parametrize("value", INVALID_PREFIX_OR_SEPARATOR[-2:])
+def test_generic_parser_accepts_checksum_valid_non_ms_hrps(value: str) -> None:
+    artifact = parse_codex32(value)
+    assert artifact.hrp in {"m", "s"}
+    assert artifact.profile is None

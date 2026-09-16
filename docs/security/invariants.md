@@ -3,17 +3,26 @@
 These rules are mandatory. The [security model](model.md) defines their limits
 and evidence.
 
-1. Only parsers and profile factories validate text. Headers precede checksums;
-   application rules follow.
+1. Only parsers and profile factories validate text. Generic container and header
+   checks precede the checksum; registered application rules follow it. Unknown
+   HRPs remain opaque and never gain invented application semantics.
 2. APIs accept only immutable validated artifacts. Outputs are reparsed;
-   recovery and derivation reject incompatible shares.
+   recovery and derivation reject sets with mismatched normalized HRPs or shapes.
 3. Shared creation uses a separate OS-CSPRNG call for each random initial share,
    gated by confirmation. Input cannot replace entropy or the original secret.
 4. Wallet setup uses the original ceremony result or a validated recovered seed.
-5. Correction is bounded and fail-closed for incomplete required work. Interrupted
-   optional work may surface one best-so-far candidate with incomplete-search
-   status, never a uniqueness claim. Tied incomplete results give no suggestion;
-   suggestions are untrusted and require exact-string confirmation.
+5. Correction shares one mass bound and deadline across target lengths. The
+   public API fails closed on incomplete required work; CLI searches may return
+   one primary-best-so-far eligible candidate at the deadline. Incomplete
+   results retain machine-readable status but carry no CLI search warning or
+   uniqueness claim. Tied incomplete results give no suggestion; proposals
+   remain untrusted and require exact-string confirmation.
+   A syntactically present HRP and separator are immutable correction context;
+   registration never ranks or transforms one namespace into another.
+   Before any candidate metadata or residue addends are disclosed, a search
+   leaving fewer than five checksum-discrimination bits requires interactive
+   recovery confirmation for every HRP. The bound includes all admitted classes
+   ranked equal to or better than the candidate, independently of execution order.
 6. Secrets stay out of arguments, logs, ordinary output, and public transfers.
    Private descriptors exist only in Python memory and child stdin.
 7. Bitcoin Core chains are discovered before entropy or recovery input. The

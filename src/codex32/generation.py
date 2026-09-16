@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import secrets
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import Never, SupportsIndex, cast
 
+from codex32._bip32 import _valid_root
 from codex32.bech32 import CHARSET, _u5_to_chars, convertbits
 from codex32.bip93 import (
     IDX_SORT,
@@ -40,7 +41,6 @@ from codex32.profiles.ms32 import (
     DEFAULT_SEED_BYTES,
     SEED_BYTE_LENGTHS,
     MasterSeed,
-    _fingerprint_from_seed,
     _payload_length,
 )
 from codex32.profiles.ms32 import (
@@ -116,8 +116,12 @@ def _random_identifier() -> str:
     return _u5_to_chars(tuple(value & 31 for value in secrets.token_bytes(4)))
 
 
-def _fingerprint_identifier(seed: bytes) -> str:
-    return _u5_to_chars(tuple(convertbits(_fingerprint_from_seed(seed), 8, 5, pad=True)[:4]))
+def _fingerprint_identifier(fingerprint: bytes) -> str:
+    if not isinstance(fingerprint, bytes):
+        raise TypeError("fingerprint must be bytes")
+    if len(fingerprint) != 4:
+        raise ValueError("fingerprint must contain four bytes")
+    return _u5_to_chars(tuple(convertbits(fingerprint, 8, 5, pad=True)[:4]))
 
 
 def _random_share(profile: Profile, threshold: int, identifier: str, index: str, length: int) -> Share:
@@ -147,20 +151,24 @@ def generate_master_seed(
     *,
     byte_length: int | None = None,
     identifier: str | None = None,
+    fingerprint: Callable[[bytes], bytes] | None = None,
 ) -> MasterSeed:
     """Generate or encode one unshared ``ms`` secret."""
     supplied, length = _seed_input(seed_bytes, byte_length)
     if supplied is not None:
         identifier = _random_identifier() if identifier is None else _identifier(identifier)
         return MasterSeed.from_seed(supplied, identifier=identifier)
+    if identifier is None and fingerprint is None:
+        raise ValueError("fresh unshared master-seed generation requires a fingerprint provider or identifier")
+    selected_identifier = _identifier(identifier) if identifier is not None else None
     while True:
         fresh = secrets.token_bytes(length)
-        try:
-            default_identifier = _fingerprint_identifier(fresh)
-        except CodexError:
+        if not _valid_root(fresh):
             continue
-        identifier = default_identifier if identifier is None else _identifier(identifier)
-        return MasterSeed.from_seed(fresh, identifier=identifier)
+        if selected_identifier is not None:
+            return MasterSeed.from_seed(fresh, identifier=selected_identifier)
+        assert fingerprint is not None
+        return MasterSeed.from_seed(fresh, identifier=_fingerprint_identifier(fingerprint(fresh)))
 
 
 def generate_core_lightning_secret(
@@ -289,6 +297,7 @@ class CreationCeremony:
             if not random_identifier:
                 raise HeaderCollision("new share set must use a different set header")
             identifier = _random_identifier()
+        assert secret.profile is not None
         return cls._start(
             secret.profile,
             len(secret.payload_symbols),
@@ -302,11 +311,7 @@ class CreationCeremony:
     def _candidate_is_accepted(self, secret: MasterSeed | CoreLightningSecret) -> bool:
         if isinstance(secret, CoreLightningSecret):
             return _cl_padding(secret)
-        try:
-            _fingerprint_from_seed(secret.seed_bytes)
-        except CodexError:
-            return False
-        return _ms_padding(secret)
+        return _valid_root(secret.seed_bytes) and _ms_padding(secret)
 
     def next_share(self) -> Share:
         """Generate or derive the next card after the previous card is confirmed."""

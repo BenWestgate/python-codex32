@@ -28,14 +28,13 @@ from codex32.bech32 import (
 from codex32.bip93 import _checksum_for_encoded_length
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import (
+    InvalidBip39Checksum,
     InvalidCase,
     InvalidCharacter,
     InvalidChecksum,
     InvalidLength,
     InvalidThreshold,
     MissingSeparator,
-    UnknownProfile,
-    UnsupportedOperation,
 )
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, TEXT_LENGTHS
 
@@ -167,8 +166,9 @@ def test_expanded_codeword_upper_bound() -> None:
 
 def test_checksum_is_verified_before_unknown_hrp_dispatch() -> None:
     valid_generic = _oracle_encode("zz", "0tests" + "q" * 26)
-    with pytest.raises(UnknownProfile):
-        parse_codex32(valid_generic)
+    artifact = parse_codex32(valid_generic)
+    assert artifact.hrp == "zz"
+    assert artifact.profile is None
     with pytest.raises(InvalidChecksum):
         parse_codex32("zz10tests" + "q" * 39)
 
@@ -219,7 +219,7 @@ def test_profile_completion_capabilities() -> None:
     share = parse_codex32(VECTOR_2["share_A"])
     assert isinstance(share, Share)
     assert complete_checksum(share.text[:-13]).text == share.text
-    with pytest.raises(UnsupportedOperation):
+    with pytest.raises(InvalidBip39Checksum):
         complete_checksum("bip39_12w10tests" + "q" * 27)
     with pytest.raises(InvalidLength):
         complete_checksum("cl10testsq")

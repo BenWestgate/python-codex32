@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from bip32 import BIP32 as BIP32Node  # type: ignore[import-untyped]
-from bip32 import InvalidInputError
-
 from codex32.bech32 import convertbits
 from codex32.bip93 import Header, Secret, _from_parts
 from codex32.checksums import _crc_pad
-from codex32.errors import CodexError, InvalidLength
+from codex32.errors import InvalidLength
 from codex32.profiles import Profile
 
 _SIZES = ((16, 26, 48), (20, 32, 54), (24, 39, 61), (28, 45, 67), (32, 52, 74), (64, 103, 127))
@@ -37,17 +32,6 @@ def _payload_padding(secret: MasterSeed) -> int:
 
 def _has_generation_padding(secret: MasterSeed) -> bool:
     return _payload_padding(secret) == _crc_pad(secret.seed_bytes)
-
-
-def _bip32_node(seed: bytes, *, testnet: bool = False) -> Any:
-    try:
-        return BIP32Node.from_seed(seed, "test" if testnet else "main")
-    except InvalidInputError as error:
-        raise CodexError("master seed does not form a valid BIP32 root") from error
-
-
-def _fingerprint_from_seed(seed: bytes) -> bytes:
-    return _bip32_node(seed).get_fingerprint()  # type: ignore[no-any-return]
 
 
 class MasterSeed(Secret):

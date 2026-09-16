@@ -47,7 +47,7 @@ from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles import Profile, _profile_rules
+from codex32.profiles import Profile, _optional_profile_rules
 from codex32.profiles.ms32 import MasterSeed, _has_generation_padding
 
 
@@ -57,12 +57,27 @@ class WorksheetCorrection:
     addend: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class CorrectionContext:
-    profile: Profile
+    hrp: str
     expected_length: int | None = None
     immutable_prefix: str | None = None
     excluded_indices: tuple[str, ...] = ()
+
+    def __init__(
+        self,
+        hrp: str | Profile,
+        expected_length: int | None = None,
+        immutable_prefix: str | None = None,
+        excluded_indices: tuple[str, ...] = (),
+    ) -> None:
+        if not isinstance(hrp, (str, Profile)):
+            raise TypeError("hrp must be str or Profile")
+        normalized = hrp.value if isinstance(hrp, Profile) else hrp.lower()
+        object.__setattr__(self, "hrp", normalized)
+        object.__setattr__(self, "expected_length", expected_length)
+        object.__setattr__(self, "immutable_prefix", immutable_prefix)
+        object.__setattr__(self, "excluded_indices", excluded_indices)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +97,23 @@ class CorrectionCandidate:
     addend_hamming_weight: int
     crc_padding_match: bool | None
     search_complete: bool = True
+    cumulative_capture_volume: int = 1
+    capture_space_bits: int = 0
+
+    @property
+    def low_checksum_discrimination(self) -> bool:
+        return _low_discrimination(self.cumulative_capture_volume, self.capture_space_bits)
+
+
+def _low_discrimination(volume: int, bits: int) -> bool:
+    return 32 * volume > 1 << bits
+
+
+def _capture_mass(layers: Sequence[tuple[int, int]], rank: int) -> tuple[int, int]:
+    """Normalize all admitted equal-or-better classes, including unsearched work."""
+    included = tuple((volume, bits) for volume, bits in layers if volume <= rank)
+    bits = max((bits for _, bits in included), default=0)
+    return sum(volume << (bits - width) for volume, width in included), bits
 
 
 # --- Direct P70-derived field, polynomial, BCH, and linear algebra. ---
@@ -490,29 +522,31 @@ class _FixedCorrector:
         "erasure_indices",
         "erasure_products",
         "erasure_state",
+        "hrp",
         "max_substitutions",
         "mutable_start",
         "prefix",
-        "profile",
         "spec",
         "uppercase",
     )
 
     def __init__(
         self,
-        profile: Profile,
+        hrp: str | Profile,
         body_length: int,
         uppercase: bool,
         max_substitutions: int | None,
         mutable_start: int = 0,
     ) -> None:
-        profile_rules = _profile_rules(profile)
-        checksum = _checksum_for_encoded_length(profile.value, body_length)
-        profile_rules.validate_payload_length(body_length - checksum.length - 6)
-        self.profile = profile
-        self.prefix = f"{profile.value}1"
+        normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
+        profile_rules = _optional_profile_rules(normalized_hrp)
+        checksum = _checksum_for_encoded_length(normalized_hrp, body_length)
+        if profile_rules is not None:
+            profile_rules.validate_payload_length(body_length - checksum.length - 6)
+        self.hrp = normalized_hrp
+        self.prefix = f"{normalized_hrp}1"
         self.spec = _spec_for_checksum(checksum)
-        self.alignment = _syndrome_alignment(self.spec, profile.value, body_length)
+        self.alignment = _syndrome_alignment(self.spec, normalized_hrp, body_length)
         self.uppercase = uppercase
         self.max_substitutions = max_substitutions
         self.mutable_start = mutable_start
@@ -540,7 +574,7 @@ class _FixedCorrector:
             self.erasure_products = None
         repair = _repair_body(
             self.spec,
-            self.profile.value,
+            self.hrp,
             values,
             self.max_substitutions,
             self.alignment,
@@ -599,6 +633,8 @@ class _FixedCorrector:
                 if edit.kind == "substitution"
             ),
             (_has_generation_padding(artifact) if isinstance(artifact, MasterSeed) else None),
+            cumulative_capture_volume=_capture_volume(len(mutable_values), erasure_count, substitutions),
+            capture_space_bits=5 * len(self.spec.generator),
         )
 
 
@@ -680,19 +716,20 @@ def _corrections_reach_target(spec: _Spec, residue: list[int], corrections: list
 def _correct_fixed(
     damaged_text: str,
     *,
-    suspected_profile: Profile,
+    suspected_profile: str | Profile,
     max_substitutions: int | None = None,
     immutable_prefix: str | None = None,
 ) -> CorrectionCandidate | None:
-    if not isinstance(suspected_profile, Profile):
-        raise TypeError("suspected_profile must be Profile")
+    if not isinstance(suspected_profile, (str, Profile)):
+        raise TypeError("suspected_profile must be str or Profile")
+    hrp = suspected_profile.value if isinstance(suspected_profile, Profile) else suspected_profile.lower()
     try:
         uppercase = _validate_single_case_ascii(damaged_text)
     except TypeError:
         raise
     except CodexError:
         return None
-    prefix = f"{suspected_profile.value}1"
+    prefix = f"{hrp}1"
     locked = prefix if immutable_prefix is None else immutable_prefix
     matches = (
         damaged_text.lower().startswith(prefix)
@@ -705,7 +742,7 @@ def _correct_fixed(
     body = [CHARSET.find(character.lower()) for character in body_text]
     try:
         solver = _FixedCorrector(
-            suspected_profile,
+            hrp,
             len(body),
             uppercase,
             max_substitutions,
@@ -721,26 +758,35 @@ def _correct_fixed(
 
 def _validate_context(context: CorrectionContext) -> None:
     try:
-        if not isinstance(context.profile, Profile):
-            raise TypeError("profile must be Profile")
+        if not isinstance(context.hrp, str) or not context.hrp:
+            raise TypeError("hrp must be a non-empty string")
+        _validate_single_case_ascii(context.hrp)
+        if context.hrp.lower() != context.hrp:
+            raise ValueError("hrp must be a normalized application prefix")
         length = context.expected_length
         if length is not None:
             if isinstance(length, bool) or not isinstance(length, int):
                 raise TypeError("expected_length must be an integer or None")
-            body_length = length - len(context.profile.value) - 1
-            checksum = _checksum_for_encoded_length(context.profile.value, body_length)
-            _profile_rules(context.profile).validate_payload_length(body_length - checksum.length - 6)
+            if length < 21:
+                raise ValueError("expected_length must permit the generic codex32 minimum length")
+            body_length = length - len(context.hrp) - 1
+            checksum = _checksum_for_encoded_length(context.hrp, body_length)
+            if body_length < checksum.length + 6:
+                raise ValueError("expected_length must contain a header and checksum")
+            rules = _optional_profile_rules(context.hrp)
+            if rules is not None:
+                rules.validate_payload_length(body_length - checksum.length - 6)
         prefix = context.immutable_prefix
         if prefix is not None:
             if not isinstance(prefix, str):
                 raise TypeError("immutable_prefix must be str or None")
             _validate_single_case_ascii(prefix)
-            base = f"{context.profile.value}1"
+            base = f"{context.hrp}1"
             if not prefix.lower().startswith(base) or len(prefix) not in (
                 len(base),
                 len(base) + 5,
             ):
-                raise ValueError("immutable_prefix must be the profile prefix with an optional header")
+                raise ValueError("immutable_prefix must be the HRP prefix with an optional header")
             if len(prefix) > len(base):
                 header = prefix[len(base) :]
                 Header(int(header[0]), header[1:], "s")
@@ -766,23 +812,10 @@ def _allowed(context: CorrectionContext, candidate: CorrectionCandidate) -> bool
     )
 
 
-def _fingerprint_match(candidate: CorrectionCandidate) -> bool | None:
-    artifact = candidate.artifact
-    if not isinstance(artifact, MasterSeed) or artifact.header.threshold:
-        return None
-    try:
-        from codex32.generation import _fingerprint_identifier
-
-        return _fingerprint_identifier(artifact.seed_bytes) == artifact.header.identifier
-    except CodexError:
-        return None
-
-
 def _candidate_order(candidate: CorrectionCandidate) -> tuple[object, ...]:
     return (
         candidate.addend_hamming_weight,
         candidate.crc_padding_match is not True,
-        _fingerprint_match(candidate) is not True,
         candidate.artifact.text.lower(),
         tuple((edit.reverse_index, edit.kind, edit.observed, edit.replacement) for edit in candidate.edits),
     )
@@ -806,8 +839,9 @@ def _best(
     candidates: Sequence[CorrectionCandidate],
     *,
     prefer_common: bool = False,
+    fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
 ) -> tuple[CorrectionCandidate, ...]:
-    """Apply the CLI-only Hamming, CRC, and fingerprint tie breakers."""
+    """Apply CLI-only Hamming and CRC tie breakers plus an optional wallet hint."""
     tied = list(_primary(candidates))
     if not tied:
         return ()
@@ -815,7 +849,12 @@ def _best(
         tied = [item for item in tied if len(item.artifact.text) in (48, 74)]
     hamming = min(item.addend_hamming_weight for item in tied)
     tied = [item for item in tied if item.addend_hamming_weight == hamming]
-    for hint in (lambda item: item.crc_padding_match, _fingerprint_match):
+    hints: tuple[Callable[[CorrectionCandidate], bool | None], ...] = (
+        (lambda item: item.crc_padding_match),
+    )
+    if fingerprint_match is not None:
+        hints += (fingerprint_match,)
+    for hint in hints:
         if any(hint(item) is True for item in tied):
             tied = [item for item in tied if hint(item) is True]
     return tuple(sorted(tied, key=_candidate_order))
@@ -898,3 +937,19 @@ def correct_worksheet_residue(
     if result is None:
         return None
     return tuple(WorksheetCorrection(index, CHARSET[addend]) for index, addend in sorted(result))
+
+
+def _residue_low_discrimination(
+    residue: str, erasure_indices: Sequence[int], corrections: Sequence[WorksheetCorrection]
+) -> bool:
+    """Account for the residue decoder's full period without inventing a word length."""
+    spec = _SHORT_SPEC if len(residue) == 13 else _LONG_SPEC
+    erased = frozenset(erasure_indices)
+    substitutions = sum(item.reverse_index not in erased and item.addend != "q" for item in corrections)
+    rank = _capture_volume(spec.period, len(erased), substitutions)
+    capacities = range((8 - len(erased)) // 2 + 1) if len(erased) <= 8 else range(1)
+    bits = 5 * len(spec.generator)
+    volume, _ = _capture_mass(
+        tuple((_capture_volume(spec.period, len(erased), count), bits) for count in capacities), rank
+    )
+    return _low_discrimination(volume, bits)

@@ -23,9 +23,9 @@ from codex32.errors import (
     InvalidShareSet,
     InvalidTargetIndex,
     InvalidThreshold,
+    MismatchedHrp,
     MismatchedIdentifier,
     MismatchedPayloadLength,
-    MismatchedProfile,
     MismatchedThreshold,
     SecretInRecoverySet,
     UnsupportedOperation,
@@ -33,7 +33,7 @@ from codex32.errors import (
 )
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles import Profile, _profile_rules, _ProfileRules
+from codex32.profiles import Profile, _optional_profile_rules, _profile_rules, _ProfileRules
 
 IDX_SORT = "sacdefghjklmnpqrtuvwxyz023456789"
 _CONSTRUCTION_TOKEN = object()
@@ -92,7 +92,7 @@ def _checksum_for_encoded_length(hrp: str, encoded_length: int) -> _Checksum:
     raise InvalidLength("expanded codex32 codeword exceeds 1023 symbols")
 
 
-def _decode_codex32(text: str) -> tuple[_ProfileRules, tuple[int, ...], _Checksum]:
+def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ...], _Checksum]:
     hrp, encoded = bech32_decode(text)
     if len(hrp) + 1 + len(encoded) < 21:
         raise InvalidLength("codex32 string must contain at least 21 characters")
@@ -101,24 +101,27 @@ def _decode_codex32(text: str) -> tuple[_ProfileRules, tuple[int, ...], _Checksu
     Header._from_symbols(body[:6])
     if not bech32_verify_checksum(hrp, encoded, checksum):
         raise InvalidChecksum(f"invalid {checksum.kind} checksum")
-    profile_rules = _profile_rules(hrp)
-    profile_rules.validate_text_length(len(text))
-    profile_rules.validate_payload_length(len(body) - 6)
-    return profile_rules, tuple(encoded), checksum
+    profile_rules = _optional_profile_rules(hrp)
+    if profile_rules is not None:
+        profile_rules.validate_text_length(len(text))
+        profile_rules.validate_payload_length(len(body) - 6)
+    return hrp, profile_rules, tuple(encoded), checksum
 
 
 @dataclass(frozen=True, slots=True, init=False)
 class _Artifact:
     text: str
     header: Header
-    profile: Profile
+    hrp: str
+    profile: Profile | None
     payload_symbols: tuple[int, ...]
 
     def __init__(
         self,
         text: str,
         header: Header,
-        profile: Profile,
+        hrp: str,
+        profile: Profile | None,
         payload_symbols: tuple[int, ...],
         *,
         _token: object,
@@ -127,6 +130,7 @@ class _Artifact:
             raise TypeError("codex32 artifacts must be created by the public factories")
         object.__setattr__(self, "text", text)
         object.__setattr__(self, "header", header)
+        object.__setattr__(self, "hrp", hrp)
         object.__setattr__(self, "profile", profile)
         object.__setattr__(self, "payload_symbols", payload_symbols)
 
@@ -151,48 +155,64 @@ def _validate_payload(profile: Profile, header: Header, payload: tuple[int, ...]
     rules.validate_payload(payload, header.index)
 
 
-def _artifact(text: str, profile: Profile, header: Header, payload: tuple[int, ...]) -> Share | Secret:
-    artifact_type = Share if header.index != "s" else _profile_rules(profile).secret_type
-    return artifact_type(text, header, profile, payload, _token=_CONSTRUCTION_TOKEN)
+def _artifact(
+    text: str,
+    hrp: str,
+    profile: Profile | None,
+    header: Header,
+    payload: tuple[int, ...],
+) -> Share | Secret:
+    rules = _optional_profile_rules(hrp)
+    artifact_type = Share if header.index != "s" else (rules.secret_type if rules is not None else Secret)
+    return artifact_type(text, header, hrp, profile, payload, _token=_CONSTRUCTION_TOKEN)
 
 
 def parse_codex32(text: str) -> Share | Secret:
-    """Validate one registered codex32 string and return an immutable artifact."""
-    profile_rules, encoded, checksum = _decode_codex32(text)
+    """Validate one codex32 string and return an immutable artifact."""
+    hrp, profile_rules, encoded, checksum = _decode_codex32(text)
     body = tuple(encoded[: -checksum.length])
     header = Header._from_symbols(body[:6])
     payload = body[6:]
-    _validate_payload(profile_rules.profile, header, payload)
-    return _artifact(text, profile_rules.profile, header, payload)
+    profile = profile_rules.profile if profile_rules is not None else None
+    if profile is not None:
+        _validate_payload(profile, header, payload)
+    return _artifact(text, hrp, profile, header, payload)
 
 
 def _from_parts(
-    profile: Profile,
+    hrp: str | Profile,
     header: Header,
     payload: tuple[int, ...],
     *,
     uppercase: bool = False,
 ) -> Share | Secret:
-    _validate_payload(profile, header, payload)
+    normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
+    rules = _optional_profile_rules(normalized_hrp)
+    if rules is not None:
+        _validate_payload(rules.profile, header, payload)
     body = [*header._symbols, *payload]
-    expanded_body_length = 2 * len(profile.value) + 1 + len(body)
+    expanded_body_length = 2 * len(normalized_hrp) + 1 + len(body)
     checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
-    text = bech32_encode(profile.value, body, checksum)
+    # Validate the completed generic codeword, including the 94/95 gap.
+    _checksum_for_encoded_length(normalized_hrp, len(body) + checksum.length)
+    text = bech32_encode(normalized_hrp, body, checksum)
     return parse_codex32(text.upper() if uppercase else text)
 
 
 def complete_checksum(unchecksummed_text: str) -> Share | Secret:
     """Add the checksum. This does not make arbitrary input safe to use as a wallet seed."""
     hrp, body_values = bech32_decode(unchecksummed_text)
-    profile_rules = _profile_rules(hrp)
-    if profile_rules.completion_error is not None:
+    profile_rules = _optional_profile_rules(hrp)
+    if profile_rules is not None and profile_rules.completion_error is not None:
         raise UnsupportedOperation(profile_rules.completion_error)
     body = tuple(body_values)
-    profile_rules.validate_payload_length(len(body) - 6)
+    if profile_rules is not None:
+        profile_rules.validate_payload_length(len(body) - 6)
     header = Header._from_symbols(body[:6])
     payload = body[6:]
-    _validate_payload(profile_rules.profile, header, payload)
-    return _from_parts(profile_rules.profile, header, payload, uppercase=unchecksummed_text.isupper())
+    if profile_rules is not None:
+        _validate_payload(profile_rules.profile, header, payload)
+    return _from_parts(hrp, header, payload, uppercase=unchecksummed_text.isupper())
 
 
 def _lagrange_weights(points: tuple[int, ...], target: int) -> tuple[int, ...]:
@@ -211,7 +231,8 @@ def _lagrange_weights(points: tuple[int, ...], target: int) -> tuple[int, ...]:
 @dataclass(frozen=True, slots=True)
 class _ShareSet:
     artifacts: tuple[Share | Secret, ...]
-    profile: Profile
+    hrp: str
+    profile: Profile | None
     threshold: int
     identifier: str
     tails: tuple[tuple[int, ...], ...]
@@ -243,9 +264,10 @@ def _bounded_artifacts(
 
 
 def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]:
-    profile_rules, encoded, checksum = _decode_codex32(artifact.text)
-    if profile_rules.profile is not artifact.profile:
-        raise InvalidShareSet("artifact text and validated profile disagree")
+    hrp, profile_rules, encoded, checksum = _decode_codex32(artifact.text)
+    profile = profile_rules.profile if profile_rules is not None else None
+    if hrp != artifact.hrp or profile is not artifact.profile:
+        raise InvalidShareSet("artifact text and validated application prefix disagree")
     return tuple(encoded[6:]), checksum.length, len(encoded)
 
 
@@ -261,8 +283,8 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     tails = [first_tail]
     indices = [first.header.index]
     for item in copied[1:]:
-        if item.profile is not first.profile:
-            raise MismatchedProfile(f"{first.profile.value} and {item.profile.value} cannot be combined")
+        if item.hrp != first.hrp:
+            raise MismatchedHrp(f"{first.hrp} and {item.hrp} cannot be combined")
         if item.header.threshold != threshold:
             raise MismatchedThreshold("share thresholds do not match")
         if item.header.identifier != first.header.identifier:
@@ -281,6 +303,7 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
         raise DuplicateShareIndex("share indices must be distinct")
     return _ShareSet(
         copied,
+        first.hrp,
         first.profile,
         threshold,
         first.header.identifier,
@@ -309,7 +332,7 @@ def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
             value ^= _gf32_multiply(weight, row[column])
         result.append(value)
     header = Header(share_set.threshold, share_set.identifier, target)
-    text = f"{share_set.profile.value}1{_u5_to_chars((*header._symbols, *result))}"
+    text = f"{share_set.hrp}1{_u5_to_chars((*header._symbols, *result))}"
     return parse_codex32(text.upper() if share_set.uppercase else text)
 
 
@@ -339,8 +362,8 @@ def derive_share(basis: Sequence[Share | Secret], fresh_index: str) -> Share:
     target = _normalize_target(fresh_index, label="fresh_index")
     if target in share_set.indices:
         raise ExistingTargetIndex(f"Choose a different share index; {target.upper()} was already supplied.")
-    profile_rules = _profile_rules(share_set.profile)
-    if profile_rules.basis_secret_type is not None:
+    profile_rules = _optional_profile_rules(share_set.hrp)
+    if profile_rules is not None and profile_rules.basis_secret_type is not None:
         implied_secret = _interpolate_tail(share_set, "s")
         if not isinstance(implied_secret, Secret):
             raise InvalidShareSet("interpolation did not produce a secret")

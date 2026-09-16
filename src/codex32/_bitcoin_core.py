@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 from time import sleep
 from typing import Literal
 
+from codex32._bip32 import _master_xprv_from_seed
 from codex32.profiles.ms32 import MasterSeed
 from codex32.wallet import core_descriptors
 
@@ -23,6 +25,12 @@ _CHAINS = (
     ("signet", "signet"),
     ("regtest", "regtest"),
 )
+
+_ORIGIN_KEY = re.compile(
+    r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]"
+    r"(?P<xpub>(?:xpub|tpub)[1-9A-HJ-NP-Za-km-z]+)"
+)
+_PRIVATE_MARKERS = ("xprv", "tprv")
 
 
 @dataclass(frozen=True)
@@ -112,6 +120,76 @@ class BitcoinCore:
         if not isinstance(result, list) or not all(isinstance(name, str) for name in result):
             raise BitcoinCoreError("Unexpected Bitcoin Core wallet list.")
         return tuple(result)
+
+    def _normalized_descriptor(self, descriptor: str) -> str:
+        result = self._rpc("getdescriptorinfo", stdin=descriptor + "\n")
+        normalized = result.get("descriptor") if isinstance(result, dict) else None
+        if not isinstance(normalized, str) or any(marker in normalized for marker in _PRIVATE_MARKERS):
+            raise BitcoinCoreError("Bitcoin Core did not return the expected public descriptor.")
+        return normalized
+
+    def _normalized_key(self, seed: bytes, path: str) -> tuple[bytes, str]:
+        xprv = _master_xprv_from_seed(seed, testnet=self.chain != "main")
+        normalized = self._normalized_descriptor(f"wpkh({xprv}{path})")
+        match = _ORIGIN_KEY.search(normalized)
+        if match is None:
+            raise BitcoinCoreError("Bitcoin Core did not return the expected key origin.")
+        origin_path = match.group("path").replace("'", "h")
+        if origin_path != path:
+            raise BitcoinCoreError("Bitcoin Core returned an unexpected derivation path.")
+        return bytes.fromhex(match.group("fingerprint")), f"[{match.group('fingerprint')}{origin_path}]{match.group('xpub')}"
+
+    def fingerprint_seed(self, seed: bytes) -> bytes:
+        """Return the BIP32 master fingerprint using Bitcoin Core out of process."""
+        fingerprint, _key = self._normalized_key(seed, "/0h")
+        return fingerprint
+
+    def fingerprint(self, secret: MasterSeed) -> bytes:
+        """Return the BIP32 master fingerprint for a validated master seed."""
+        if not isinstance(secret, MasterSeed):
+            raise TypeError("wallet operations accept only MasterSeed")
+        return self.fingerprint_seed(secret.seed_bytes)
+
+    def multisig_account_xpub(self, secret: MasterSeed, *, account: int = 0) -> str:
+        """Return the BIP48 native-SegWit account xpub with Core-derived origin."""
+        if not isinstance(secret, MasterSeed):
+            raise TypeError("wallet operations accept only MasterSeed")
+        if isinstance(account, bool) or not isinstance(account, int) or not 0 <= account < 2**31:
+            raise ValueError("account must be an integer from 0 through 2^31-1")
+        path = f"/48h/{int(self.chain != 'main')}h/{account}h/2h"
+        _fingerprint, key = self._normalized_key(secret.seed_bytes, path)
+        return key
+
+    def public_descriptors(
+        self,
+        secret: MasterSeed,
+        *,
+        account: int = 0,
+        timestamp: int | Literal["now"] = 0,
+    ) -> tuple[dict[str, object], ...]:
+        """Normalize BIP44/49/84/86 private descriptors to public descriptors in Core."""
+        private = core_descriptors(
+            secret,
+            account=account,
+            testnet=self.chain != "main",
+            private=True,
+            timestamp=timestamp,
+        )
+        records: list[dict[str, object]] = []
+        expected_fingerprint: bytes | None = None
+        for purpose, record in zip((44, 49, 84, 86), private, strict=True):
+            normalized = self._normalized_descriptor(str(record["desc"]).split("#", 1)[0])
+            match = _ORIGIN_KEY.search(normalized)
+            expected_path = f"/{purpose}h/{int(self.chain != 'main')}h/{account}h"
+            if match is None or match.group("path").replace("'", "h") != expected_path:
+                raise BitcoinCoreError("Bitcoin Core returned an unexpected descriptor key origin.")
+            fingerprint = bytes.fromhex(match.group("fingerprint"))
+            if expected_fingerprint is None:
+                expected_fingerprint = fingerprint
+            elif fingerprint != expected_fingerprint:
+                raise BitcoinCoreError("Bitcoin Core returned inconsistent master fingerprints.")
+            records.append({"desc": normalized, "active": True, "timestamp": timestamp})
+        return tuple(records)
 
     def _target(self, name: str, *, private: bool = True) -> tuple[bool, bool] | None:
         listing, info = self._rpc("listdescriptors", wallet=name), self._rpc("getwalletinfo", wallet=name)
@@ -209,6 +287,7 @@ class BitcoinCore:
             try:
                 public = core_descriptors(
                     secret,
+                    integration=self,
                     account=account,
                     testnet=self.chain != "main",
                     timestamp=timestamp,

@@ -1,6 +1,6 @@
 """Enumerate bounded alignments; correction.py performs every symbol repair."""
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from itertools import combinations, groupby
 from math import comb, factorial
@@ -14,6 +14,7 @@ from codex32.correction import (
     CorrectionContext,
     CorrectionEdit,
     _allowed,
+    _capture_mass,
     _capture_volume,
     _correct_fixed,
     _FixedCorrector,
@@ -308,8 +309,8 @@ def _prepare(
         }
         for shape in shapes
     }
-    base = len(context.profile.value) + 1
-    degree = _checksum_for_encoded_length(context.profile.value, target - base).length
+    base = len(context.hrp) + 1
+    degree = _checksum_for_encoded_length(context.hrp, target - base).length
     return _Target(context, text, immutable, target, base, degree, counts)
 
 
@@ -413,7 +414,7 @@ def _normalize(context: CorrectionContext, damaged_text: str) -> tuple[str, int]
         _validate_single_case_ascii(text)
     except CodexError:
         return None
-    prefix = context.immutable_prefix or f"{context.profile.value}1"
+    prefix = context.immutable_prefix or f"{context.hrp}1"
     matches = text.startswith(prefix) if context.immutable_prefix else text.lower().startswith(prefix)
     if not matches or not target - 8 <= len(text) <= target + 8:
         return None
@@ -431,25 +432,40 @@ def _keep(results: dict[str, CorrectionCandidate], candidate: CorrectionCandidat
         results[key] = candidate
 
 
+def _search_fixed(
+    state: _Target,
+    frontier: dict[tuple[int, _StructuralClass, int, int], int],
+    results: dict[str, CorrectionCandidate],
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
+) -> CorrectionCandidate | None:
+    fixed = _correct_fixed(
+        state.text,
+        suspected_profile=state.context.hrp,
+        immutable_prefix=state.context.immutable_prefix,
+    )
+    if fixed is None or not _allowed(state.context, fixed) or allowed is not None and not allowed(fixed):
+        return None
+    substitutions = sum(edit.kind == "substitution" for edit in fixed.edits)
+    if (state.target, _FIXED, fixed.erasures_filled, substitutions) in frontier:
+        _keep(results, fixed)
+    # Retain the witness even if its fixed explanation was not admitted: a
+    # cheaper structural explanation may still qualify under the same ledger.
+    return fixed
+
+
 def _search_target(
     state: _Target,
     frontier: dict[tuple[int, _StructuralClass, int, int], int],
     results: dict[str, CorrectionCandidate],
     deadline: float | None,
+    *,
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
+    views: Iterator[_View] | None = None,
 ) -> bool:
     context, text = state.context, state.text
     excluded = frozenset(CHARSET.index(value.lower()) for value in context.excluded_indices)
     if _FIXED in state.counts:
-        fixed = _correct_fixed(
-            text,
-            suspected_profile=context.profile,
-            immutable_prefix=context.immutable_prefix,
-        )
-        if fixed is not None and _allowed(context, fixed):
-            substitutions = sum(edit.kind == "substitution" for edit in fixed.edits)
-            key = (state.target, _FIXED, fixed.erasures_filled, substitutions)
-            if key in frontier:
-                _keep(results, fixed)
+        _search_fixed(state, frontier, results, allowed)
     layers = sorted(
         (
             (volume, shape, remaining, substitutions)
@@ -470,7 +486,7 @@ def _search_target(
             return False
         if limit not in solvers:
             solvers[limit] = _FixedCorrector(
-                context.profile,
+                context.hrp,
                 state.target - state.base,
                 text.isupper(),
                 limit,
@@ -479,7 +495,10 @@ def _search_target(
         solver = solvers[limit]
         if incremental is None:
             incremental = _IncrementalSyndromes(solver.alignment, source)
-        for number, view in enumerate(_views(text, state.target, shape, state.immutable, state.base)):
+        alignments = (
+            _views(text, state.target, shape, state.immutable, state.base) if views is None else views
+        )
+        for number, view in enumerate(alignments):
             if number % 32 == 0 and deadline is not None and monotonic() >= deadline:
                 return False
             unknown = tuple(view.unknown_positions(explicit))
@@ -493,7 +512,7 @@ def _search_target(
                 erasures,
                 incremental.packed(view),
             )
-            if fixed is None or not _allowed(context, fixed):
+            if fixed is None or not _allowed(context, fixed) or allowed is not None and not allowed(fixed):
                 continue
             substitutions = sum(edit.kind == "substitution" for edit in fixed.edits)
             key = (state.target, shape, remaining, substitutions)
@@ -541,6 +560,9 @@ def _search_many(
     reduced: frozenset[int] = frozenset(),
     deadline: float | None = None,
     max_character_depth: int = 4,
+    competitors: bool = False,
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
+    capture_layers: list[tuple[int, int]] | None = None,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
     deadline = monotonic() + 10 if deadline is None else deadline
     states = tuple(
@@ -556,6 +578,23 @@ def _search_many(
         is not None
     )
     frontier = _frontier(states, primary)
+    layers_accounted = [] if capture_layers is None else capture_layers
+    widths = {state.target: 5 * state.degree for state in states}
+    layers_accounted.extend((volume, widths[key[0]]) for key, volume in frontier.items())
+
+    def finish(
+        candidates: tuple[CorrectionCandidate, ...], complete: bool
+    ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
+        annotated = []
+        for candidate in candidates:
+            volume, bits = _capture_mass(layers_accounted, candidate.capture_volume)
+            annotated.append(replace(candidate, cumulative_capture_volume=volume, capture_space_bits=bits))
+        return tuple(annotated), complete
+
+    if competitors:
+        from codex32._competitors import _search_competitors
+
+        return finish(*_search_competitors(states, frontier, deadline, allowed))
     results: dict[str, CorrectionCandidate] = {}
     # One global admission ledger, then fixed, required, and optional work.
     # The minimum supported public sphere is A<=2 / G<=2; deeper cutoffs
@@ -583,5 +622,5 @@ def _search_many(
                 candidates = _primary(tuple(results.values()))
                 if phase < 2 or len(candidates) != 1:
                     return (), False
-                return (replace(candidates[0], search_complete=False),), False
-    return _primary(tuple(results.values())), True
+                return finish((replace(candidates[0], search_complete=False),), False)
+    return finish(_primary(tuple(results.values())), True)

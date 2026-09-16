@@ -532,7 +532,14 @@ def test_cross_target_paths_deduplicate_the_same_final_string_globally() -> None
         )
 
     assert complete
-    assert results == (candidate,)
+    assert len(results) == 1
+    assert results == (
+        replace(
+            candidate,
+            cumulative_capture_volume=results[0].cumulative_capture_volume,
+            capture_space_bits=results[0].capture_space_bits,
+        ),
+    )
 
 
 def test_structural_input_and_deadline_are_bounded() -> None:

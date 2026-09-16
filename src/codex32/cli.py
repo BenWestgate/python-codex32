@@ -6,16 +6,20 @@ import argparse
 import json
 import sys
 from collections.abc import Callable, Sequence
-from typing import Literal, cast
+from typing import Literal, NamedTuple, cast
 
 from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
 from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import (
+    InteractiveConfirmationRequired,
+    RecoveryDeclined,
     _card_text,
     _confirm_correction,
     _correction_candidates,
     _entered_groups,
+    _fingerprint_matcher,
     _render_groups,
+    _require_recovery,
     _suggestions,
 )
 from codex32._cli_input import read_artifacts as _artifacts
@@ -32,26 +36,32 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import correct_worksheet_residue
+from codex32.correction import _residue_low_discrimination, correct_worksheet_residue
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 from codex32.generation import (
     ConfirmationResult,
     CreationCeremony,
-    generate_core_lightning_secret,
     generate_master_seed,
 )
 from codex32.profiles import Profile, _profile_rules
-from codex32.profiles.cl32 import CoreLightningSecret
-from codex32.profiles.ms32 import (
-    MasterSeed,
-    _fingerprint_from_seed,
-)
+from codex32.profiles.ms32 import MasterSeed
 from codex32.profiles.ms32 import (
     _text_length as _ms_text_length,
 )
 from codex32.wallet import master_xprv, multisig_account_xpub
 
 Artifact = Share | Secret
+
+
+class _CliContext(NamedTuple):
+    prog: str
+    master_seed: bool
+    profiles: tuple[Profile, ...] | None
+    initial_prefix: str
+
+
+_GENERIC = _CliContext("codex32", False, None, "")
+_MASTER_SEED = _CliContext("ms32", True, (Profile.MS,), "MS1")
 
 
 class _CommandError(Exception):
@@ -85,36 +95,52 @@ def _secret(artifacts: list[Artifact]) -> Secret:
 
 
 def _master_seed() -> MasterSeed:
-    if isinstance(value := _secret(_artifacts(profiles=(Profile.MS,))), MasterSeed):
+    if isinstance(
+        value := _secret(_artifacts(profiles=(Profile.MS,), initial_prefix="MS1")),
+        MasterSeed,
+    ):
         return value
     raise _UsageError("Wallet commands accept only Bitcoin master-seed secrets.")
 
 
 def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
     header = artifact.header
-    name = _profile_rules(artifact.profile).label
-    if isinstance(artifact, Share):
-        name = name.replace("master seed", "master-seed").replace("HSM secret", "HSM-secret")
-        heading = f"{name} share {header.index.upper()}"
+    if artifact.profile is None:
+        heading = (
+            f"codex32 share {header.index.upper()}"
+            if isinstance(artifact, Share)
+            else f"{'Unshared' if header.threshold == 0 else 'Shared'} codex32 secret"
+        )
+        if valid and isinstance(artifact, Secret):
+            heading = heading[0].lower() + heading[1:]
+        lines = [f"{'Valid ' if valid else ''}{heading}.", f"HRP: {artifact.hrp.upper()}"]
     else:
-        heading = f"{'Unshared' if header.threshold == 0 else 'Shared'} {name}"
-    if valid and isinstance(artifact, Secret):
-        heading = heading[0].lower() + heading[1:]
-    lines = [
-        f"{'Valid ' if valid else ''}{heading}.",
-        f"Backup identifier: {header.identifier.upper()}",
-    ]
+        name = _profile_rules(artifact.profile).label
+        if isinstance(artifact, Share):
+            name = name.replace("master seed", "master-seed").replace("HSM secret", "HSM-secret")
+            heading = f"{name} share {header.index.upper()}"
+        else:
+            heading = f"{'Unshared' if header.threshold == 0 else 'Shared'} {name}"
+        if valid and isinstance(artifact, Secret):
+            heading = heading[0].lower() + heading[1:]
+        lines = [f"{'Valid ' if valid else ''}{heading}."]
+    lines.append(f"Backup identifier: {header.identifier.upper()}")
     if header.threshold:
         lines.append(f"Shares needed for recovery: {header.threshold}")
     return lines
 
 
-def _render(artifact: Artifact, pretty: bool, observed: str = "") -> str:
+def _render(
+    artifact: Artifact,
+    pretty: bool,
+    observed: str = "",
+    fingerprint: Callable[[MasterSeed], bytes] | None = None,
+) -> str:
     if not pretty:
         return artifact.text
     lines = _summary(artifact)
-    if isinstance(artifact, MasterSeed):
-        lines.append(f"Master fingerprint: {_fingerprint_from_seed(artifact.seed_bytes).hex().upper()}")
+    if isinstance(artifact, MasterSeed) and fingerprint is not None:
+        lines.append(f"Master fingerprint: {fingerprint(artifact).hex().upper()}")
     return "\n".join((*lines, "", _card_text(artifact.text, observed=observed)))
 
 
@@ -125,17 +151,27 @@ def _emit(
     err: bool = False,
     gap: bool = False,
     observed: str = "",
+    fingerprint: Callable[[MasterSeed], bytes] | None = None,
 ) -> None:
     pretty = (sys.stderr if err else sys.stdout).isatty() and not plain
-    _print(("\n" if gap and pretty else "") + _render(artifact, pretty, observed), err=err)
+    _print(
+        ("\n" if gap and pretty else "") + _render(artifact, pretty, observed, fingerprint),
+        err=err,
+    )
 
 
-def _share_command(index: str, plain: bool) -> int:
+def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinCore | None = None) -> int:
     try:
         index = _normalize_target(index, label="share index")
     except CodexError as error:
         raise _UsageError(f"Choose one share index from {IDX_SORT[1:].upper()}.") from error
-    artifacts = _artifacts(basis=True, excluded_index=index, profiles=(Profile.MS, Profile.CL))
+    artifacts = _artifacts(
+        basis=True,
+        excluded_index=index,
+        profiles=context.profiles,
+        initial_prefix=context.initial_prefix,
+        fingerprint=core.fingerprint if core is not None else None,
+    )
     try:
         derived = derive_share(artifacts, index)
     except CodexError as error:
@@ -159,10 +195,9 @@ def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None
         raise _UsageError("The set header must use either uppercase or lowercase.")
     if "1" in lowered:
         hrp, header = lowered.rsplit("1", 1)
-        try:
-            profile = Profile(hrp)
-        except ValueError as error:
-            raise _UsageError("The set header begins with an unknown prefix.") from error
+        if hrp != Profile.MS.value:
+            raise _UsageError("The set header must begin with ms1.")
+        profile = Profile.MS
     else:
         profile, header = Profile.MS, lowered
     if len(header) not in (1, 5) or header[0] not in "023456789":
@@ -180,11 +215,14 @@ def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None
     return profile, threshold, identifier
 
 
-def _creation_source(profile: Profile) -> bytes | Artifact:
+def _creation_source(
+    profile: Profile,
+    fingerprint: Callable[[MasterSeed], bytes] | None = None,
+) -> bytes | Artifact:
     prefill = ""
     while True:
         value = _text(
-            "Enter an existing codex32 secret or hexadecimal seed",
+            "Enter an existing Bitcoin codex32 secret or hexadecimal seed",
             optional=True,
             prefill=prefill,
             prompt_end=":\n> ",
@@ -200,13 +238,20 @@ def _creation_source(profile: Profile) -> bytes | Artifact:
         except CodexError as error:
             if not sys.stdin.isatty():
                 raise _UsageError(str(error)) from error
-            candidates = _suggestions(value, "", (profile,), [])
+            candidates = _suggestions(
+                value,
+                "",
+                (profile,),
+                [],
+                allowed=lambda item: isinstance(item.artifact, Secret) and item.artifact.profile is profile,
+                fingerprint=fingerprint,
+            )
             if (
                 len(candidates) == 1
                 and isinstance(candidate := candidates[0].artifact, Secret)
                 and candidate.profile is profile
             ):
-                confirmation = _confirm_correction(candidate, [], False)
+                confirmation = _confirm_correction(candidates[0], [], False, fingerprint)
                 if confirmation is True:
                     return candidate
                 if confirmation is False:
@@ -276,21 +321,22 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
 
 
 def _generated_secret(
-    profile: Profile,
     source: bytes | None,
     byte_length: int | None,
     identifier: str | None,
-) -> MasterSeed | CoreLightningSecret:
-    return (
-        generate_master_seed(source, byte_length=byte_length, identifier=identifier)
-        if profile is Profile.MS
-        else generate_core_lightning_secret(source, identifier=identifier)
+    fingerprint: Callable[[bytes], bytes] | None = None,
+) -> MasterSeed:
+    return generate_master_seed(
+        source,
+        byte_length=byte_length,
+        identifier=identifier,
+        fingerprint=fingerprint,
     )
 
 
 def _initialize_wallet(
     core: BitcoinCore,
-    secret: MasterSeed | CoreLightningSecret,
+    secret: MasterSeed,
     *,
     private: bool = True,
     account: int = 0,
@@ -301,10 +347,7 @@ def _initialize_wallet(
     assert isinstance(secret, MasterSeed)
     try:
         if confirmed:
-            _print(
-                ("\n" if secret.header.threshold else "") + "Master-seed backup confirmed.\n",
-                err=True,
-            )
+            _print("Master-seed backup confirmed.\n", err=True)
         name = core.initialize(
             secret,
             lambda prompt: _text(prompt, optional=True),
@@ -328,7 +371,7 @@ def _initialize_wallet(
             err=True,
         )
         _print(
-            f"Master fingerprint: {_fingerprint_from_seed(secret.seed_bytes).hex().upper()}",
+            f"Master fingerprint: {core.fingerprint(secret).hex().upper()}",
             err=True,
         )
         _print("Derivation standards: BIP44, BIP49, BIP84, and BIP86", err=True)
@@ -347,7 +390,7 @@ def _initialize_wallet(
         ) from error
 
 
-def _connected_core() -> BitcoinCore:
+def _connected_core(fallback: str | None = None) -> BitcoinCore:
     try:
         core = BitcoinCore.connect(
             lambda prompt: _text(prompt, optional=True),
@@ -358,7 +401,12 @@ def _connected_core() -> BitcoinCore:
     except KeyboardInterrupt as error:
         raise _CoreSelectionInterrupted from error
     except BitcoinCoreError as error:
-        raise _CommandError(str(error)) from error
+        suggestion = (
+            f" Run 'codex32 {fallback}' instead for a Core-independent operation."
+            if fallback is not None
+            else ""
+        )
+        raise _CommandError(str(error) + suggestion) from error
 
 
 def _create(
@@ -370,18 +418,13 @@ def _create(
 ) -> int:
     profile, selected_threshold, identifier = _creation_header(header)
     threshold = 0 if selected_threshold is None else selected_threshold
-    if profile not in (Profile.MS, Profile.CL):
-        raise _UsageError("Only Bitcoin and Core Lightning can be created.")
+    if profile is not Profile.MS:
+        raise _UsageError("Only Bitcoin master-seed backups can be created.")
     if shares is not None and indices is not None:
         raise _UsageError("Choose either --shares or --indices, not both.")
-    if byte_length is not None and profile is Profile.CL:
-        raise _UsageError(
-            "--bytes is only for Bitcoin master seeds; Core Lightning secrets are always 32 bytes."
-        )
     if byte_length is not None and existing:
         raise _UsageError("--bytes applies only to a new random seed.")
-    bitcoin = profile is Profile.MS
-    if bitcoin and not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise _UsageError("Bitcoin backup creation requires an interactive terminal.")
     if threshold and not sys.stdin.isatty():
         raise _UsageError("Shared creation requires an interactive terminal.")
@@ -390,24 +433,23 @@ def _create(
             shares = {2: 3, 3: 5}[threshold]
         else:
             raise _UsageError("For thresholds 4 through 9, choose --shares or --indices.")
-    core = _connected_core() if bitcoin else None
-    source = _creation_source(profile) if existing else None
+    core = _connected_core()
+    source = _creation_source(profile, core.fingerprint) if existing else None
     if not existing and not sys.stdin.isatty() and _text("", optional=True):
         raise _UsageError("Use --existing when supplying a seed or secret.")
-    expected_type = MasterSeed if profile is Profile.MS else CoreLightningSecret
-    if isinstance(source, (Share, Secret)) and not isinstance(source, expected_type):
+    if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
     try:
         if threshold == 0:
-            if isinstance(source, (MasterSeed, CoreLightningSecret)):
+            if isinstance(source, MasterSeed):
                 if identifier is not None and identifier != source.header.identifier:
                     raise _UsageError(
                         "To change the existing secret's identifier, choose a sharing threshold from 2 through 9."
                     )
                 secret = source
             else:
-                secret = _generated_secret(profile, source, byte_length, identifier)
-            _emit(secret, False)
+                secret = _generated_secret(source, byte_length, identifier, core.fingerprint_seed)
+            _emit(secret, False, fingerprint=core.fingerprint)
             if sys.stdin.isatty():
                 _confirm_card(secret)
             return (
@@ -415,7 +457,7 @@ def _create(
                 if core is not None
                 else 0
             )
-        if isinstance(source, (MasterSeed, CoreLightningSecret)):
+        if isinstance(source, MasterSeed):
             ceremony = CreationCeremony.from_secret(
                 source,
                 threshold=threshold,
@@ -424,7 +466,7 @@ def _create(
                 indices=indices,
             )
         elif source is not None:
-            source_secret = _generated_secret(profile, source, None, identifier)
+            source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
             ceremony = CreationCeremony.from_secret(
                 source_secret,
                 threshold=threshold,
@@ -432,17 +474,10 @@ def _create(
                 share_count=shares,
                 indices=indices,
             )
-        elif profile is Profile.MS:
+        else:
             ceremony = CreationCeremony.master_seed(
                 threshold=threshold,
                 byte_length=16 if byte_length is None else byte_length,
-                identifier=identifier,
-                share_count=shares,
-                indices=indices,
-            )
-        else:
-            ceremony = CreationCeremony.core_lightning(
-                threshold=threshold,
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
@@ -457,29 +492,30 @@ def _create(
         _emit(artifact, False, gap=position > 0)
         _confirm_card(artifact, ceremony.confirm)
         _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
-    secret = ceremony.finish()
+    finished = ceremony.finish()
+    assert isinstance(finished, MasterSeed)
     if core is not None:
-        return _initialize_wallet(core, secret, timestamp=0 if existing else "now", fresh=not existing)
+        return _initialize_wallet(core, finished, timestamp=0 if existing else "now", fresh=not existing)
     _print("\nEvery recovery card was confirmed from its re-entered text.", err=True)
     return 0
 
 
-def _checksum(header: str | None, plain: bool) -> int:
-    instruction = "Enter the header first, then only" if header is None else "Enter only"
+def _checksum(plain: bool) -> int:
+    if not sys.stdin.isatty():
+        raise _UsageError("Checksum completion requires an interactive terminal.")
     warning = (
-        "DANGER: Incorrect input can make the wallet predictable and cause "
-        f"permanent loss of funds. {instruction} characters generated by following "
-        "the Codex32 Book dice-debiasing worksheet exactly. Do not enter raw dice "
-        "rolls, seed words, hexadecimal seeds, passwords, or anything else."
+        "DANGER: Incorrect input can cause permanent loss of funds.\n"
+        "Follow the Codex32 Book procedure and its Dice De-biasing Worksheet exactly.\n"
+        "This command cannot verify how your data was generated.\n"
+        "Do not enter raw dice rolls, seed words, hexadecimal seeds, or passwords.\n"
     )
     _print(warning, err=True, danger=True)
-    prompt = (
-        "Checksum worksheet non-pink bold squares" if header is None else "Remaining non-pink bold squares"
-    )
+    prompt = "Checksum worksheet non-pink bold squares"
     try:
-        value = (header or "") + _text(prompt, prompt_end=":\n> ")
-        text = value if "1" in value else "ms1" + value
-        if Profile(text[: text.rfind("1")].lower()) not in (Profile.MS, Profile.CL):
+        value = _text(prompt, prompt_end=":\n\n> MS1")
+        prefix = "MS1" if value.isupper() else "ms1"
+        text = value if "1" in value else prefix + value
+        if Profile(text[: text.rfind("1")].lower()) is not Profile.MS:
             raise ValueError
         artifact = complete_checksum(text)
     except (CodexError, ValueError) as error:
@@ -487,6 +523,11 @@ def _checksum(header: str | None, plain: bool) -> int:
             "The input does not match the expected format of the filled-out "
             "non-pink bold squares.\nConsult the Codex32 Book and check the worksheet."
         ) from error
+    clear = "\x1b[3J\x1b[2J\x1b[H" if sys.stderr.isatty() else ""
+    repeated = _text(clear + "Re-enter the worksheet non-pink bold squares", prompt_end=":\n\n> MS1")
+    repeated = repeated if "1" in repeated else "ms1" + repeated
+    if repeated.lower() != text.lower():
+        raise _CommandError("Entries do not match. Restart and re-enter the worksheet.")
     _emit(artifact, plain)
     return 0
 
@@ -496,9 +537,16 @@ def _correct(
     erasures: tuple[int, ...],
     byte_length: int | Literal["?"] | None,
     plain: bool,
+    context: _CliContext,
+    core: BitcoinCore | None = None,
 ) -> int:
     prompt = "Enter the worksheet residue" if residue else "Enter the damaged codex32 string"
-    value = _text(prompt, preserve_groups=not residue, prompt_end=":\n> ")
+    value = _text(
+        prompt,
+        preserve_groups=not residue,
+        prefill=context.initial_prefix if not residue else "",
+        prompt_end=":\n> ",
+    )
     if residue:
         if byte_length is not None:
             raise _UsageError("--bytes cannot be used with --residue.")
@@ -512,6 +560,8 @@ def _correct(
             raise _CommandError("No unique correction could be found.")
         if not result:
             _print("The worksheet residue is already correct.")
+        else:
+            _require_recovery(_residue_low_discrimination(value, tuple(p - 1 for p in erasures), result))
         for correction in result:
             _print(
                 f"Add {correction.addend} at position "
@@ -521,18 +571,12 @@ def _correct(
     if erasures:
         raise _UsageError("--erasure can be used only with --residue.")
     normalized = "".join(value.split())
-    lowered = normalized.lower()
-    profile = next(
-        (item for item in (Profile.MS, Profile.CL) if lowered.startswith(f"{item}1")),
-        None,
-    )
-    if profile is None:
-        bip39_profiles = (Profile.BIP39_12W, Profile.BIP39_24W)
-        if any(lowered.startswith(f"{item}1") for item in bip39_profiles):
-            raise _UsageError("Full-string correction is not available for BIP39 worksheet backups.")
-        raise _UsageError("Check the start of your backup. It must begin with ms1 or cl1.")
-    if byte_length is not None and profile is not Profile.MS:
-        raise _UsageError("--bytes can be used only with an ms1 master-seed backup.")
+    separator = normalized.lower().rfind("1")
+    if separator <= 0:
+        raise _UsageError("Enter a complete application prefix followed by the separator 1.")
+    hrp = normalized[:separator].lower()
+    if context.master_seed and hrp != Profile.MS.value:
+        raise _UsageError("This command accepts only Bitcoin master-seed input beginning with ms1.")
     try:
         parse_codex32(normalized)
     except CodexError:
@@ -544,9 +588,10 @@ def _correct(
         return 0
     candidates, complete, _deadline, ambiguous = _correction_candidates(
         value,
-        profile,
+        hrp,
         byte_length,
-        value[:3],
+        value[: separator + 1],
+        fingerprint_match=_fingerprint_matcher(core.fingerprint if core is not None else None),
     )
     if not complete and not candidates:
         raise _CommandError("The correction search did not complete within ten seconds.")
@@ -557,13 +602,18 @@ def _correct(
     if len(candidates) != 1:
         raise _CommandError("Several corrections are possible. Check the original backup.")
     fixed = candidates[0]
-    if not fixed.search_complete:
-        _print("Best-effort suggestion: the search is incomplete; uniqueness is not established.", err=True)
+    _require_recovery(fixed.low_checksum_discrimination)
     warning = (
         "Warning: This is only a correction suggestion. Compare it with the original backup before using it."
     )
     _print(warning, err=True)
-    _emit(fixed.artifact, plain, err=True, observed=value)
+    _emit(
+        fixed.artifact,
+        plain,
+        err=True,
+        observed=value,
+        fingerprint=core.fingerprint if core is not None else None,
+    )
     return 1
 
 
@@ -594,17 +644,37 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"], testnet: bool, 
     )
 
 
-def _dispatch(arguments: argparse.Namespace) -> int:
+def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
     command = cast(str, arguments.command)
     plain = bool(getattr(arguments, "plain", False))
+    fingerprint_core: BitcoinCore | None = None
+    if context.master_seed and (
+        command in ("secret", "share") or (command == "correct" and not bool(arguments.residue))
+    ):
+        fingerprint_core = _connected_core(command)
     if command == "check":
-        _print("\n\n".join("\n".join(_summary(item, valid=True)) for item in _artifacts(one=True)))
+        artifacts = _artifacts(
+            one=True,
+            profiles=context.profiles,
+            initial_prefix=context.initial_prefix,
+        )
+        _print("\n\n".join("\n".join(_summary(item, valid=True)) for item in artifacts))
         return 0
     if command == "secret":
-        _emit(_secret(_artifacts()), plain)
+        _emit(
+            _secret(
+                _artifacts(
+                    profiles=context.profiles,
+                    initial_prefix=context.initial_prefix,
+                    fingerprint=fingerprint_core.fingerprint if fingerprint_core is not None else None,
+                )
+            ),
+            plain,
+            fingerprint=fingerprint_core.fingerprint if fingerprint_core is not None else None,
+        )
         return 0
     if command == "share":
-        return _share_command(cast(str, arguments.index), plain)
+        return _share_command(cast(str, arguments.index), plain, context, fingerprint_core)
     if command == "create":
         return _create(
             cast(str | None, arguments.header),
@@ -614,30 +684,37 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             bool(arguments.existing),
         )
     if command == "checksum":
-        return _checksum(cast(str | None, arguments.header), plain)
+        return _checksum(plain)
     if command == "correct":
         return _correct(
             bool(arguments.residue),
             tuple(cast(list[int], arguments.erasures)),
-            cast(int | Literal["?"] | None, arguments.byte_length),
+            cast(int | Literal["?"] | None, getattr(arguments, "byte_length", None)),
             plain,
+            context,
+            fingerprint_core,
         )
     if command == "xprv":
         secret = _master_seed()
         _print(
             "Warning: The following root private key can spend funds from every wallet derived "
-            "from this seed. Keep it secret.",
+            "from this seed. Keep it secret.\n",
             err=True,
             danger=True,
         )
         _print(master_xprv(secret, testnet=bool(arguments.testnet)))
         return 0
     if command == "wallet" and arguments.wallet_command == "multisig-xpub":
+        core = _connected_core()
+        testnet = bool(arguments.testnet)
+        if testnet != (core.chain != "main"):
+            expected = "test network" if testnet else "mainnet"
+            raise _UsageError(f"The connected Bitcoin Core is not on the requested {expected}.")
         _print(
             multisig_account_xpub(
                 _master_seed(),
+                integration=core,
                 account=int(arguments.account),
-                testnet=bool(arguments.testnet),
             )
         )
         return 0
@@ -651,8 +728,8 @@ def _dispatch(arguments: argparse.Namespace) -> int:
     raise AssertionError(f"unhandled command {command!r}")
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = _parser()
+def _main(context: _CliContext, argv: Sequence[str] | None = None) -> int:
+    parser = _parser(context.prog, master_seed=context.master_seed)
     arguments_list = sys.argv[1:] if argv is None else argv
     if not arguments_list:
         arguments_list = ("--help",)
@@ -660,13 +737,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         arguments = parser.parse_args(arguments_list)
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else 1
-    scope = f"codex32 {arguments.command}"
+    scope = f"{context.prog} {arguments.command}"
     try:
-        return _dispatch(arguments)
+        return _dispatch(arguments, context)
+    except RecoveryDeclined:
+        return 1
+    except InteractiveConfirmationRequired:
+        _print(f"{context.prog}: interactive confirmation required", err=True)
+        return 1
     except _UsageError as error:
         _print(f"{scope}: {error}", err=True)
         return 2
     except (_CommandError, CodexError) as error:
+        _print(f"{scope}: {error}", err=True)
+        return 1
+    except BitcoinCoreError as error:
         _print(f"{scope}: {error}", err=True)
         return 1
     except EOFError:
@@ -689,6 +774,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             err=True,
         )
         return 130
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the generic codex32 command-line façade."""
+    return _main(_GENERIC, argv)
+
+
+def ms_main(argv: Sequence[str] | None = None) -> int:
+    """Run the Bitcoin master-seed command-line façade."""
+    return _main(_MASTER_SEED, argv)
 
 
 if __name__ == "__main__":

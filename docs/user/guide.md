@@ -1,5 +1,26 @@
 # codex32 user guide
 
+`codex32` checks, corrects, recovers, and derives shares across application
+prefixes. `ms32` provides Bitcoin master-seed workflows, including secure
+creation and checksum worksheets. Use `ms32 create` for new Bitcoin backups.
+BIP39 worksheet profiles are
+[not recommended for creation](https://secretcodex32.com/docs/index.html),
+but existing backups can be recovered and corrected.
+
+When correction has little checksum evidence left, either executable asks:
+
+```text
+Warning: With this much correction, incorrect or insecure data can appear
+to be a valid backup.
+
+Are you recovering an existing backup? [y/N]:
+```
+
+Only an interactive yes reveals the suggestion. No, blank input, or EOF ends
+the command without showing it. This also applies to worksheet-residue repairs
+and `--plain`. After disclosure, compare the whole string with the original
+card before accepting it. A checksum cannot make weak input secure.
+
 Choose the setup that fits you:
 
 - **Recommended: dedicated online spending wallet — easiest.** A normally
@@ -66,23 +87,23 @@ service.
 
 Choose one command:
 
-- **2-of-3 shares (recommended):** `codex32 create 2` produces three shares;
+- **2-of-3 shares (recommended):** `ms32 create 2` produces three shares;
   any two recover the seed and one can be lost.
-- **3-of-5 shares:** `codex32 create 3` produces five shares; any three recover
+- **3-of-5 shares:** `ms32 create 3` produces five shares; any three recover
   the seed and any two can be lost.
-- **Unshared:** `codex32 create` produces one secret. You may make redundant
+- **Unshared:** `ms32 create` produces one secret. You may make redundant
   copies, but any copy can recover the seed.
 - **Custom:** thresholds 4 through 9 require `--shares` or `--indices`. For
-  example, `codex32 create 4cash --shares 7` produces seven `cash` shares; any
+  example, `ms32 create 4cash --shares 7` produces seven `cash` shares; any
   four recover the seed.
 
 More required shares make theft harder; fewer required shares make recovery
 easier.
 
-Already have a complete codex32 secret? Run `codex32 create --existing` to
+Already have a complete codex32 `ms` secret? Run `ms32 create --existing` to
 write and confirm its recovery card and initialize a Bitcoin Core wallet.
 The existing secret is preserved unchanged. To split it into three cards
-requiring any two, use `codex32 create 2 --existing` instead. Enter the secret
+requiring any two, use `ms32 create 2 --existing` instead. Enter the secret
 only when prompted. Bitcoin Core also scans for prior transactions.
 
 ### 3. Make a Bitcoin Core wallet
@@ -237,14 +258,14 @@ Verify it watch-only before exposing private keys.
 2. Find the separately stored wallet record and the original wallet
    instructions.
 3. On Tails or another reviewed offline computer, check each card with
-   `codex32 check`. If validation fails, recheck what you typed before assuming
+   `ms32 check`. If validation fails, recheck what you typed before assuming
    the paper is wrong.
 4. Disable Ethernet, internet, Tor, Wi-Fi, Bluetooth, cellular, and every other
    network path. Load a blank descriptor wallet with private keys disabled in
    Bitcoin Core, and run:
 
    ```bash
-   codex32 wallet bitcoin-core watch-only --timestamp 0
+   ms32 wallet bitcoin-core watch-only --timestamp 0
    ```
 
 5. Select and confirm the blank watch-only wallet. codex32 imports and verifies
@@ -258,7 +279,7 @@ intended computer, create a blank encrypted descriptor wallet with private
 keys enabled, and run:
 
 ```bash
-codex32 wallet bitcoin-core restore --timestamp 0
+ms32 wallet bitcoin-core restore --timestamp 0
 ```
 
 Select and confirm that wallet. If it is locked, follow the displayed
@@ -280,7 +301,7 @@ codex32 can export this seed's public cosigner key. It cannot reconstruct the
 complete multisig policy or sign a transaction.
 
 ```bash
-codex32 wallet multisig-xpub | qr
+ms32 wallet multisig-xpub | qr
 ```
 
 Import the xpub into the selected reviewed coordinator. Use the coordinator only
@@ -295,11 +316,11 @@ seed, or root xprv.
 
 ### Card maintenance and damaged writing
 
-- `codex32 check` validates a card's format and checksum. A valid result does
+- `ms32 check` validates a card's format and checksum. A valid result does
   not prove that it belongs to this wallet.
-- `codex32 correct` suggests a repair. Compare any suggestion character by
+- `ms32 correct` suggests a repair. Compare any suggestion character by
   character with the physical backup before confirming it.
-- `codex32 share d` derives a replacement at unused index `d`. Confirm and
+- `ms32 share d` derives a replacement at unused index `d`. Confirm and
   store the new card before retiring an old one. Interactive use displays the
   share, then asks you to write and re-enter it. Matching groups stay confirmed
   while you recheck highlighted regions. Success prints “Recovery card
@@ -307,13 +328,26 @@ seed, or root xprv.
 
 ### Worksheets and migration formats
 
-`codex32 checksum` completes the non-pink bold squares from a Codex32 Book
+`ms32 checksum` completes the non-pink bold squares from a Codex32 Book
 checksum worksheet. It does not turn arbitrary dice rolls, words, passwords,
 or hexadecimal text into a safe wallet.
 
-codex32 can check and recover its fixed Core Lightning and BIP39 worksheet
-profiles, but it does not generate BIP39 words. Keep the matching worksheet and
-original wallet instructions with the inheritance plan.
+An interactive terminal is required; piped input is rejected, even with
+`--plain`. Enter the worksheet input twice independently. The display is
+cleared before the second entry where supported. The completed string is only
+shown if both entries agree. On a mismatch, restart and consult the worksheet.
+This confirmation does not establish that the Book's procedure was followed.
+
+Follow the Codex32 Book procedure exactly. There is no positional header
+argument; the prompt refers to the Book's worksheet.
+
+The generic `codex32` façade can check, correct, recover, and derive shares for
+compatible Core Lightning, BIP39 worksheet, and opaque-HRP artifacts. It does
+not generate BIP39 words or Core Lightning secrets. Registered profiles retain
+their application validation; unknown HRPs remain opaque codex32 symbols.
+Keep the matching application worksheet and original wallet instructions with
+the inheritance plan. Published BIP-93 still defines the `ms` application; the
+arbitrary-HRP format direction is not yet merged into that specification.
 
 ### QR troubleshooting
 
