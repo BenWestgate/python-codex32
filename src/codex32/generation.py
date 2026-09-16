@@ -21,7 +21,6 @@ from codex32.bip93 import (
 )
 from codex32.errors import (
     CeremonyStateError,
-    CodexError,
     HeaderCollision,
     InvalidIdentifier,
     InvalidLength,
@@ -159,7 +158,9 @@ def generate_master_seed(
         identifier = _random_identifier() if identifier is None else _identifier(identifier)
         return MasterSeed.from_seed(supplied, identifier=identifier)
     if identifier is None and fingerprint is None:
-        raise ValueError("fresh unshared master-seed generation requires a fingerprint provider or identifier")
+        raise ValueError(
+            "fresh unshared master-seed generation requires a fingerprint provider or identifier"
+        )
     selected_identifier = _identifier(identifier) if identifier is not None else None
     while True:
         fresh = secrets.token_bytes(length)

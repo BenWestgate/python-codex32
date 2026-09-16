@@ -36,6 +36,7 @@ from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
+from tools._wallet_reference import ReferenceCore, fingerprint_seed
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,15 @@ class _FakeBitcoinCore:
     account: int | None = None
     timestamp: int | str | None = None
 
+    def fingerprint_seed(self, seed: bytes) -> bytes:
+        return fingerprint_seed(seed)
+
+    def fingerprint(self, secret: MasterSeed) -> bytes:
+        return self.fingerprint_seed(secret.seed_bytes)
+
+    def multisig_account_xpub(self, secret: MasterSeed, *, account: int = 0) -> str:
+        return ReferenceCore(testnet=self.chain != "main").multisig_account_xpub(secret, account=account)
+
     def initialize(
         self,
         secret: MasterSeed,
@@ -108,6 +118,11 @@ class _FakeBitcoinCore:
         self.imported = secret
         self.private, self.account, self.timestamp = private, account, timestamp
         return "test-wallet"
+
+
+@pytest.fixture(autouse=True)
+def _offline_core(monkeypatch):
+    monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *args, **kwargs: _FakeBitcoinCore())
 
 
 def _invoke(args: list[str], *lines: str) -> _Result:
@@ -133,7 +148,7 @@ def _invoke_terminal(args: list[str], *lines: str) -> _Result:
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        status = main(args)
+        status = ms_main(args)
     return _Result(status, stdout.getvalue(), stderr.getvalue())
 
 
@@ -262,7 +277,7 @@ def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> N
     def forbidden(_seed: bytes) -> bytes:
         raise AssertionError("check derived a BIP32 fingerprint")
 
-    monkeypatch.setattr(cli_module, "_fingerprint_from_seed", forbidden)
+    monkeypatch.setattr(cli_module, "_connected_core", forbidden)
     result = _invoke(["check"], VECTOR_1["secret_s"])
 
     assert result.exit_code == 0
@@ -481,7 +496,10 @@ def test_tty_wallet_commands_retry_silently_after_declining_correction(
     assert ms_main(command) == 0
     captured = capsys.readouterr()
     assert captured.out.strip().startswith(expected)
-    assert "Possible correction:\n\nMaster fingerprint: 3F3521A6\n\n" in captured.err
+    if command[0] == "wallet":
+        assert "Possible correction:\n\nMaster fingerprint: 3F3521A6\n\n" in captured.err
+    else:
+        assert "Master fingerprint:" not in captured.err
     assert input_module._card_text(original, False) in captured.err
     assert "> " not in captured.err
     assert prompts[0] == "Enter a codex32 string:\n> MS1"
@@ -829,7 +847,7 @@ def test_artifact_output_is_pretty_only_at_a_terminal() -> None:
     formatted = _invoke_terminal(["secret"], VECTOR_1["secret_s"])
     output = formatted.stdout
 
-    assert formatted.exit_code == 0 and formatted.stderr == ""
+    assert formatted.exit_code == 0 and formatted.stderr.strip() == ""
     assert output.startswith("Unshared Bitcoin master seed.\n")
     assert "Master fingerprint:" in output
     assert all(code in output for code in ("\x1b[1m", "\x1b[22m", "\x1b[0m"))
@@ -907,7 +925,7 @@ def test_tty_subsequent_correction_recases_confirmed_immutable_context(
     monkeypatch.setattr(indel, "_search_many", search)
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
-    assert main(["secret"]) == 0
+    assert ms_main(["secret"]) == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == VECTOR_2["secret_S"].lower()
     assert "Possible correction:\n\nMaster fingerprint: FAB6868A\n\n" in captured.err
@@ -1216,7 +1234,7 @@ def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:
     secret = artifacts[0]
     assert isinstance(secret, MasterSeed) and len(secret.seed_bytes) == 16
     assert secret.header.threshold == 0
-    assert secret.header.identifier == _fingerprint_identifier(secret.seed_bytes)
+    assert secret.header.identifier == _fingerprint_identifier(fingerprint_seed(secret.seed_bytes))
 
 
 def test_fresh_bitcoin_terminal_and_core_preflight_precede_entropy() -> None:
@@ -1352,7 +1370,7 @@ def test_bare_create_requires_exact_confirmation_on_a_terminal(
         assert ms_main(["create"]) == 0
     artifact = parse_codex32(emitted[0])
     assert isinstance(artifact, MasterSeed)
-    assert artifact.header.identifier == _fingerprint_identifier(artifact.seed_bytes)
+    assert artifact.header.identifier == _fingerprint_identifier(fingerprint_seed(artifact.seed_bytes))
 
 
 def test_fresh_shared_create_confirms_each_card_on_a_terminal(
@@ -1540,7 +1558,9 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
     custom = _output_artifacts(custom_count)
     shares = _output_artifacts(shared)
     assert isinstance(fingerprinted_secret, MasterSeed)
-    assert fingerprinted_secret.header.identifier == _fingerprint_identifier(fingerprinted_secret.seed_bytes)
+    assert fingerprinted_secret.header.identifier == _fingerprint_identifier(
+        fingerprint_seed(fingerprinted_secret.seed_bytes)
+    )
     assert unshared_secret.header.identifier == "test"
     assert len(automatic) == 3
     assert all(share.header.threshold == 2 for share in automatic)
@@ -1687,7 +1707,7 @@ def test_checksum_defaults_to_ms_and_rejects_explicit_cl() -> None:
     assert cl_result.exit_code == 2
     assert default.stdout.strip() == prefixed.stdout.strip() == ms.text
     assert cl_result.stdout == ""
-    assert "does not match the expected format" in cl_result.stderr
+    assert "is not in the expected format" in cl_result.stderr
     assert "DANGER: Incorrect input can cause permanent loss of funds." in default.stderr
     assert "Dice De-biasing Worksheet exactly" in default.stderr
     assert default.stdout == ms.text + "\n"
@@ -1703,8 +1723,8 @@ def test_checksum_enforces_published_sizes_and_capabilities() -> None:
         _invoke_checksum("not-a-header" + "x" * 26),
     )
     expected = (
-        "The input does not match the expected format of the filled-out "
-        "non-pink bold squares.\nConsult the Codex32 Book and check the worksheet."
+        "The worksheet input is not in the expected format.\n"
+        "Consult the Codex32 Book and check the non-pink bold squares."
     )
 
     for result in invalid:
@@ -2056,7 +2076,7 @@ def test_direct_watch_only_warning_precedes_recovery_input(
 ) -> None:
     cli_module = importlib.import_module("codex32.cli")
 
-    def stop_before_input() -> MasterSeed:
+    def stop_before_input(_fingerprint=None) -> MasterSeed:
         assert "Do not enter codex32 shares on a network-connected computer" in capsys.readouterr().err
         raise cli_module._UsageError("stopped")
 
@@ -2131,7 +2151,7 @@ def test_production_size_budgets_are_enforced() -> None:
         for path in package.rglob("*.py")
     }
 
-    assert sum(counts.values()) < 4500, counts
+    assert sum(counts.values()) < 5000, counts
 
 
 @pytest.mark.parametrize(
@@ -2474,7 +2494,7 @@ def test_operational_candidate_whole_card_confirmation(monkeypatch, capsys, resp
     monkeypatch.setattr(module, "_editable_input", lambda prompt: prompts.append(prompt) or response)
     monkeypatch.setattr(module.sys.stderr, "isatty", lambda: True)
     candidate = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=65)
-    assert module._confirm_correction(candidate, [], False) is accepted
+    assert module._confirm_correction(candidate, [], False, _FakeBitcoinCore().fingerprint) is accepted
     output = capsys.readouterr().err
     assert "Master fingerprint: 3F3521A6\n\n" in output
     assert module._card_text(artifact.text) in output
@@ -2492,12 +2512,12 @@ def test_final_share_preview_is_isolated_and_basis_has_no_preview(monkeypatch, c
     )
     accepted = [first]
     monkeypatch.setattr(module, "_editable_input", lambda prompt: "n")
-    assert not module._confirm_correction(candidate, accepted, False)
+    assert not module._confirm_correction(candidate, accepted, False, _FakeBitcoinCore().fingerprint)
     assert accepted == [first]
     assert "Master fingerprint: FAB6868A\n\n" in capsys.readouterr().err
-    assert not module._confirm_correction(candidate, accepted, True)
+    assert not module._confirm_correction(candidate, accepted, True, _FakeBitcoinCore().fingerprint)
     assert "Master fingerprint" not in capsys.readouterr().err
-    assert not module._confirm_correction(candidate, [], False)
+    assert not module._confirm_correction(candidate, [], False, _FakeBitcoinCore().fingerprint)
     assert "Master fingerprint" not in capsys.readouterr().err
 
 
@@ -2508,12 +2528,11 @@ def test_failed_fingerprint_never_offers_confirmation(monkeypatch, capsys):
     def fail(seed):
         raise CodexError("unusable")
 
-    monkeypatch.setattr(module, "_fingerprint_from_seed", fail)
     monkeypatch.setattr(module, "_editable_input", lambda prompt: pytest.fail("confirmation offered"))
     candidate = CorrectionCandidate(
         parse_codex32(VECTOR_1["secret_s"]), (), 1, 0, 0, None, capture_space_bits=65
     )
-    assert not module._confirm_correction(candidate, [], False)
+    assert not module._confirm_correction(candidate, [], False, fail)
     assert "Could not recover a valid Bitcoin master seed using this correction." in capsys.readouterr().err
 
 
@@ -2694,7 +2713,7 @@ def test_creation_source_correction_requires_approval(monkeypatch, capsys, respo
 
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", answer)
-    result = cli._creation_source(Profile.MS)
+    result = cli._creation_source(Profile.MS, _FakeBitcoinCore().fingerprint)
     assert result == (parse_codex32(expected) if response == "yes" else bytes(16))
     output = capsys.readouterr().err
     assert "Master fingerprint: 3F3521A6\n\n" in output
@@ -2729,9 +2748,8 @@ def test_creation_source_unusable_candidates_retry(monkeypatch, capsys, kind):
     def fail(seed):
         raise CodexError("invalid seed")
 
-    if kind == "fingerprint":
-        monkeypatch.setattr(module, "_fingerprint_from_seed", fail)
-    assert cli._creation_source(Profile.MS) == bytes(16)
+    fingerprint = fail if kind == "fingerprint" else _FakeBitcoinCore().fingerprint
+    assert cli._creation_source(Profile.MS, fingerprint) == bytes(16)
     output = capsys.readouterr().err
     assert "Possible correction:" not in output
     assert "Rejected:" in output

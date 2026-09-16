@@ -120,7 +120,10 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
     assert _invoke(ms_main, ["--version"])[1].startswith("ms32 ")
 
 
-def test_cli_share_is_generic_and_ms32_share_is_scoped() -> None:
+def test_cli_share_is_generic_and_ms32_share_is_scoped(monkeypatch) -> None:
+    from tools._wallet_reference import ReferenceCore
+
+    monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *args, **kwargs: ReferenceCore())
     basis = UNKNOWN["short"]["S"] + "\n" + UNKNOWN["short"]["A"] + "\n"
     status, output, error = _invoke(main, ["share", "d", "--plain"], basis)
     assert (status, output.strip(), error) == (0, UNKNOWN["short"]["D"], "")

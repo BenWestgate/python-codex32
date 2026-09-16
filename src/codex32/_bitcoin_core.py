@@ -137,7 +137,9 @@ class BitcoinCore:
         origin_path = match.group("path").replace("'", "h")
         if origin_path != path:
             raise BitcoinCoreError("Bitcoin Core returned an unexpected derivation path.")
-        return bytes.fromhex(match.group("fingerprint")), f"[{match.group('fingerprint')}{origin_path}]{match.group('xpub')}"
+        return bytes.fromhex(
+            match.group("fingerprint")
+        ), f"[{match.group('fingerprint')}{origin_path}]{match.group('xpub')}"
 
     def fingerprint_seed(self, seed: bytes) -> bytes:
         """Return the BIP32 master fingerprint using Bitcoin Core out of process."""
@@ -332,12 +334,16 @@ class BitcoinCore:
                 if state is None:
                     tell("That wallet is no longer eligible. Choose again.")
                     continue
-                records = core_descriptors(
-                    secret,
-                    account=account,
-                    testnet=self.chain != "main",
-                    private=private,
-                    timestamp=timestamp,
+                records = (
+                    public
+                    if not private
+                    else core_descriptors(
+                        secret,
+                        account=account,
+                        testnet=self.chain != "main",
+                        private=private,
+                        timestamp=timestamp,
+                    )
                 )
                 imported = self._rpc(
                     "importdescriptors",

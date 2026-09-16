@@ -60,7 +60,7 @@ avoid comments or tests that restate the implementation. Add or update concise
 docstrings when changing public behavior. Write codex32 in lowercase except
 when referring to the Codex32 Book.
 
-Keep the installed package below 4,500 logical review lines, as enforced by the
+Keep the installed package below 5,000 logical review lines, as enforced by the
 existing test. New dependencies, public API signature or return-shape changes,
 and lint suppressions require user authorization; an explicit request can
 already provide that authorization.

@@ -849,9 +849,7 @@ def _best(
         tied = [item for item in tied if len(item.artifact.text) in (48, 74)]
     hamming = min(item.addend_hamming_weight for item in tied)
     tied = [item for item in tied if item.addend_hamming_weight == hamming]
-    hints: tuple[Callable[[CorrectionCandidate], bool | None], ...] = (
-        (lambda item: item.crc_padding_match),
-    )
+    hints: tuple[Callable[[CorrectionCandidate], bool | None], ...] = ((lambda item: item.crc_padding_match),)
     if fingerprint_match is not None:
         hints += (fingerprint_match,)
     for hint in hints:

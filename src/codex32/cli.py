@@ -36,7 +36,7 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import _residue_low_discrimination, correct_worksheet_residue
+from codex32.correction import _best, _residue_low_discrimination, correct_worksheet_residue
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 from codex32.generation import (
     ConfirmationResult,
@@ -94,9 +94,9 @@ def _secret(artifacts: list[Artifact]) -> Secret:
         raise _UsageError(str(error)) from error
 
 
-def _master_seed() -> MasterSeed:
+def _master_seed(fingerprint: Callable[[MasterSeed], bytes] | None = None) -> MasterSeed:
     if isinstance(
-        value := _secret(_artifacts(profiles=(Profile.MS,), initial_prefix="MS1")),
+        value := _secret(_artifacts(profiles=(Profile.MS,), initial_prefix="MS1", fingerprint=fingerprint)),
         MasterSeed,
     ):
         return value
@@ -520,8 +520,8 @@ def _checksum(plain: bool) -> int:
         artifact = complete_checksum(text)
     except (CodexError, ValueError) as error:
         raise _UsageError(
-            "The input does not match the expected format of the filled-out "
-            "non-pink bold squares.\nConsult the Codex32 Book and check the worksheet."
+            "The worksheet input is not in the expected format.\n"
+            "Consult the Codex32 Book and check the non-pink bold squares."
         ) from error
     clear = "\x1b[3J\x1b[2J\x1b[H" if sys.stderr.isatty() else ""
     repeated = _text(clear + "Re-enter the worksheet non-pink bold squares", prompt_end=":\n\n> MS1")
@@ -591,7 +591,6 @@ def _correct(
         hrp,
         byte_length,
         value[: separator + 1],
-        fingerprint_match=_fingerprint_matcher(core.fingerprint if core is not None else None),
     )
     if not complete and not candidates:
         raise _CommandError("The correction search did not complete within ten seconds.")
@@ -599,10 +598,15 @@ def _correct(
         raise _CommandError("More than one correction is possible; none was selected.")
     if not candidates:
         raise _CommandError("No valid correction found. Check the original backup.")
+    if context.master_seed and len(candidates) > 1:
+        core = core or _connected_core("correct")
+        candidates = _best(candidates, fingerprint_match=_fingerprint_matcher(core.fingerprint))
     if len(candidates) != 1:
         raise _CommandError("Several corrections are possible. Check the original backup.")
     fixed = candidates[0]
     _require_recovery(fixed.low_checksum_discrimination)
+    if context.master_seed:
+        core = core or _connected_core("correct")
     warning = (
         "Warning: This is only a correction suggestion. Compare it with the original backup before using it."
     )
@@ -632,7 +636,7 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"], testnet: bool, 
     core = _connected_core()
     if testnet and core.chain == "main":
         raise _UsageError("The connected Bitcoin Core is mainnet; remove --testnet.")
-    secret = _master_seed()
+    secret = _master_seed(core.fingerprint)
     return _initialize_wallet(
         core,
         secret,
@@ -648,9 +652,7 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
     command = cast(str, arguments.command)
     plain = bool(getattr(arguments, "plain", False))
     fingerprint_core: BitcoinCore | None = None
-    if context.master_seed and (
-        command in ("secret", "share") or (command == "correct" and not bool(arguments.residue))
-    ):
+    if context.master_seed and command in ("secret", "share"):
         fingerprint_core = _connected_core(command)
     if command == "check":
         artifacts = _artifacts(
@@ -712,7 +714,7 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
             raise _UsageError(f"The connected Bitcoin Core is not on the requested {expected}.")
         _print(
             multisig_account_xpub(
-                _master_seed(),
+                _master_seed(core.fingerprint),
                 integration=core,
                 account=int(arguments.account),
             )

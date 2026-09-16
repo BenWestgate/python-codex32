@@ -6,6 +6,8 @@ import argparse
 import hashlib
 import json
 
+from _wallet_reference import ReferenceCore
+
 from codex32 import (
     MasterSeed,
     core_descriptors,
@@ -28,6 +30,7 @@ def _record(case: int, length: int, testnet: bool) -> dict[str, object]:
     seed = _seed(case, length)
     account = int.from_bytes(hashlib.sha256(seed).digest()[:4], "big") % 2**31
     secret = MasterSeed.from_seed(seed, identifier="test")
+    core = ReferenceCore(testnet=testnet)
     return {
         "case": case,
         "length": length,
@@ -37,10 +40,11 @@ def _record(case: int, length: int, testnet: bool) -> dict[str, object]:
         "multisig": multisig_account_xpub(
             secret,
             account=account,
-            testnet=testnet,
+            integration=core,
         ),
         "public": core_descriptors(
             secret,
+            integration=core,
             account=account,
             testnet=testnet,
             timestamp=case,

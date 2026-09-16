@@ -11,7 +11,7 @@ from data.sharing_vectors import SHARING_VECTORS
 from test_bip39 import BIP39_12W_ZERO, BIP39_24W_ZERO
 
 from codex32 import CorrectionContext, MasterSeed, Profile, correct
-from codex32._cli_input import _correction_plan
+from codex32._cli_input import _correction_plan, _fingerprint_matcher
 from codex32.correction import CorrectionCandidate, _best, _capture_volume, _erasure_state, _primary
 from codex32.generation import _fingerprint_identifier
 from codex32.indel import (
@@ -32,6 +32,7 @@ from codex32.indel import (
     _search_target,
 )
 from codex32.profiles.ms32 import TEXT_LENGTHS
+from tools._wallet_reference import fingerprint_seed
 from tools.correction_capture import cross_length_classes
 
 SOURCE = VECTOR_1["secret_s"]
@@ -410,14 +411,15 @@ def test_duplicate_reconstruction_keeps_lower_hamming_path() -> None:
 
 def test_cli_tie_breaks_follow_hamming_crc_then_fingerprint() -> None:
     seed = bytes(range(16))
-    fingerprint = MasterSeed.from_seed(seed, identifier=_fingerprint_identifier(seed))
+    fingerprint = MasterSeed.from_seed(seed, identifier=_fingerprint_identifier(fingerprint_seed(seed)))
     mismatch = MasterSeed.from_seed(seed, identifier="test")
     high_hamming = CorrectionCandidate(mismatch, (), 10, 0, 3, True)
     crc = CorrectionCandidate(mismatch, (), 10, 0, 2, True)
     fingerprint_match = CorrectionCandidate(fingerprint, (), 10, 0, 2, True)
 
     assert len(_primary((high_hamming, crc, fingerprint_match))) == 3
-    assert _best((high_hamming, crc, fingerprint_match)) == (fingerprint_match,)
+    matcher = _fingerprint_matcher(lambda secret: fingerprint_seed(secret.seed_bytes))
+    assert _best((high_hamming, crc, fingerprint_match), fingerprint_match=matcher) == (fingerprint_match,)
 
 
 def test_lower_primary_volume_always_wins_cli_ties() -> None:

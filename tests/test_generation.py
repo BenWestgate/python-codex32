@@ -25,7 +25,6 @@ from codex32 import (
 from codex32.bech32 import _u5_to_chars
 from codex32.errors import (
     CeremonyStateError,
-    CodexError,
     HeaderCollision,
     InvalidIdentifier,
     InvalidLength,
@@ -34,6 +33,7 @@ from codex32.errors import (
 )
 from codex32.generation import ORDINARY_INDICES, _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding
+from tools._wallet_reference import fingerprint_seed
 
 
 def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed | CoreLightningSecret, tuple[Share, ...]]:
@@ -59,10 +59,10 @@ def _seed(byte_length: int) -> bytes:
 
 def test_fresh_unshared_ms_supports_every_bip93_size() -> None:
     for byte_length in SEED_BYTE_LENGTHS:
-        secret = generate_master_seed(byte_length=byte_length)
+        secret = generate_master_seed(byte_length=byte_length, fingerprint=fingerprint_seed)
         assert len(secret.seed_bytes) == byte_length
         assert secret.header.threshold == 0
-        assert secret.header.identifier == _fingerprint_identifier(secret.seed_bytes)
+        assert secret.header.identifier == _fingerprint_identifier(fingerprint_seed(secret.seed_bytes))
         assert _has_generation_padding(secret)
 
 
@@ -274,17 +274,17 @@ def test_final_ms_share_retries_a_bip32_invalid_root(monkeypatch: pytest.MonkeyP
     ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
     first = ceremony.next_share()
     assert ceremony.confirm(first.text).accepted
-    original = generation_module._fingerprint_from_seed
+    original = generation_module._valid_root
     checks = 0
 
-    def reject_once(seed: bytes) -> bytes:
+    def reject_once(seed: bytes) -> bool:
         nonlocal checks
         checks += 1
         if checks == 1:
-            raise CodexError("synthetic invalid BIP32 root")
+            return False
         return original(seed)
 
-    monkeypatch.setattr(generation_module, "_fingerprint_from_seed", reject_once)
+    monkeypatch.setattr(generation_module, "_valid_root", reject_once)
     second = ceremony.next_share()
     assert checks >= 2 and ceremony.confirm(second.text).accepted
     assert recover_secret((first, second)) == ceremony.finish()
@@ -402,4 +402,4 @@ def test_from_secret_rejects_non_secret_artifacts() -> None:
     ((VECTOR_1, "8u6j"), (VECTOR_2, "l2mg"), (VECTOR_3, "regv")),
 )
 def test_unshared_fingerprint_identifier_vectors(vector: dict[str, str], expected: str) -> None:
-    assert _fingerprint_identifier(bytes.fromhex(vector["secret_hex"])) == expected
+    assert _fingerprint_identifier(fingerprint_seed(bytes.fromhex(vector["secret_hex"]))) == expected

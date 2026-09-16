@@ -11,6 +11,7 @@ import pytest
 from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
 from codex32.bip93 import parse_codex32
 from codex32.profiles.ms32 import MasterSeed
+from tools._wallet_reference import descriptor_info
 
 _parsed = parse_codex32("ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw")
 assert isinstance(_parsed, MasterSeed)
@@ -281,10 +282,11 @@ class _ImportRPC:
             ]
             return {"wallet_name": "signer", "descriptors": records}
         if command == "getdescriptorinfo":
-            position = len(self.expansions) // 2
-            pair = [f"public-{position}-0", f"public-{position}-1"]
-            self.expansions.extend(pair)
-            return {"multipath_expansion": pair}
+            assert stdin is not None
+            result = descriptor_info(stdin)
+            if "xprv" not in stdin and "tprv" not in stdin:
+                self.expansions.extend(result["multipath_expansion"])
+            return result
         if command == "importdescriptors":
             self.imported = True
             return [{"success": True} for _ in range(4)]
@@ -315,8 +317,9 @@ def test_encrypted_import_retries_without_a_passphrase_verifies_and_relocks(
 
     assert client.initialize(_SEED, lambda _prompt: "yes", messages.append) == "signer"
     private_calls = [call for call in rpc.calls if "xprv" in (call[2] or "")]
-    assert len(private_calls) == 1
-    arguments, wallet, private_stdin = private_calls[0]
+    assert len(private_calls) == 5
+    assert all(args == ("getdescriptorinfo",) and wallet is None for args, wallet, _ in private_calls[:4])
+    arguments, wallet, private_stdin = private_calls[-1]
     assert arguments == ("importdescriptors",) and wallet == "signer"
     assert private_stdin is not None and private_stdin.endswith("\n")
     records = json.loads(private_stdin)
@@ -507,7 +510,7 @@ def test_wallet_relocking_before_import_repeats_wait_without_preparation(
         == "signer"
     )
     assert delays == [1]
-    assert sum(arguments == ("getdescriptorinfo",) for arguments, _wallet, _stdin in rpc.calls) == 4
+    assert sum(arguments == ("getdescriptorinfo",) for arguments, _wallet, _stdin in rpc.calls) == 8
     assert sum(arguments == ("importdescriptors",) for arguments, _wallet, _stdin in rpc.calls) == 1
 
 
