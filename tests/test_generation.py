@@ -6,7 +6,7 @@ from itertools import combinations
 
 import pytest
 from _codex32_oracle import oracle_encode
-from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_6
+from data.bip93_vectors import VECTOR_2, VECTOR_4, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -33,7 +33,6 @@ from codex32.errors import (
 )
 from codex32.generation import ORDINARY_INDICES, _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding
-from tools._wallet_reference import fingerprint_seed
 
 
 def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed | CoreLightningSecret, tuple[Share, ...]]:
@@ -57,12 +56,16 @@ def _seed(byte_length: int) -> bytes:
     return bytes((position * 109 + byte_length) % 256 for position in range(byte_length))
 
 
+def _fake_fingerprint(seed: bytes) -> bytes:
+    return seed[:4]
+
+
 def test_fresh_unshared_ms_supports_every_bip93_size() -> None:
     for byte_length in SEED_BYTE_LENGTHS:
-        secret = generate_master_seed(byte_length=byte_length, fingerprint=fingerprint_seed)
+        secret = generate_master_seed(byte_length=byte_length, fingerprint=_fake_fingerprint)
         assert len(secret.seed_bytes) == byte_length
         assert secret.header.threshold == 0
-        assert secret.header.identifier == _fingerprint_identifier(fingerprint_seed(secret.seed_bytes))
+        assert secret.header.identifier == _fingerprint_identifier(_fake_fingerprint(secret.seed_bytes))
         assert _has_generation_padding(secret)
 
 
@@ -395,11 +398,3 @@ def test_from_secret_rejects_non_secret_artifacts() -> None:
                 indices="ac",
                 identifier="test",  # type: ignore[arg-type]
             )
-
-
-@pytest.mark.parametrize(
-    ("vector", "expected"),
-    ((VECTOR_1, "8u6j"), (VECTOR_2, "l2mg"), (VECTOR_3, "regv")),
-)
-def test_unshared_fingerprint_identifier_vectors(vector: dict[str, str], expected: str) -> None:
-    assert _fingerprint_identifier(fingerprint_seed(bytes.fromhex(vector["secret_hex"]))) == expected

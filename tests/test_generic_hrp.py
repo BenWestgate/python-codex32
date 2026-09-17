@@ -167,9 +167,12 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
 
 
 def test_cli_share_is_generic_and_ms32_share_is_scoped(monkeypatch) -> None:
-    from tools._wallet_reference import ReferenceCore
+    class _FakeCore:
+        @staticmethod
+        def fingerprint(_secret: object) -> bytes:
+            return b"\0\0\0\0"
 
-    monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *args, **kwargs: ReferenceCore())
+    monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *args, **kwargs: _FakeCore())
     basis = UNKNOWN["short"]["S"] + "\n" + UNKNOWN["short"]["A"] + "\n"
     status, output, error = _invoke(main, ["share", "d", "--plain"], basis)
     assert (status, output.strip(), error) == (0, UNKNOWN["short"]["D"], "")
