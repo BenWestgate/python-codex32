@@ -37,9 +37,9 @@ Choose the setup that fits you:
 - **Recommended: dedicated online spending wallet — easiest.** A normally
   networked Bitcoin Core node stores encrypted signing keys, synchronizes the
   wallet, and handles ordinary receiving and spending.
-- **More protection: online watch-only wallet plus offline signer — more
-  steps.** The computer with signing keys stays disconnected from every
-  network and signs PSBT files.
+- **More protection: Bitcoin Core's offline-signing workflow — more steps.**
+  Restore the signing wallet offline with `ms32 wallet`, then follow Bitcoin
+  Core v32's maintained watch-only/PSBT procedure.
 
 Recovery, inheritance, multisig, and damaged-card help follow those two setup
 choices.
@@ -55,7 +55,7 @@ recovery card.
 
 You will need:
 
-- Bitcoin Core 30 or newer, with its local RPC server enabled and
+- Bitcoin Core 32 or newer, with its local RPC server enabled and
   `bitcoin-cli` available on `PATH`;
 - codex32 installed using the [README instructions](../../README.md#install);
 - one blank [codex32 recovery card](recovery-card.html) per secret or share; and
@@ -192,78 +192,22 @@ worth the extra steps.
 
 ## More protection: watch-only wallet and offline signer
 
-Prepare a dedicated signing computer with Bitcoin Core, codex32, `jq`, `qr`,
-and a local ZBar reader before disconnecting it permanently. Tails includes
-`qr`; this guide uses it for local public-data and PSBT transfers. Disable
-Ethernet, internet, Tor, Wi-Fi, Bluetooth, cellular, and every other network
-path on this computer.
+On the offline signer, create an empty encrypted descriptor wallet with private
+keys enabled and run `ms32 wallet`. Keep that computer disconnected from every
+network while recovery text or signing keys are present.
 
-### 1. Initialize the offline signer
-
-With every network path disabled, follow the Recommended steps through **Make
-a Bitcoin Core wallet** on the offline computer. Name the blank encrypted
-wallet clearly, such as `offline-signer`. This computer and its Core wallet
-must remain offline.
-
-### 2. Transfer only Core's accepted public descriptors
-
-For a wallet named `offline-signer`, export Core's accepted public descriptors
-with:
-
-```bash
-bitcoin-cli -rpcconnect=127.0.0.1 -rpcwallet=offline-signer listdescriptors | jq -c '[.descriptors[] | {desc,timestamp,active,internal,range,next_index}]' | qr
-```
-
-Public descriptors cannot spend, but they reveal wallet activity. Do not use a
-website, cloud scanner, chat service, or synced clipboard.
-
-On the online computer, create a blank descriptor wallet named
-`codex32-watch-only` with private keys disabled. Scan one local QR directly
-into it:
-
-```bash
-zbarcam --raw --oneshot |
-  bitcoin-cli -rpcwallet=codex32-watch-only -stdin importdescriptors
-```
-
-Every result must say `"success": true`. Generate one fresh receiving address
-in each Bitcoin-Qt wallet and compare them on the two screens. Do not receive
-funds if they differ.
-
-### 3. Spend with a PSBT
-
-1. In the online Bitcoin-Qt watch-only wallet, fill in **Send**, check the
-   destination, amount, and fee, and choose **Create Unsigned**.
-2. Copy the base64 PSBT. Run `qr`, paste the text, and press Ctrl-D to display
-   it as a local QR.
-3. On the offline computer, receive it into a file:
-
-   ```bash
-   zbarcam --raw --oneshot > unsigned.psbt
-   ```
-
-4. Load `unsigned.psbt` in Bitcoin-Qt. On the offline screen, verify every
-   destination, amount, and fee before signing.
-5. Copy the signed base64 PSBT, run `qr`, paste it, and press Ctrl-D.
-6. On the online computer, scan it into `signed.psbt`, load that file in the
-   watch-only Bitcoin-Qt wallet, check it again, and broadcast:
-
-   ```bash
-   zbarcam --raw --oneshot > signed.psbt
-   ```
-
-If a PSBT is too large for a reliable QR, use a dedicated removable drive. The
-drive crosses the security boundary: keep it for this purpose, treat every file
-on it as untrusted, and still verify the transaction on the offline screen.
-
-Bitcoin Core maintains an
-[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md)
-for this watch-only/PSBT split.
+After the signer is restored, follow Bitcoin Core v32's maintained
+[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md).
+That workflow owns the watch-only export/import and PSBT transport steps. In
+Bitcoin Core v32, `exportwatchonlywallet` creates the watch-only wallet file and
+`restorewallet` loads it on the online node. Do not improvise a codex32-specific
+descriptor-transfer procedure in place of that maintained workflow.
 
 ## Recover an existing or inherited wallet
 
 An existing wallet has records and history that can identify a wrong recovery.
-Verify it watch-only before exposing private keys.
+Restore it on the intended offline or otherwise trusted signer before comparing
+its public wallet data with the separate wallet record.
 
 1. Collect the required cards with matching identifiers and text lengths.
 2. Find the separately stored wallet record and the original wallet
@@ -272,34 +216,28 @@ Verify it watch-only before exposing private keys.
    `ms32 check`. If validation fails, recheck what you typed before assuming
    the paper is wrong.
 4. Disable Ethernet, internet, Tor, Wi-Fi, Bluetooth, cellular, and every other
-   network path. Load a blank descriptor wallet with private keys disabled in
-   Bitcoin Core, and run:
+   network path. Load a blank encrypted descriptor wallet with private keys
+   enabled in Bitcoin Core, and run:
 
    ```bash
-   ms32 wallet bitcoin-core watch-only --timestamp 0
+   ms32 wallet --timestamp 0
    ```
 
-5. Select and confirm the blank watch-only wallet. codex32 imports and verifies
-   its public descriptors. Reconnect the normally networked Bitcoin Core node
-   and let blockchain and wallet synchronization finish.
-6. Only then compare the recovered fingerprint, account, complete policy,
-   balance, and transaction history with the wallet record.
+5. Select and confirm that wallet. If it is locked, follow the displayed
+   Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
+   It imports the private descriptors, verifies the public set, and relocks an
+   encrypted wallet.
+6. If you need an online watch-only counterpart, keep the restored signer
+   offline and follow Bitcoin Core v32's
+   [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)
+   to export and restore the watch-only wallet. Let the online node synchronize,
+   then compare the recovered fingerprint, account, policy, addresses, balance,
+   and transaction history with the wallet record.
 
-Proceed to private restoration only when everything matches. Disconnect the
-intended computer, create a blank encrypted descriptor wallet with private
-keys enabled, and run:
-
-```bash
-ms32 wallet bitcoin-core restore --timestamp 0
-```
-
-Select and confirm that wallet. If it is locked, follow the displayed
-Bitcoin-Qt Console instructions; codex32 waits and continues automatically. It
-imports the private descriptors, verifies the public set, and relocks an
-encrypted wallet. A timestamp of zero
-safely scans all history and may take time; it belongs in this recovery command,
-not on a paper card. During an emergency recovery, move the funds to a newly
-established wallet after a small test payment when circumstances permit.
+A timestamp of zero safely scans all history and may take time; it belongs in
+the recovery command, not on a paper card. During an emergency recovery, move
+the funds to a newly established wallet after a small test payment when
+circumstances permit.
 
 Stop and get knowledgeable help instead of guessing when records are missing,
 results disagree, or the wallet is multisig or nonstandard.
@@ -308,22 +246,9 @@ results disagree, or the wallet is multisig or nonstandard.
 
 ### Multisig cosigner recovery
 
-codex32 can export this seed's public cosigner key. It cannot reconstruct the
-complete multisig policy or sign a transaction.
-
-```bash
-ms32 wallet multisig-xpub | qr
-```
-
-Import the xpub into the selected reviewed coordinator. Use the coordinator only
-to assemble the policy and PSBT; use a Bitcoin Core descriptor wallet as the
-signer. Follow a reviewed Bitcoin Core multisig workflow; codex32 does not build
-the signing wallet.
-
-Before receiving or signing, verify the xpub's exact fingerprint, derivation
-path, and xpub in the complete policy. Check every PSBT destination, amount,
-fee, policy, and cosigner. Never give a coordinator a codex32 share, master
-seed, or root xprv.
+Restore the cosigner's private Bitcoin Core wallet with `ms32 wallet`, then
+follow Bitcoin Core v32's maintained
+[multisig tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/multisig-tutorial.md).
 
 ### Card maintenance and damaged writing
 

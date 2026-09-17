@@ -63,21 +63,19 @@ def _terminal_output(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--plain", action="store_true", help="print unformatted backup text")
 
 
-def _wallet_options(parser: argparse.ArgumentParser, *, timestamp: bool) -> None:
+def _wallet_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--account",
         type=_integer("account", 0, 2**31 - 1),
         default=0,
         help="account number (default: 0)",
     )
-    if timestamp:
-        parser.add_argument(
-            "--timestamp",
-            type=_timestamp,
-            default=0,
-            help="search for transactions since this Unix timestamp; use 0 for all history or now for a new wallet",
-        )
-    parser.add_argument("--testnet", action="store_true", help="use testnet keys")
+    parser.add_argument(
+        "--timestamp",
+        type=_timestamp,
+        default=0,
+        help="search for transactions since this Unix timestamp; use 0 for all history or now for a new wallet",
+    )
 
 
 def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.ArgumentParser:
@@ -102,10 +100,10 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
     commands = result.add_subparsers(dest="command", required=True, title="commands", metavar="COMMAND")
 
     check = _command(commands, "check", "check a secret or share for errors")
-    check.description = "Check a secret or share for format, checksum, and content errors."
+    check.description = "Check a secret or share for format, checksum, or content errors."
     secret = _command(commands, "secret", "recover a secret from shares")
     secret.description = (
-        "Recover the secret from exactly the threshold number of shares from the same set. "
+        "Recover the secret using exactly the threshold number of shares from the same set. "
         "Use different share indices. You can also enter an existing secret to display it."
     )
     _terminal_output(secret)
@@ -115,7 +113,7 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         "derive a share from codex32 strings",
     )
     share.description = (
-        "Derive a share at INDEX from exactly the threshold number of strings from the same set. "
+        "Derive a share at INDEX using exactly the threshold number of codex32 strings from the same set. "
         "Use different input indices; one input may be the secret. "
         "INDEX must differ from S and the input indices."
     )
@@ -124,8 +122,8 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
 
     correct = _command(commands, "correct", "suggest repairs for a damaged codex32 string")
     correct.description = (
-        "Suggest repairs for wrong, unreadable, missing, extra, or swapped characters, "
-        "and damaged, missing, extra, or swapped four-character groups. "
+        "Suggest repairs for wrong, unreadable, missing, extra, or swapped characters or "
+        "four-character groups. "
         "Use ? for each unreadable character. Check suggested repairs against the original backup."
     )
     correct.add_argument(
@@ -185,22 +183,8 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         help="use an existing Bitcoin codex32 secret or hexadecimal seed",
     )
 
-    wallet = _command(commands, "wallet", "set up a Bitcoin Core wallet or export wallet data")
-    wallet_commands = wallet.add_subparsers(dest="wallet_command", required=True)
-    multisig = _command(
-        wallet_commands,
-        "multisig-xpub",
-        "export an account xpub for multisig coordinators",
-    )
-    _wallet_options(multisig, timestamp=False)
-    bitcoin_core = _command(wallet_commands, "bitcoin-core", "initialize a Bitcoin Core wallet")
-    core_modes = bitcoin_core.add_subparsers(dest="core_mode", required=True)
-    for name, help_text in (
-        ("restore", "restore signing ability using private wallet data"),
-        ("watch-only", "find transactions without providing private keys"),
-    ):
-        mode = _command(core_modes, name, help_text)
-        _wallet_options(mode, timestamp=True)
+    wallet = _command(commands, "wallet", "restore a Bitcoin Core wallet")
+    _wallet_options(wallet)
 
     xprv = _command(commands, "xprv", "export the root extended private key")
     xprv.add_argument("--testnet", action="store_true", help="use a testnet key")

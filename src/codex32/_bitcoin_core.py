@@ -11,7 +11,7 @@ from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
 from codex32.profiles.ms32 import MasterSeed
-from codex32.wallet import core_descriptors
+from codex32.wallet import _descriptor_records, core_descriptors
 
 
 class BitcoinCoreError(Exception):
@@ -26,11 +26,9 @@ _CHAINS = (
     ("regtest", "regtest"),
 )
 
-_ORIGIN_KEY = re.compile(
-    r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]"
-    r"(?P<xpub>(?:xpub|tpub)[1-9A-HJ-NP-Za-km-z]+)"
-)
+_ORIGIN = re.compile(r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]")
 _PRIVATE_MARKERS = ("xprv", "tprv")
+_PURPOSES = (44, 49, 84, 86)
 
 
 @dataclass(frozen=True)
@@ -60,7 +58,7 @@ class BitcoinCore:
             reported = blockchain.get("chain") if isinstance(blockchain, dict) else None
             if isinstance(version, bool) or not isinstance(version, int) or reported != chain:
                 continue
-            if version >= 300000:
+            if version >= 320000:
                 choices.append(cls(executable, chain, version))
         if not choices:
             raise BitcoinCoreError(
@@ -128,23 +126,26 @@ class BitcoinCore:
             raise BitcoinCoreError("Bitcoin Core did not return the expected public descriptor.")
         return normalized
 
-    def _normalized_key(self, seed: bytes, path: str) -> tuple[bytes, str]:
-        xprv = _master_xprv_from_seed(seed, testnet=self.chain != "main")
-        normalized = self._normalized_descriptor(f"wpkh({xprv}{path})")
-        match = _ORIGIN_KEY.search(normalized)
-        if match is None:
-            raise BitcoinCoreError("Bitcoin Core did not return the expected key origin.")
-        origin_path = match.group("path").replace("'", "h")
-        if origin_path != path:
-            raise BitcoinCoreError("Bitcoin Core returned an unexpected derivation path.")
-        return bytes.fromhex(
-            match.group("fingerprint")
-        ), f"[{match.group('fingerprint')}{origin_path}]{match.group('xpub')}"
-
     def fingerprint_seed(self, seed: bytes) -> bytes:
         """Return the BIP32 master fingerprint using Bitcoin Core out of process."""
-        fingerprint, _key = self._normalized_key(seed, "/0h")
-        return fingerprint
+        xprv = _master_xprv_from_seed(seed, testnet=self.chain != "main")
+        descriptor = self._normalized_descriptor(f"pkh({xprv})")
+        addresses = self._rpc("deriveaddresses", stdin=descriptor + "\n")
+        if not isinstance(addresses, list) or len(addresses) != 1 or not isinstance(addresses[0], str):
+            raise BitcoinCoreError("Bitcoin Core did not derive the expected master-key address.")
+        decoded = self._rpc("validateaddress", addresses[0])
+        script = decoded.get("scriptPubKey") if isinstance(decoded, dict) else None
+        if (
+            not isinstance(script, str)
+            or len(script) != 50
+            or not script.startswith("76a914")
+            or not script.endswith("88ac")
+        ):
+            raise BitcoinCoreError("Bitcoin Core did not return the expected master-key script.")
+        try:
+            return bytes.fromhex(script[6:14])
+        except ValueError as error:
+            raise BitcoinCoreError("Bitcoin Core returned an invalid master-key script.") from error
 
     def fingerprint(self, secret: MasterSeed) -> bytes:
         """Return the BIP32 master fingerprint for a validated master seed."""
@@ -152,54 +153,86 @@ class BitcoinCore:
             raise TypeError("wallet operations accept only MasterSeed")
         return self.fingerprint_seed(secret.seed_bytes)
 
-    def multisig_account_xpub(self, secret: MasterSeed, *, account: int = 0) -> str:
-        """Return the BIP48 native-SegWit account xpub with Core-derived origin."""
-        if not isinstance(secret, MasterSeed):
-            raise TypeError("wallet operations accept only MasterSeed")
-        if isinstance(account, bool) or not isinstance(account, int) or not 0 <= account < 2**31:
-            raise ValueError("account must be an integer from 0 through 2^31-1")
-        path = f"/48h/{int(self.chain != 'main')}h/{account}h/2h"
-        _fingerprint, key = self._normalized_key(secret.seed_bytes, path)
-        return key
+    def _root_xpub(self, wallet: str) -> str:
+        result = self._rpc("gethdkeys", wallet=wallet)
+        if not isinstance(result, list) or len(result) != 1 or not isinstance(result[0], dict):
+            raise BitcoinCoreError("Bitcoin Core did not return the expected wallet HD key.")
+        xpub = result[0].get("xpub")
+        prefix = "xpub" if self.chain == "main" else "tpub"
+        if (
+            result[0].get("has_private") is not True
+            or not isinstance(xpub, str)
+            or not xpub.startswith(prefix)
+        ):
+            raise BitcoinCoreError("Bitcoin Core did not return the expected private wallet HD key.")
+        return xpub
+
+    def _derived_key(self, wallet: str, root_xpub: str, path: str) -> tuple[bytes, str]:
+        result = self._rpc(
+            "-named",
+            "derivehdkey",
+            f"path=m{path}",
+            f"hdkey={root_xpub}",
+            wallet=wallet,
+        )
+        origin = result.get("origin") if isinstance(result, dict) else None
+        xpub = result.get("xpub") if isinstance(result, dict) else None
+        match = _ORIGIN.fullmatch(origin) if isinstance(origin, str) else None
+        prefix = "xpub" if self.chain == "main" else "tpub"
+        if match is None or not isinstance(xpub, str) or not xpub.startswith(prefix):
+            raise BitcoinCoreError("Bitcoin Core did not return the expected derived HD key.")
+        normalized_path = match.group("path").replace("'", "h")
+        if normalized_path != path:
+            raise BitcoinCoreError("Bitcoin Core returned an unexpected derivation path.")
+        return bytes.fromhex(match.group("fingerprint")), f"{origin}{xpub}/<0;1>/*"
 
     def public_descriptors(
         self,
         secret: MasterSeed,
         *,
+        wallet: str,
         account: int = 0,
         timestamp: int | Literal["now"] = 0,
     ) -> tuple[dict[str, object], ...]:
-        """Normalize BIP44/49/84/86 private descriptors to public descriptors in Core."""
-        private = core_descriptors(
-            secret,
-            account=account,
-            testnet=self.chain != "main",
-            private=True,
-            timestamp=timestamp,
-        )
-        records: list[dict[str, object]] = []
+        """Ask Core to derive account xpubs, then normalize their public descriptors."""
+        if not isinstance(secret, MasterSeed):
+            raise TypeError("wallet operations accept only MasterSeed")
+        root_xpub = self._root_xpub(wallet)
+        keys: list[str] = []
         expected_fingerprint: bytes | None = None
-        for purpose, record in zip((44, 49, 84, 86), private, strict=True):
-            normalized = self._normalized_descriptor(str(record["desc"]).split("#", 1)[0])
-            match = _ORIGIN_KEY.search(normalized)
-            expected_path = f"/{purpose}h/{int(self.chain != 'main')}h/{account}h"
-            if match is None or match.group("path").replace("'", "h") != expected_path:
-                raise BitcoinCoreError("Bitcoin Core returned an unexpected descriptor key origin.")
-            fingerprint = bytes.fromhex(match.group("fingerprint"))
+        for purpose in _PURPOSES:
+            path = f"/{purpose}h/{int(self.chain != 'main')}h/{account}h"
+            fingerprint, key = self._derived_key(wallet, root_xpub, path)
             if expected_fingerprint is None:
                 expected_fingerprint = fingerprint
             elif fingerprint != expected_fingerprint:
                 raise BitcoinCoreError("Bitcoin Core returned inconsistent master fingerprints.")
-            records.append({"desc": normalized, "active": True, "timestamp": timestamp})
-        return tuple(records)
+            keys.append(key)
+        records = _descriptor_records(tuple(keys), timestamp)  # type: ignore[arg-type]
+        for record in records:
+            detail = self._rpc("getdescriptorinfo", stdin=str(record["desc"]) + "\n")
+            expansion = detail.get("multipath_expansion") if isinstance(detail, dict) else None
+            if (
+                not isinstance(detail, dict)
+                or detail.get("hasprivatekeys") is not False
+                or not isinstance(expansion, list)
+                or len(expansion) != 2
+                or not all(
+                    isinstance(descriptor, str)
+                    and not any(marker in descriptor for marker in _PRIVATE_MARKERS)
+                    for descriptor in expansion
+                )
+            ):
+                raise BitcoinCoreError("Bitcoin Core did not validate the expected public descriptor.")
+        return records
 
-    def _target(self, name: str, *, private: bool = True) -> tuple[bool, bool] | None:
+    def _target(self, name: str) -> tuple[bool, bool] | None:
         listing, info = self._rpc("listdescriptors", wallet=name), self._rpc("getwalletinfo", wallet=name)
         if not isinstance(info, dict) or not isinstance(listing, dict):
             raise BitcoinCoreError("Unexpected Bitcoin Core wallet information.")
         eligible = (
             info.get("descriptors") is True
-            and info.get("private_keys_enabled") is private
+            and info.get("private_keys_enabled") is True
             and info.get("external_signer", False) is False
             and info.get("txcount") == 0
             and info.get("keypoolsize") == 0
@@ -215,12 +248,8 @@ class BitcoinCore:
         self,
         ask: Callable[[str], str],
         tell: Callable[[str], None],
-        *,
-        private: bool = True,
     ) -> str:
-        choices = tuple(
-            name for name in sorted(self._names()) if self._target(name, private=private) is not None
-        )
+        choices = tuple(name for name in sorted(self._names()) if self._target(name) is not None)
         if len(choices) == 1 and ask(f"Use blank wallet {json.dumps(choices[0])}? [y/N]").lower() in (
             "y",
             "yes",
@@ -245,22 +274,19 @@ class BitcoinCore:
                     tell("Enter one of the displayed numbers.")
                     continue
             before = set(self._names())
-            key_state = "enabled" if private else "disabled"
             tell(
                 "In Bitcoin-Qt, choose File > Create Wallet... and create a blank descriptor wallet with "
-                f"private keys {key_state}."
+                "private keys enabled."
             )
             tell("Waiting; press Ctrl-C to stop.")
             while True:
                 sleep(1)
                 names = set(self._names())
                 new = names - before
-                appeared = tuple(
-                    name for name in sorted(new) if self._target(name, private=private) is not None
-                )
+                appeared = tuple(name for name in sorted(new) if self._target(name) is not None)
                 if appeared:
                     break
-            choices = tuple(name for name in sorted(names) if self._target(name, private=private) is not None)
+            choices = tuple(name for name in sorted(names) if self._target(name) is not None)
             if len(appeared) == 1 and ask(f"Use blank wallet {json.dumps(appeared[0])}? [y/N]").lower() in (
                 "y",
                 "yes",
@@ -273,13 +299,12 @@ class BitcoinCore:
         ask: Callable[[str], str],
         tell: Callable[[str], None],
         *,
-        private: bool = True,
         account: int = 0,
         timestamp: int | Literal["now"] = "now",
     ) -> str:
         while True:
-            name = self._select(ask, tell, private=private)
-            state = self._target(name, private=private)
+            name = self._select(ask, tell)
+            state = self._target(name)
             if state is None:
                 tell("That wallet is no longer eligible. Choose again.")
                 continue
@@ -287,11 +312,57 @@ class BitcoinCore:
             relock = encrypted
             waited = False
             try:
-                public = core_descriptors(
+                while True:
+                    if locked:
+                        waited = True
+                        tell(
+                            "In Bitcoin-Qt, open Window > Console and select wallet "
+                            f'{json.dumps(name)}.\nType: walletpassphrase "YOUR PASSPHRASE" 5\n'
+                            "Waiting; press Ctrl-C to stop."
+                        )
+                    while locked:
+                        sleep(1)
+                        state = self._target(name)
+                        if state is None:
+                            break
+                        encrypted, locked = state
+                        relock = relock or encrypted
+                    if state is None:
+                        break
+                    state = self._target(name)
+                    if state is None:
+                        raise BitcoinCoreError("The selected wallet changed before import.")
+                    current_encrypted, locked = state
+                    relock = relock or current_encrypted
+                    if not locked:
+                        break
+                if state is None:
+                    tell("That wallet is no longer eligible. Choose again.")
+                    continue
+                records = core_descriptors(
                     secret,
-                    integration=self,
                     account=account,
                     testnet=self.chain != "main",
+                    private=True,
+                    timestamp=timestamp,
+                )
+                imported = self._rpc(
+                    "importdescriptors",
+                    wallet=name,
+                    stdin=json.dumps(records, separators=(",", ":")) + "\n",
+                )
+                del records
+                valid = (
+                    isinstance(imported, list)
+                    and len(imported) == 4
+                    and all(isinstance(item, dict) and item.get("success") is True for item in imported)
+                )
+                if not valid:
+                    raise BitcoinCoreError("Bitcoin Core did not import every private descriptor.")
+                public = self.public_descriptors(
+                    secret,
+                    wallet=name,
+                    account=account,
                     timestamp=timestamp,
                 )
                 expected: list[tuple[str, bool, bool]] = []
@@ -307,59 +378,6 @@ class BitcoinCore:
                     expected.extend(
                         (descriptor, True, bool(position)) for position, descriptor in enumerate(expansion)
                     )
-                while True:
-                    if locked:
-                        waited = True
-                        tell(
-                            "In Bitcoin-Qt, open Window > Console and select wallet "
-                            f'{json.dumps(name)}.\nType: walletpassphrase "YOUR PASSPHRASE" 5\n'
-                            "Waiting; press Ctrl-C to stop."
-                        )
-                    while locked:
-                        sleep(1)
-                        state = self._target(name, private=private)
-                        if state is None:
-                            break
-                        encrypted, locked = state
-                        relock = relock or encrypted
-                    if state is None:
-                        break
-                    state = self._target(name, private=private)
-                    if state is None:
-                        raise BitcoinCoreError("The selected wallet changed before import.")
-                    current_encrypted, locked = state
-                    relock = relock or current_encrypted
-                    if not locked:
-                        break
-                if state is None:
-                    tell("That wallet is no longer eligible. Choose again.")
-                    continue
-                records = (
-                    public
-                    if not private
-                    else core_descriptors(
-                        secret,
-                        account=account,
-                        testnet=self.chain != "main",
-                        private=private,
-                        timestamp=timestamp,
-                    )
-                )
-                imported = self._rpc(
-                    "importdescriptors",
-                    wallet=name,
-                    stdin=json.dumps(records, separators=(",", ":")) + "\n",
-                )
-                del records
-                valid = (
-                    isinstance(imported, list)
-                    and len(imported) == 4
-                    and all(isinstance(item, dict) and item.get("success") is True for item in imported)
-                )
-                if not valid:
-                    raise BitcoinCoreError(
-                        f"Bitcoin Core did not import every {'private' if private else 'public'} descriptor."
-                    )
                 listed = self._rpc("listdescriptors", wallet=name)
                 values = listed.get("descriptors") if isinstance(listed, dict) else None
                 if not isinstance(values, list) or not all(isinstance(item, dict) for item in values):
@@ -371,6 +389,7 @@ class BitcoinCore:
                         item.get("internal") is True,
                     )
                     for item in values
+                    if item.get("active") is True
                 ]
                 if sorted(actual) != sorted(expected):
                     raise BitcoinCoreError("Bitcoin Core's accepted public descriptors did not match.")

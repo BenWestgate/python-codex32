@@ -55,7 +55,7 @@
     {"id": "abbreviated-command", "args": ["cre"]},
     {"id": "missing-share-index", "args": ["share"]},
     {"id": "unsupported-fresh-size", "args": ["create", "--bytes", "17"]},
-    {"id": "missing-wallet-mode", "args": ["wallet", "bitcoin-core"]},
+    {"id": "old-wallet-mode", "args": ["wallet", "bitcoin-core"]},
     {"id": "unknown-option", "args": ["correct", "--candidate"]}
   ]
 }

@@ -1,4 +1,4 @@
-"""Emit a deterministic digest of the complete wallet-export boundary."""
+"""Emit a deterministic digest of the wallet interoperability boundary."""
 
 from __future__ import annotations
 
@@ -8,17 +8,12 @@ import json
 
 from _wallet_reference import ReferenceCore
 
-from codex32 import (
-    MasterSeed,
-    core_descriptors,
-    master_xprv,
-    multisig_account_xpub,
-)
+from codex32 import MasterSeed, core_descriptors, master_xprv
 
-_DOMAIN = b"python-codex32 differential wallet corpus v1"
+_DOMAIN = b"python-codex32 differential wallet corpus v2"
 _SEED_LENGTHS = (16, 20, 24, 28, 32, 64)
 _EXPECTED_CASES = 64
-_EXPECTED_DIGEST = "f21f9b7f5574f39b14a585c99b99b9db70bf4e7b852d3f038679956cd2e7cb12"
+_EXPECTED_DIGEST = "9b3342af401765e4ec73acb3d17142060c1844fc70fda4d87e77f1191f6aec40"
 
 
 def _seed(case: int, length: int) -> bytes:
@@ -37,14 +32,10 @@ def _record(case: int, length: int, testnet: bool) -> dict[str, object]:
         "testnet": testnet,
         "account": account,
         "xprv": master_xprv(secret, testnet=testnet),
-        "multisig": multisig_account_xpub(
-            secret,
-            account=account,
-            integration=core,
-        ),
         "public": core_descriptors(
             secret,
             integration=core,
+            wallet="test-only",
             account=account,
             testnet=testnet,
             timestamp=case,
@@ -86,7 +77,7 @@ def main() -> None:
     if arguments.verify:
         if arguments.cases != _EXPECTED_CASES:
             raise SystemExit(f"--verify requires --cases {_EXPECTED_CASES}")
-        if actual != _EXPECTED_DIGEST:
+        if not _EXPECTED_DIGEST or actual != _EXPECTED_DIGEST:
             raise SystemExit("wallet differential digest mismatch")
 
 

@@ -27,8 +27,9 @@ obtain an independent review before relying on it with funds. See
 
 ## Install
 
-Python 3.12 or 3.13 is required. To install the project with its pinned
-dependencies, run these commands from the project folder:
+Python 3.12 or 3.13 is required. The installed package has no third-party
+runtime dependencies. To install it with the pinned build backend, run these
+commands from the project folder:
 
 ```bash
 python -m venv .venv
@@ -36,8 +37,6 @@ source .venv/bin/activate
 
 python -m pip install --require-hashes \
   -r requirements/cli-build-dependencies.txt
-python -m pip install --no-build-isolation --require-hashes \
-  -r requirements/cli-dependencies.txt
 python -m pip install --no-build-isolation --no-deps .
 python -m pip check
 ```
@@ -57,7 +56,7 @@ characters, require interactive confirmation.
 
 ## Start here
 
-Start Bitcoin Core 30 or newer with local RPC enabled. codex32 detects and
+Start Bitcoin Core 32 or newer with local RPC enabled. codex32 detects and
 reports the local Bitcoin Core network. To practice with Bitcoin-Qt on signet,
 start it with:
 

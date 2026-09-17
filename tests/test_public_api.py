@@ -1,13 +1,57 @@
 """Abuse-path tests for the safe public package boundary."""
 
+import ast
+import os
+import subprocess
+import sys
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
-import codex32
 from data.bip93_vectors import VECTOR_2
 
+import codex32
 from codex32 import Header, MasterSeed, Share, parse_codex32
 from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshold
+
+
+def test_backup_workflows_need_only_the_standard_library() -> None:
+    source = """
+from codex32 import CreationCeremony, CorrectionContext, Profile, correct, derive_share, parse_codex32, recover_secret
+
+ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+shares = []
+for _ in range(2):
+    share = ceremony.next_share()
+    assert ceremony.confirm(share.text).accepted
+    shares.append(share)
+secret = ceremony.finish()
+assert parse_codex32(secret.text) == secret
+assert recover_secret(shares) == secret
+assert derive_share(shares, "d").header.index == "d"
+damaged = shares[0].text[:-1] + "?"
+assert correct(CorrectionContext(Profile.MS), damaged)
+"""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", source],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_python_bip32_boundary_stops_at_the_root() -> None:
+    module = Path(__file__).parents[1] / "src" / "codex32" / "_bip32.py"
+    tree = ast.parse(module.read_text())
+    functions = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+    imports = {alias.name for node in tree.body if isinstance(node, ast.Import) for alias in node.names}
+    assert functions == {"_root_material", "_valid_root", "_base58check", "_master_xprv_from_seed"}
+    assert imports == {"hashlib", "hmac"}
 
 
 def test_checksum_completion_is_not_public_api() -> None:

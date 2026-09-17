@@ -28,6 +28,7 @@ from codex32 import (
     Profile,
     Secret,
     Share,
+    derive_share,
     parse_codex32,
     recover_secret,
 )
@@ -36,7 +37,7 @@ from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
-from tools._wallet_reference import ReferenceCore, fingerprint_seed
+from tools._wallet_reference import fingerprint_seed
 
 
 @dataclass(frozen=True)
@@ -90,7 +91,7 @@ class _CreationOutput(io.StringIO):
 @dataclass
 class _FakeBitcoinCore:
     chain: str = "main"
-    version: int = 300000
+    version: int = 320000
     imported: MasterSeed | None = None
     private: bool | None = None
     account: int | None = None
@@ -101,9 +102,6 @@ class _FakeBitcoinCore:
 
     def fingerprint(self, secret: MasterSeed) -> bytes:
         return self.fingerprint_seed(secret.seed_bytes)
-
-    def multisig_account_xpub(self, secret: MasterSeed, *, account: int = 0) -> str:
-        return ReferenceCore(testnet=self.chain != "main").multisig_account_xpub(secret, account=account)
 
     def initialize(
         self,
@@ -466,7 +464,7 @@ def test_tty_retry_replaces_only_the_editable_suffix(
 
 @pytest.mark.parametrize(
     ("command", "expected"),
-    [(["xprv"], VECTOR_1["xprv"]), (["wallet", "multisig-xpub"], "[3f3521a6/48h/0h/0h/2h]xpub")],
+    [(["xprv"], VECTOR_1["xprv"]), (["wallet"], "")],
 )
 def test_tty_wallet_commands_retry_silently_after_declining_correction(
     monkeypatch: pytest.MonkeyPatch,
@@ -681,9 +679,7 @@ def test_fixed_prefix_follows_prevailing_suffix_case(prefix: str, suffix: str, e
     "command",
     (
         ("xprv",),
-        ("wallet", "multisig-xpub"),
-        ("wallet", "bitcoin-core", "watch-only"),
-        ("wallet", "bitcoin-core", "restore"),
+        ("wallet",),
     ),
 )
 def test_wallet_paths_accept_a_suffix_after_frozen_ms1(
@@ -709,9 +705,7 @@ def test_wallet_paths_accept_a_suffix_after_frozen_ms1(
     "command",
     (
         ("xprv",),
-        ("wallet", "multisig-xpub"),
-        ("wallet", "bitcoin-core", "watch-only"),
-        ("wallet", "bitcoin-core", "restore"),
+        ("wallet",),
     ),
 )
 def test_wallet_recovery_recases_later_header_from_suffix(
@@ -1040,9 +1034,7 @@ def test_bip39_recovery_accepts_later_suffix_in_another_case(monkeypatch, profil
     (
         ("secret", "--plain"),
         ("xprv",),
-        ("wallet", "multisig-xpub"),
-        ("wallet", "bitcoin-core", "watch-only"),
-        ("wallet", "bitcoin-core", "restore"),
+        ("wallet",),
     ),
 )
 def test_tty_recovery_accepts_secret_after_compatible_shares(
@@ -1065,7 +1057,7 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
 
     assert (main if command[0] == "secret" else ms_main)(command) == 0
     captured = capsys.readouterr()
-    if command[:2] != ("wallet", "bitcoin-core"):
+    if command[0] != "wallet":
         assert captured.out
     assert "Rejected:" not in captured.err
     assert "Share 1 of 3 accepted." in captured.err
@@ -1874,32 +1866,23 @@ def test_correction_hides_internal_candidate_reparse_failures() -> None:
 
 def test_wallet_commands_initialize_selected_master_seed_destinations() -> None:
     xprv = _invoke(["xprv"], VECTOR_1["secret_s"])
-    xpub = _invoke(["wallet", "multisig-xpub", "--account", "0"], VECTOR_1["secret_s"])
-    public, public_core = _invoke_initialized_wallet(
-        ["wallet", "bitcoin-core", "watch-only"], VECTOR_1["secret_s"]
-    )
-    private, private_core = _invoke_initialized_wallet(
-        ["wallet", "bitcoin-core", "restore"], VECTOR_1["secret_s"]
-    )
+    private, private_core = _invoke_initialized_wallet(["wallet"], VECTOR_1["secret_s"])
 
-    assert xprv.exit_code == xpub.exit_code == public.exit_code == private.exit_code == 0
+    assert xprv.exit_code == private.exit_code == 0
     assert xprv.stdout.strip() == VECTOR_1["xprv"]
     assert xprv.stderr.endswith("Keep it secret.\n\n")
-    assert xpub.stdout.startswith("[3f3521a6/48h/0h/0h/2h]xpub")
-    assert public.stdout == private.stdout == ""
-    assert public_core.imported == private_core.imported == parse_codex32(VECTOR_1["secret_s"])
-    assert public_core.private is False and private_core.private is True
+    assert private.stdout == ""
+    assert private_core.imported == parse_codex32(VECTOR_1["secret_s"])
+    assert private_core.private is True
     assert "Warning: This imports private descriptors that can spend funds." in private.stderr
     assert "Use only the intended encrypted wallet" not in private.stderr
     assert "\x1b[" not in private.stderr + private.stdout
-    assert "Do not enter codex32 shares on a network-connected computer" in public.stderr
-    assert "watch-only wallet initialized" in public.stderr
     assert "spending wallet initialized" in private.stderr
 
 
 def test_bitcoin_core_cli_accepts_now_timestamp() -> None:
     result, core = _invoke_initialized_wallet(
-        ["wallet", "bitcoin-core", "watch-only", "--timestamp", "now"],
+        ["wallet", "--timestamp", "now"],
         VECTOR_1["secret_s"],
     )
 
@@ -1909,7 +1892,7 @@ def test_bitcoin_core_cli_accepts_now_timestamp() -> None:
 
 def test_bitcoin_core_cli_derives_test_network_from_connected_core() -> None:
     result, core = _invoke_initialized_wallet(
-        ["wallet", "bitcoin-core", "watch-only"],
+        ["wallet"],
         VECTOR_1["secret_s"],
         core=_FakeBitcoinCore(chain="regtest"),
     )
@@ -1917,32 +1900,66 @@ def test_bitcoin_core_cli_derives_test_network_from_connected_core() -> None:
     assert result.exit_code == 0 and core.imported is not None
 
 
-def test_direct_watch_only_warning_precedes_recovery_input(
+def test_wallet_network_selection_does_not_change_recovery_material() -> None:
+    expected = parse_codex32(VECTOR_1["secret_s"])
+    main_result, main_core = _invoke_initialized_wallet(
+        ["wallet"],
+        VECTOR_1["secret_s"],
+        core=_FakeBitcoinCore(chain="main"),
+    )
+    test_result, test_core = _invoke_initialized_wallet(
+        ["wallet"],
+        VECTOR_1["secret_s"],
+        core=_FakeBitcoinCore(chain="regtest"),
+    )
+
+    assert main_result.exit_code == test_result.exit_code == 0
+    assert main_core.imported == test_core.imported == expected
+
+
+def test_wallet_network_selection_preserves_share_compatibility() -> None:
+    a = parse_codex32(VECTOR_2["share_A"])
+    c = parse_codex32(VECTOR_2["share_C"])
+    assert isinstance(a, Share) and isinstance(c, Share)
+    recovered = recover_secret((a, c))
+    assert isinstance(recovered, MasterSeed)
+
+    for chain in ("main", "regtest"):
+        result, core = _invoke_initialized_wallet(
+            ["wallet"],
+            recovered.text,
+            core=_FakeBitcoinCore(chain=chain),
+        )
+        assert result.exit_code == 0
+        assert core.imported == recovered
+        assert recover_secret((a, c)) == recovered
+        assert derive_share((a, c), "d").text == VECTOR_2["derived_D"]
+
+
+def test_wallet_private_warning_precedes_recovery_input(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     cli_module = importlib.import_module("codex32.cli")
 
     def stop_before_input(_fingerprint=None) -> MasterSeed:
-        assert "Do not enter codex32 shares on a network-connected computer" in capsys.readouterr().err
+        assert "Warning: This imports private descriptors that can spend funds." in capsys.readouterr().err
         raise cli_module._UsageError("stopped")
 
     monkeypatch.setattr(cli_module, "_master_seed", stop_before_input)
     monkeypatch.setattr(cli_module.BitcoinCore, "connect", lambda *_args: _FakeBitcoinCore())
     monkeypatch.setattr(cli_module.sys, "stdin", _TTYInput())
 
-    assert ms_main(["wallet", "bitcoin-core", "watch-only"]) == 2
+    assert ms_main(["wallet"]) == 2
 
 
 def test_wallet_cli_rejects_non_ms_profiles() -> None:
     for command in (
         ("xprv",),
-        ("wallet", "multisig-xpub"),
-        ("wallet", "bitcoin-core", "watch-only"),
-        ("wallet", "bitcoin-core", "restore"),
+        ("wallet",),
     ):
         result = (
             _invoke_initialized_wallet(list(command), SHARING_VECTORS["cl"]["S"])[0]
-            if command[:2] == ("wallet", "bitcoin-core")
+            if command[0] == "wallet"
             else _invoke(list(command), SHARING_VECTORS["cl"]["S"])
         )
         assert result.exit_code != 0
@@ -1951,7 +1968,7 @@ def test_wallet_cli_rejects_non_ms_profiles() -> None:
 
 def test_long_options_must_not_be_abbreviated() -> None:
     result = _invoke(
-        ["wallet", "bitcoin-core", "restore", "--acc", "0"],
+        ["wallet", "--acc", "0"],
         VECTOR_1["secret_s"],
     )
 
@@ -1959,10 +1976,12 @@ def test_long_options_must_not_be_abbreviated() -> None:
     assert "Remove or correct these arguments: --acc 0" in result.stderr
 
 
-def test_wallet_modes_are_mandatory_and_old_commands_are_absent() -> None:
+def test_old_wallet_hierarchy_and_old_commands_are_absent() -> None:
     for command in (
-        ["wallet"],
         ["wallet", "bitcoin-core"],
+        ["wallet", "restore"],
+        ["wallet", "watch-only"],
+        ["wallet", "multisig-xpub"],
         ["verify"],
         ["xpub"],
         ["descriptors"],

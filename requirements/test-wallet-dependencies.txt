@@ -1,6 +1,7 @@
 --require-hashes
 --only-binary=coincurve
 
+# Test-only independent wallet oracle; never installed by the documented CLI path.
 # Owner-authored upstream PR #53 changes only coincurve's upper bound and its CI matrix.
 bip32 @ https://github.com/darosior/python-bip32/archive/45db547bdf5a5bc19a8c55ef447dbf9169928792.tar.gz \
     --hash=sha256:a25be30641b381eed9a5249bbc4a73124905223c9c50f93140f519bcf259e415

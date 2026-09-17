@@ -23,12 +23,11 @@ class WalletPublicDeriver(Protocol):
 
     def fingerprint(self, secret: MasterSeed) -> bytes: ...
 
-    def multisig_account_xpub(self, secret: MasterSeed, *, account: int = 0) -> str: ...
-
     def public_descriptors(
         self,
         secret: MasterSeed,
         *,
+        wallet: str,
         account: int = 0,
         timestamp: int | Literal["now"] = 0,
     ) -> tuple[dict[str, object], ...]: ...
@@ -67,27 +66,31 @@ def _with_checksum(descriptor: str) -> str:
     return descriptor + "#" + _u5_to_chars(DESCSUM.create(_descriptor_symbols(descriptor)))
 
 
+def _descriptor_records(
+    keys: tuple[str, str, str, str], timestamp: int | Literal["now"]
+) -> tuple[dict[str, object], ...]:
+    records = []
+    for (template, _purpose), key in zip(_TEMPLATES, keys, strict=True):
+        records.append(
+            {
+                "desc": _with_checksum(template.format(key=key)),
+                "active": True,
+                "timestamp": timestamp,
+            }
+        )
+    return tuple(records)
+
+
 def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:
     """Return the root BIP32 extended private key with authority over all children."""
     return _master_xprv_from_seed(_master(secret).seed_bytes, testnet=testnet)
-
-
-def multisig_account_xpub(
-    secret: MasterSeed,
-    *,
-    integration: WalletPublicDeriver,
-    account: int = 0,
-) -> str:
-    """Return a public BIP48 native-SegWit account key with its key origin."""
-    _master(secret)
-    account = _account(account)
-    return integration.multisig_account_xpub(secret, account=account)
 
 
 def core_descriptors(
     secret: MasterSeed,
     *,
     integration: WalletPublicDeriver | None = None,
+    wallet: str | None = None,
     account: int = 0,
     testnet: bool = False,
     private: bool = False,
@@ -111,13 +114,18 @@ def core_descriptors(
     if not private:
         if integration is None:
             raise TypeError("public descriptors require a wallet integration")
-        return integration.public_descriptors(secret, account=account, timestamp=timestamp)
+        if wallet is None:
+            raise TypeError("public descriptors require a Bitcoin Core wallet name")
+        return integration.public_descriptors(
+            secret,
+            wallet=wallet,
+            account=account,
+            timestamp=timestamp,
+        )
     coin_type = int(testnet)
     xprv = master_xprv(secret, testnet=testnet)
-    records = []
-    for template, purpose in _TEMPLATES:
+    keys = []
+    for _template, purpose in _TEMPLATES:
         path = f"m/{purpose}h/{coin_type}h/{account}h"
-        key = xprv + path[1:] + "/<0;1>/*"
-        descriptor = template.format(key=key)
-        records.append({"desc": _with_checksum(descriptor), "active": True, "timestamp": timestamp})
-    return tuple(records)
+        keys.append(xprv + path[1:] + "/<0;1>/*")
+    return _descriptor_records(tuple(keys), timestamp)  # type: ignore[arg-type]

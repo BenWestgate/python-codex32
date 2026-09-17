@@ -28,7 +28,7 @@ classifiers = [
   "Topic :: Security :: Cryptography",
   "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["bip32>=5,<6"]
+dependencies = []
 
 [project.scripts]
 codex32 = "codex32.cli:main"

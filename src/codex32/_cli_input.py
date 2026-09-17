@@ -601,7 +601,7 @@ def _redirected(
     for token in tokens:
         try:
             artifact = _parse(token, profiles)
-        except InputError as error:
+        except InputError:
             if one:
                 raise
 
@@ -627,7 +627,7 @@ def _redirected(
                 fingerprint=fingerprint,
             )
             if len(candidates) != 1:
-                raise error
+                raise
             if not _confirm_correction(candidates[0], accepted, basis, fingerprint):
                 raise CorrectionDeclined
             artifact = candidates[0].artifact

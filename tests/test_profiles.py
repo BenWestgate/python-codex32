@@ -16,7 +16,6 @@ from data.bip93_vectors import (
 from codex32 import (
     CoreLightningSecret,
     MasterSeed,
-    Share,
     parse_codex32,
 )
 from codex32.bech32 import (
@@ -28,7 +27,6 @@ from codex32.bech32 import (
 from codex32.bip93 import _checksum_for_encoded_length
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import (
-    InvalidBip39Checksum,
     InvalidCase,
     InvalidCharacter,
     InvalidChecksum,
@@ -37,6 +35,7 @@ from codex32.errors import (
     MissingSeparator,
 )
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, TEXT_LENGTHS
+
 
 def _payload(data: bytes, padding: int) -> str:
     accumulator = int.from_bytes(data, "big")

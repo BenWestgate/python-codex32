@@ -26,8 +26,8 @@ fingerprints, and wallet history cannot spend funds but remain privacy-sensitive
 | Package API | Recovery, derivation, sharing, and wallet operations accept validated artifacts, not unchecked text. |
 | Python process | Secret objects remain in process memory; normal output must not reveal them unintentionally. |
 | Operator and paper | The operator controls transcription, physical recovery cards, wallet records, and acceptance of correction suggestions. |
-| Entropy and cryptography | The operating-system cryptographically secure random-number generator (OS-CSPRNG), BIP32, and Coincurve are trusted dependencies. |
-| Bitcoin Core | The selected `bitcoin-cli`, its configuration, the selected local Core instance, and the destination computer are trusted for wallet initialization. |
+| Entropy and root keys | The operating-system cryptographically secure random-number generator (OS-CSPRNG) and Python stdlib HMAC/SHA-512 primitives are trusted. codex32 performs only BIP32 root validation and root xprv/tprv serialization in process. |
+| Bitcoin Core | The selected `bitcoin-cli`, its configuration, the selected local Core instance, and the destination computer are trusted for fingerprints, hardened/public-key derivation, and wallet initialization. |
 
 ## Operator assumptions
 
@@ -59,8 +59,10 @@ The operator must:
 - Terminal input may remain in line-editing buffers or scrollback. codex32
   disables automatic Readline history, writes no history file, and cannot
   guarantee that its best-effort terminal and scrollback clearing succeeds.
-- BIP32 and Coincurve are trusted cryptographic dependencies and are not
-  independently audited by this project.
+- The installed Python package does not load a third-party secp256k1
+  implementation. Elliptic-curve public-key derivation used for fingerprints,
+  xpubs, and public descriptors is delegated to the separately running Bitcoin
+  Core process.
 - Separate OS-CSPRNG calls provide opportunities to mix fresh noise but cannot
   guarantee new physical entropy between calls.
 - A checksum, generation-padding hint, fingerprint, or correction candidate
@@ -127,8 +129,10 @@ Confirmation shows that the operator can produce the correct recovery string dur
 The API accepts neither caller-provided entropy nor padding values, partial
 bases, or resumable ceremony state. Fresh creation rejects final-share
 candidates whose generation padding is invalid. Master-seed creation also
-rejects candidates that cannot form a valid BIP32 root. The original ceremony
-result, not re-entered text, remains the source for automatic wallet setup.
+rejects candidates that cannot form a valid BIP32 root. This check uses only
+stdlib HMAC-SHA512 plus the secp256k1 scalar-order bound; it performs no point
+multiplication. The original ceremony result, not re-entered text, remains the
+source for automatic wallet setup.
 
 Sharing an existing secret generates and confirms *k−1* random initial shares
 before deriving the remaining shares. Recovery requires exactly the declared
@@ -213,18 +217,18 @@ for creation. New Bitcoin backups should use the secure random generation in
 ## Bitcoin Core controls
 
 Automatic initialization applies to fresh Bitcoin master-seed creation,
-sharing an existing master seed, and `ms32 wallet bitcoin-core` restoration.
-Watch-only mode initializes a private-keys-disabled destination with public
-descriptors.
+sharing an existing master seed, and direct `ms32 wallet` restoration. The CLI
+initializes only private-key-enabled descriptor wallets; watch-only and offline
+signing setup belong to Bitcoin Core's maintained v32 workflow.
 
 | Control | Required behavior |
 |---|---|
-| Preflight | Before entropy or recovery input, explicit chain arguments probe the five standard local networks for Bitcoin Core 30 or newer. One response is selected automatically; multiple responses require operator selection. |
+| Preflight | Before entropy or recovery input, explicit chain arguments probe the five standard local networks for Bitcoin Core 32 or newer. One response is selected automatically; multiple responses require operator selection. |
 | Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, wallet database, or wallet-creation operation. Every call uses loopback and the selected chain. |
-| Destination | Only an empty descriptor wallet of the requested private-key type, with no external signer, transactions, descriptors, keypool entries, or active scan, is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
-| Seed source | Account 0 BIP44, BIP49, BIP84, and BIP86 descriptors are derived from the original ceremony result or validated recovered master seed for Core's reported chain. |
+| Destination | Only an empty descriptor wallet with private keys enabled, no external signer, transactions, descriptors, keypool entries, or active scan is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
+| Seed source | The original ceremony result or validated recovered master seed supplies root-xprv private descriptors for Core's reported chain. After import, Core v32's wallet HD-key RPCs derive the requested BIP44, BIP49, BIP84, and BIP86 account xpubs. |
 | Secret channel | Private descriptor JSON is sent only through the child's standard input. It is absent from arguments, ordinary output, and diagnostics. codex32 has no passphrase channel and suppresses raw Core errors. |
-| Revalidation | Public descriptors are expanded before requesting an unlock. Every destination property is checked again immediately before import. Every import must succeed, and the exact eight expected public external/internal descriptors must match Core's accepted set. |
+| Revalidation | Every destination property is checked again immediately before import. Every private import must succeed before public verification begins. `gethdkeys` must expose one private wallet root; `derivehdkey` must return the requested hardened account paths with one consistent fingerprint and the correct network xpub/tpub version. `getdescriptorinfo` then validates and expands the fixed public templates, and the exact eight active descriptors must match Core's accepted set. |
 | Relocking | Once Core reports an encrypted private-key wallet unlocked, a `finally`-protected obligation requests `walletlock` and verifies the locked state after success, failure, state change, or interruption. |
 
 The unlock command is entered in Bitcoin-Qt. Its

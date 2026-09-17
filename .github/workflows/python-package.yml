@@ -24,7 +24,7 @@ jobs:
       - run: python -m pip install --require-hashes -r requirements/cli-build-dependencies.txt
       - run: >-
           python -m pip install --no-build-isolation --require-hashes
-          -r requirements/cli-dependencies.txt
+          -r requirements/test-wallet-dependencies.txt
       - run: python -m pip install --no-build-isolation -e '.[dev]'
       - run: python -m pip check
       - run: python -m pytest -q
@@ -34,3 +34,4 @@ jobs:
       - run: python tools/differential_correction.py --verify
       - run: python tools/differential_wallet.py --verify
       - run: python -m build --no-isolation
+      - run: python tools/verify_wheel_environment.py

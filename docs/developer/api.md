@@ -43,7 +43,7 @@ generic parse-length failure.
 | structural alignment and admission | `indel.py` | `test_correction_indel.py`, `test_correction_capture.py` |
 | CLI competitor scheduling and pruning | `_competitors.py` | `test_competitors.py` |
 | incremental alignment syndromes | `_alignment.py` | `test_alignment.py` |
-| master-seed BIP32 adaptation | `profiles/ms32.py` | BIP32 and wallet vectors |
+| stdlib-only BIP32 root validation and serialization | `_bip32.py`, `profiles/ms32.py` | BIP32 and wallet vectors |
 | fixed wallet derivation and descriptors | `wallet.py` | `test_wallet.py` |
 | Core target selection and subprocess state | `_bitcoin_core.py` | Core adapter and regtest |
 | bounded stdin, fixed-prefix TTY entry, and whole-card confirmation | `_cli_input.py` | `test_cli.py` |
@@ -66,9 +66,11 @@ generic parse-length failure.
   target header, and reparses the result.
 - `generation.py` is the only entropy owner and generates only `ms` and `cl`.
 - Correction never edits the HRP or separator and reparses every candidate.
-- `profiles/ms32.py` is the only direct importer of the untyped BIP32
-  dependency. `wallet.py` accepts only `MasterSeed` and has no state or generic
-  parser.
+- `_bip32.py` stops at HMAC-SHA512 root derivation, scalar validity, and root
+  xprv/tprv Base58Check serialization. It performs no child derivation or
+  secp256k1 point arithmetic. `wallet.py` accepts only `MasterSeed`; EC-dependent
+  public derivation is supplied through an explicit wallet integration and the
+  CLI uses Bitcoin Core for that boundary.
 - `_cli_input.py` retains at most nine artifacts and delegates partial-set
   compatibility to `bip93.py`. Card confirmation clears the terminal and saved
   scrollback where supported, then displays only entered text after a mismatch.
@@ -573,79 +575,98 @@ Public wallet operations accept only a validated `MasterSeed`. `wallet.py` is
 stateless and never accepts shares, Core Lightning secrets, BIP39 migration
 artifacts, or raw bytes.
 
-The public adapter has three functions:
+The public adapter has two functions:
 
 - `master_xprv(secret, testnet=False)` returns the BIP32 root extended private
   key.
-- `multisig_account_xpub(secret, account=0, testnet=False)` returns a native
-  SegWit BIP48 account xpub with origin information at
-  `m/48h/coin_typeh/accounth/2h`.
 - `core_descriptors(...)` returns fixed BIP44, BIP49, BIP84, and BIP86 Bitcoin
-  Core `importdescriptors` records.
+  Core `importdescriptors` records. Private records use stdlib-only root xprv
+  serialization; public records require an explicit wallet integration and the
+  Core wallet whose imported root key will perform hardened derivation.
+
+No installed Python dependency performs secp256k1 operations. The private
+Bitcoin Core adapter implements the wallet integration by sending root-xprv
+descriptor material to `bitcoin-cli` over stdin and treating Core's returned
+fingerprints, account xpubs, and normalized descriptors as untrusted external
+data.
 
 Public descriptors contain account xpubs. Private descriptors intentionally
 follow Bitcoin Core's root-key form: they contain the root xprv followed by the
 complete derivation path. They therefore grant authority over the entire root,
 not only the selected account. The CLI warns before printing them.
 
-Account, private/public mode, and timestamp are explicit inputs. The connected
-Core chain selects the network; `--testnet` can require that it is not mainnet.
-The timestamp defaults to `0` so recovery scans from genesis. A nonnegative
-Unix time or the literal `now` may be supplied; `now` intentionally skips
-historical discovery. There is no account database, descriptor parser, policy
-language, RPC library, or network client.
+Account, private/public mode, network serialization, and timestamp are explicit
+API inputs. The `ms32 wallet` CLI takes only `--account` and `--timestamp`; the
+selected Bitcoin Core chain is authoritative and there is no wallet
+`--testnet` flag. `ms32 xprv --testnet` remains explicit because it directly
+selects xprv versus tprv serialization. The timestamp defaults to `0` so
+recovery scans from genesis. A nonnegative Unix time or the literal `now` may
+be supplied; `now` intentionally skips historical discovery. There is no
+account database, descriptor parser, policy language, RPC library, or network
+client.
 
 Bitcoin master-seed creation and restoration use a private CLI adapter. Before
 entropy or recovery input it resolves `bitcoin-cli` from `PATH` and probes the
 five standard chains with explicit `-chain` and `-rpcconnect=127.0.0.1`
-arguments. It requires Core 30 or newer, automatically selects one responsive
+arguments. It requires Core 32 or newer, automatically selects one responsive
 chain, or asks the operator when several respond. Every later call retains the
 selected chain. After confirmation or recovery it offers only loaded, empty
-descriptor wallets of the requested private-key type, with no external signer,
+private-key-enabled descriptor wallets, with no external signer,
 descriptors, transactions, keypool, or active scan. The operator selects by
 number and confirms the escaped exact name; the adapter never infers a wallet
 from list order or Bitcoin-Qt state.
 
-Public descriptor expansion occurs before a locked wallet is opened.
 Immediately before import, every target property is checked again. The original
 `CreationCeremony.finish()` result or validated recovered master seed supplies
-BIP44, BIP49, BIP84, and BIP86 records. Confirmation text is never reparsed
-into this source. Private JSON is sent only through
+the four private multipath records. Confirmation text is never reparsed into
+this source. Private descriptor material is sent only through
 `bitcoin-cli -stdin`, raw Core errors are suppressed, and no passphrase
-interface exists. The adapter requires four successful imports and compares public
-`listdescriptors` output with the eight external/internal expansions returned
-by public `getdescriptorinfo`. It relocks wallets Core reports as encrypted.
+interface exists.
+
+After all four private records import successfully, Core v32 exposes the one
+wallet HD root with `gethdkeys`; `derivehdkey` performs the hardened
+BIP44/49/84/86 account derivations. Python validates the returned origin paths,
+fingerprint consistency, and network xpub/tpub versions, constructs only the
+fixed descriptor templates, and asks `getdescriptorinfo` to validate and expand
+their external/internal branches. The adapter then compares the exact eight
+active public descriptors against `listdescriptors`. It relocks wallets Core
+reports as encrypted. Master-fingerprint display is likewise delegated to Core:
+a stateless root P2PKH descriptor is normalized, `deriveaddresses` derives its
+address, and `validateaddress` returns the script hash whose first four bytes are
+the BIP32 fingerprint.
 
 The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
-`getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `importdescriptors`,
-and `walletlock`. Bitcoin Core alone creates wallets, selects encryption,
-handles passphrases, stores keys, and provides normal wallet behavior.
+`getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `deriveaddresses`,
+`validateaddress`, `importdescriptors`, `gethdkeys`, `derivehdkey`, and
+`walletlock`. Bitcoin Core alone creates wallets, selects encryption, handles
+passphrases, stores keys, and provides normal wallet behavior.
 
-The CLI makes the public/private destination a mandatory choice:
+The wallet CLI is one leaf command:
 
 ```text
-ms32 wallet bitcoin-core watch-only
-ms32 wallet bitcoin-core restore
+ms32 wallet --account 0 --timestamp 0
 ```
 
-Both commands preflight Core before recovery input, recover one validated
-master seed, select and revalidate an empty destination, import through
-`bitcoin-cli -stdin`, and verify the exact accepted public descriptor set.
-`watch-only` requires private keys disabled and warns against entering shares
-on a networked computer merely to create a public wallet. `restore` requires
-private keys enabled and relocks an encrypted destination after success,
-failure, or interruption. Neither command handles a passphrase.
+It preflights Core before recovery input, recovers one validated master seed,
+selects and revalidates an empty private-key-enabled destination, imports
+through `bitcoin-cli -stdin`, verifies the exact accepted public descriptor
+set, and relocks an encrypted destination after success, failure, or
+interruption. It never handles a passphrase.
 
-`ms32 wallet multisig-xpub` emits only this seed's origin-qualified BIP48
-coordinator key. It does not define cosigners, threshold, descriptor, address,
-or complete multisig policy. The direct `ms32 xprv` primitive remains
-top-level and carries an explicit secret-root warning.
+For offline signing/watch-only and multisig workflows, use Bitcoin Core v32's
+maintained procedures. Until the final v32 release, see the versioned
+[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)
+and [multisig tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/multisig-tutorial.md).
+The direct `ms32 xprv` primitive remains top-level and carries an explicit
+secret-root warning.
 
-`tools/bitcoin_core_regtest.py` is the repeatable integration check. It starts
-an isolated Bitcoin Core regtest, exercises fresh and recovery initialization,
-proves matching watch-only and signing-wallet addresses and balance discovery,
-refuses a watch-only spend, signs and broadcasts, and verifies relocking. It also checks
-mainnet/testnet key separation and the narrow BIP48 coordinator export.
+`tools/bitcoin_core_regtest.py` is the repeatable integration check. It requires
+Bitcoin Core 32 or newer and exercises direct wallet restoration, account and
+timestamp handling, Core-normalized public descriptors, balance discovery,
+sign/broadcast behavior on regtest, relocking, and mainnet/test-network root
+serialization. `tools/bitcoin_core_main_smoke.py` repeats the descriptor,
+account, timestamp, and relocking checks against an isolated main-chain Core
+instance without connecting to peers.
 
 ## Deliberate divergences and non-goals
 

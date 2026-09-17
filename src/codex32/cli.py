@@ -9,7 +9,6 @@ from collections.abc import Callable, Sequence
 from typing import Literal, NamedTuple, cast
 
 from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
-from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
@@ -22,6 +21,7 @@ from codex32._cli_input import (
     _require_correction_confirmation,
     _suggestions,
 )
+from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
@@ -47,7 +47,7 @@ from codex32.profiles.ms32 import MasterSeed
 from codex32.profiles.ms32 import (
     _text_length as _ms_text_length,
 )
-from codex32.wallet import master_xprv, multisig_account_xpub
+from codex32.wallet import master_xprv
 
 Artifact = Share | Secret
 
@@ -337,7 +337,6 @@ def _initialize_wallet(
     core: BitcoinCore,
     secret: MasterSeed,
     *,
-    private: bool = True,
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
     fresh: bool = True,
@@ -351,15 +350,11 @@ def _initialize_wallet(
             secret,
             lambda prompt: _text(prompt, optional=True),
             lambda message: _print(message, err=True),
-            private=private,
             account=account,
             timestamp=timestamp,
         )
         version = f"{core.version // 10000}.{core.version // 100 % 100}.{core.version % 100}"
-        _print(
-            f"Bitcoin Core {'spending' if private else 'watch-only'} wallet initialized.",
-            err=True,
-        )
+        _print("Bitcoin Core spending wallet initialized.", err=True)
         _print(
             f"\n{'Record these wallet details' if fresh else 'Wallet details'}:",
             err=True,
@@ -590,26 +585,15 @@ def _correct(
     return 1
 
 
-def _bitcoin_core(account: int, timestamp: int | Literal["now"], testnet: bool, private: bool) -> int:
+def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
     if not sys.stdin.isatty():
         raise _UsageError("Bitcoin Core wallet initialization requires an interactive terminal.")
-    warning = (
-        ("Warning: This imports private descriptors that can spend funds.")
-        if private
-        else (
-            "Warning: Do not enter codex32 shares on a network-connected computer merely to create "
-            "a watch-only wallet. Prefer exporting public descriptors from the offline signing wallet."
-        )
-    )
-    _print(warning, err=True, danger=private)
+    _print("Warning: This imports private descriptors that can spend funds.", err=True, danger=True)
     core = _connected_core()
-    if testnet and core.chain == "main":
-        raise _UsageError("The connected Bitcoin Core is mainnet; remove --testnet.")
     secret = _master_seed(core.fingerprint)
     return _initialize_wallet(
         core,
         secret,
-        private=private,
         account=account,
         timestamp=timestamp,
         fresh=False,
@@ -673,26 +657,10 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
         )
         _print(master_xprv(secret, testnet=bool(arguments.testnet)))
         return 0
-    if command == "wallet" and arguments.wallet_command == "multisig-xpub":
-        core = _connected_core()
-        testnet = bool(arguments.testnet)
-        if testnet != (core.chain != "main"):
-            expected = "test network" if testnet else "mainnet"
-            raise _UsageError(f"The connected Bitcoin Core is not on the requested {expected}.")
-        _print(
-            multisig_account_xpub(
-                _master_seed(core.fingerprint),
-                integration=core,
-                account=int(arguments.account),
-            )
-        )
-        return 0
-    if command == "wallet" and arguments.wallet_command == "bitcoin-core":
+    if command == "wallet":
         return _bitcoin_core(
             int(arguments.account),
             cast(int | Literal["now"], arguments.timestamp),
-            bool(arguments.testnet),
-            arguments.core_mode == "restore",
         )
     raise AssertionError(f"unhandled command {command!r}")
 
