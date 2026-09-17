@@ -152,11 +152,16 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
         "INDEX must differ from S and the input indices."
     ) in share_help
     wallet_help = _invoke(ms_main, ["wallet", "--help"])[1]
-    assert "usage: ms32 wallet [-h] [--account ACCOUNT] [--timestamp TIMESTAMP]" in wallet_help
-    assert "Restore a Bitcoin Core wallet." in wallet_help
-    assert "--testnet" not in wallet_help
-    for old_command in ("bitcoin-core", "restore", "watch-only", "multisig-xpub"):
-        assert old_command not in wallet_help
+    assert wallet_help == (
+        "usage: ms32 wallet [-h] [--account ACCOUNT] [--timestamp TIMESTAMP]\n\n"
+        "Restore a Bitcoin Core wallet.\n\n"
+        "options:\n"
+        "  -h, --help            show this help message and exit\n"
+        "  --account ACCOUNT     account number (default: 0)\n"
+        "  --timestamp TIMESTAMP\n"
+        "                        search for transactions since this Unix timestamp; use\n"
+        "                        0 for all history or now for a new wallet\n"
+    )
     assert _invoke(main, ["--version"])[1].startswith("codex32 ")
     assert _invoke(ms_main, ["--version"])[1].startswith("ms32 ")
 
