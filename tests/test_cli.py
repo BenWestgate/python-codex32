@@ -37,6 +37,7 @@ from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
+from tools._wallet_test_vectors import stub_fingerprint
 
 
 @dataclass(frozen=True)
@@ -87,14 +88,6 @@ class _CreationOutput(io.StringIO):
         return self.pretty or self.checks == 1
 
 
-def _fake_fingerprint(seed: bytes) -> bytes:
-    frozen = {
-        bytes.fromhex(VECTOR_1["secret_hex"]): bytes.fromhex("3f3521a6"),
-        bytes.fromhex(VECTOR_2["secret_hex"]): bytes.fromhex("fab6868a"),
-    }
-    return frozen.get(seed, seed[:4])
-
-
 @dataclass
 class _FakeBitcoinCore:
     chain: str = "main"
@@ -105,7 +98,7 @@ class _FakeBitcoinCore:
     timestamp: int | str | None = None
 
     def fingerprint_seed(self, seed: bytes) -> bytes:
-        return _fake_fingerprint(seed)
+        return stub_fingerprint(seed)
 
     def fingerprint(self, secret: MasterSeed) -> bytes:
         return self.fingerprint_seed(secret.seed_bytes)
@@ -1231,7 +1224,7 @@ def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:
     secret = artifacts[0]
     assert isinstance(secret, MasterSeed) and len(secret.seed_bytes) == 16
     assert secret.header.threshold == 0
-    assert secret.header.identifier == _fingerprint_identifier(_fake_fingerprint(secret.seed_bytes))
+    assert secret.header.identifier == _fingerprint_identifier(stub_fingerprint(secret.seed_bytes))
 
 
 def test_fresh_bitcoin_terminal_and_core_preflight_precede_entropy() -> None:
@@ -1367,7 +1360,7 @@ def test_bare_create_requires_exact_confirmation_on_a_terminal(
         assert ms_main(["create"]) == 0
     artifact = parse_codex32(emitted[0])
     assert isinstance(artifact, MasterSeed)
-    assert artifact.header.identifier == _fingerprint_identifier(_fake_fingerprint(artifact.seed_bytes))
+    assert artifact.header.identifier == _fingerprint_identifier(stub_fingerprint(artifact.seed_bytes))
 
 
 def test_fresh_shared_create_confirms_each_card_on_a_terminal(
@@ -1556,7 +1549,7 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
     shares = _output_artifacts(shared)
     assert isinstance(fingerprinted_secret, MasterSeed)
     assert fingerprinted_secret.header.identifier == _fingerprint_identifier(
-        _fake_fingerprint(fingerprinted_secret.seed_bytes)
+        stub_fingerprint(fingerprinted_secret.seed_bytes)
     )
     assert unshared_secret.header.identifier == "test"
     assert len(automatic) == 3

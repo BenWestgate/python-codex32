@@ -32,6 +32,7 @@ from codex32.indel import (
     _search_target,
 )
 from codex32.profiles.ms32 import TEXT_LENGTHS
+from tools._wallet_test_vectors import core_fingerprint
 from tools.correction_capture import cross_length_classes
 
 SOURCE = VECTOR_1["secret_s"]
@@ -40,10 +41,6 @@ CONTEXT = CorrectionContext(Profile.MS, expected_length=len(SOURCE))
 
 def _groups(text: str) -> list[str]:
     return [text[start : start + 4] for start in range(0, len(text), 4)]
-
-
-def _fake_fingerprint(seed: bytes) -> bytes:
-    return seed[:4]
 
 
 def _character_damage(source: str, inserted: int, omitted: int) -> str:
@@ -413,15 +410,15 @@ def test_duplicate_reconstruction_keeps_lower_hamming_path() -> None:
 
 
 def test_cli_tie_breaks_follow_hamming_crc_then_fingerprint() -> None:
-    seed = bytes(range(16))
-    fingerprint = MasterSeed.from_seed(seed, identifier=_fingerprint_identifier(_fake_fingerprint(seed)))
+    seed = bytes.fromhex(VECTOR_1["secret_hex"])
+    fingerprint = MasterSeed.from_seed(seed, identifier=_fingerprint_identifier(core_fingerprint(seed)))
     mismatch = MasterSeed.from_seed(seed, identifier="test")
     high_hamming = CorrectionCandidate(mismatch, (), 10, 0, 3, True)
     crc = CorrectionCandidate(mismatch, (), 10, 0, 2, True)
     fingerprint_match = CorrectionCandidate(fingerprint, (), 10, 0, 2, True)
 
     assert len(_primary((high_hamming, crc, fingerprint_match))) == 3
-    matcher = _fingerprint_matcher(lambda secret: _fake_fingerprint(secret.seed_bytes))
+    matcher = _fingerprint_matcher(lambda secret: core_fingerprint(secret.seed_bytes))
     assert _best((high_hamming, crc, fingerprint_match), fingerprint_match=matcher) == (fingerprint_match,)
 
 
