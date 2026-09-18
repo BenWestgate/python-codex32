@@ -19,6 +19,7 @@ from codex32 import (
 )
 from codex32.cli import main, ms_main
 from codex32.errors import MismatchedHrp, MismatchedProfile
+from tools._wallet_test_vectors import STUB_FINGERPRINT
 
 UNKNOWN = {
     "short": {
@@ -170,7 +171,7 @@ def test_cli_share_is_generic_and_ms32_share_is_scoped(monkeypatch) -> None:
     class _FakeCore:
         @staticmethod
         def fingerprint(_secret: object) -> bytes:
-            return b"\0\0\0\0"
+            return STUB_FINGERPRINT
 
     monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *args, **kwargs: _FakeCore())
     basis = UNKNOWN["short"]["S"] + "\n" + UNKNOWN["short"]["A"] + "\n"
