@@ -32,7 +32,7 @@ from codex32.indel import (
     _search_target,
 )
 from codex32.profiles.ms32 import TEXT_LENGTHS
-from tools._wallet_test_vectors import core_fingerprint
+from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint
 from tools.correction_capture import cross_length_classes
 
 SOURCE = VECTOR_1["secret_s"]
@@ -410,7 +410,7 @@ def test_duplicate_reconstruction_keeps_lower_hamming_path() -> None:
 
 
 def test_cli_tie_breaks_follow_hamming_crc_then_fingerprint() -> None:
-    seed = bytes.fromhex(VECTOR_1["secret_hex"])
+    seed = FIXTURE_SEED[16]
     fingerprint = MasterSeed.from_seed(seed, identifier=_fingerprint_identifier(core_fingerprint(seed)))
     mismatch = MasterSeed.from_seed(seed, identifier="test")
     high_hamming = CorrectionCandidate(mismatch, (), 10, 0, 3, True)

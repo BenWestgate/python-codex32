@@ -6,7 +6,7 @@ from itertools import combinations
 
 import pytest
 from _codex32_oracle import oracle_encode
-from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_6
+from data.bip93_vectors import VECTOR_2, VECTOR_4, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -33,7 +33,7 @@ from codex32.errors import (
 )
 from codex32.generation import ORDINARY_INDICES, _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding
-from tools._wallet_test_vectors import core_fingerprint, stub_fingerprint
+from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint, stub_fingerprint
 
 
 def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed | CoreLightningSecret, tuple[Share, ...]]:
@@ -67,11 +67,11 @@ def test_fresh_unshared_ms_supports_every_bip93_size() -> None:
 
 
 @pytest.mark.parametrize(
-    ("vector", "expected"),
-    ((VECTOR_1, "8u6j"), (VECTOR_2, "l2mg"), (VECTOR_3, "regv")),
+    ("byte_length", "expected"),
+    ((16, "3mga"), (20, "ex5l"), (24, "fhrx"), (28, "5hu7"), (32, "jef7"), (64, "48dx")),
 )
-def test_unshared_identifier_from_core_fingerprint(vector: dict[str, str], expected: str) -> None:
-    seed = bytes.fromhex(vector["secret_hex"])
+def test_unshared_identifier_from_core_fingerprint(byte_length: int, expected: str) -> None:
+    seed = FIXTURE_SEED[byte_length]
     assert _fingerprint_identifier(core_fingerprint(seed)) == expected
 
 
