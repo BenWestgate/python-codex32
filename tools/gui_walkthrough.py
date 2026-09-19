@@ -20,7 +20,7 @@ import gi
 gi.require_version("Adw", "1")
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import GLib, Gtk
+from gi.repository import Gdk, GLib, Gtk
 
 from codex32_gui import app, pages, reading, wallet_setup
 
@@ -90,6 +90,31 @@ def rows(page: Any) -> list[Any]:
     return [item for item in walk(page) if type(item).__name__ == "ActionRow"]
 
 
+def _primary() -> str:
+    """Read back whatever the display's primary selection holds, without blocking."""
+    display = Gdk.Display.get_default()
+    if display is None:
+        return ""
+    holder: list[str] = []
+    display.get_primary_clipboard().read_text_async(None, lambda clip, done: holder.append(_text(clip, done)))
+    for _attempt in range(200):
+        settle()
+        if holder:
+            return holder[0]
+    return ""
+
+
+def _text(clipboard: Any, done: Any) -> str:
+    try:
+        return clipboard.read_text_finish(done) or ""
+    except GLib.Error:
+        return ""
+
+
+def _primary_is_empty() -> bool:
+    return _primary() == ""
+
+
 def settle() -> None:
     context = GLib.MainContext.default()
     for _attempt in range(500):
@@ -111,6 +136,7 @@ class Walkthrough(app.Application):
             self.damaged,
             self.candidate,
             self.back_to_entry,
+            self.accepted_repair,
             self.preflight,
             self.network,
             self.letters,
@@ -154,6 +180,14 @@ class Walkthrough(app.Application):
         field.set_text("ms12nameacd")
         settle()
         check("text is uppercased and grouped", field.get_text() == "MS12 NAME ACD", field.get_text())
+        field.set_text("MS12NAMECB")
+        settle()
+        check(
+            "a character no card can carry is named, not silently dropped",
+            any("never contains B" in text for text in labels(page)),
+            [text for text in labels(page) if "contains" in text],
+        )
+        check("and it is gone from the field", "B" not in field.get_text(), field.get_text())
         field.set_text("MS10NAMEA")
         settle()
         check("an impossible header stops the rest", field.get_text() == "MS10 NAME A", field.get_text())
@@ -200,7 +234,8 @@ class Walkthrough(app.Application):
 
     def candidate(self) -> bool:
         page = self.page()
-        if page.get_title() != "Repair":
+        # The spinner shares this title, so wait for the candidate itself to arrive.
+        if page.get_title() != "Repair" or button(page, "It does not match my card") is None:
             return False
         groups = [item for item in walk(page) if "card-group" in item.get_css_classes()]
         check(
@@ -219,7 +254,28 @@ class Walkthrough(app.Application):
             return False
         typed = "".join(field_of(page).get_text().split())
         check("refusing a repair keeps what was typed", typed == SHARE_C[:-1] + "?", typed)
-        self.view.replace([pages.home(self.view)])
+        press(page, "Suggest a repair")
+        return True
+
+    def accepted_repair(self) -> bool:
+        page = self.page()
+        if page.get_title() != "Repair" or button(page, "It matches my card") is None:
+            return False
+        press(page, "It matches my card")
+        settle()
+        page, shown = self.page(), labels(self.page())
+        check(
+            "an accepted repair is never called intact",
+            not any("intact" in text for text in shown),
+            [text for text in shown if "intact" in text],
+        )
+        check(
+            "and it says the card was guessed at, not read",
+            any("cannot tell you it is right" in text for text in shown),
+            shown[:3],
+        )
+        check("and the repair is still the published vector", card(page) == SHARE_C, card(page))
+        press(page, "Done")
         return True
 
     def preflight(self) -> bool:
@@ -297,6 +353,12 @@ class Walkthrough(app.Application):
         page = self.page()
         if button(page, "I have written it down") is None:
             return False
+        check("a replacement card is named, never counted", page.get_title() == "Card D", page.get_title())
+        check(
+            "and nothing on it states a total",
+            not any(" of 1" in text for text in labels(page)),
+            [text for text in labels(page) if " of " in text],
+        )
         self.made = card(page)
         check("the derived card is the published vector", self.made == DERIVED_D, self.made)
         press(page, "I have written it down")
@@ -305,6 +367,12 @@ class Walkthrough(app.Application):
     def read_back(self) -> bool:
         page = self.page()
         field = field_of(page)
+        check("the read-back is named the same way", page.get_title() == "Card D", page.get_title())
+        field.set_text(self.made)
+        settle()
+        field.select_region(0, -1)
+        settle()
+        check("selecting a card does not publish it", _primary_is_empty(), _primary())
         field.set_text(self.made[:-4] + "QQQQ")
         settle()
         press(page, "Confirm card")

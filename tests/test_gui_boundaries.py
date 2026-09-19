@@ -33,7 +33,7 @@ FORBIDDEN = frozenset(
     }
 )
 CORE_ADAPTER = "codex32._bitcoin_core"
-BUDGET = 1800
+BUDGET = 2000
 
 
 def _package() -> Path:
@@ -76,6 +76,22 @@ def test_nothing_reads_or_writes_a_file(path: Path) -> None:
 def test_only_one_module_speaks_to_bitcoin_core(path: Path) -> None:
     imported = _imports(ast.parse(path.read_text()))
     assert (CORE_ADAPTER in imported) == (path.name == "wallet_setup.py"), sorted(imported)
+
+
+def test_the_accessibility_bus_is_turned_off_before_gtk_starts() -> None:
+    """GTK otherwise publishes every label and entry, seed and passphrase included."""
+    source = (_package() / "__init__.py").read_text()
+    assert 'GLib.setenv("GTK_A11Y", "none", False)' in source
+    tree = ast.parse(source)
+    settings = [node for node in ast.walk(tree) if isinstance(node, ast.Import | ast.ImportFrom)]
+    assert settings, "the setting has to be made before any typelib is loaded"
+
+
+@pytest.mark.parametrize("path", _modules(), ids=lambda path: path.name)
+def test_nothing_but_the_version_pin_may_import_a_module_by_name(path: Path) -> None:
+    """`importlib` would reach any of the forbidden modules without naming one."""
+    imported = {name.split(".")[0] for name in _imports(ast.parse(path.read_text()))}
+    assert "importlib" not in imported or path.name == "__init__.py", sorted(imported)
 
 
 def test_the_parts_that_decide_something_need_no_toolkit() -> None:

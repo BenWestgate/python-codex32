@@ -8,20 +8,23 @@ should not have to open a second application and type a console command.
 
 The passphrase reaches `bitcoin-cli` through `-stdinwalletpassphrase` and
 `-stdin`, never through a command argument, so it is absent from `/proc` and
-`ps`. It is never stored, never logged, and never written to disk. Import,
-verification, and relocking remain the library's `BitcoinCore.initialize`.
+`ps`. It is never stored, never logged, and never written to disk. Import and
+verification remain the library's `BitcoinCore.initialize`, and `fill` holds a
+`finally`-protected obligation to lock again any wallet this file unlocked.
 """
 
 from __future__ import annotations
 
+import codecs
 import json
+import locale
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
 from codex32 import MasterSeed
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import _CHAINS, BitcoinCore, BitcoinCoreError
 
 __all__ = [
     "UNLOCK_SECONDS",
@@ -32,10 +35,12 @@ __all__ = [
     "connect",
     "create",
     "eligible",
+    "fill",
     "fingerprint",
     "fingerprint_provider",
     "initialize",
     "network",
+    "relock",
     "require_unlocked",
     "unlock",
     "version_text",
@@ -44,6 +49,9 @@ __all__ = [
 UNLOCK_SECONDS = 180
 _WAITING = "press Ctrl-C to stop."
 _QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
+_REFUSED = "Bitcoin Core did not accept that passphrase."
+_STILL_OPEN = "Confirm in Bitcoin Core that the wallet is locked before you leave this computer."
+_UNSENDABLE = "This computer could not hand that text to Bitcoin Core. Use unaccented characters."
 
 
 class Offer(BitcoinCoreError):
@@ -108,14 +116,23 @@ class Wallet:
 
 
 def connect(chain: str | None = None) -> BitcoinCore:
-    """Discover local Bitcoin Core before any entropy or recovery input is taken."""
+    """Discover local Bitcoin Core before any entropy or recovery input is taken.
+
+    The library only asks which chain to use while more than one answers, so a
+    chain that stops answering between the two probes would be replaced silently
+    by whichever one is left. The chain that was chosen is therefore confirmed
+    here, and a different one is offered back rather than used.
+    """
     answer = _Answer(chain, quoted=False)
-    return BitcoinCore.connect(answer.ask, answer.tell)
+    core = BitcoinCore.connect(answer.ask, answer.tell)
+    if chain is not None and network(core) != chain:
+        raise Offer((network(core),))
+    return core
 
 
 def network(core: BitcoinCore) -> str:
-    """Return the chain this connection selected."""
-    return core.chain
+    """Return the chain this connection selected, named the way the operator chose it."""
+    return dict(_CHAINS).get(core.chain, core.chain)
 
 
 def fingerprint(core: BitcoinCore, secret: MasterSeed) -> str:
@@ -143,10 +160,27 @@ def eligible(core: BitcoinCore) -> tuple[Wallet, ...]:
     return tuple(found)
 
 
+def _transferable(text: str, subject: str) -> None:
+    """Refuse text this computer would hand Bitcoin Core as something else.
+
+    `bitcoin-cli` is given standard input in the locale's encoding, while
+    Bitcoin-Qt sends UTF-8. Where those differ, a passphrase set or checked here
+    would not be the one Bitcoin Core's own window sets or checks.
+    """
+    if not text.isascii() and codecs.lookup(locale.getencoding()).name != "utf-8":
+        raise BitcoinCoreError(
+            f"This computer's text is not stored as UTF-8, so Bitcoin Core would receive a different "
+            f"{subject} than the one you typed. Use unaccented letters, digits and punctuation."
+        )
+
+
 def _wallet_name(name: str) -> str:
     """Accept only names Bitcoin Core can carry on one standard-input line."""
     if not name or name != name.strip() or not name.isprintable():
         raise BitcoinCoreError("A wallet name must be printable text without leading or trailing spaces.")
+    if name in (".", "..") or "/" in name or "\\" in name:
+        raise BitcoinCoreError("A wallet name cannot contain a slash, and cannot be . or .. on its own.")
+    _transferable(name, "wallet name")
     return name
 
 
@@ -154,6 +188,7 @@ def _passphrase(passphrase: str) -> str:
     """Accept only passphrases that survive the one-argument-per-line channel."""
     if not passphrase or "\n" in passphrase or "\r" in passphrase:
         raise BitcoinCoreError("A wallet passphrase cannot be empty or contain a line break.")
+    _transferable(passphrase, "passphrase")
     return passphrase
 
 
@@ -164,6 +199,8 @@ def create(core: BitcoinCore, name: str, passphrase: str) -> None:
         arguments.append(f"passphrase={_passphrase(passphrase)}")
     try:
         core._rpc("-named", "createwallet", stdin="\n".join(arguments) + "\n")
+    except UnicodeEncodeError:
+        raise BitcoinCoreError(_UNSENDABLE) from None
     except BitcoinCoreError as error:
         raise BitcoinCoreError(
             "Bitcoin Core would not create a wallet with that name. A wallet of that name may exist already."
@@ -172,8 +209,23 @@ def create(core: BitcoinCore, name: str, passphrase: str) -> None:
         raise BitcoinCoreError("Bitcoin Core did not create an empty wallet that codex32 can fill.")
 
 
+def relock(core: BitcoinCore, name: str) -> None:
+    """Lock a wallet this program unlocked, and make Bitcoin Core confirm it is locked."""
+    try:
+        core._rpc("walletlock", wallet=name)
+        state = core._rpc("getwalletinfo", wallet=name)
+    except BitcoinCoreError as error:
+        raise BitcoinCoreError(_STILL_OPEN) from error
+    if not isinstance(state, dict) or state.get("unlocked_until") != 0:
+        raise BitcoinCoreError(_STILL_OPEN)
+
+
 def unlock(core: BitcoinCore, name: str, passphrase: str) -> None:
-    """Unlock one wallet with a passphrase that only ever travels on standard input."""
+    """Unlock one wallet with a passphrase that only ever travels on standard input.
+
+    Once Bitcoin Core has accepted the passphrase the wallet is open, so every
+    way out of the check that follows locks it again first.
+    """
     line = _passphrase(passphrase) + "\n"
     try:
         core._rpc(
@@ -183,11 +235,22 @@ def unlock(core: BitcoinCore, name: str, passphrase: str) -> None:
             wallet=name,
             stdin=line,
         )
+    except UnicodeEncodeError:
+        raise BitcoinCoreError(_UNSENDABLE) from None
     except BitcoinCoreError as error:
-        raise BitcoinCoreError("Bitcoin Core did not accept that passphrase.") from error
-    state = core._target(name)
-    if state is None or state[1]:
-        raise BitcoinCoreError("Bitcoin Core did not accept that passphrase.")
+        raise BitcoinCoreError(_REFUSED) from error
+    open_now = False
+    try:
+        state = core._target(name)
+        open_now = state is not None and not state[1]
+    finally:
+        if not open_now:
+            relock(core, name)
+    if not open_now:
+        raise BitcoinCoreError(
+            "Bitcoin Core took that passphrase, but the wallet is no longer an empty one codex32 can "
+            "fill. It has been locked again. Look at the list of empty wallets afresh."
+        )
 
 
 def require_unlocked(core: BitcoinCore, name: str) -> None:
@@ -208,3 +271,28 @@ def initialize(
     """Hand the library the wallet the operator named, and let it do the import."""
     answer = _Answer(name, quoted=True)
     return core.initialize(secret, answer.ask, answer.tell, account=account, timestamp=timestamp)
+
+
+def fill(
+    core: BitcoinCore,
+    secret: MasterSeed,
+    name: str,
+    passphrase: str,
+    *,
+    account: int = 0,
+    timestamp: int | Literal["now"] = "now",
+) -> str:
+    """Unlock, import, and lock again, whatever happens in between.
+
+    `BitcoinCore.initialize` relocks from its own `finally`, but it arms that
+    obligation only after it has chosen the wallet, so a refusal raised before
+    then would leave a wallet this program unlocked open. The obligation here
+    covers the whole sequence; locking an already locked wallet is harmless.
+    """
+    if not passphrase:
+        return initialize(core, secret, name, account=account, timestamp=timestamp)
+    unlock(core, name, passphrase)
+    try:
+        return initialize(core, secret, name, account=account, timestamp=timestamp)
+    finally:
+        relock(core, name)

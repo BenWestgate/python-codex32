@@ -34,10 +34,15 @@ and evidence.
    channel. The graphical program declares one exception, confined to
    `codex32_gui/wallet_setup.py`, which is also the only module there that
    speaks to Bitcoin Core: it may send an operator-supplied passphrase to
-   `bitcoin-cli` on standard input to unlock a wallet, and may create one blank
-   descriptor wallet with a fixed set of arguments and no options. It stores no
-   passphrase and writes nothing to disk. An unlocked encrypted signer is
-   relocked and verified on every exit path, by the library, unchanged.
+   `bitcoin-cli` on standard input to unlock a wallet, may create one blank
+   descriptor wallet with a fixed set of arguments and no options, and may
+   request `walletlock`. It stores no passphrase and writes nothing to disk.
+   An unlocked encrypted signer is relocked and verified on every exit path: by
+   the library, unchanged, and additionally by a `finally`-protected obligation
+   covering every wallet the graphical program itself unlocked. No window may
+   close out of that obligation. The graphical program also disables the
+   toolkit's accessibility bus before the toolkit starts, unless the operator
+   has set it themselves.
 10. External text, Core output, public wallet data, and PSBTs are untrusted.
 11. Only Bitcoin Core descriptor wallets sign with codex32-derived keys.
     Sensitive operations use only codex32 or Core on malware-free computers

@@ -246,27 +246,48 @@ initialization.
 
 ### The graphical program
 
-`codex32-gui` shares every control above, because import, revalidation, and
-relocking remain `BitcoinCore.initialize`. It declares two departures, both
-confined to `codex32_gui/wallet_setup.py`, the only module in that package that
-imports the Core adapter.
+`codex32-gui` shares every control above, because import and revalidation remain
+`BitcoinCore.initialize`. It declares three departures, all confined to
+`codex32_gui/wallet_setup.py`, the only module in that package that imports the
+Core adapter.
 
 | Departure | Required behavior |
 |---|---|
-| Passphrase | The operator may supply a Bitcoin Core wallet passphrase. It reaches `bitcoin-cli` through `-stdinwalletpassphrase`, never through an argument, so it is absent from `/proc` and process listings. It is not stored, not logged, and not written to disk, and a passphrase containing a line break is refused rather than truncated. The screen keeps the command line's behavior as an alternative: the operator may unlock in Bitcoin-Qt instead, and the program then only rechecks wallet state. |
-| Wallet creation | `createwallet` may be issued once, with `wallet_name`, `disable_private_keys=false`, `blank=true`, and a `passphrase` only when one was given. No other option is sent, and the resulting wallet must pass the same eligibility test as any other destination before it is used. Names are restricted to printable text without leading or trailing spaces, so a name cannot span the one-argument-per-line channel. |
+| Passphrase | The operator may supply a Bitcoin Core wallet passphrase. It reaches `bitcoin-cli` through `-stdinwalletpassphrase`, never through an argument, so it is absent from `/proc` and process listings. It is not stored, not logged, and not written to disk, and a passphrase containing a line break is refused rather than truncated. A passphrase this computer's locale would encode as something other than what Bitcoin-Qt sends is refused, so no half-encoded secret reaches a screen or a traceback. The screen keeps the command line's behavior as an alternative: the operator may unlock in Bitcoin-Qt instead, and the program then only rechecks wallet state. |
+| Wallet creation | `createwallet` may be issued once, with `wallet_name`, `disable_private_keys=false`, `blank=true`, and a `passphrase` only when one was given. No other option is sent, and the resulting wallet must pass the same eligibility test as any other destination before it is used. Names are restricted to printable text without leading or trailing spaces, and may not contain a slash or be `.` or `..`, so a name can neither span the one-argument-per-line channel nor describe a path. |
+| Relocking | Every wallet this program unlocks carries a `finally`-protected obligation of its own, in `wallet_setup.fill`, that requests `walletlock` and verifies `unlocked_until` is zero. The library's obligation is armed only after it has chosen a wallet, so a refusal raised before that point would otherwise leave an unlocked wallet open until Bitcoin Core's own timeout. Worker threads are not daemons, so closing the window during an import runs both obligations rather than skipping them. |
 
 Destination selection is unchanged and is not delegated to prompt wording. The
 program answers the library's selection prompts only for a name the operator
 already chose on screen, confirms that exact name when the library asks again,
 and otherwise raises rather than answering, so a stale or unexpected listing can
 produce a refusal but never a different wallet. The library's terminal-only
-waiting loops are refused for the same reason.
+waiting loops are refused for the same reason. The chain the operator chose is
+confirmed against the one connected, because the library asks which chain to use
+only while more than one answers. On screen a wallet is chosen by the position of
+its row, never by the text of its label, and Core's text is rendered without
+Pango markup, so a wallet name cannot hide or impersonate another.
 
 The program draws no entropy, opens no socket, starts no process of its own, and
 writes no file: no settings, no recent list, no log, and no clipboard write of
 recovery text. Entered recovery text is cleared when its screen is left, subject
 to the zeroization limitation above.
+
+Two disclosure channels belong to the toolkit rather than to this program, and
+are named here because a static import check cannot see either.
+
+- **The accessibility bus.** GTK publishes every label and entry on the desktop's
+  shared accessibility bus, where any program running as the same user can read
+  them and can invoke a password entry's own reveal action. The window therefore
+  sets `GTK_A11Y=none` before GTK starts, in `codex32_gui/__init__.py`, and
+  leaves the setting alone when the operator has already chosen one, so
+  `GTK_A11Y=atspi codex32-gui` restores screen-reader support for anyone who
+  needs it and accepts that exposure.
+- **The primary selection.** Selecting text inside the entry field hands it to
+  the primary selection, which a clipboard manager may copy to disk. The field
+  takes the selection back on the next main-loop turn, which closes the window
+  to one turn but does not remove it; an operator who runs a clipboard manager
+  should not select the text of a card.
 
 ## Verification map
 

@@ -54,6 +54,33 @@ NOT_PROOF = (
     "A card that checks out is undamaged, but that does not prove it belongs to your wallet. "
     "Only restoring the wallet and comparing it with your wallet record shows that."
 )
+GUESSWORK = (
+    "This was worked out from what you could still read. It was not read off the card, and codex32 "
+    "cannot tell you it is right. Copy it onto a fresh card, then prove it by restoring your wallet "
+    "and checking the master fingerprint against your wallet record."
+)
+_CREATED = (
+    "Your wallet is ready",
+    "Copy these onto your wallet record, and keep it apart from every card.",
+    (
+        "Store each card in a different safe place. Send a small test payment and wait for it to "
+        "arrive before you put real savings here."
+    ),
+)
+_RESTORED = (
+    "Your wallet is back",
+    "Check each of these against your wallet record. They should all match.",
+    (
+        "If the master fingerprint is not the one on your record, these cards do not belong to that "
+        "wallet: stop, and do not send anything to it. Bitcoin Core is now scanning the chain from "
+        "the beginning, so your balance and history are not complete until it has finished."
+    ),
+)
+CARDS_SAFE = (
+    "Your cards are unharmed and still recover this wallet. Nothing was written onto them and "
+    "nothing about them changed. When Bitcoin Core is ready, choose \u201cRestore my wallet\u201d "
+    "and enter them. Do not set up a new wallet: that would make a different backup."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +205,7 @@ def _blank(flow: Gtk.FlowBox) -> None:
 def _rows(title: str, values: Sequence[tuple[str, str]]) -> Adw.PreferencesGroup:
     group = Adw.PreferencesGroup(title=title)
     for label, value in values:
-        group.add(Adw.ActionRow(title=label, subtitle=value, subtitle_selectable=True))
+        group.add(Adw.ActionRow(title=label, subtitle=value, subtitle_selectable=True, use_markup=False))
     return group
 
 
@@ -209,22 +236,35 @@ def _replace(view: Adw.NavigationView, page: Adw.NavigationPage) -> None:
     view.replace([home(view), page])
 
 
-def _failure(view: Adw.NavigationView, error: object) -> None:
+def _failure(view: Adw.NavigationView, error: object, advice: str = "") -> None:
+    """Stop, and where cards already exist, say plainly that they are still good."""
+    buttons = [_button("Start again", lambda: view.replace([home(view)]))]
+    if advice:
+        buttons.append(_button("Restore my wallet", lambda: _again(view, _start_restore)))
+    buttons[-1].add_css_class("suggested-action")
     page = _page(
         "Stopped",
-        _column(_title("That did not work", str(error), "dialog-error-symbolic")),
-        actions=_actions(
-            _button("Start again", lambda: view.replace([home(view)]), style="suggested-action")
+        _column(
+            _title("That did not work", str(error), "dialog-error-symbolic"),
+            *((_note(advice, "success"),) if advice else ()),
         ),
+        actions=_actions(*buttons),
         can_pop=False,
     )
     _replace(view, page)
 
 
 def _working(view: Adw.NavigationView, title: str, message: str) -> Adw.NavigationPage:
+    """Show one operation in flight. It cannot be left, so its result cannot be lost.
+
+    Leaving would drop the result of work that has already happened: an import
+    that reached Bitcoin Core would go unreported, and a ceremony left half way
+    would strand its cards. Every operation behind this page is bounded, by the
+    correction deadline or by `bitcoin-cli`'s own timeout.
+    """
     spinner = Gtk.Spinner(halign=Gtk.Align.CENTER, width_request=32, height_request=32)
     spinner.start()
-    page = _page(title, _column(spinner, _title(message)))
+    page = _page(title, _column(spinner, _title(message)), can_pop=False)
     view.push(page)
     return page
 
@@ -233,12 +273,13 @@ def _then[Result](
     view: Adw.NavigationView,
     page: Adw.NavigationPage,
     follow: Callable[[Result], Adw.NavigationPage | None],
+    advice: str = "",
 ) -> Callable[[Result | Exception], None]:
     """Turn a worker result into the next page, the failure page, or a step of its own."""
 
     def deliver(outcome: Result | Exception) -> None:
         if isinstance(outcome, Exception):
-            _failure(view, outcome)
+            _failure(view, outcome, advice)
             return
         following = follow(outcome)
         if following is not None:
@@ -285,11 +326,10 @@ def _guessed(observed: str, corrected: str) -> frozenset[int]:
     return frozenset(changed)
 
 
-def _radio_group(
-    group: Adw.PreferencesGroup, rows: Sequence[tuple[str, str]]
-) -> list[tuple[str, Gtk.CheckButton]]:
+def _radio_group(group: Adw.PreferencesGroup, rows: Sequence[tuple[str, str]]) -> list[Gtk.CheckButton]:
+    """Build one radio row per choice. Rows carry Bitcoin Core's text, so none of it is markup."""
     first: Gtk.CheckButton | None = None
-    buttons: list[tuple[str, Gtk.CheckButton]] = []
+    buttons: list[Gtk.CheckButton] = []
     for label, detail in rows:
         choice = Gtk.CheckButton()
         if first is None:
@@ -297,15 +337,16 @@ def _radio_group(
             choice.set_active(True)
         else:
             choice.set_group(first)
-        row = Adw.ActionRow(title=label, subtitle=detail, activatable_widget=choice)
+        row = Adw.ActionRow(title=label, subtitle=detail, activatable_widget=choice, use_markup=False)
         row.add_prefix(choice)
         group.add(row)
-        buttons.append((label, choice))
+        buttons.append(choice)
     return buttons
 
 
-def _selected(buttons: Sequence[tuple[str, Gtk.CheckButton]]) -> str:
-    return next(label for label, choice in buttons if choice.get_active())
+def _selected(buttons: Sequence[Gtk.CheckButton]) -> int:
+    """Return which row is chosen by position, so no wallet name can stand in for another."""
+    return next(index for index, choice in enumerate(buttons) if choice.get_active())
 
 
 # --- Home ------------------------------------------------------------------
@@ -358,7 +399,7 @@ def _connect(
         return then(found)
 
     deliver = _then(view, page, follow)
-    work.run(page, probe, deliver)
+    work.run(view, page, probe, deliver)
 
 
 def _network_page(
@@ -372,11 +413,20 @@ def _network_page(
         _title("Which network?", "Practise on signet. Use mainnet only for coins you cannot replace."),
         group,
     )
-    action = _button("Continue", lambda: _connect(view, _selected(buttons), then), style="suggested-action")
+    action = _button(
+        "Continue",
+        lambda: _connect(view, options[_selected(buttons)], then),
+        style="suggested-action",
+    )
     return _page("Network", content, actions=_actions(action))
 
 
 # --- Writing and reading back one card -------------------------------------
+
+
+def _counted(letter: str, position: int, count: int | None) -> str:
+    """Name this card. Only the create flow may say how many cards there are."""
+    return f"Card {position + 1} of {count}" if count is not None else f"Card {letter}"
 
 
 def _write_page(
@@ -384,7 +434,7 @@ def _write_page(
     *,
     card: Artifact,
     position: int,
-    count: int,
+    count: int | None,
     confirm: Callable[[str], ConfirmationResult],
     after: Callable[[], None],
     cancel: Callable[[Adw.NavigationPage], None],
@@ -393,15 +443,16 @@ def _write_page(
     letter = card.header.index.upper()
     name = card.header.identifier.upper()
     shown = _card(card.text)
+    where = f"Copy this onto card {position + 1}" if count is not None else "Copy this onto a fresh card"
     content = _column(
-        _title("Write it down", f"Copy this onto card {position + 1}"),
+        _title("Write it down", where),
         _note("Use pen on a card you can keep dry. Copy each shaded group exactly, left to right."),
         shown,
         _note(f"Label this card {letter}. The letter after {name} is the card's name."),
         _note(NO_CAMERA, "warning"),
     )
     page = _page(
-        f"Card {position + 1} of {count}",
+        _counted(letter, position, count),
         content,
         actions=_actions(
             _button("Cancel", lambda: cancel(page)),
@@ -421,7 +472,7 @@ def _read_back_page(
     view: Adw.NavigationView,
     card: Artifact,
     position: int,
-    count: int,
+    count: int | None,
     confirm: Callable[[str], ConfirmationResult],
     after: Callable[[], None],
 ) -> Adw.NavigationPage:
@@ -433,10 +484,18 @@ def _read_back_page(
     def update(*_arguments: object) -> None:
         state = field.reading()
         accept.set_sensitive(state.complete)
-        _say(status, f"{len(state.text)} of {state.expected} characters")
+        # A character a card can never carry is named, never quietly deleted: this
+        # is the step whose whole purpose is to catch a misread glyph.
+        fault = state.message if state.level == "error" else ""
+        counted = f"{len(state.text)} of {state.expected} characters"
+        _say(status, fault or counted, "error" if fault else "")
 
     def check() -> None:
-        result = confirm(reading.normalize(field.get_text()))
+        try:
+            result = confirm(reading.normalize(field.get_text()))
+        except CodexError as error:
+            _failure(view, error, CARDS_SAFE)
+            return
         if not result.accepted:
             groups = result.mismatched_groups
             where = f"Group {min(groups)}" if groups else "What you typed"
@@ -448,7 +507,7 @@ def _read_back_page(
     accept.connect("clicked", lambda _button: check())
     field.connect("changed", update)
     content = _column(
-        _title("Now type it back from the card", f"Card {position + 1} of {count}"),
+        _title("Now type it back from the card", _counted(card.header.index.upper(), position, count)),
         _note(
             "The original is no longer on screen. Read from the card you just wrote, so a slip of the "
             "pen is caught now rather than years from now."
@@ -461,7 +520,7 @@ def _read_back_page(
         ),
     )
     page = _page(
-        f"Card {position + 1} of {count}",
+        _counted(card.header.index.upper(), position, count),
         content,
         actions=_actions(_button("Show the card again", view.pop), accept),
     )
@@ -529,10 +588,10 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
     )
     for row in (needed, total, size):
         custom.add(row)
-    buttons[-1][1].connect("toggled", lambda choice: custom.set_visible(choice.get_active()))
+    buttons[-1].connect("toggled", lambda choice: custom.set_visible(choice.get_active()))
 
     def begin() -> None:
-        chosen = _selected(buttons)
+        chosen = list(details)[_selected(buttons)]
         if chosen != "Something else":
             threshold, count = next((t, c) for t, c, label in PRESETS if label == chosen)
             _begin_cards(view, core, threshold, count, SEED_SIZES[0][0])
@@ -563,6 +622,7 @@ def _begin_cards(
     if threshold == 0:
         page = _working(view, "New backup", "Drawing a fresh master seed…")
         work.run(
+            view,
             page,
             lambda: generate_master_seed(
                 byte_length=byte_length, fingerprint=wallet_setup.fingerprint_provider(core)
@@ -612,7 +672,7 @@ def _next_card(
             cancel=lambda shown: _abandon(view, shown),
         )
 
-    work.run(page, ceremony.next_share, _then(view, page, follow))
+    work.run(view, page, ceremony.next_share, _then(view, page, follow))
 
 
 def _card_confirmed(
@@ -625,7 +685,7 @@ def _card_confirmed(
     if position + 1 < count:
         _next_card(view, core, ceremony, position + 1, count)
         return
-    page = _working(view, "Backup", "Checking that the cards recover one master seed…")
+    page = _working(view, "Backup", "Finishing the backup…")
 
     def follow(secret: MasterSeed | CoreLightningSecret) -> None:
         if not isinstance(secret, MasterSeed):
@@ -633,8 +693,8 @@ def _card_confirmed(
             return
         _wallets(view, core, secret, "now")
 
-    deliver = _then(view, page, follow)
-    work.run(page, ceremony.finish, deliver)
+    deliver = _then(view, page, follow, CARDS_SAFE)
+    work.run(view, page, ceremony.finish, deliver)
 
 
 # --- The Bitcoin Core wallet -----------------------------------------------
@@ -650,9 +710,15 @@ def _wallets(
 ) -> None:
     page = _working(view, "Bitcoin Core", "Asking Bitcoin Core which wallets are empty…")
     work.run(
+        view,
         page,
         lambda: wallet_setup.eligible(core),
-        _then(view, page, lambda found: _wallet_page(view, core, secret, found, timestamp, restoring)),
+        _then(
+            view,
+            page,
+            lambda found: _wallet_page(view, core, secret, found, timestamp, restoring),
+            CARDS_SAFE,
+        ),
     )
 
 
@@ -671,15 +737,16 @@ def _wallet_page(
     buttons = _radio_group(group, rows)
 
     def go() -> None:
-        name = _selected(buttons)
-        if name == CREATE_WALLET:
-            view.push(_new_wallet_page(view, core, secret, timestamp))
+        # By position, so that a wallet named like the create row is still reachable.
+        index = _selected(buttons)
+        if index == len(found):
+            view.push(_new_wallet_page(view, core, secret, timestamp, restoring))
             return
-        chosen = next(item for item in found if item.name == name)
+        chosen = found[index]
         if chosen.locked:
-            view.push(_unlock_page(view, core, secret, chosen, timestamp))
+            view.push(_unlock_page(view, core, secret, chosen, timestamp, restoring))
             return
-        _import(view, core, secret, name, "", timestamp)
+        _import(view, core, secret, chosen.name, "", timestamp, restoring)
 
     content = _column(
         _title(
@@ -718,6 +785,7 @@ def _new_wallet_page(
     core: BitcoinCore,
     secret: MasterSeed,
     timestamp: Timestamp,
+    restoring: bool = False,
 ) -> Adw.NavigationPage:
     """Ask Bitcoin Core for one blank wallet, with a passphrase the operator chooses."""
     name = Adw.EntryRow(title="Wallet name", text=secret.header.identifier.upper())
@@ -735,11 +803,14 @@ def _new_wallet_page(
 
         def job() -> Record:
             wallet_setup.create(core, chosen, passphrase)
-            if passphrase:
-                wallet_setup.unlock(core, chosen, passphrase)
-            return _record(core, secret, chosen, timestamp)
+            return _record(core, secret, chosen, timestamp, passphrase)
 
-        work.run(page, job, _then(view, page, lambda record: _finished_page(view, record)))
+        work.run(
+            view,
+            page,
+            job,
+            _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE),
+        )
 
     def go() -> None:
         passphrase = first.get_text()
@@ -785,6 +856,7 @@ def _unlock_page(
     secret: MasterSeed,
     wallet: wallet_setup.Wallet,
     timestamp: Timestamp,
+    restoring: bool = False,
 ) -> Adw.NavigationPage:
     """Unlock one already encrypted wallet, or step aside and let Bitcoin Core do it."""
     field = Adw.PasswordEntryRow(title="Wallet passphrase")
@@ -797,8 +869,12 @@ def _unlock_page(
     manual.add_row(
         Adw.ActionRow(
             title="In Bitcoin Core, open Window ▸ Console",
-            subtitle=f'Select the wallet {wallet.name}, then type: walletpassphrase "YOUR PASSPHRASE" 180',
+            subtitle=(
+                f"Select the wallet {wallet.name}, then type: "
+                f'walletpassphrase "YOUR PASSPHRASE" {wallet_setup.UNLOCK_SECONDS}'
+            ),
             subtitle_selectable=True,
+            use_markup=False,
         )
     )
     group.add(manual)
@@ -810,10 +886,15 @@ def _unlock_page(
             wallet_setup.require_unlocked(core, wallet.name)
             return _record(core, secret, wallet.name, timestamp)
 
-        work.run(page, job, _then(view, page, lambda record: _finished_page(view, record)))
+        work.run(
+            view,
+            page,
+            job,
+            _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE),
+        )
 
     def go() -> None:
-        _import(view, core, secret, wallet.name, field.get_text(), timestamp)
+        _import(view, core, secret, wallet.name, field.get_text(), timestamp, restoring)
 
     content = _column(
         _title(
@@ -839,8 +920,10 @@ def _unlock_page(
     return page
 
 
-def _record(core: BitcoinCore, secret: MasterSeed, name: str, timestamp: Timestamp) -> Record:
-    final = wallet_setup.initialize(core, secret, name, timestamp=timestamp)
+def _record(
+    core: BitcoinCore, secret: MasterSeed, name: str, timestamp: Timestamp, passphrase: str = ""
+) -> Record:
+    final = wallet_setup.fill(core, secret, name, passphrase, timestamp=timestamp)
     return Record(
         secret.header.identifier.upper(),
         final,
@@ -857,40 +940,42 @@ def _import(
     name: str,
     passphrase: str,
     timestamp: Timestamp,
+    restoring: bool = False,
 ) -> None:
     page = _working(view, "Bitcoin Core", f"Writing your keys into {name}…")
+    work.run(
+        view,
+        page,
+        lambda: _record(core, secret, name, timestamp, passphrase),
+        _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE),
+    )
 
-    def job() -> Record:
-        if passphrase:
-            wallet_setup.unlock(core, name, passphrase)
-        return _record(core, secret, name, timestamp)
 
-    work.run(page, job, _then(view, page, lambda record: _finished_page(view, record)))
+def _finished_page(view: Adw.NavigationView, record: Record, restoring: bool = False) -> Adw.NavigationPage:
+    """Show the wallet-identity fields.
 
-
-def _finished_page(view: Adw.NavigationView, record: Record) -> Adw.NavigationPage:
+    A new wallet's are copied onto the wallet record. A restored wallet's are the
+    only proof the cards just entered belong to that wallet, so they are checked
+    against the record instead, and no creation date is offered: the one this
+    wallet was born with is on the record already, and today's would replace it.
+    """
+    heading, asked, closing = _RESTORED if restoring else _CREATED
+    dated = () if restoring else (("Approximate creation date", time.strftime("%Y-%m-%d")),)
     content = _column(
-        _title(
-            "Your wallet is ready",
-            "Copy these onto your wallet record, and keep it apart from every card.",
-            DONE_ICON,
-        ),
+        _title(heading, asked, DONE_ICON),
         _rows(
             "Wallet identity",
             (
                 ("Backup identifier", record.identifier),
                 ("Bitcoin Core wallet name", record.wallet),
                 ("Bitcoin Core version", record.version),
-                ("Approximate creation date", time.strftime("%Y-%m-%d")),
+                *dated,
                 ("Master fingerprint", record.fingerprint),
                 ("Derivation standards", "BIP 44, 49, 84 and 86"),
                 ("Account number", str(record.account)),
             ),
         ),
-        _note(
-            "Store each card in a different safe place. Send a small test payment and wait for it to "
-            "arrive before you put real savings here."
-        ),
+        _note(closing, "warning" if restoring else ""),
     )
     return _page(
         "Finished",
@@ -944,7 +1029,8 @@ def _collect(
     basis: bool = False,
     wanted: int | None = None,
     reserved: tuple[str, ...] = (),
-    then: Callable[[tuple[Artifact, ...]], None],
+    repaired: bool = False,
+    then: Callable[[tuple[Artifact, ...], bool], None],
 ) -> Adw.NavigationPage:
     """Take one card, and keep taking them until the backup has enough."""
     first = accepted[0] if accepted else None
@@ -959,14 +1045,28 @@ def _collect(
     fix = _button("Suggest a repair", lambda: suggest())
     go = _button("Continue", lambda: proceed(), style="suggested-action")
 
+    def refuse(artifact: Artifact | None) -> str:
+        """Say why this card cannot join the ones already entered, if it cannot."""
+        if artifact is not None and artifact.header.index in blocked:
+            letter = artifact.header.index.upper()
+            return f"That would be card {letter}, which cannot be used here."
+        return _incompatible(artifact, accepted, basis)
+
     def update(*_arguments: object) -> None:
         state = field.reading()
-        problem = _incompatible(state.artifact, accepted, basis)
+        problem = refuse(state.artifact)
         go.set_sensitive(state.artifact is not None and not problem)
         fix.set_sensitive(state.repairable)
         _say(status, problem or state.message, "error" if problem else state.level)
 
-    def accept(artifact: Artifact) -> None:
+    def accept(artifact: Artifact, guessed: bool = False) -> None:
+        # Checked again here: a repair arrives from its own screen, not from the field.
+        problem = refuse(artifact)
+        if problem:
+            if work.showing(view, page):
+                view.pop_to_page(page)
+            _say(status, problem, "error")
+            return
         gathered = (*accepted, artifact)
         field.clear()
         if _outstanding(gathered, basis, wanted):
@@ -981,15 +1081,16 @@ def _collect(
                     basis=basis,
                     wanted=wanted,
                     reserved=reserved,
+                    repaired=repaired or guessed,
                     then=then,
                 ),
             )
         else:
-            then(gathered)
+            then(gathered, repaired or guessed)
 
     def proceed() -> None:
         artifact = field.reading().artifact
-        if artifact is not None and not _incompatible(artifact, accepted, basis):
+        if artifact is not None:
             accept(artifact)
 
     def suggest() -> None:
@@ -1003,12 +1104,12 @@ def _collect(
                 return
 
             def following() -> Adw.NavigationPage:
-                return _repair_page(view, result, observed, accept, page)
+                return _repair_page(view, result, observed, lambda card: accept(card, True), page)
 
             gated = result.low_checksum_discrimination
             view.push(_guess_gate_page(view, following) if gated else following())
 
-        work.run(spinner, lambda: reading.repair(observed, length, excluded), deliver)
+        work.run(view, spinner, lambda: reading.repair(observed, length, excluded), deliver)
 
     field.connect("changed", update)
     progress = []
@@ -1088,12 +1189,17 @@ def _again(view: Adw.NavigationView, start: Callable[[Adw.NavigationView], None]
     start(view)
 
 
-def _intact_page(view: Adw.NavigationView, artifact: Artifact) -> Adw.NavigationPage:
+def _intact_page(view: Adw.NavigationView, artifact: Artifact, repaired: bool = False) -> Adw.NavigationPage:
+    """Report one card. A card that was guessed at is never called intact."""
     shown = _card(artifact.text)
     content = _column(
-        _title("This card is intact", _describe(artifact)),
+        _title(
+            "This is what the card should say" if repaired else "This card is intact",
+            _describe(artifact),
+            "" if repaired else DONE_ICON,
+        ),
         shown,
-        _note(NOT_PROOF),
+        _note(GUESSWORK, "warning") if repaired else _note(NOT_PROOF),
     )
     page = _page(
         "Card",
@@ -1116,7 +1222,7 @@ def _start_check(view: Adw.NavigationView) -> None:
             heading="Type what your card says",
             body="Nothing is saved and nothing leaves this computer.",
             wanted=1,
-            then=lambda found: _replace(view, _intact_page(view, found[0])),
+            then=lambda found, guessed: _replace(view, _intact_page(view, found[0], guessed)),
         )
     )
 
@@ -1129,7 +1235,7 @@ def _start_repair(view: Adw.NavigationView) -> None:
             heading="What you can read on the card",
             body="Type ? for anything you cannot make out. Nothing is saved and nothing leaves this computer.",
             wanted=1,
-            then=lambda found: _replace(view, _intact_page(view, found[0])),
+            then=lambda found, guessed: _replace(view, _intact_page(view, found[0], guessed)),
         )
     )
 
@@ -1185,7 +1291,9 @@ def _start_seed(view: Adw.NavigationView) -> None:
             title="Show my master seed",
             heading="Enter your cards",
             body="This never opens a Bitcoin Core wallet and never changes your backup.",
-            then=lambda found: _recover(view, found, lambda secret: _replace(view, _seed_page(view, secret))),
+            then=lambda found, _guessed: _recover(
+                view, found, lambda secret: _replace(view, _seed_page(view, secret))
+            ),
         )
     )
 
@@ -1219,7 +1327,7 @@ def _letter_page(view: Adw.NavigationView) -> Adw.NavigationPage:
                 body="codex32 works out the new card from them. Nothing else changes.",
                 basis=True,
                 reserved=(letter,),
-                then=lambda found: _derive(view, found, letter),
+                then=lambda found, _guessed: _derive(view, found, letter),
             )
         )
 
@@ -1253,7 +1361,7 @@ def _derive(view: Adw.NavigationView, found: tuple[Artifact, ...], letter: str) 
             view,
             card=share,
             position=0,
-            count=1,
+            count=None,
             confirm=lambda text: _compare(share.text, text),
             after=lambda: _replace(view, _share_done_page(view, share)),
             cancel=lambda _page: view.replace([home(view)]),
@@ -1314,6 +1422,6 @@ def _start_restore(view: Adw.NavigationView) -> None:
             title="Restore my wallet",
             heading="Enter your cards",
             body="Type what each card says. Nothing is saved and nothing leaves this computer.",
-            then=lambda found: _recover(view, found, lambda secret: _restore(view, core, secret)),
+            then=lambda found, _guessed: _recover(view, found, lambda secret: _restore(view, core, secret)),
         ),
     )

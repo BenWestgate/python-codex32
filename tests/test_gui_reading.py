@@ -3,7 +3,16 @@
 import pytest
 from data.bip93_vectors import VECTOR_2, VECTOR_3
 
-from codex32_gui.reading import PREFIX, expected_length, grouped, header_fault, normalize, read, repair
+from codex32_gui.reading import (
+    PREFIX,
+    expected_length,
+    grouped,
+    header_fault,
+    lookalike_fault,
+    normalize,
+    read,
+    repair,
+)
 
 SHARE_A = VECTOR_2["share_A"]
 SHARE_C = VECTOR_2["share_C"]
@@ -124,3 +133,29 @@ def test_a_card_with_too_little_checksum_left_demands_the_warning() -> None:
     found = repair(SHARE_C[:-13] + "?" * 13, None)
     assert isinstance(found, CorrectionCandidate)
     assert found.low_checksum_discrimination
+
+
+@pytest.mark.parametrize(
+    ("typed", "expected"),
+    [("B", "8"), ("I", "J or L"), ("O", "0, a zero"), ("1", "L")],
+)
+def test_a_character_no_card_can_carry_is_named_with_what_it_is_probably(typed: str, expected: str) -> None:
+    fault = lookalike_fault(f"MS12NAMEC{typed}")
+    assert typed in fault
+    assert expected in fault
+
+
+def test_the_prefix_keeps_its_own_one() -> None:
+    assert lookalike_fault("MS1") == ""
+    assert lookalike_fault("ms12namec") == ""
+
+
+def test_an_ordinary_stray_key_is_still_dropped_in_silence() -> None:
+    assert lookalike_fault("MS12NAMEC!,. ") == ""
+
+
+def test_several_confusable_characters_are_all_named() -> None:
+    fault = lookalike_fault("MS12NAMEBO")
+    assert "B or O" in fault
+    assert "B is probably 8" in fault
+    assert "O is probably 0" in fault

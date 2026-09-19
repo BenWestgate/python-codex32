@@ -24,6 +24,7 @@ ALLOWED = frozenset(CHARSET.upper() + "?")
 HEADER_LENGTH = 6
 GROUP = 4
 SLACK = 8
+LOOKALIKE = {"B": "8", "I": "J or L", "O": "0, a zero", "1": "L"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +52,26 @@ def normalize(raw: str) -> str:
     typed = "".join(raw.split()).upper()
     keep = max(size for size in range(len(PREFIX) + 1) if typed[:size] == PREFIX[:size])
     return PREFIX + "".join(character for character in typed[keep:] if character in ALLOWED)
+
+
+def lookalike_fault(raw: str) -> str:
+    """Name a character no card can contain, rather than deleting it in silence.
+
+    Every other character outside the alphabet is punctuation or a stray key, and
+    dropping it quietly is right. These four are not: bech32 leaves out B, I, O
+    and 1 precisely because handwriting confuses them with 8, J, L and 0, so they
+    are exactly what someone misreads from their own card. Swallowing them would
+    turn the read-back, whose whole purpose is to catch a slip of the pen, into
+    the step that hides one.
+    """
+    typed = "".join(raw.split()).upper()
+    keep = max(size for size in range(len(PREFIX) + 1) if typed[:size] == PREFIX[:size])
+    found = sorted({character for character in typed[keep:] if character in LOOKALIKE})
+    if not found:
+        return ""
+    named = found[0] if len(found) == 1 else ", ".join(found[:-1]) + " or " + found[-1]
+    hints = ", ".join(f"{character} is probably {LOOKALIKE[character]}" for character in found)
+    return f"A card never contains {named}. Look at the card again: {hints}."
 
 
 def grouped(text: str) -> str:

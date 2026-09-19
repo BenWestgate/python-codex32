@@ -9,10 +9,19 @@ from typing import Any
 
 import pytest
 
+from codex32 import parse_codex32
 from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
 from codex32_gui import wallet_setup
 
+_SEED = parse_codex32("MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW")
+
 PASSPHRASE = 'a pass phrase with = and "quotes"'
+
+
+def _lines(supplied: str) -> list[str]:
+    """Split standard input the way bitcoin-cli's own `std::getline` does: on newlines only."""
+    parts = supplied.split("\n")
+    return parts[:-1] if parts and parts[-1] == "" else parts
 
 
 @dataclass
@@ -34,7 +43,7 @@ class _Core:
         self.runs.append((tuple(command), supplied))
         options = [item for item in command[1:] if item.startswith("-")]
         arguments = [item for item in command[1:] if not item.startswith("-")]
-        lines = (supplied or "").splitlines()
+        lines = _lines(supplied or "")
         if supplied is not None and "-stdinwalletpassphrase" in options:
             # bitcoin-cli takes the first line as the passphrase argument.
             arguments, lines = [arguments[0], lines[0], *arguments[1:]], lines[1:]
@@ -71,7 +80,14 @@ class _Core:
             assert name is not None
             self.wallets[name].locked = False
             return ""
+        if method == "walletlock":
+            assert name is not None
+            self.wallets[name].locked = True
+            return ""
         raise AssertionError(f"the graphical program should not call {method}")
+
+    def called(self, method: str) -> bool:
+        return any(method in command for command, _supplied in self.runs)
 
 
 def _client(monkeypatch: pytest.MonkeyPatch, wallets: dict[str, _Wallet]) -> tuple[BitcoinCore, _Core]:
@@ -154,9 +170,9 @@ def test_wallet_creation_uses_one_fixed_set_of_flags(monkeypatch: pytest.MonkeyP
     command, supplied = fake.runs[0]
     assert "-named" in command and "createwallet" in command
     assert supplied is not None
-    assert supplied.splitlines()[:3] == ["wallet_name=fresh", "disable_private_keys=false", "blank=true"]
-    assert supplied.splitlines()[3] == f"passphrase={PASSPHRASE}"
-    assert len(supplied.splitlines()) == 4
+    assert _lines(supplied)[:3] == ["wallet_name=fresh", "disable_private_keys=false", "blank=true"]
+    assert _lines(supplied)[3] == f"passphrase={PASSPHRASE}"
+    assert len(_lines(supplied)) == 4
 
 
 def test_a_wallet_created_without_a_passphrase_carries_no_passphrase_line(
@@ -165,7 +181,7 @@ def test_a_wallet_created_without_a_passphrase_carries_no_passphrase_line(
     core, fake = _client(monkeypatch, {})
     wallet_setup.create(core, "fresh", "")
     assert fake.runs[0][1] is not None
-    assert len(fake.runs[0][1].splitlines()) == 3
+    assert len(_lines(fake.runs[0][1])) == 3
 
 
 @pytest.mark.parametrize("name", ["", " leading", "trailing ", "two\nlines", "bell\x07"])
@@ -174,6 +190,14 @@ def test_unusable_wallet_names_are_refused_before_bitcoin_core_sees_them(
 ) -> None:
     core, fake = _client(monkeypatch, {})
     with pytest.raises(BitcoinCoreError, match="printable text"):
+        wallet_setup.create(core, name, "")
+    assert fake.runs == []
+
+
+@pytest.mark.parametrize("name", ["..", ".", "over/there", "back\\slash", "../../elsewhere"])
+def test_a_wallet_name_cannot_describe_a_path(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    core, fake = _client(monkeypatch, {})
+    with pytest.raises(BitcoinCoreError, match="slash"):
         wallet_setup.create(core, name, "")
     assert fake.runs == []
 
@@ -189,7 +213,7 @@ def test_a_passphrase_that_cannot_survive_the_channel_is_refused(
 
 
 def test_an_unlock_that_leaves_the_wallet_locked_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
-    core, _fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
     original = _Core._reply
 
     def stubborn(self: _Core, method: str, arguments: list[str], name: str | None) -> str:
@@ -197,8 +221,66 @@ def test_an_unlock_that_leaves_the_wallet_locked_is_reported(monkeypatch: pytest
         return "" if method == "walletpassphrase" else original(self, method, arguments, name)
 
     monkeypatch.setattr(_Core, "_reply", stubborn)
-    with pytest.raises(BitcoinCoreError, match="did not accept that passphrase"):
+    with pytest.raises(BitcoinCoreError, match="no longer an empty one"):
         wallet_setup.unlock(core, "fresh", PASSPHRASE)
+    assert fake.called("walletlock")
+
+
+def test_a_wallet_that_stops_being_eligible_is_locked_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bitcoin Core has taken the passphrase by then, so the wallet is open until it is shut."""
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
+    original = _Core._reply
+
+    def filled(self: _Core, method: str, arguments: list[str], name: str | None) -> str:
+        if method == "listdescriptors" and self.wallets["fresh"].locked is False:
+            return json.dumps({"descriptors": [{"desc": "wpkh(xpub)", "active": True}]})
+        return original(self, method, arguments, name)
+
+    monkeypatch.setattr(_Core, "_reply", filled)
+    with pytest.raises(BitcoinCoreError, match="locked it again|no longer an empty one"):
+        wallet_setup.unlock(core, "fresh", PASSPHRASE)
+    assert fake.called("walletlock")
+    assert fake.wallets["fresh"].locked
+
+
+def test_an_import_that_fails_before_the_library_arms_its_own_relock_still_locks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
+
+    def refuse(*_arguments: object, **_keywords: object) -> str:
+        raise BitcoinCoreError("Bitcoin Core is waiting for something to be done in its own window.")
+
+    monkeypatch.setattr(wallet_setup, "initialize", refuse)
+    with pytest.raises(BitcoinCoreError, match="waiting"):
+        wallet_setup.fill(core, _SEED, "fresh", PASSPHRASE)
+    assert fake.called("walletlock")
+    assert fake.wallets["fresh"].locked
+
+
+def test_an_unlock_is_not_attempted_when_no_passphrase_was_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core, fake = _client(monkeypatch, {"fresh": _Wallet()})
+    monkeypatch.setattr(wallet_setup, "initialize", lambda *_a, **_k: "fresh")
+    assert wallet_setup.fill(core, _SEED, "fresh", "") == "fresh"
+    assert not fake.called("walletpassphrase")
+    assert not fake.called("walletlock")
+
+
+def test_the_chain_the_operator_chose_is_the_one_that_is_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One chain answering after another stopped must not quietly stand in for it."""
+    monkeypatch.setattr(
+        wallet_setup.BitcoinCore,
+        "connect",
+        classmethod(lambda _cls, _ask, _tell: BitcoinCore("bitcoin-cli", "main", 320000)),
+    )
+    assert wallet_setup.connect("mainnet").chain == "main"
+    with pytest.raises(wallet_setup.Offer) as raised:
+        wallet_setup.connect("signet")
+    assert raised.value.options == ("mainnet",)
 
 
 def test_the_version_is_reported_the_way_bitcoin_core_reports_it() -> None:

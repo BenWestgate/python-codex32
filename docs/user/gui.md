@@ -39,6 +39,12 @@ this.
 
 `codex32-gui` takes no arguments. Never put a secret in one.
 
+The window turns off the desktop's accessibility bus, because GTK otherwise
+offers every line on screen — your cards, your master seed and your wallet
+passphrase — to any other program running as you. If you use a screen reader,
+start it with `GTK_A11Y=atspi codex32-gui` instead; that gives the screen reader
+what it needs, and everything else on that bus too.
+
 ## Before you start
 
 Start Bitcoin Core first. Setting up and restoring a wallet both look for it
@@ -73,6 +79,11 @@ Finally, copy the wallet details onto your
 [wallet record](wallet-verification-record.html) and keep it apart from every
 card. The window shows exactly the fields that record asks for.
 
+A card never contains **B**, **I**, **O** or **1**: those four are left out of
+the alphabet precisely because handwriting confuses them with 8, J, L and 0. If
+you type one, the window says so and names what the card probably says, rather
+than quietly swallowing it.
+
 ## A card that is damaged
 
 Type what you can still read, and `?` for each character you cannot make out.
@@ -86,6 +97,10 @@ correct without being correct, and any earlier mistake gets locked in with
 nothing left to detect it. If the funds matter, stop there and get help.
 
 If more than one repair fits, the window shows none of them. Check the card again.
+
+A repaired card is never called intact. The window says it is what the card
+*should* say, marks it as guesswork, and tells you to copy it onto a fresh card
+and prove it by restoring your wallet and checking the master fingerprint.
 
 ## What the window never claims
 
@@ -108,15 +123,30 @@ program codex32 starts is `bitcoin-cli`, on the loopback address, and secrets
 reach it on standard input rather than in a command argument, so they never
 appear in the list of running programs.
 
+One thing is worth knowing: on X11, selecting text inside the entry field hands
+it to the primary selection, which some clipboard managers copy to disk. The
+window takes it back immediately, but the safest habit is not to select the text
+of a card at all. You never need to: nothing here asks you to copy and paste.
+
 The window asks for a Bitcoin Core wallet passphrase, which the command line
 deliberately does not; see [the security model](../security/model.md). It is sent
 straight to `bitcoin-cli` and is never stored.
 
 ## If something goes wrong
 
-The window stops and says so, and your cards remain valid. A failure while the
-keys are being written leaves the wallet locked and your recovery cards
-unchanged; run **Restore my wallet** again once Bitcoin Core is healthy.
+The window stops and says so, and it says in as many words that your cards are
+unharmed and still recover the wallet. Nothing is ever written onto a card by
+Bitcoin Core, so a failure here cannot damage one. Once Bitcoin Core is healthy,
+choose **Restore my wallet** and enter the same cards — not **Set up a new
+wallet**, which would make a different backup. If the wallet was part-filled
+before it failed, it is no longer empty, so it will not be offered again: create
+another one, or ask Bitcoin Core for a fresh blank wallet.
+
+When you restore, the window asks you to **check** the wallet details against
+your record rather than copy them onto it. That comparison — the master
+fingerprint above all — is the only thing that proves the cards you just typed
+belong to that wallet. It shows no creation date on that screen, because the
+real one is already on your record and today's would replace it.
 
 The window always uses account 0, which is what it writes onto your wallet
 record. If you are restoring a wallet whose record shows a different account
