@@ -49,6 +49,11 @@ one part of a split master seed. A **wallet record** describes the expected
 wallet without containing recovery secrets; store it separately from every
 recovery card.
 
+The same Bitcoin master-seed jobs are available in a window. If you would rather
+not use a terminal, see [the codex32 window](gui.md); it covers creation,
+restoration, checking, repair, and replacing a card, and it asks for the Bitcoin
+Core wallet passphrase that this command deliberately does not.
+
 ## Recommended: dedicated Bitcoin Core spending wallet
 
 ### 1. Prepare

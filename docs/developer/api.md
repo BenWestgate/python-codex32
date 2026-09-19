@@ -107,6 +107,16 @@ blank and comment-only lines while counting subpackages recursively. Changing
 the budget requires explicit review and authorization together with the matching
 documentation and enforcement update.
 
+### The optional graphical package
+
+`src/codex32_gui/` is a second distribution package in this repository,
+installed as `codex32[gui]` and started by `codex32-gui`. It is a client of the
+surface above and of the private Core adapter; nothing in `src/codex32/` imports
+it, and the base install keeps its property of having no third-party runtime
+dependency. It carries its own budget of 1,800 logical review lines, separate
+from the 5,000 above. Its own boundaries are documented in
+[`gui.md`](gui.md) and enforced by `tests/test_gui_boundaries.py`.
+
 ## Profile and opaque-HRP capabilities
 
 There is no runtime registration. An unknown HRP uses generic codex32 rules and
