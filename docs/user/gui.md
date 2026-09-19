@@ -118,5 +118,9 @@ The window stops and says so, and your cards remain valid. A failure while the
 keys are being written leaves the wallet locked and your recovery cards
 unchanged; run **Restore my wallet** again once Bitcoin Core is healthy.
 
+The window always uses account 0, which is what it writes onto your wallet
+record. If you are restoring a wallet whose record shows a different account
+number, use `ms32 wallet --account N` instead.
+
 The command line remains the fuller tool: `ms32 --help` lists everything,
 including the parts this window leaves out.

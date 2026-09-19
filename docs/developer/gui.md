@@ -112,6 +112,9 @@ library's.
   where `ms32 correct` would pick one.
 - The window creates Bitcoin Core wallets; `ms32 create` still does not. Whether
   the command line should match is deliberately unresolved.
+- The account number is fixed at 0, which is the command line's default. The
+  restore screen says so, and points anyone whose wallet record shows another
+  number at `ms32 wallet --account N`.
 - `xprv`, Core Lightning, BIP39 worksheet profiles, and the generic `codex32`
   façade are not in the window.
 

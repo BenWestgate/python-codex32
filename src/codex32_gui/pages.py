@@ -640,12 +640,19 @@ def _card_confirmed(
 # --- The Bitcoin Core wallet -----------------------------------------------
 
 
-def _wallets(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSeed, timestamp: Timestamp) -> None:
+def _wallets(
+    view: Adw.NavigationView,
+    core: BitcoinCore,
+    secret: MasterSeed,
+    timestamp: Timestamp,
+    *,
+    restoring: bool = False,
+) -> None:
     page = _working(view, "Bitcoin Core", "Asking Bitcoin Core which wallets are empty…")
     work.run(
         page,
         lambda: wallet_setup.eligible(core),
-        _then(view, page, lambda found: _wallet_page(view, core, secret, found, timestamp)),
+        _then(view, page, lambda found: _wallet_page(view, core, secret, found, timestamp, restoring)),
     )
 
 
@@ -655,6 +662,7 @@ def _wallet_page(
     secret: MasterSeed,
     found: tuple[wallet_setup.Wallet, ...],
     timestamp: Timestamp,
+    restoring: bool,
 ) -> Adw.NavigationPage:
     """Name the wallet that will hold the keys. The library confirms that name again."""
     group = Adw.PreferencesGroup(title="Empty wallets Bitcoin Core has ready")
@@ -682,6 +690,17 @@ def _wallet_page(
         _note(
             "Only empty wallets are listed, so no wallet you already use can be overwritten. You may also "
             "create one in Bitcoin Core yourself and check again."
+        ),
+        *(
+            (
+                _note(
+                    "This restores account 0. If your wallet record shows a different account number, "
+                    "restore with the ms32 wallet --account command instead.",
+                    "warning",
+                ),
+            )
+            if restoring
+            else ()
         ),
     )
     return _page(
@@ -1283,7 +1302,7 @@ def _restore(view: Adw.NavigationView, core: BitcoinCore, secret: Secret) -> Non
     if not isinstance(secret, MasterSeed):
         _failure(view, "Only a Bitcoin master-seed backup can restore a wallet.")
         return
-    _wallets(view, core, secret, 0)
+    _wallets(view, core, secret, 0, restoring=True)
 
 
 def _start_restore(view: Adw.NavigationView) -> None:
