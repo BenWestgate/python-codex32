@@ -33,8 +33,12 @@ dependencies = []
 [project.scripts]
 codex32 = "codex32.cli:main"
 ms32 = "codex32.cli:ms_main"
+codex32-gui = "codex32_gui.__main__:main"
 
 [project.optional-dependencies]
+gui = [
+  "pygobject>=3.50",
+]
 dev = [
   "build>=1,<2",
   "hypothesis>=6,<7",
@@ -54,6 +58,16 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[[tool.mypy.overrides]]
+# PyGObject is a system package with no type information for this project.
+module = ["gi", "gi.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Widget base classes therefore arrive as Any; the GUI still checks everything else.
+module = ["codex32_gui.*"]
+disallow_subclassing_any = false
 
 [tool.ruff]
 line-length = 110
