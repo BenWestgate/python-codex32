@@ -24,7 +24,11 @@ from gi.repository import GLib, Gtk
 
 from codex32_gui import app, pages, reading, wallet_setup
 
+SHARE_A = "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM"
 SHARE_C = "MS12NAMECACDEFGHJKLMNPQRSTUVWXYZ023FTR2GDZMPY6PN"
+DERIVED_D = "MS12NAMEDLL4F8JLH4E5VDVULDLFXU2JHDNLSM97XVENRXEG"
+SECRET_S = "MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW"
+OTHER_BACKUP = "ms13cashcacdefghjklmnpqrstuvwxyz023949xq35my48dr"
 NETWORKS = ("mainnet", "signet", "regtest")
 
 failures: list[str] = []
@@ -57,6 +61,15 @@ def walk(widget: Any) -> Iterator[Any]:
         yield child
         yield from walk(child)
         child = child.get_next_sibling()
+
+
+def card(page: Any) -> str:
+    return "".join(item.get_label() for item in walk(page) if "card-group" in item.get_css_classes())
+
+
+def button(page: Any, label: str) -> Any:
+    found = [item for item in walk(page) if isinstance(item, Gtk.Button) and item.get_label() == label]
+    return found[0] if found else None
 
 
 def field_of(page: Any) -> Any:
@@ -100,6 +113,14 @@ class Walkthrough(app.Application):
             self.back_to_entry,
             self.preflight,
             self.network,
+            self.letters,
+            self.basis,
+            self.second_card,
+            self.derived,
+            self.read_back,
+            self.new_card_done,
+            self.seed_entry,
+            self.seed_shown,
         ]
         GLib.timeout_add(300, self.pump)
 
@@ -221,6 +242,115 @@ class Walkthrough(app.Application):
         press(page, "Continue")
         settle()
         check("the chosen network is the one used", asked == [None, "signet"], asked)
+        self.view.replace([pages.home(self.view)])
+        return True
+
+    def letters(self) -> bool:
+        page = self.page()
+        if page.get_title() != "codex32":
+            return False
+        rows(page)[4].emit("activated")
+        page = self.page()
+        check("replacing a card starts with a letter", page.get_title() == "New card", page.get_title())
+        offered = [item.get_label() for item in walk(page) if "card-group" in item.get_css_classes()]
+        check("thirty-one ordinary letters, and no S", len(offered) == 31 and "S" not in offered, offered)
+        flow = next(item for item in walk(page) if isinstance(item, Gtk.FlowBox))
+        for position in range(31):
+            child = flow.get_child_at_index(position)
+            if child.get_child().get_label() == "D":
+                flow.select_child(child)
+        press(page, "Continue")
+        return True
+
+    def basis(self) -> bool:
+        page = self.page()
+        field = field_of(page)
+        field.set_text(DERIVED_D)
+        settle()
+        check("the letter being made cannot also be entered", not button(page, "Continue").get_sensitive())
+        field.set_text(SHARE_A)
+        settle()
+        check("an existing card is accepted", button(page, "Continue").get_sensitive())
+        press(page, "Continue")
+        return True
+
+    def second_card(self) -> bool:
+        page = self.page()
+        field = field_of(page)
+        check("the known header is pre-filled", field.get_text() == "MS12 NAME", field.get_text())
+        field.set_text(SHARE_A)
+        settle()
+        check("the same card cannot be entered twice", not button(page, "Continue").get_sensitive())
+        field.set_text(OTHER_BACKUP)
+        settle()
+        check(
+            "a card from another backup is named and refused",
+            any("belongs to backup CASH" in text for text in labels(page)),
+            [text for text in labels(page) if "backup" in text],
+        )
+        field.set_text(SHARE_C)
+        settle()
+        press(page, "Continue")
+        return True
+
+    def derived(self) -> bool:
+        page = self.page()
+        if button(page, "I have written it down") is None:
+            return False
+        self.made = card(page)
+        check("the derived card is the published vector", self.made == DERIVED_D, self.made)
+        press(page, "I have written it down")
+        return True
+
+    def read_back(self) -> bool:
+        page = self.page()
+        field = field_of(page)
+        field.set_text(self.made[:-4] + "QQQQ")
+        settle()
+        press(page, "Confirm card")
+        check(
+            "a mistyped group is named and refused",
+            any("Group 12 does not match" in text for text in labels(page)),
+            [text for text in labels(page) if "Group" in text],
+        )
+        field.set_text(self.made.lower())
+        settle()
+        press(page, "Confirm card")
+        return True
+
+    def new_card_done(self) -> bool:
+        page = self.page()
+        if button(page, "Done") is None:
+            return False
+        text = labels(page)
+        check("the new card is reported confirmed", any("is written and confirmed" in item for item in text))
+        check("and the wallet is said to be untouched", any("wallet is untouched" in item for item in text))
+        check("and no card count is stated", not any(" of 3" in item for item in text), text)
+        press(page, "Done")
+        return True
+
+    def seed_entry(self) -> bool:
+        page = self.page()
+        if page.get_title() != "codex32":
+            return False
+        rows(page)[5].emit("activated")
+        for text in (SHARE_A, SHARE_C):
+            page = self.page()
+            field_of(page).set_text(text)
+            settle()
+            press(page, "Continue")
+        return True
+
+    def seed_shown(self) -> bool:
+        page = self.page()
+        if page.get_title() != "Master seed":
+            return False
+        check("two cards recover the published secret", card(page) == SECRET_S, card(page))
+        check(
+            "and the screen warns before anything else",
+            any("take every coin" in text for text in labels(page)),
+            [text for text in labels(page) if "coin" in text],
+        )
         return True
 
 
