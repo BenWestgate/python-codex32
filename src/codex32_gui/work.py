@@ -31,7 +31,7 @@ def run[Result](
     """
     global _running
     if _running:
-        GLib.idle_add(_busy, done)
+        GLib.idle_add(_busy, page, done)
         return
     _running = True
 
@@ -54,6 +54,7 @@ def run[Result](
     threading.Thread(target=worker, daemon=True).start()
 
 
-def _busy[Result](done: Callable[[Result | Exception], None]) -> bool:
-    done(RuntimeError(_BUSY))
+def _busy[Result](page: Adw.NavigationPage, done: Callable[[Result | Exception], None]) -> bool:
+    if page.get_root() is not None:
+        done(RuntimeError(_BUSY))
     return False

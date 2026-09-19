@@ -431,15 +431,16 @@ def _read_back_page(
     accept = _button("Confirm card", lambda: None, style="suggested-action")
 
     def update(*_arguments: object) -> None:
-        reading = field.reading()
-        accept.set_sensitive(reading.complete)
-        _say(status, f"{len(reading.text)} of {reading.expected} characters")
+        state = field.reading()
+        accept.set_sensitive(state.complete)
+        _say(status, f"{len(state.text)} of {state.expected} characters")
 
     def check() -> None:
         result = confirm(reading.normalize(field.get_text()))
         if not result.accepted:
-            first = min(result.mismatched_groups)
-            _say(status, f"Group {first} does not match. Check it against your card.", "error")
+            groups = result.mismatched_groups
+            where = f"Group {min(groups)}" if groups else "What you typed"
+            _say(status, f"{where} does not match. Check it against your card.", "error")
             return
         field.clear()
         after()
@@ -516,6 +517,15 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
     size = Adw.ComboRow(
         title="Seed size",
         model=Gtk.StringList.new([label for _length, label in SEED_SIZES]),
+    )
+    # Neither number may leave the other impossible.
+    needed.connect(
+        "notify::value",
+        lambda row, _spec: total.set_value(max(total.get_value(), row.get_value())),
+    )
+    total.connect(
+        "notify::value",
+        lambda row, _spec: needed.set_value(min(needed.get_value(), row.get_value())),
     )
     for row in (needed, total, size):
         custom.add(row)
@@ -920,10 +930,10 @@ def _collect(
     """Take one card, and keep taking them until the backup has enough."""
     first = accepted[0] if accepted else None
     length = len(first.text) if first is not None else None
-    used = tuple(
-        dict.fromkeys([*(item.header.index for item in accepted if isinstance(item, Share)), *reserved])
-    )
-    field = Codex32Entry(accepted=used, length=length)
+    blocked = tuple(dict.fromkeys([*(item.header.index for item in accepted), *reserved]))
+    # Correction accepts ordinary indices only; S is refused by the field instead.
+    excluded = tuple(index for index in blocked if index != "s")
+    field = Codex32Entry(accepted=blocked, length=length)
     if first is not None:
         field.prefill(f"{reading.PREFIX}{first.header.threshold}{first.header.identifier}")
     status = _note("")
@@ -931,11 +941,11 @@ def _collect(
     go = _button("Continue", lambda: proceed(), style="suggested-action")
 
     def update(*_arguments: object) -> None:
-        reading = field.reading()
-        problem = _incompatible(reading.artifact, accepted, basis)
-        go.set_sensitive(reading.artifact is not None and not problem)
-        fix.set_sensitive(reading.repairable)
-        _say(status, problem or reading.message, "error" if problem else reading.level)
+        state = field.reading()
+        problem = _incompatible(state.artifact, accepted, basis)
+        go.set_sensitive(state.artifact is not None and not problem)
+        fix.set_sensitive(state.repairable)
+        _say(status, problem or state.message, "error" if problem else state.level)
 
     def accept(artifact: Artifact) -> None:
         gathered = (*accepted, artifact)
@@ -979,7 +989,7 @@ def _collect(
             gated = result.low_checksum_discrimination
             view.push(_guess_gate_page(view, following) if gated else following())
 
-        work.run(spinner, lambda: reading.repair(observed, length, used), deliver)
+        work.run(spinner, lambda: reading.repair(observed, length, excluded), deliver)
 
     field.connect("changed", update)
     progress = []
