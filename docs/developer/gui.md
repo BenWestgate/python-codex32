@@ -141,6 +141,14 @@ library's.
 - The account number is fixed at 0, which is the command line's default. The
   restore screen says so, and points anyone whose wallet record shows another
   number at `ms32 wallet --account N`.
+- The window offers no checksum completer, and does not tell the operator that
+  13 or 15 trailing `?`, depending on card length, would be one. It is aimed at
+  someone whose seed comes from the operating system, for whom a Book worksheet
+  never arises, so advertising the route there would be all cost. The route is
+  reachable anyway, so `_guess_gate_page` speaks to a person completing new data
+  as well as to a person recovering a damaged card, and forbids replacing a
+  checksum outright. `docs/user/guide.md` documents the route for the command
+  line, which is where the worksheet audience already is.
 - Restoring asks the operator to *check* the wallet-identity fields against
   their record rather than copy them onto it, and shows no creation date. A
   restore is the only moment the program can show that the cards entered belong

@@ -137,6 +137,8 @@ class Walkthrough(app.Application):
             self.candidate,
             self.back_to_entry,
             self.accepted_repair,
+            self.completion_entry,
+            self.completion_gate,
             self.preflight,
             self.network,
             self.letters,
@@ -276,6 +278,57 @@ class Walkthrough(app.Application):
         )
         check("and the repair is still the published vector", card(page) == SHARE_C, card(page))
         press(page, "Done")
+        return True
+
+    def completion_entry(self) -> bool:
+        """Thirteen unreadable characters at the end are a whole checksum."""
+        page = self.page()
+        if page.get_title() != "codex32":
+            return False
+        rows(page)[3].emit("activated")
+        page = self.page()
+        field = field_of(page)
+        field.set_text(SHARE_C[:-13] + "?" * 13)
+        settle()
+        fix = button(page, "Suggest a repair")
+        check("completing a checksum is offered as a repair", fix.get_sensitive())
+        fix.emit("clicked")
+        return True
+
+    def completion_gate(self) -> bool:
+        page = self.page()
+        if page.get_title() != "Warning" or button(page, "Show the guess") is None:
+            return False
+        shown = labels(page)
+        check("nothing about the guess is disclosed yet", card(page) == "", card(page))
+        check(
+            "the gate addresses someone completing new data",
+            any("making by hand" in text and "locks it in" in text for text in shown),
+            [text for text in shown if "hand" in text],
+        )
+        check(
+            "and someone recovering a damaged card",
+            any("may simply be wrong" in text for text in shown),
+            [text for text in shown if "wrong" in text],
+        )
+        check(
+            "and forbids replacing a checksum outright",
+            any("Never erase" in text for text in shown),
+            [text for text in shown if "Never" in text],
+        )
+        show = button(page, "Show the guess")
+        check("the guess stays hidden until YES is typed", not show.get_sensitive())
+        entry = next(item for item in walk(page) if isinstance(item, Gtk.Entry))
+        for typed in ("yes", "Yes", "YES please", "Y"):
+            entry.set_text(typed)
+            settle()
+            check(f"{typed!r} does not open the gate", not show.get_sensitive())
+        entry.set_text("YES")
+        settle()
+        check("literal YES opens it", show.get_sensitive())
+        press(page, "Cancel")
+        settle()
+        self.view.replace([pages.home(self.view)])
         return True
 
     def preflight(self) -> bool:

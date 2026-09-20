@@ -93,8 +93,19 @@ compare it character by character before you accept it.
 
 If too much is missing, the window stops and asks you to type `YES` in capitals
 first. That is not a formality: with that little checksum left, a repair can look
-correct without being correct, and any earlier mistake gets locked in with
-nothing left to detect it. If the funds matter, stop there and get help.
+correct without being correct. The screen says so twice over, because two
+different people reach it. If you are filling in the last squares of a backup you
+are making by hand, it tells you to check every character against what you wrote,
+since completing the squares locks any earlier mistake in for good. If you are
+recovering a damaged card, it tells you the answer may simply be wrong, and that
+you may have to try likely misreadings one at a time. If the funds matter, stop
+there and get help.
+
+**Never erase a card's last characters to make it check out.** A card that fails
+its check is telling you something is wrong. Replacing the ending hides that
+mistake inside a result that now looks valid, and you lose the one signal that
+would have found it. Type what the card actually says, `?` included, and let the
+window work from that.
 
 If more than one repair fits, the window shows none of them. Check the card again.
 

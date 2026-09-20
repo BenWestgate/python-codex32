@@ -1132,7 +1132,15 @@ def _collect(
 def _guess_gate_page(
     view: Adw.NavigationView, following: Callable[[], Adw.NavigationPage]
 ) -> Adw.NavigationPage:
-    """Invariant 5: disclose nothing about the candidate until literal YES is typed."""
+    """Invariant 5: disclose nothing about the candidate until literal YES is typed.
+
+    Thirteen or fifteen unreadable characters at the end of a card are the whole
+    checksum, depending on card length, so this screen is also what someone
+    filling in the last squares of a hand-made backup reaches. It has to speak to
+    both of them: a person recovering a damaged card, who may be shown something
+    simply wrong, and a person completing new data, whose earlier mistakes this
+    would set in stone.
+    """
     field = Gtk.Entry(placeholder_text="YES")
     show = _button("Show the guess", lambda: view.push(following()), style="destructive-action")
     show.set_sensitive(False)
@@ -1140,9 +1148,23 @@ def _guess_gate_page(
     content = _column(
         _title("This repair would be a guess"),
         _note(
-            "So much of this card is unreadable that codex32 can fill in the blanks in a way that looks "
-            "correct without being correct. If any earlier character is also wrong, that mistake gets "
-            "locked in and the card becomes wrong forever, with nothing left to detect it.",
+            "So much of this card is unreadable that codex32 can fill in the blanks in a way that "
+            "looks correct without being correct.",
+            "warning",
+        ),
+        _note(
+            "If you are filling in the last squares of a backup you are making by hand, check every "
+            "character you have typed against what you wrote down before you go on. Nothing can "
+            "detect a mistake made earlier: filling in the squares locks it in for good."
+        ),
+        _note(
+            "If you are recovering a damaged card, the answer may simply be wrong. If it does not "
+            "restore your wallet, you may have to try likely misreadings one at a time."
+        ),
+        _note(
+            "Never erase a card's last characters to make it check out. A card that fails its check "
+            "is telling you something is wrong, and replacing the ending hides that mistake instead "
+            "of finding it.",
             "warning",
         ),
         _note("If the funds matter, stop here and get help instead."),
