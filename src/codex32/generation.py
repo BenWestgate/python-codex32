@@ -21,6 +21,7 @@ from codex32.bip93 import (
 )
 from codex32.errors import (
     CeremonyStateError,
+    CodexError,
     HeaderCollision,
     InvalidIdentifier,
     InvalidLength,
@@ -155,6 +156,8 @@ def generate_master_seed(
     """Generate or encode one unshared ``ms`` secret."""
     supplied, length = _seed_input(seed_bytes, byte_length)
     if supplied is not None:
+        if not _valid_root(supplied):
+            raise CodexError("master seed does not form a valid BIP32 root")
         identifier = _random_identifier() if identifier is None else _identifier(identifier)
         return MasterSeed.from_seed(supplied, identifier=identifier)
     if identifier is None and fingerprint is None:
