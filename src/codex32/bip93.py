@@ -47,7 +47,11 @@ class Header:
     index: str
 
     def __post_init__(self) -> None:
-        if isinstance(self.threshold, bool) or self.threshold not in (0, *range(2, 10)):
+        if (
+            isinstance(self.threshold, bool)
+            or not isinstance(self.threshold, int)
+            or self.threshold not in (0, *range(2, 10))
+        ):
             raise InvalidThreshold("threshold must be 0 or an integer from 2 through 9")
         if not isinstance(self.identifier, str):
             raise InvalidIdentifier("identifier must be str")
