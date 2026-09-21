@@ -51,11 +51,15 @@ class Header:
             raise InvalidThreshold("threshold must be 0 or an integer from 2 through 9")
         if not isinstance(self.identifier, str):
             raise InvalidIdentifier("identifier must be str")
+        if not self.identifier.isascii():
+            raise InvalidIdentifier("identifier must contain only ASCII Bech32 symbols")
         identifier = self.identifier.lower()
         if len(identifier) != 4 or any(character not in CHARSET for character in identifier):
             raise InvalidIdentifier("identifier must be exactly four Bech32 symbols")
         if not isinstance(self.index, str):
             raise InvalidShareIndex("share index must be str")
+        if not self.index.isascii():
+            raise InvalidShareIndex("share index must be an ASCII Bech32 symbol")
         index = self.index.lower()
         if len(index) != 1 or index not in CHARSET:
             raise InvalidShareIndex("share index must be one Bech32 symbol")
@@ -333,6 +337,8 @@ def recover_secret(shares: Sequence[Share]) -> Secret:
 def _normalize_target(value: object, *, label: str) -> str:
     if not isinstance(value, str):
         raise InvalidTargetIndex(f"{label} must be one Bech32 symbol")
+    if not value.isascii():
+        raise InvalidTargetIndex(f"{label} must be an ASCII Bech32 symbol")
     normalized = value.lower()
     if len(normalized) != 1 or normalized not in CHARSET or normalized == "s":
         raise InvalidTargetIndex(f"{label} must be one of {IDX_SORT[1:].upper()}")

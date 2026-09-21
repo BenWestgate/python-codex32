@@ -137,6 +137,20 @@ def test_raw_bytes_accept_random_or_explicit_identifiers() -> None:
     secret = generate_master_seed(raw, identifier="TEST")
     assert len(random_secret.header.identifier) == 4
     assert secret.header.identifier == "test"
+    with pytest.raises(InvalidIdentifier):
+        generate_master_seed(raw, identifier="tesK")
+
+
+def test_confirmation_rejects_unicode_that_lowercases_to_bech32(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    value = bytes([generation_module.CHARSET.index("k")]) * 26
+    monkeypatch.setattr(generation_module.secrets, "token_bytes", lambda _length: value)
+    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    pending = ceremony.next_share()
+    invalid = pending.text.replace("k", "K", 1)
+    assert invalid != pending.text
+    assert not ceremony.confirm(invalid).accepted
 
 
 def test_explicit_and_random_output_order_contracts() -> None:
@@ -162,6 +176,7 @@ def test_explicit_and_random_output_order_contracts() -> None:
         {"threshold": 2, "share_count": 32},
         {"threshold": 2, "indices": "a"},
         {"threshold": 2, "indices": "aa"},
+        {"threshold": 2, "indices": "aK"},
         {"threshold": 2, "indices": "sa"},
         {"threshold": 2, "indices": "ia"},
     ),

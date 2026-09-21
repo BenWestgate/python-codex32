@@ -74,8 +74,9 @@ generic parse-length failure.
 - `_cli_input.py` retains at most nine artifacts and delegates partial-set
   compatibility to `bip93.py`. Card confirmation clears the terminal and saved
   scrollback where supported, then displays only entered text after a mismatch.
-  Canonical text removes whitespace for comparison; presentation state retains
-  entered spacing and case. Grouped alignment preserves entered ownership;
+  Canonical text removes whitespace and folds ASCII case for comparison;
+  non-ASCII lookalikes remain mismatches. Presentation state retains entered
+  spacing and case. Grouped alignment preserves entered ownership;
   unspaced alignment minimizes character edits before disturbed groups.
   Codex32 entry uses a separate `> ` line; correction candidates use ordinary card formatting without a prompt marker;
   fixed prefixes follow that marker. The `xprv` and wallet recovery paths begin

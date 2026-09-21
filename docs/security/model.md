@@ -121,7 +121,7 @@ available through `codex32`.
 
 Creation retries show only entered text in contiguous regions: bold red means review the card, with reverse video added for the active region. Original card formatting is display-only; editable prefills retain entered case and spacing.
 Complete matching canonical groups freeze; local alignment preserves entered group ownership before edit minimization and proceeds without crossing frozen boundaries (see the API alignment rules).
-Empty retries fail; retries are unlimited. Correct full-string retries confirm; incorrect recognizable full-string retries preserve progress and clarify the active region. Only complete case/whitespace-normalized equality confirms, with no expected characters, error classifications, prescribed edits, or repairs.
+Empty retries fail; retries are unlimited. Correct full-string retries confirm; incorrect recognizable full-string retries preserve progress and clarify the active region. Only complete ASCII-case/whitespace-normalized equality confirms; non-ASCII lookalikes remain mismatches and must be re-entered. No expected characters, error classifications, prescribed edits, or repairs are supplied.
 Progressive group-level correctness feedback is explicitly accepted and does not change the confirmation boundary.
 
 Confirmation shows that the operator can produce the correct recovery string during setup. It cannot prove that the physical backup was corrected rather than reconstructed using confirmation feedback.
