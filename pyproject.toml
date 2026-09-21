@@ -11,8 +11,8 @@ authors = [
 description = "Python reference implementation for codex32 (BIP93) and codex32-encoded master seeds."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
-license = "MIT"
-license-files = ["LICENSE*"]
+license = "MIT AND BSD-3-Clause"
+license-files = ["LICENSE*", "LICENSES/*"]
 maintainers = [
   { name = "Ben Westgate", email = "benwestgate@protonmail.com" },
 ]
