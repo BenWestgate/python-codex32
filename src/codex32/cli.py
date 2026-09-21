@@ -20,6 +20,7 @@ from codex32._bitcoin_core import (
 from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
+    _ascii_lower,
     _card_text,
     _case_interpretation,
     _confirm_correction,
@@ -203,6 +204,8 @@ def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinC
 def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None]:
     if value is None:
         return Profile.MS, None, None
+    if not value.isascii():
+        raise _UsageError("The set header must contain only ASCII characters.")
     lowered = value.lower()
     if lowered != value and value.upper() != value:
         raise _UsageError("The set header must use either uppercase or lowercase.")
@@ -310,10 +313,10 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
             prefill=prefill,
         )
         compact = "".join(replacement.split())
-        if compact.lower() == expected.lower():
+        if _ascii_lower(compact) == expected.lower():
             groups = [replacement]
             break
-        if len(compact) > len(expected[start * 4 : end * 4]) and compact.lower().startswith(
+        if len(compact) > len(expected[start * 4 : end * 4]) and _ascii_lower(compact).startswith(
             (expected.split("1", 1)[0] + "1").lower()
         ):
             _print(
@@ -327,7 +330,7 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
         changed.difference_update(range(start, end))
         changed.update(start + i for i in remaining)
     entered = "".join(groups)
-    if "".join(entered.split()).lower() != expected.lower():
+    if _ascii_lower("".join(entered.split())) != expected.lower():
         raise RuntimeError("Confirmation mismatch.")
     if confirm is not None and not confirm(entered).accepted:
         raise RuntimeError("Confirmation rejected.")
