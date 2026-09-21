@@ -1,7 +1,7 @@
 """What the graphical entry field makes of typed text, without a display."""
 
 import pytest
-from data.bip93_vectors import VECTOR_2, VECTOR_3
+from data.bip93_vectors import VECTOR_2, VECTOR_3, VECTOR_5
 
 from codex32_gui.reading import (
     PREFIX,
@@ -127,10 +127,11 @@ def test_a_repair_that_repeats_an_accepted_card_is_not_offered() -> None:
     assert isinstance(repair(SHARE_A[:-1] + "Q", 48, ("a",)), str)
 
 
-def test_a_card_with_too_little_checksum_left_demands_the_warning() -> None:
+@pytest.mark.parametrize(("card", "checksum_length"), ((SHARE_C, 13), (VECTOR_5["secret_s"], 15)))
+def test_a_card_with_too_little_checksum_left_demands_the_warning(card: str, checksum_length: int) -> None:
     from codex32 import CorrectionCandidate
 
-    found = repair(SHARE_C[:-13] + "?" * 13, None)
+    found = repair(card[:-checksum_length] + "?" * checksum_length, None)
     assert isinstance(found, CorrectionCandidate)
     assert found.low_checksum_discrimination
 
