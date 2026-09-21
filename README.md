@@ -64,13 +64,19 @@ arrive as system packages, so install those and create the environment with
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 python -m venv --system-site-packages .venv
+source .venv/bin/activate
+
+python -m pip install --require-hashes \
+  -r requirements/cli-build-dependencies.txt
+python -m pip install --no-build-isolation --no-deps '.[gui]'
+python -m pip check
+codex32-gui
 ```
 
-Then install exactly as above and run `codex32-gui`. `pip check` now reports the
-system's own packages as well, so any pre-existing problem there is listed too.
-Tails 7 and Debian 13 already carry the three system packages, so an amnesic
-session needs no download. The `codex32[gui]` extra declares PyGObject for
-anyone installing from a package index instead. See the
+Because this environment can see system Python packages, `pip check` may also
+report pre-existing problems in unrelated applications such as Electrum. Those
+packages are not GUI dependencies. Tails 7 and Debian 13 already carry the three
+required system packages, so an amnesic session needs no download. See the
 [window guide](docs/user/gui.md).
 
 ## Start here
