@@ -230,19 +230,27 @@ class BitcoinCore:
         listing, info = self._rpc("listdescriptors", wallet=name), self._rpc("getwalletinfo", wallet=name)
         if not isinstance(info, dict) or not isinstance(listing, dict):
             raise BitcoinCoreError("Unexpected Bitcoin Core wallet information.")
+        txcount = info.get("txcount")
+        keypoolsize = info.get("keypoolsize")
+        internal_keypool = info.get("keypoolsize_hd_internal", 0)
+        has_unlock_state = "unlocked_until" in info
+        unlocked = info.get("unlocked_until")
         eligible = (
             info.get("descriptors") is True
             and info.get("private_keys_enabled") is True
             and info.get("external_signer", False) is False
-            and info.get("txcount") == 0
-            and info.get("keypoolsize") == 0
-            and info.get("keypoolsize_hd_internal", 0) == 0
+            and type(txcount) is int
+            and txcount == 0
+            and type(keypoolsize) is int
+            and keypoolsize == 0
+            and type(internal_keypool) is int
+            and internal_keypool == 0
             and info.get("scanning") is False
             and listing.get("descriptors") == []
             and name.isprintable()
+            and (not has_unlock_state or type(unlocked) is int and unlocked >= 0)
         )
-        unlocked = info.get("unlocked_until")
-        return (unlocked is not None, unlocked == 0) if eligible else None
+        return (has_unlock_state, unlocked == 0) if eligible else None
 
     def _select(
         self,
@@ -403,7 +411,8 @@ class BitcoinCore:
                         continue
                     except BitcoinCoreError as error:
                         raise BitcoinCoreError(warning) from error
-                    if not isinstance(info, dict) or info.get("unlocked_until") != 0:
+                    unlocked_until = info.get("unlocked_until") if isinstance(info, dict) else None
+                    if type(unlocked_until) is not int or unlocked_until != 0:
                         raise BitcoinCoreError(warning)
                     relock = False
             if waited:
