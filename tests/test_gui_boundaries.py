@@ -56,6 +56,31 @@ def _imports(tree: ast.AST) -> set[str]:
     return found
 
 
+def _named_function(tree: ast.AST, name: str) -> ast.FunctionDef:
+    return next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name)
+
+
+def _direct_calls(function: ast.FunctionDef) -> set[str]:
+    """Collect calls in one function body without entering callbacks it defines."""
+    found: set[str] = set()
+
+    class Calls(ast.NodeVisitor):
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            if node is function:
+                self.generic_visit(node)
+
+        def visit_Lambda(self, _node: ast.Lambda) -> None:
+            return
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if isinstance(node.func, ast.Name):
+                found.add(node.func.id)
+            self.generic_visit(node)
+
+    Calls().visit(function)
+    return found
+
+
 @pytest.mark.parametrize("path", _modules(), ids=lambda path: path.name)
 def test_the_gui_draws_no_entropy_opens_no_socket_and_touches_no_file(path: Path) -> None:
     imported = _imports(ast.parse(path.read_text()))
@@ -114,3 +139,15 @@ def test_the_gui_keeps_its_own_size_budget() -> None:
         for path in _modules()
     }
     assert sum(counts.values()) < BUDGET, counts
+
+
+def test_restore_verifies_identity_before_wallet_mutation() -> None:
+    tree = ast.parse((_package() / "pages.py").read_text())
+    restore = _named_function(tree, "_restore")
+    verify = _named_function(tree, "_verify_restore")
+    identity_page = _named_function(tree, "_restore_identity_page")
+
+    assert "_verify_restore" in _direct_calls(restore)
+    assert "_wallets" not in _direct_calls(restore)
+    assert "_wallets" not in _direct_calls(verify)
+    assert "_wallets" not in _direct_calls(identity_page)

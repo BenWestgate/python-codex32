@@ -933,6 +933,61 @@ def _record(
     )
 
 
+def _restore_identity_page(
+    view: Adw.NavigationView,
+    core: BitcoinCore,
+    secret: MasterSeed,
+    fingerprint: str,
+) -> Adw.NavigationPage:
+    """Require the wallet record to match before any recovered key is imported."""
+
+    def continue_restore() -> None:
+        _wallets(view, core, secret, 0, restoring=True)
+
+    content = _column(
+        _title(
+            "Check the wallet before restoring it",
+            "Compare this master fingerprint with the wallet record you stored separately from the cards.",
+        ),
+        _rows(
+            "Recovered wallet identity",
+            (
+                ("Backup identifier", secret.header.identifier.upper()),
+                ("Master fingerprint", fingerprint),
+            ),
+        ),
+        _note(
+            "If the fingerprint does not match your wallet record, stop. Bitcoin Core has not been changed.",
+            "warning",
+        ),
+    )
+    return _page(
+        "Verify wallet",
+        content,
+        actions=_actions(
+            _button("Stop", lambda: view.replace([home(view)])),
+            _button("Matches my record", continue_restore, style="suggested-action"),
+        ),
+        can_pop=False,
+    )
+
+
+def _verify_restore(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSeed) -> None:
+    """Derive public identity without mutating Core, then require operator confirmation."""
+    page = _working(view, "Restore my wallet", "Checking the recovered wallet identity…")
+    work.run(
+        view,
+        page,
+        lambda: wallet_setup.fingerprint(core, secret),
+        _then(
+            view,
+            page,
+            lambda fingerprint: _restore_identity_page(view, core, secret, fingerprint),
+            CARDS_SAFE,
+        ),
+    )
+
+
 def _import(
     view: Adw.NavigationView,
     core: BitcoinCore,
@@ -1410,7 +1465,7 @@ def _restore(view: Adw.NavigationView, core: BitcoinCore, secret: Secret) -> Non
     if not isinstance(secret, MasterSeed):
         _failure(view, "Only a Bitcoin master-seed backup can restore a wallet.")
         return
-    _wallets(view, core, secret, 0, restoring=True)
+    _verify_restore(view, core, secret)
 
 
 def _start_restore(view: Adw.NavigationView) -> None:

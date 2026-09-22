@@ -46,7 +46,8 @@ The operator must:
 - protect recovery cards and store shared cards in different trusted places;
 - confirm every newly recorded secret or share;
 - keep wallet records separate from shares and compare recovered fingerprints,
-  addresses, account, policy, and history with those records;
+  addresses, account, policy, and history with those records; the graphical
+  restore requires the fingerprint comparison before it imports recovered keys;
 - compare every correction suggestion with the original codex32 string and stop
   when recovered information and wallet records disagree; and
 - never put recovery text in command arguments or transfer a master seed,
@@ -267,6 +268,14 @@ confirmed against the one connected, because the library asks which chain to use
 only while more than one answers. On screen a wallet is chosen by the position of
 its row, never by the text of its label, and Core's text is rendered without
 Pango markup, so a wallet name cannot hide or impersonate another.
+
+Restore derives the recovered seed's master fingerprint through Bitcoin Core
+before destination selection and displays it with the backup identifier. The
+operator must explicitly confirm that fingerprint against the separately stored
+wallet record before the program lists, creates, unlocks, or imports into a
+destination wallet. A mismatch can therefore stop recovery without mutating a
+Bitcoin Core wallet. The fingerprint remains only a short diagnostic identifier;
+its authentication-strength limitation above still applies.
 
 The program draws no entropy, opens no socket, starts no process of its own, and
 writes no file: no settings, no recent list, no log, and no clipboard write of
