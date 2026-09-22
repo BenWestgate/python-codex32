@@ -134,7 +134,10 @@ class _Artifact:
         object.__setattr__(self, "payload_symbols", payload_symbols)
 
     def __str__(self) -> str:
-        return self.text
+        return f"<{type(self).__name__}: redacted>"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(<redacted>)"
 
     def __len__(self) -> int:
         return len(self.text)

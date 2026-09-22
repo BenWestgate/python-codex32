@@ -11,7 +11,7 @@ import pytest
 from data.bip93_vectors import VECTOR_2
 
 import codex32
-from codex32 import Header, MasterSeed, Share, parse_codex32
+from codex32 import CorrectionCandidate, Header, MasterSeed, Share, parse_codex32
 from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshold
 
 
@@ -82,6 +82,27 @@ def test_artifacts_cannot_be_directly_constructed_or_mutated() -> None:
         share.text = "changed"  # type: ignore[misc]
     with pytest.raises((FrozenInstanceError, AttributeError)):
         share.header.identifier = "leak"  # type: ignore[misc]
+
+
+def test_artifact_default_rendering_does_not_disclose_recovery_text() -> None:
+    share = parse_codex32(VECTOR_2["share_A"])
+    candidate = CorrectionCandidate(share, (), 1, 0, 0, None)
+
+    assert share.text not in str(share)
+    assert share.text not in repr(share)
+    assert share.text not in repr(candidate)
+    assert str(share) == "<Share: redacted>"
+    assert repr(share) == "Share(<redacted>)"
+
+
+def test_master_seed_default_rendering_does_not_disclose_seed_material() -> None:
+    secret = MasterSeed.from_seed(bytes(range(16)), identifier="test")
+
+    assert secret.text not in str(secret)
+    assert secret.text not in repr(secret)
+    assert "payload_symbols" not in repr(secret)
+    assert str(secret) == "<MasterSeed: redacted>"
+    assert repr(secret) == "MasterSeed(<redacted>)"
 
 
 def test_master_seed_factory_can_only_construct_index_s() -> None:
