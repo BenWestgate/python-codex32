@@ -168,11 +168,13 @@ wallet should be trusted until initialization completes.
 
 ### 4. Complete the record and store the cards
 
-Copy the displayed backup identifier, wallet name, Bitcoin Core version,
-master fingerprint, recovery commitment, derivation standards, and account
-number to the wallet record. Add the approximate
-creation / earliest-use date. Do not put a descriptor timestamp on a recovery
-card; Core's public descriptor export preserves its stored timestamps.
+For graphical setup, copy the displayed backup identifier, wallet name, Bitcoin
+Core version, master fingerprint, recovery commitment, derivation standards,
+and account number to the wallet record. The command-line workflow does not yet
+display the recovery commitment, so do not rely on a CLI-created record for
+graphical recovery. Add the approximate creation / earliest-use date. Do not put
+a descriptor timestamp on a recovery card; Core's public descriptor export
+preserves its stored timestamps.
 
 Store each card securely. For a shared backup, use different trusted places.
 Keep the wallet record separately from all cards.
