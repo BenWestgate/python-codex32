@@ -27,6 +27,22 @@ def test_syndrome_alignment_cache_is_bounded_for_untrusted_hrps():
     assert info.currsize == _ALIGNMENT_CACHE_SIZE
 
 
+def test_syndrome_alignment_cache_fits_one_unknown_length_search():
+    observed = 50
+    targets = sorted({observed + delta for delta in (*range(-4, 5), -8, 8)})
+    _syndrome_alignment.cache_clear()
+
+    first = [_syndrome_alignment(_SHORT_SPEC, "generic", target) for target in targets]
+    before = _syndrome_alignment.cache_info()
+    second = [_syndrome_alignment(_SHORT_SPEC, "generic", target) for target in targets]
+    after = _syndrome_alignment.cache_info()
+
+    assert len(targets) == _ALIGNMENT_CACHE_SIZE
+    assert all(left is right for left, right in zip(first, second, strict=True))
+    assert after.misses == before.misses
+    assert after.hits == before.hits + len(targets)
+
+
 def test_syndrome_alignment_cache_still_reuses_recent_entries():
     _syndrome_alignment.cache_clear()
     first = _syndrome_alignment(_SHORT_SPEC, "ms", 45)

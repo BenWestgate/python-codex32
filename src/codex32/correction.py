@@ -250,9 +250,9 @@ _LONG_SPEC = _Spec(
     1023,
 )
 
-# Keep all six standard ms target lengths hot without letting arbitrary HRPs
-# create process-lifetime state.
-_ALIGNMENT_CACHE_SIZE = 8
+# Keep every target length from one generic unknown-length search hot without
+# letting arbitrary HRPs create process-lifetime state.
+_ALIGNMENT_CACHE_SIZE = 11
 
 
 def _spec_for_checksum(checksum: _Checksum) -> _Spec:
