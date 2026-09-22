@@ -144,10 +144,22 @@ class _Artifact:
 
 
 class Share(_Artifact):
+    """Validated codex32 share; use ``.text`` for the explicit serialized value.
+
+    ``str(share)`` and ``repr(share)`` are deliberately redacted so accidental
+    logging or interpolation does not disclose recovery material.
+    """
+
     __slots__ = ()
 
 
 class Secret(_Artifact):
+    """Validated codex32 secret; use ``.text`` for the explicit serialized value.
+
+    ``str(secret)`` and ``repr(secret)`` are deliberately redacted so accidental
+    logging or interpolation does not disclose recovery material.
+    """
+
     __slots__ = ()
 
 
