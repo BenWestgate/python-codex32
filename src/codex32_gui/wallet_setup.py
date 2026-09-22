@@ -32,12 +32,14 @@ __all__ = [
     "BitcoinCoreError",
     "Offer",
     "Wallet",
+    "commitment_matches",
     "connect",
     "create",
     "eligible",
     "fill",
     "fingerprint",
     "fingerprint_provider",
+    "identity",
     "initialize",
     "network",
     "relock",
@@ -138,6 +140,20 @@ def network(core: BitcoinCore) -> str:
 def fingerprint(core: BitcoinCore, secret: MasterSeed) -> str:
     """Return the BIP32 master fingerprint, derived by Bitcoin Core out of process."""
     return core.fingerprint(secret).hex()
+
+
+def identity(core: BitcoinCore, secret: MasterSeed) -> tuple[str, str]:
+    """Return the short fingerprint and strong public recovery commitment."""
+    fingerprint_bytes, commitment = core.recovery_identity(secret)
+    text = commitment.hex().upper()
+    return fingerprint_bytes.hex(), " ".join(text[start : start + 4] for start in range(0, len(text), 4))
+
+
+def commitment_matches(expected: str, entered: str) -> bool:
+    """Compare a copied recovery commitment, ignoring only whitespace and case."""
+    expected_text = "".join(expected.split()).upper()
+    entered_text = "".join(entered.split()).upper()
+    return len(entered_text) == 64 and entered_text == expected_text
 
 
 def fingerprint_provider(core: BitcoinCore) -> Callable[[bytes], bytes]:

@@ -91,6 +91,7 @@ class Record:
     wallet: str
     version: str
     fingerprint: str
+    commitment: str
     account: int
 
 
@@ -924,11 +925,13 @@ def _record(
     core: BitcoinCore, secret: MasterSeed, name: str, timestamp: Timestamp, passphrase: str = ""
 ) -> Record:
     final = wallet_setup.fill(core, secret, name, passphrase, timestamp=timestamp)
+    fingerprint, commitment = wallet_setup.identity(core, secret)
     return Record(
         secret.header.identifier.upper(),
         final,
         wallet_setup.version_text(core),
-        wallet_setup.fingerprint(core, secret),
+        fingerprint,
+        commitment,
         0,
     )
 
@@ -938,38 +941,52 @@ def _restore_identity_page(
     core: BitcoinCore,
     secret: MasterSeed,
     fingerprint: str,
+    commitment: str,
 ) -> Adw.NavigationPage:
-    """Require the wallet record to match before any recovered key is imported."""
+    """Require a separately stored strong commitment before importing recovered keys."""
+    entered = Adw.EntryRow(title="Recovery commitment from wallet record")
+    group = Adw.PreferencesGroup()
+    group.add(entered)
+    status = _note("")
 
     def continue_restore() -> None:
+        if not wallet_setup.commitment_matches(commitment, entered.get_text()):
+            _say(status, "That commitment does not match this recovered wallet. Stop here.", "error")
+            return
+        _empty(entered)
         _wallets(view, core, secret, 0, restoring=True)
 
     content = _column(
         _title(
             "Check the wallet before restoring it",
-            "Compare this master fingerprint with the wallet record you stored separately from the cards.",
+            "Type the recovery commitment from the wallet record stored separately from the cards.",
         ),
         _rows(
-            "Recovered wallet identity",
+            "Diagnostic identity",
             (
                 ("Backup identifier", secret.header.identifier.upper()),
                 ("Master fingerprint", fingerprint),
             ),
         ),
+        group,
+        status,
         _note(
-            "If the fingerprint does not match your wallet record, stop. Bitcoin Core has not been changed.",
+            "The expected commitment is deliberately not shown here. If your record has no recovery "
+            "commitment, stop; do not substitute the master fingerprint. Bitcoin Core has not been changed.",
             "warning",
         ),
     )
-    return _page(
+    page = _page(
         "Verify wallet",
         content,
         actions=_actions(
             _button("Stop", lambda: view.replace([home(view)])),
-            _button("Matches my record", continue_restore, style="suggested-action"),
+            _button("Verify and continue", continue_restore, style="suggested-action"),
         ),
         can_pop=False,
     )
+    _forget_when_gone(view, page, lambda: _empty(entered))
+    return page
 
 
 def _verify_restore(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSeed) -> None:
@@ -978,11 +995,11 @@ def _verify_restore(view: Adw.NavigationView, core: BitcoinCore, secret: MasterS
     work.run(
         view,
         page,
-        lambda: wallet_setup.fingerprint(core, secret),
+        lambda: wallet_setup.identity(core, secret),
         _then(
             view,
             page,
-            lambda fingerprint: _restore_identity_page(view, core, secret, fingerprint),
+            lambda identity: _restore_identity_page(view, core, secret, *identity),
             CARDS_SAFE,
         ),
     )
@@ -1026,6 +1043,7 @@ def _finished_page(view: Adw.NavigationView, record: Record, restoring: bool = F
                 ("Bitcoin Core version", record.version),
                 *dated,
                 ("Master fingerprint", record.fingerprint),
+                ("Recovery commitment", record.commitment),
                 ("Derivation standards", "BIP 44, 49, 84 and 86"),
                 ("Account number", str(record.account)),
             ),

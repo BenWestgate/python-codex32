@@ -33,6 +33,7 @@
     <div class="field">Bitcoin Core version:</div>
     <div class="field">Approximate creation / earliest-use date:</div>
     <div class="field">Master fingerprint:</div>
+    <div class="field wide">Recovery commitment:</div>
     <div class="field">Derivation standards:</div>
     <div class="field">Account number:</div>
     <div class="field wide">Descriptor or policy archive location:</div>
@@ -56,6 +57,7 @@
 
   <h2>Later wallet verification for recovery</h2>
   <p><span class="check"></span> Followed the documented Bitcoin Core recovery workflow.</p>
+  <p><span class="check"></span> Entered the recovery commitment before any recovered keys were imported.</p>
   <p><span class="check"></span> Matched the expected master fingerprint.</p>
   <p><span class="check"></span> Matched account, complete policy, history, and balance.</p>
   <p><span class="check"></span> If available, a trusted person reviewed the wallet setup and recovery plan.</p>
@@ -67,8 +69,9 @@
     <div class="field wide">Offline device and destination wallet notes:</div>
   </div>
   <p class="small">
-    This record cannot authenticate a replaced backup by itself. Treat it as privacy-sensitive:
-    it can reveal wallet structure, balances, and transaction history even though it cannot spend.
+    The recovery commitment binds a recovered single-key seed to this separately stored record.
+    It does not authenticate a multisig policy, descriptor archive, history, or balance. Treat this
+    record as privacy-sensitive even though it cannot spend.
   </p>
 </body>
 </html>

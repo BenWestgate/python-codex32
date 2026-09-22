@@ -68,6 +68,10 @@ The operator must:
   guarantee new physical entropy between calls.
 - A checksum, generation-padding hint, fingerprint, or correction candidate
   does not authenticate a backup or prove the operator's intent.
+- The graphical recovery commitment is a domain-separated SHA-256 digest of
+  the canonical root xpub returned by Bitcoin Core. It is public metadata and
+  authenticates only against the separately stored record; it is not a secret,
+  a MAC, or proof that the record itself is trustworthy.
 - Creation feedback identifies correct groups but does not prove the recovery card was corrected.
 - A fresh unshared master seed exposes a public 20-bit BIP32 fingerprint in its
   default identifier; fingerprints are metadata, not secrets.
@@ -269,13 +273,16 @@ only while more than one answers. On screen a wallet is chosen by the position o
 its row, never by the text of its label, and Core's text is rendered without
 Pango markup, so a wallet name cannot hide or impersonate another.
 
-Restore derives the recovered seed's master fingerprint through Bitcoin Core
-before destination selection and displays it with the backup identifier. The
-operator must explicitly confirm that fingerprint against the separately stored
-wallet record before the program lists, creates, unlocks, or imports into a
-destination wallet. A mismatch can therefore stop recovery without mutating a
-Bitcoin Core wallet. The fingerprint remains only a short diagnostic identifier;
-its authentication-strength limitation above still applies.
+Restore derives the recovered seed's canonical root xpub and master fingerprint
+through Bitcoin Core before destination selection. It computes the recovery
+commitment as `SHA256(domain_tag || root_xpub)`, where `domain_tag` is the
+ASCII text `codex32 recovery commitment` followed by one NUL byte. It asks the
+operator to enter the 256-bit value from the separately stored wallet
+record. The expected commitment is not displayed before comparison. Only a
+match permits the program to list, create, unlock, or import into a destination
+wallet, so a mismatch can stop recovery without mutating one. The fingerprint
+is still displayed as a short diagnostic identifier but is not used to authorize
+the transition.
 
 The program draws no entropy, opens no socket, starts no process of its own, and
 writes no file: no settings, no recent list, no log, and no clipboard write of

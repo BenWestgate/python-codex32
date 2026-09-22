@@ -77,7 +77,10 @@ the seed. It protects the wallet on this computer.
 
 Finally, copy the wallet details onto your
 [wallet record](wallet-verification-record.html) and keep it apart from every
-card. The window shows exactly the fields that record asks for.
+card. The window shows exactly the fields that record asks for, including a
+long recovery commitment. That commitment is public, but it must stay separate
+from the cards because the restore screen uses it to reject the wrong recovered
+seed before Bitcoin Core is changed.
 
 A card never contains **B**, **I**, **O** or **1**: those four are left out of
 the alphabet precisely because handwriting confuses them with 8, J, L and 0. If
@@ -142,11 +145,17 @@ wallet**, which would make a different backup. If the wallet was part-filled
 before it failed, it is no longer empty, so it will not be offered again: create
 another one, or ask Bitcoin Core for a fresh blank wallet.
 
-When you restore, the window asks you to **check** the wallet details against
-your record rather than copy them onto it. That comparison — the master
-fingerprint above all — is the only thing that proves the cards you just typed
-belong to that wallet. It shows no creation date on that screen, because the
-real one is already on your record and today's would replace it.
+When you restore, the window first asks you to type the recovery commitment from
+the separate wallet record. It deliberately does not show the value it expects.
+If the value does not match, it does not list, create, unlock, or fill a Bitcoin
+Core wallet. Do not substitute the shorter master fingerprint. Older wallet
+records without a recovery commitment need to be updated before relying on this
+pre-import check.
+
+After a successful restore, the window asks you to check the remaining wallet
+details against the record rather than copy them onto it. It shows no creation
+date on that screen, because the real one is already on your record and today's
+would replace it.
 
 The window always uses account 0, which is what it writes onto your wallet
 record. If you are restoring a wallet whose record shows a different account

@@ -285,3 +285,22 @@ def test_the_chain_the_operator_chose_is_the_one_that_is_used(
 
 def test_the_version_is_reported_the_way_bitcoin_core_reports_it() -> None:
     assert wallet_setup.version_text(BitcoinCore("bitcoin-cli", "main", 320100)) == "32.1.0"
+
+
+def test_recovery_identity_formats_a_full_sha256_commitment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        BitcoinCore,
+        "recovery_identity",
+        lambda _self, _secret: (bytes.fromhex("3f3521a6"), bytes(range(32))),
+    )
+    fingerprint, commitment = wallet_setup.identity(BitcoinCore("bitcoin-cli", "main", 320000), _SEED)
+    assert fingerprint == "3f3521a6"
+    assert commitment == ("0001 0203 0405 0607 0809 0A0B 0C0D 0E0F 1011 1213 1415 1617 1819 1A1B 1C1D 1E1F")
+
+
+def test_recovery_commitment_match_ignores_only_case_and_whitespace() -> None:
+    expected = "0123 4567 89AB CDEF" * 4
+    assert wallet_setup.commitment_matches(expected, "0123456789abcdef" * 4)
+    assert wallet_setup.commitment_matches(expected, "  0123 4567 89ab cdef  " * 4)
+    assert not wallet_setup.commitment_matches(expected, "0123456789abcdef" * 3)
+    assert not wallet_setup.commitment_matches(expected, "f123456789abcdef" + "0123456789abcdef" * 3)

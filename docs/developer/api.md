@@ -640,10 +640,12 @@ fingerprint consistency, and network xpub/tpub versions, constructs only the
 fixed descriptor templates, and asks `getdescriptorinfo` to validate and expand
 their external/internal branches. The adapter then compares the exact eight
 active public descriptors against `listdescriptors`. It relocks wallets Core
-reports as encrypted. Master-fingerprint display is likewise delegated to Core:
-a stateless root P2PKH descriptor is normalized, `deriveaddresses` derives its
-address, and `validateaddress` returns the script hash whose first four bytes are
-the BIP32 fingerprint.
+reports as encrypted. Master-fingerprint and graphical recovery-commitment
+derivation are likewise delegated to Core. A stateless root P2PKH descriptor is
+normalized to its public root xpub. SHA-256 over the domain-separated canonical
+xpub supplies the 256-bit recovery commitment; `deriveaddresses` and
+`validateaddress` return the script hash whose first four bytes are the BIP32
+fingerprint. Neither operation opens or mutates a wallet.
 
 The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
 `getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `deriveaddresses`,

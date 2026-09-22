@@ -425,7 +425,7 @@ def test_failed_import_is_generic_and_relocks_encrypted_wallet(
     assert any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
 
 
-def test_fingerprint_uses_stateless_core_address_derivation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_recovery_identity_uses_stateless_public_derivation(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[tuple[str, ...], str | None]] = []
 
     def rpc(
@@ -446,12 +446,42 @@ def test_fingerprint_uses_stateless_core_address_derivation(monkeypatch: pytest.
 
     monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
 
-    assert BitcoinCore("bitcoin-cli", "main", 320000).fingerprint(_SEED) == bytes.fromhex("3f3521a6")
+    identity = BitcoinCore("bitcoin-cli", "main", 320000).recovery_identity(_SEED)
+    assert identity == (
+        bytes.fromhex("3f3521a6"),
+        bytes.fromhex("db007d748326b0be6c27e2dada55a4116cc6c286cd76d11671b2f6af8fb8ae9f"),
+    )
     assert calls == [
         (("getdescriptorinfo",), None),
         (("deriveaddresses",), None),
         (("validateaddress", "1synthetic"), None),
     ]
+
+
+def test_fingerprint_keeps_the_short_legacy_view(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        BitcoinCore,
+        "recovery_identity_seed",
+        lambda _self, _seed: (bytes.fromhex("3f3521a6"), bytes(32)),
+    )
+    assert BitcoinCore("bitcoin-cli", "main", 320000).fingerprint(_SEED) == bytes.fromhex("3f3521a6")
+
+
+@pytest.mark.parametrize(
+    "descriptor",
+    (
+        "wpkh(xpub-root)#checksum",
+        "pkh(tpub-root)#checksum",
+        "pkh(not-a-public-key)#checksum",
+        "pkh(xpub-root)",
+    ),
+)
+def test_recovery_identity_rejects_unexpected_root_public_descriptor(
+    descriptor: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(BitcoinCore, "_normalized_descriptor", lambda _self, _descriptor: descriptor)
+    with pytest.raises(BitcoinCoreError, match="root public"):
+        BitcoinCore("bitcoin-cli", "main", 320000).recovery_identity(_SEED)
 
 
 @pytest.mark.parametrize("change", ("missing", "extra"))

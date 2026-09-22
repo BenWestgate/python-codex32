@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -29,6 +30,7 @@ _CHAINS = (
 _ORIGIN = re.compile(r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]")
 _PRIVATE_MARKERS = ("xprv", "tprv")
 _PURPOSES = (44, 49, 84, 86)
+_RECOVERY_COMMITMENT_DOMAIN = b"codex32 recovery commitment\0"
 
 
 @dataclass(frozen=True)
@@ -126,10 +128,20 @@ class BitcoinCore:
             raise BitcoinCoreError("Bitcoin Core did not return the expected public descriptor.")
         return normalized
 
-    def fingerprint_seed(self, seed: bytes) -> bytes:
-        """Return the BIP32 master fingerprint using Bitcoin Core out of process."""
+    def recovery_identity_seed(self, seed: bytes) -> tuple[bytes, bytes]:
+        """Return the BIP32 fingerprint and a SHA-256 commitment to the root xpub."""
         xprv = _master_xprv_from_seed(seed, testnet=self.chain != "main")
         descriptor = self._normalized_descriptor(f"pkh({xprv})")
+        if not descriptor.startswith("pkh(") or ")#" not in descriptor:
+            raise BitcoinCoreError("Bitcoin Core did not return the expected root public descriptor.")
+        root_xpub, separator, checksum = descriptor[4:].partition(")#")
+        prefix = "xpub" if self.chain == "main" else "tpub"
+        if separator != ")#" or not checksum or not root_xpub.startswith(prefix):
+            raise BitcoinCoreError("Bitcoin Core did not return the expected root public key.")
+        try:
+            commitment = hashlib.sha256(_RECOVERY_COMMITMENT_DOMAIN + root_xpub.encode("ascii")).digest()
+        except UnicodeEncodeError as error:
+            raise BitcoinCoreError("Bitcoin Core returned an invalid root public key.") from error
         addresses = self._rpc("deriveaddresses", stdin=descriptor + "\n")
         if not isinstance(addresses, list) or len(addresses) != 1 or not isinstance(addresses[0], str):
             raise BitcoinCoreError("Bitcoin Core did not derive the expected master-key address.")
@@ -143,15 +155,25 @@ class BitcoinCore:
         ):
             raise BitcoinCoreError("Bitcoin Core did not return the expected master-key script.")
         try:
-            return bytes.fromhex(script[6:14])
+            return bytes.fromhex(script[6:14]), commitment
         except ValueError as error:
             raise BitcoinCoreError("Bitcoin Core returned an invalid master-key script.") from error
+
+    def fingerprint_seed(self, seed: bytes) -> bytes:
+        """Return the BIP32 master fingerprint using Bitcoin Core out of process."""
+        return self.recovery_identity_seed(seed)[0]
 
     def fingerprint(self, secret: MasterSeed) -> bytes:
         """Return the BIP32 master fingerprint for a validated master seed."""
         if not isinstance(secret, MasterSeed):
             raise TypeError("wallet operations accept only MasterSeed")
         return self.fingerprint_seed(secret.seed_bytes)
+
+    def recovery_identity(self, secret: MasterSeed) -> tuple[bytes, bytes]:
+        """Return public recovery identity for a validated master seed."""
+        if not isinstance(secret, MasterSeed):
+            raise TypeError("wallet operations accept only MasterSeed")
+        return self.recovery_identity_seed(secret.seed_bytes)
 
     def _root_xpub(self, wallet: str) -> str:
         result = self._rpc("gethdkeys", wallet=wallet)
