@@ -6,6 +6,7 @@ import pytest
 
 from codex32._alignment import _IncrementalSyndromes, _View
 from codex32.correction import (
+    _ALIGNMENT_CACHE_SIZE,
     _LONG_SPEC,
     _SHORT_SPEC,
     _pack_syndromes,
@@ -13,6 +14,29 @@ from codex32.correction import (
     _syndrome_alignment,
     _syndromes,
 )
+
+
+def test_syndrome_alignment_cache_is_bounded_for_untrusted_hrps():
+    _syndrome_alignment.cache_clear()
+
+    for index in range(_ALIGNMENT_CACHE_SIZE + 5):
+        _syndrome_alignment(_SHORT_SPEC, f"attacker{index}", 45)
+
+    info = _syndrome_alignment.cache_info()
+    assert info.maxsize == _ALIGNMENT_CACHE_SIZE
+    assert info.currsize == _ALIGNMENT_CACHE_SIZE
+
+
+def test_syndrome_alignment_cache_still_reuses_recent_entries():
+    _syndrome_alignment.cache_clear()
+    first = _syndrome_alignment(_SHORT_SPEC, "ms", 45)
+    before = _syndrome_alignment.cache_info()
+
+    second = _syndrome_alignment(_SHORT_SPEC, "ms", 45)
+
+    after = _syndrome_alignment.cache_info()
+    assert first is second
+    assert after.hits == before.hits + 1
 
 
 @pytest.mark.parametrize(

@@ -23,7 +23,7 @@
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from functools import cache
+from functools import cache, lru_cache
 from math import comb
 from time import monotonic
 from typing import Literal
@@ -250,6 +250,10 @@ _LONG_SPEC = _Spec(
     1023,
 )
 
+# Keep all six standard ms target lengths hot without letting arbitrary HRPs
+# create process-lifetime state.
+_ALIGNMENT_CACHE_SIZE = 8
+
 
 def _spec_for_checksum(checksum: _Checksum) -> _Spec:
     if checksum is _CODEX32:
@@ -276,7 +280,7 @@ def _pack_syndromes(values: tuple[int, ...]) -> int:
     return sum(value << (10 * index) for index, value in enumerate(values))
 
 
-@cache
+@lru_cache(maxsize=_ALIGNMENT_CACHE_SIZE)
 def _syndrome_alignment(spec: _Spec, hrp: str, length: int) -> tuple[int, tuple[tuple[int, ...], ...]]:
     base = _pack_syndromes(_syndromes(spec, _residue(spec, hrp, [0] * length), target=True))
     powers = _poly_powers(spec.generator, length)
