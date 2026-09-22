@@ -185,6 +185,11 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
 
     wallet = _command(commands, "wallet", "restore a Bitcoin Core wallet")
     _wallet_options(wallet)
+    wallet.add_argument(
+        "--enroll",
+        action="store_true",
+        help="record a recovery commitment from an established loaded wallet without reading recovery cards",
+    )
 
     xprv = _command(commands, "xprv", "export the root extended private key")
     xprv.add_argument("--testnet", action="store_true", help="use a testnet key")

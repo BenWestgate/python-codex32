@@ -153,7 +153,7 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
     ) in share_help
     wallet_help = _invoke(ms_main, ["wallet", "--help"])[1]
     assert wallet_help == (
-        "usage: ms32 wallet [-h] [--account ACCOUNT] [--timestamp TIMESTAMP]\n\n"
+        "usage: ms32 wallet [-h] [--account ACCOUNT] [--timestamp TIMESTAMP] [--enroll]\n\n"
         "Restore a Bitcoin Core wallet.\n\n"
         "options:\n"
         "  -h, --help            show this help message and exit\n"
@@ -161,6 +161,8 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
         "  --timestamp TIMESTAMP\n"
         "                        search for transactions since this Unix timestamp; use\n"
         "                        0 for all history or now for a new wallet\n"
+        "  --enroll              record a recovery commitment from an established\n"
+        "                        loaded wallet without reading recovery cards\n"
     )
     assert _invoke(main, ["--version"])[1].startswith("codex32 ")
     assert _invoke(ms_main, ["--version"])[1].startswith("ms32 ")

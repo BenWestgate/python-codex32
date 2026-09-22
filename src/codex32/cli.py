@@ -8,7 +8,12 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import Literal, NamedTuple, cast
 
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import (
+    BitcoinCore,
+    BitcoinCoreError,
+    _recovery_commitment_matches,
+    _recovery_commitment_text,
+)
 from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
@@ -346,6 +351,18 @@ def _initialize_wallet(
     try:
         if confirmed:
             _print("Master-seed backup confirmed.\n", err=True)
+        fingerprint, commitment = core.recovery_identity(secret)
+        if not fresh:
+            _print(
+                f"Recovered master fingerprint: {fingerprint.hex().upper()}",
+                err=True,
+            )
+            entered = _text("Recovery commitment from wallet record")
+            if not _recovery_commitment_matches(_recovery_commitment_text(commitment), entered):
+                raise _CommandError(
+                    "That recovery commitment does not match this recovered wallet. "
+                    "Bitcoin Core was not changed."
+                )
         name = core.initialize(
             secret,
             lambda prompt: _text(prompt, optional=True),
@@ -365,9 +382,10 @@ def _initialize_wallet(
             err=True,
         )
         _print(
-            f"Master fingerprint: {core.fingerprint(secret).hex().upper()}",
+            f"Master fingerprint: {fingerprint.hex().upper()}",
             err=True,
         )
+        _print(f"Recovery commitment: {_recovery_commitment_text(commitment)}", err=True)
         _print("Derivation standards: BIP44, BIP49, BIP84, and BIP86", err=True)
         _print(f"Account number: {account}", err=True)
         if fresh:
@@ -601,6 +619,29 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
     )
 
 
+def _enroll_wallet_record() -> int:
+    if not sys.stdin.isatty():
+        raise _UsageError("Wallet-record enrollment requires an interactive terminal.")
+    core = _connected_core()
+    name, fingerprint, commitment = core.enrollment_identity(
+        lambda prompt: _text(prompt, optional=True),
+        lambda message: _print(message, err=True),
+    )
+    _print(
+        "Recovery-record enrollment reads public wallet identity only; Bitcoin Core was not changed.",
+        err=True,
+    )
+    _print(f"Wallet name: {json.dumps(name)}", err=True)
+    _print(f"Master fingerprint: {fingerprint.hex().upper()}", err=True)
+    _print(f"Recovery commitment: {_recovery_commitment_text(commitment)}", err=True)
+    _print(
+        "Compare the wallet name and master fingerprint with the existing wallet record. "
+        "If they match, copy the recovery commitment to that record before attempting recovery.",
+        err=True,
+    )
+    return 0
+
+
 def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
     command = cast(str, arguments.command)
     plain = bool(getattr(arguments, "plain", False)) or (command == "correct" and not sys.stdin.isatty())
@@ -658,6 +699,10 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
         _print(master_xprv(secret, testnet=bool(arguments.testnet)))
         return 0
     if command == "wallet":
+        if bool(arguments.enroll):
+            if int(arguments.account) != 0 or cast(int | Literal["now"], arguments.timestamp) != 0:
+                raise _UsageError("--enroll cannot be combined with a non-default --account or --timestamp.")
+            return _enroll_wallet_record()
         return _bitcoin_core(
             int(arguments.account),
             cast(int | Literal["now"], arguments.timestamp),

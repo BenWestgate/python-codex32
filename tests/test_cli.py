@@ -39,6 +39,8 @@ from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
 from tools._wallet_reference import fingerprint_seed
 
+_TEST_RECOVERY_COMMITMENT = bytes(range(32))
+
 
 @dataclass(frozen=True)
 class _Result:
@@ -103,6 +105,16 @@ class _FakeBitcoinCore:
     def fingerprint(self, secret: MasterSeed) -> bytes:
         return self.fingerprint_seed(secret.seed_bytes)
 
+    def recovery_identity(self, secret: MasterSeed) -> tuple[bytes, bytes]:
+        return self.fingerprint(secret), _TEST_RECOVERY_COMMITMENT
+
+    def enrollment_identity(
+        self,
+        _ask: Callable[[str], str],
+        _tell: Callable[[str], None],
+    ) -> tuple[str, bytes, bytes]:
+        return "legacy-wallet", bytes.fromhex("3f3521a6"), _TEST_RECOVERY_COMMITMENT
+
     def initialize(
         self,
         secret: MasterSeed,
@@ -154,7 +166,8 @@ def _invoke_confirmed_create(
     terminal_output: bool = False,
     core: _FakeBitcoinCore | None = None,
 ) -> _Result:
-    stdin = _TTYInput("\n".join(lines) + "\n")
+    entered = (*lines, _TEST_RECOVERY_COMMITMENT.hex()) if "--existing" in args else lines
+    stdin = _TTYInput("\n".join(entered) + "\n")
     stdout = _CreationOutput(pretty=terminal_output)
     stderr = io.StringIO()
 
@@ -181,10 +194,12 @@ def _invoke_initialized_wallet(
     args: list[str],
     *lines: str,
     core: _FakeBitcoinCore | None = None,
+    commitment: str | None = _TEST_RECOVERY_COMMITMENT.hex(),
 ) -> tuple[_Result, _FakeBitcoinCore]:
     selected = _FakeBitcoinCore() if core is None else core
+    entered = lines if commitment is None else (*lines, commitment)
     stdin, stdout, stderr = (
-        _TTYInput("\n".join(lines) + "\n"),
+        _TTYInput("\n".join(entered) + "\n"),
         io.StringIO(),
         io.StringIO(),
     )
@@ -476,7 +491,15 @@ def test_tty_wallet_commands_retry_silently_after_declining_correction(
 
     original = VECTOR_1["secret_s"]
     damaged = original[:20] + ("q" if original[20] != "q" else "p") + original[21:]
-    answers = iter((damaged[3:], "n", damaged[3:], "yes"))
+    answers = iter(
+        (
+            damaged[3:],
+            "n",
+            damaged[3:],
+            "yes",
+            *((_TEST_RECOVERY_COMMITMENT.hex(),) if command[0] == "wallet" else ()),
+        )
+    )
     prompts: list[str] = []
     prefills: list[str] = []
 
@@ -500,8 +523,13 @@ def test_tty_wallet_commands_retry_silently_after_declining_correction(
     assert "> " not in captured.err
     assert prompts[0] == "Enter a codex32 string:\n> MS1"
     assert prompts[2] == "Enter a codex32 string:\n> ms1"
-    assert prompts[-1] == "Does this entire string exactly match your recovery card? [y/N]: "
-    assert prefills == ["", "", damaged[3:], ""]
+    confirmation_prompt = "Does this entire string exactly match your recovery card? [y/N]: "
+    if command[0] == "wallet":
+        assert prompts[-2:] == [confirmation_prompt, "Recovery commitment from wallet record: "]
+        assert prefills == ["", "", damaged[3:], "", ""]
+    else:
+        assert prompts[-1] == confirmation_prompt
+        assert prefills == ["", "", damaged[3:], ""]
     assert "Rejected:" not in captured.err
 
 
@@ -691,6 +719,8 @@ def test_wallet_paths_accept_a_suffix_after_frozen_ms1(
 
     def answer(prompt: str, _prefill: str = "") -> str:
         prompts.append(prompt)
+        if prompt == "Recovery commitment from wallet record: ":
+            return _TEST_RECOVERY_COMMITMENT.hex()
         return VECTOR_1["secret_s"][3:]
 
     monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
@@ -714,7 +744,13 @@ def test_wallet_recovery_recases_later_header_from_suffix(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     prefix = "ms12name"
-    answers = iter((VECTOR_2["share_A"].lower(), VECTOR_2["share_C"][len(prefix) :].upper()))
+    answers = iter(
+        (
+            VECTOR_2["share_A"].lower(),
+            VECTOR_2["share_C"][len(prefix) :].upper(),
+            *((_TEST_RECOVERY_COMMITMENT.hex(),) if command[0] == "wallet" else ()),
+        )
+    )
     prompts: list[str] = []
 
     def answer(prompt: str, _prefill: str = "") -> str:
@@ -1044,7 +1080,14 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    answers = iter((VECTOR_3["derived_f"], VECTOR_3["share_c"], VECTOR_3["secret_s"]))
+    answers = iter(
+        (
+            VECTOR_3["derived_f"],
+            VECTOR_3["share_c"],
+            VECTOR_3["secret_s"],
+            *((_TEST_RECOVERY_COMMITMENT.hex(),) if command[0] == "wallet" else ()),
+        )
+    )
     prompts: list[str] = []
 
     def answer(prompt: str) -> str:
@@ -1065,11 +1108,14 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
     first_prompt = (
         "Enter a codex32 string:\n> " if command[0] == "secret" else "Enter a codex32 string:\n> MS1"
     )
-    assert prompts == [
+    expected_prompts = [
         first_prompt,
         "Enter share 2 of 3:\n> ms13cash",
         "Enter share 3 of 3:\n> ms13cash",
     ]
+    if command[0] == "wallet":
+        expected_prompts.append("Recovery commitment from wallet record: ")
+    assert prompts == expected_prompts
 
 
 def test_tty_share_collects_secret_and_exact_basis(
@@ -1512,6 +1558,8 @@ def test_existing_create_prompts_for_source_then_each_card(
         prompts.append(prompt)
         if len(prompts) == 1:
             return VECTOR_4["secret_s"]
+        if prompt.startswith("Recovery commitment from wallet record"):
+            return _TEST_RECOVERY_COMMITMENT.hex()
         if prompt.startswith("Write this share"):
             emitted.append(_card_text(capsys.readouterr().out))
             return ""
@@ -1531,6 +1579,7 @@ def test_existing_create_prompts_for_source_then_each_card(
         "Re-enter the share from the recovery card:\n> ",
         "Write this share on a new recovery card, then press Enter. ",
         "Re-enter the share from the recovery card:\n> ",
+        "Recovery commitment from wallet record: ",
     ]
     assert capsys.readouterr().err.startswith("\n")
 
@@ -1878,6 +1927,49 @@ def test_wallet_commands_initialize_selected_master_seed_destinations() -> None:
     assert "Use only the intended encrypted wallet" not in private.stderr
     assert "\x1b[" not in private.stderr + private.stdout
     assert "spending wallet initialized" in private.stderr
+    assert "Recovery commitment: 0001 0203 0405 0607" in private.stderr
+
+
+def test_wallet_restore_rejects_wrong_commitment_before_import() -> None:
+    result, core = _invoke_initialized_wallet(
+        ["wallet"],
+        VECTOR_1["secret_s"],
+        commitment="00" * 32,
+    )
+
+    assert result.exit_code != 0
+    assert core.imported is None
+    assert "does not match this recovered wallet" in result.stderr
+    assert "Bitcoin Core was not changed" in result.stderr
+    assert "Recovery commitment: 0001 0203" not in result.stderr
+
+
+def test_wallet_enroll_reads_established_public_identity_without_recovery() -> None:
+    core = _FakeBitcoinCore()
+    stdin, stdout, stderr = _TTYInput(), io.StringIO(), io.StringIO()
+    with (
+        patch.object(sys, "stdin", stdin),
+        patch("codex32.cli.BitcoinCore.connect", return_value=core),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        status = ms_main(["wallet", "--enroll"])
+
+    assert status == 0
+    assert core.imported is None
+    assert stdout.getvalue() == ""
+    assert "Warning: This imports private descriptors" not in stderr.getvalue()
+    assert 'Wallet name: "legacy-wallet"' in stderr.getvalue()
+    assert "Master fingerprint: 3F3521A6" in stderr.getvalue()
+    assert "Recovery commitment: 0001 0203 0405 0607" in stderr.getvalue()
+    assert "Bitcoin Core was not changed" in stderr.getvalue()
+
+
+def test_wallet_enroll_requires_an_interactive_terminal() -> None:
+    result = _invoke(["wallet", "--enroll"])
+
+    assert result.exit_code == 2
+    assert "Wallet-record enrollment requires an interactive terminal" in result.stderr
 
 
 def test_bitcoin_core_cli_accepts_now_timestamp() -> None:
@@ -2292,7 +2384,7 @@ def test_create_existing_secret_confirms_original_before_initializing(
     output = _TTYOutput()
     damaged = secret.text[:-1] + ("q" if secret.text[-1].lower() != "q" else "p")
     width = len(secret.text) % 4 or 4
-    answers = iter(("", damaged, secret.text[-width:].upper()))
+    answers = iter(("", damaged, secret.text[-width:].upper(), _TEST_RECOVERY_COMMITMENT.hex()))
     prefills: list[str] = []
 
     def answer(prompt: str, **options: object) -> str:
@@ -2715,7 +2807,17 @@ def test_corrected_creation_source_identity_and_acceptance_boundary(monkeypatch)
             SimpleNamespace(artifact=secret, search_complete=True, low_checksum_discrimination=False),
         ),
     )
-    answers = iter(("ms1invalid", "n", "ms1invalid", "yes", "", secret.text))
+    answers = iter(
+        (
+            "ms1invalid",
+            "n",
+            "ms1invalid",
+            "yes",
+            "",
+            secret.text,
+            _TEST_RECOVERY_COMMITMENT.hex(),
+        )
+    )
     confirmations = []
 
     def answer(prompt, prefill=""):

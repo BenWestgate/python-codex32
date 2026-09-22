@@ -665,6 +665,18 @@ through `bitcoin-cli -stdin`, verifies the exact accepted public descriptor
 set, and relocks an encrypted destination after success, failure, or
 interruption. It never handles a passphrase.
 
+Legacy wallet records can be upgraded before recovery is needed with:
+
+```text
+ms32 wallet --enroll
+```
+
+This mode accepts no recovery material. It asks the operator to choose a loaded
+established private wallet, reads its single root xpub with `gethdkeys`, derives
+the same public fingerprint and recovery commitment, and displays those values
+for comparison and copying into the old record. It does not select an empty
+destination, unlock, import, or mutate a wallet.
+
 For offline signing/watch-only and multisig workflows, use Bitcoin Core v32's
 maintained procedures. Until the final v32 release, see the versioned
 [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)

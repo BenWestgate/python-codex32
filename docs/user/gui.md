@@ -149,8 +149,10 @@ When you restore, the window first asks you to type the recovery commitment from
 the separate wallet record. It deliberately does not show the value it expects.
 If the value does not match, it does not list, create, unlock, or fill a Bitcoin
 Core wallet. Do not substitute the shorter master fingerprint. Older wallet
-records without a recovery commitment need to be updated before relying on this
-pre-import check.
+records without a recovery commitment need to be updated while the established
+wallet is still available: load it in Bitcoin Core, run `ms32 wallet --enroll`,
+compare the displayed wallet name and master fingerprint with the old record,
+and then copy the displayed commitment into that record.
 
 After a successful restore, the window asks you to check the remaining wallet
 details against the record rather than copy them onto it. It shows no creation

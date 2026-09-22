@@ -11,11 +11,11 @@ and evidence.
 3. Shared creation uses a separate OS-CSPRNG call for each random initial share,
    gated by confirmation. Input cannot replace entropy or the original secret.
 4. Wallet setup uses the original ceremony result or a validated recovered seed.
-   Graphical recovery derives public wallet identity first and requires the
-   operator to enter a separately stored SHA-256 commitment to the canonical
-   root xpub before any recovered key material may mutate a Bitcoin Core wallet.
-   The 32-bit BIP32 fingerprint is diagnostic metadata, never the authorization
-   value for this transition.
+   Graphical and command-line recovery derive public wallet identity first and
+   require the operator to enter a separately stored SHA-256 commitment to the
+   canonical root xpub before any recovered key material may mutate a Bitcoin
+   Core wallet. The 32-bit BIP32 fingerprint is diagnostic metadata, never the
+   authorization value for this transition.
 5. Correction shares one mass bound and deadline across target lengths. The
    public API fails closed on incomplete required work; CLI searches may return
    one primary-best-so-far eligible candidate at the deadline. Incomplete

@@ -234,6 +234,8 @@ signing setup belong to Bitcoin Core's maintained v32 workflow.
 | Preflight | Before entropy or recovery input, explicit chain arguments probe the five standard local networks for Bitcoin Core 32 or newer. One response is selected automatically; multiple responses require operator selection. |
 | Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, wallet database, or wallet-creation operation. Every call uses loopback and the selected chain. |
 | Destination | Only an empty descriptor wallet with private keys enabled, no external signer, transactions, descriptors, keypool entries, or active scan is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
+| Recovery authorization | Before CLI restoration or resharing of an existing seed reaches wallet initialization, codex32 derives the public recovery identity without importing descriptors. The operator must type the separately stored 256-bit recovery commitment; a mismatch stops before wallet mutation. The BIP32 fingerprint is diagnostic only. |
+| Legacy record enrollment | `ms32 wallet --enroll` accepts no recovery material and performs no wallet mutation. It reads the canonical root xpub from one operator-selected, loaded established private wallet, derives the same public fingerprint and 256-bit commitment, and displays them so an older record can be upgraded before recovery is needed. The operator compares the wallet name and fingerprint with that existing record before copying the commitment. |
 | Seed source | The original ceremony result or validated recovered master seed supplies root-xprv private descriptors for Core's reported chain. After import, Core v32's wallet HD-key RPCs derive the requested BIP44, BIP49, BIP84, and BIP86 account xpubs. |
 | Secret channel | Private descriptor JSON is sent only through the child's standard input. It is absent from arguments, ordinary output, and diagnostics. The library and the command-line programs have no passphrase channel, and raw Core errors are suppressed. |
 | Revalidation | Every destination property is checked again immediately before import. Every private import must succeed before public verification begins. `gethdkeys` must expose one private wallet root; `derivehdkey` must return the requested hardened account paths with one consistent fingerprint and the correct network xpub/tpub version. `getdescriptorinfo` then validates and expands the fixed public templates, and the exact eight active descriptors must match Core's accepted set. |
@@ -273,16 +275,25 @@ only while more than one answers. On screen a wallet is chosen by the position o
 its row, never by the text of its label, and Core's text is rendered without
 Pango markup, so a wallet name cannot hide or impersonate another.
 
-Restore derives the recovered seed's canonical root xpub and master fingerprint
-through Bitcoin Core before destination selection. It computes the recovery
+Graphical and command-line restore derive the recovered seed's canonical root
+xpub and master fingerprint through Bitcoin Core before destination selection.
+They compute the recovery
 commitment as `SHA256(domain_tag || root_xpub)`, where `domain_tag` is the
-ASCII text `codex32 recovery commitment` followed by one NUL byte. It asks the
+ASCII text `codex32 recovery commitment` followed by one NUL byte. They ask the
 operator to enter the 256-bit value from the separately stored wallet
 record. The expected commitment is not displayed before comparison. Only a
 match permits the program to list, create, unlock, or import into a destination
 wallet, so a mismatch can stop recovery without mutating one. The fingerprint
 is still displayed as a short diagnostic identifier but is not used to authorize
 the transition.
+
+Legacy records that predate the commitment field are enrolled separately while
+their established Core wallet is still available. `ms32 wallet --enroll` reads
+the selected loaded wallet's one private HD root, converts only its xpub into the
+same public recovery identity, and displays the wallet name, fingerprint, and
+commitment. It never reads recovery cards, imports descriptors, unlocks a wallet,
+or writes to Core. A record without that independently enrolled value does not
+gain a weaker fingerprint-only restore bypass.
 
 The program draws no entropy, opens no socket, starts no process of its own, and
 writes no file: no settings, no recent list, no log, and no clipboard write of

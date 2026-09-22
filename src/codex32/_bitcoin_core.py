@@ -33,6 +33,21 @@ _PURPOSES = (44, 49, 84, 86)
 _RECOVERY_COMMITMENT_DOMAIN = b"codex32 recovery commitment\0"
 
 
+def _recovery_commitment_text(commitment: bytes) -> str:
+    """Format a full recovery commitment for records and comparison."""
+    if len(commitment) != 32:
+        raise ValueError("recovery commitments must be 32 bytes")
+    text = commitment.hex().upper()
+    return " ".join(text[start : start + 4] for start in range(0, len(text), 4))
+
+
+def _recovery_commitment_matches(expected: str, entered: str) -> bool:
+    """Compare commitment text, ignoring only whitespace and case."""
+    expected_text = "".join(expected.split()).upper()
+    entered_text = "".join(entered.split()).upper()
+    return len(expected_text) == len(entered_text) == 64 and entered_text == expected_text
+
+
 @dataclass(frozen=True)
 class BitcoinCore:
     executable: str
@@ -128,10 +143,8 @@ class BitcoinCore:
             raise BitcoinCoreError("Bitcoin Core did not return the expected public descriptor.")
         return normalized
 
-    def recovery_identity_seed(self, seed: bytes) -> tuple[bytes, bytes]:
-        """Return the BIP32 fingerprint and a SHA-256 commitment to the root xpub."""
-        xprv = _master_xprv_from_seed(seed, testnet=self.chain != "main")
-        descriptor = self._normalized_descriptor(f"pkh({xprv})")
+    def _recovery_identity_descriptor(self, descriptor: str) -> tuple[bytes, bytes]:
+        """Return recovery identity from one normalized root P2PKH descriptor."""
         if not descriptor.startswith("pkh(") or ")#" not in descriptor:
             raise BitcoinCoreError("Bitcoin Core did not return the expected root public descriptor.")
         root_xpub, separator, checksum = descriptor[4:].partition(")#")
@@ -159,6 +172,19 @@ class BitcoinCore:
         except ValueError as error:
             raise BitcoinCoreError("Bitcoin Core returned an invalid master-key script.") from error
 
+    def _recovery_identity_xpub(self, root_xpub: str) -> tuple[bytes, bytes]:
+        """Return recovery identity from an established wallet's public root key."""
+        descriptor = self._normalized_descriptor(f"pkh({root_xpub})")
+        normalized_xpub = descriptor[4:].partition(")#")[0] if descriptor.startswith("pkh(") else ""
+        if normalized_xpub != root_xpub:
+            raise BitcoinCoreError("Bitcoin Core changed the established wallet root public key.")
+        return self._recovery_identity_descriptor(descriptor)
+
+    def recovery_identity_seed(self, seed: bytes) -> tuple[bytes, bytes]:
+        """Return the BIP32 fingerprint and a SHA-256 commitment to the root xpub."""
+        xprv = _master_xprv_from_seed(seed, testnet=self.chain != "main")
+        return self._recovery_identity_descriptor(self._normalized_descriptor(f"pkh({xprv})"))
+
     def fingerprint_seed(self, seed: bytes) -> bytes:
         """Return the BIP32 master fingerprint using Bitcoin Core out of process."""
         return self.recovery_identity_seed(seed)[0]
@@ -174,6 +200,38 @@ class BitcoinCore:
         if not isinstance(secret, MasterSeed):
             raise TypeError("wallet operations accept only MasterSeed")
         return self.recovery_identity_seed(secret.seed_bytes)
+
+    def enrollment_identity(
+        self,
+        ask: Callable[[str], str],
+        tell: Callable[[str], None],
+    ) -> tuple[str, bytes, bytes]:
+        """Choose an established loaded wallet and return its public recovery identity."""
+        choices: list[tuple[str, bytes, bytes]] = []
+        for name in sorted(self._names()):
+            try:
+                fingerprint, commitment = self._recovery_identity_xpub(self._root_xpub(name))
+            except BitcoinCoreError:
+                continue
+            choices.append((name, fingerprint, commitment))
+        if not choices:
+            raise BitcoinCoreError(
+                "No loaded Bitcoin Core wallet exposes one private HD root. Load the established spending wallet first."
+            )
+        while True:
+            tell("Loaded Bitcoin Core wallets that can enroll a recovery commitment:")
+            for number, (name, _fingerprint, _commitment) in enumerate(choices, 1):
+                tell(f"  {number}. {json.dumps(name)}")
+            answer = ask("Choose the established wallet number")
+            if not answer.isdecimal() or not 1 <= int(answer) <= len(choices):
+                tell("Enter one of the displayed numbers.")
+                continue
+            selected = choices[int(answer) - 1]
+            if ask(f"Read public recovery identity from {json.dumps(selected[0])}? [y/N]").lower() in (
+                "y",
+                "yes",
+            ):
+                return selected
 
     def _root_xpub(self, wallet: str) -> str:
         result = self._rpc("gethdkeys", wallet=wallet)

@@ -168,16 +168,21 @@ wallet should be trusted until initialization completes.
 
 ### 4. Complete the record and store the cards
 
-For graphical setup, copy the displayed backup identifier, wallet name, Bitcoin
-Core version, master fingerprint, recovery commitment, derivation standards,
-and account number to the wallet record. The command-line workflow does not yet
-display the recovery commitment, so do not rely on a CLI-created record for
-graphical recovery. Add the approximate creation / earliest-use date. Do not put
-a descriptor timestamp on a recovery card; Core's public descriptor export
-preserves its stored timestamps.
+Copy the displayed backup identifier, wallet name, Bitcoin Core version,
+master fingerprint, recovery commitment, derivation standards, and account
+number to the wallet record. Add the approximate creation / earliest-use date.
+Do not put a descriptor timestamp on a recovery card; Core's public descriptor
+export preserves its stored timestamps.
 
 Store each card securely. For a shared backup, use different trusted places.
 Keep the wallet record separately from all cards.
+
+If an older wallet record predates the recovery-commitment field, update it
+while the established spending wallet is still available. Load that wallet in
+Bitcoin Core and run `ms32 wallet --enroll`. codex32 reads only the wallet's
+public root identity and does not read recovery cards or change the wallet.
+Compare the displayed wallet name and master fingerprint with the old record;
+only after they match, copy the displayed recovery commitment into the record.
 
 ### 5. Receive and spend normally
 
@@ -213,12 +218,16 @@ descriptor-transfer procedure in place of that maintained workflow.
 ## Recover an existing or inherited wallet
 
 An existing wallet has records and history that can identify a wrong recovery.
-Restore it on the intended offline or otherwise trusted signer before comparing
-its public wallet data with the separate wallet record.
+The recovered wallet must match the separately stored recovery commitment before
+private descriptors are imported. The four-byte BIP32 fingerprint remains a
+diagnostic check, not authorization to restore.
 
 1. Collect the required cards with matching identifiers and text lengths.
 2. Find the separately stored wallet record and the original wallet
-   instructions.
+   instructions. If the record has no recovery commitment and the established
+   wallet still exists, stop and enroll it first with `ms32 wallet --enroll` as
+   described above. Do not invent a commitment from the recovery cards during
+   an emergency restore.
 3. On Tails or another reviewed offline computer, check each card with
    `ms32 check`. If validation fails, recheck what you typed before assuming
    the paper is wrong.
@@ -230,16 +239,20 @@ its public wallet data with the separate wallet record.
    ms32 wallet --timestamp 0
    ```
 
-5. Select and confirm that wallet. If it is locked, follow the displayed
+5. codex32 shows the recovered master fingerprint for diagnosis, then asks for
+   the recovery commitment from the separately stored wallet record. Type the
+   complete commitment. A mismatch stops before any descriptor import; do not
+   substitute the fingerprint for this check.
+6. Select and confirm that wallet. If it is locked, follow the displayed
    Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
    It imports the private descriptors, verifies the public set, and relocks an
    encrypted wallet.
-6. If you need an online watch-only counterpart, keep the restored signer
+7. If you need an online watch-only counterpart, keep the restored signer
    offline and follow Bitcoin Core v32's
    [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)
    to export and restore the watch-only wallet. Let the online node synchronize,
-   then compare the recovered fingerprint, account, policy, addresses, balance,
-   and transaction history with the wallet record.
+   then compare the fingerprint, account, policy, addresses, balance, and
+   transaction history with the wallet record as secondary checks.
 
 A timestamp of zero safely scans all history and may take time; it belongs in
 the recovery command, not on a paper card. During an emergency recovery, move

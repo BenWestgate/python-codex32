@@ -9,7 +9,12 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import (
+    BitcoinCore,
+    BitcoinCoreError,
+    _recovery_commitment_matches,
+    _recovery_commitment_text,
+)
 from codex32.bip93 import parse_codex32
 from codex32.profiles.ms32 import MasterSeed
 from codex32.wallet import _with_checksum
@@ -456,6 +461,67 @@ def test_recovery_identity_uses_stateless_public_derivation(monkeypatch: pytest.
         (("deriveaddresses",), None),
         (("validateaddress", "1synthetic"), None),
     ]
+    calls.clear()
+    assert BitcoinCore("bitcoin-cli", "main", 320000)._recovery_identity_xpub("xpub-root") == identity
+    assert calls == [
+        (("getdescriptorinfo",), None),
+        (("deriveaddresses",), None),
+        (("validateaddress", "1synthetic"), None),
+    ]
+
+
+def test_recovery_commitment_text_has_one_shared_canonical_format() -> None:
+    expected = "0001 0203 0405 0607 0809 0A0B 0C0D 0E0F 1011 1213 1415 1617 1819 1A1B 1C1D 1E1F"
+    assert _recovery_commitment_text(bytes(range(32))) == expected
+    assert _recovery_commitment_matches(
+        expected, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    )
+    assert not _recovery_commitment_matches(expected, "00" * 31)
+
+
+def test_enrollment_identity_comes_from_an_established_loaded_wallet(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = BitcoinCore("bitcoin-cli", "main", 320000)
+    identity = (bytes.fromhex("3f3521a6"), bytes(range(32)))
+    messages: list[str] = []
+    prompts: list[str] = []
+    answers = iter(("1", "yes"))
+
+    monkeypatch.setattr(BitcoinCore, "_names", lambda _self: ("blank", "legacy"))
+
+    def root(name: str) -> str:
+        if name == "blank":
+            raise BitcoinCoreError("no root")
+        return _ROOT_XPUB
+
+    monkeypatch.setattr(BitcoinCore, "_root_xpub", lambda _self, name: root(name))
+    monkeypatch.setattr(BitcoinCore, "_recovery_identity_xpub", lambda _self, _root: identity)
+
+    def ask(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    assert client.enrollment_identity(ask, messages.append) == ("legacy", *identity)
+    assert messages == [
+        "Loaded Bitcoin Core wallets that can enroll a recovery commitment:",
+        '  1. "legacy"',
+    ]
+    assert prompts == [
+        "Choose the established wallet number",
+        'Read public recovery identity from "legacy"? [y/N]',
+    ]
+
+
+def test_enrollment_identity_fails_without_an_established_wallet(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = BitcoinCore("bitcoin-cli", "main", 320000)
+    monkeypatch.setattr(BitcoinCore, "_names", lambda _self: ("blank",))
+    monkeypatch.setattr(
+        BitcoinCore,
+        "_root_xpub",
+        lambda _self, _name: (_ for _ in ()).throw(BitcoinCoreError("no root")),
+    )
+
+    with pytest.raises(BitcoinCoreError, match="Load the established spending wallet"):
+        client.enrollment_identity(lambda _prompt: "", lambda _message: None)
 
 
 def test_fingerprint_keeps_the_short_legacy_view(monkeypatch: pytest.MonkeyPatch) -> None:

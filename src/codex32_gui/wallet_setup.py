@@ -24,7 +24,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 from codex32 import MasterSeed
-from codex32._bitcoin_core import _CHAINS, BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import (
+    _CHAINS,
+    BitcoinCore,
+    BitcoinCoreError,
+    _recovery_commitment_matches,
+    _recovery_commitment_text,
+)
 
 __all__ = [
     "UNLOCK_SECONDS",
@@ -145,15 +151,12 @@ def fingerprint(core: BitcoinCore, secret: MasterSeed) -> str:
 def identity(core: BitcoinCore, secret: MasterSeed) -> tuple[str, str]:
     """Return the short fingerprint and strong public recovery commitment."""
     fingerprint_bytes, commitment = core.recovery_identity(secret)
-    text = commitment.hex().upper()
-    return fingerprint_bytes.hex(), " ".join(text[start : start + 4] for start in range(0, len(text), 4))
+    return fingerprint_bytes.hex(), _recovery_commitment_text(commitment)
 
 
 def commitment_matches(expected: str, entered: str) -> bool:
     """Compare a copied recovery commitment, ignoring only whitespace and case."""
-    expected_text = "".join(expected.split()).upper()
-    entered_text = "".join(entered.split()).upper()
-    return len(entered_text) == 64 and entered_text == expected_text
+    return _recovery_commitment_matches(expected, entered)
 
 
 def fingerprint_provider(core: BitcoinCore) -> Callable[[bytes], bytes]:
