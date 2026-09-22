@@ -93,6 +93,8 @@ def _checksum_for_encoded_length(hrp: str, encoded_length: int) -> _Checksum:
 
 def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ...], _Checksum]:
     hrp, encoded = bech32_decode(text)
+    if len(hrp) > 83:
+        raise InvalidLength(f"human-readable part exceeds 83 characters ({len(hrp)})")
     if len(hrp) + 1 + len(encoded) < 21:
         raise InvalidLength("codex32 string must contain at least 21 characters")
     checksum = _checksum_for_encoded_length(hrp, len(encoded))

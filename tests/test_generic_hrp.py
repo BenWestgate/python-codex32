@@ -18,7 +18,7 @@ from codex32 import (
     recover_secret,
 )
 from codex32.cli import main, ms_main
-from codex32.errors import MismatchedHrp, MismatchedProfile
+from codex32.errors import InvalidLength, MismatchedHrp, MismatchedProfile
 
 UNKNOWN = {
     "short": {
@@ -48,6 +48,14 @@ def test_opaque_hrp_parse_complete_recover_and_derive(vector: dict[str, str]) ->
     assert secret.text.isupper()
     assert recover_secret([a, c]).text == vector["S"].upper()
     assert derive_share([secret, a], "d").text == vector["D"].upper()
+
+
+def test_hrp_over_83_characters_is_rejected_at_the_bip173_limit() -> None:
+    within_limit = oracle_encode("z" * 83, "0testsq")
+    over_limit = oracle_encode("z" * 84, "0testsq")
+    assert parse_codex32(within_limit).hrp == "z" * 83
+    with pytest.raises(InvalidLength):
+        parse_codex32(over_limit)
 
 
 def test_sharing_compares_normalized_hrp_and_keeps_compatibility_error_name() -> None:
