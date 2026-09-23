@@ -78,14 +78,12 @@ class _TTYInput(io.StringIO):
 
 
 class _CreationOutput(io.StringIO):
-    def __init__(self, *, pretty: bool = False) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.pretty = pretty
-        self.checks = 0
+        self.interactive = True
 
     def isatty(self) -> bool:
-        self.checks += 1
-        return self.pretty or self.checks == 1
+        return self.interactive
 
 
 @dataclass
@@ -151,12 +149,16 @@ def _invoke_terminal(args: list[str], *lines: str) -> _Result:
 def _invoke_confirmed_create(
     args: list[str],
     *lines: str,
-    terminal_output: bool = False,
     core: _FakeBitcoinCore | None = None,
 ) -> _Result:
     stdin = _TTYInput("\n".join(lines) + "\n")
-    stdout = _CreationOutput(pretty=terminal_output)
+    stdout = _CreationOutput()
     stderr = io.StringIO()
+    selected_core = core or _FakeBitcoinCore()
+
+    def connect(*_args: object, **_kwargs: object) -> _FakeBitcoinCore:
+        stdout.interactive = False
+        return selected_core
 
     def confirm_card(
         artifact: Share | Secret,
@@ -169,7 +171,7 @@ def _invoke_confirmed_create(
     with (
         patch.object(sys, "stdin", stdin),
         patch("codex32.cli._confirm_card", confirm_card),
-        patch("codex32.cli.BitcoinCore.connect", return_value=core or _FakeBitcoinCore()),
+        patch("codex32.cli.BitcoinCore.connect", side_effect=connect),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
