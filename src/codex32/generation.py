@@ -357,8 +357,7 @@ class CreationCeremony:
         if not isinstance(text, str):
             raise TypeError("confirmation text must be str")
         observed = "".join(text.split())
-        if observed.isascii():
-            observed = observed.lower()
+        observed = "".join(char.lower() if char.isascii() else char for char in observed)
         expected = self._pending.text.lower()
         mismatched = tuple(
             group + 1
