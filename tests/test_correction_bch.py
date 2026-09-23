@@ -217,6 +217,7 @@ def test_public_context_constrains_length_prefix_and_used_indices() -> None:
         CorrectionContext(Profile.MS, excluded_indices=["a"]),  # type: ignore[arg-type]
         CorrectionContext(Profile.MS, excluded_indices=("s",)),
         CorrectionContext(Profile.MS, excluded_indices=("a", "A")),
+        CorrectionContext("z" * 84, expected_length=106),
     ),
 )
 def test_malformed_public_context_is_rejected(context: CorrectionContext) -> None:
