@@ -32,6 +32,7 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
+from codex32._bitcoin_core import BitcoinCore
 from codex32.bech32 import _chars_to_u5, bech32_encode
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
@@ -96,6 +97,7 @@ class _FakeBitcoinCore:
     private: bool | None = None
     account: int | None = None
     timestamp: int | str | None = None
+    expected: bytes | None = None
 
     def fingerprint_seed(self, seed: bytes) -> bytes:
         return fingerprint_seed(seed)
@@ -103,16 +105,22 @@ class _FakeBitcoinCore:
     def fingerprint(self, secret: MasterSeed) -> bytes:
         return self.fingerprint_seed(secret.seed_bytes)
 
+    def verify_identity(self, secret: MasterSeed, expected_fingerprint: bytes | None) -> None:
+        BitcoinCore.verify_identity(self, secret, expected_fingerprint)  # type: ignore[arg-type]
+
     def initialize(
         self,
         secret: MasterSeed,
         _ask: Callable[[str], str],
         _tell: Callable[[str], None],
         *,
+        expected_fingerprint: bytes | None,
         private: bool = True,
         account: int = 0,
         timestamp: int | str = "now",
     ) -> str:
+        self.verify_identity(secret, expected_fingerprint)
+        self.expected = expected_fingerprint
         self.imported = secret
         self.private, self.account, self.timestamp = private, account, timestamp
         return "test-wallet"
@@ -121,6 +129,17 @@ class _FakeBitcoinCore:
 @pytest.fixture(autouse=True)
 def _offline_core(monkeypatch):
     monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *args, **kwargs: _FakeBitcoinCore())
+
+
+_RECORDED_FINGERPRINT = importlib.import_module("codex32.cli")._recorded_fingerprint
+
+
+@pytest.fixture(autouse=True)
+def _matching_record(monkeypatch):
+    """Answer the wallet-record prompt correctly; its own behavior is tested directly below."""
+    monkeypatch.setattr(
+        "codex32.cli._recorded_fingerprint", lambda core, secret, _fresh: core.fingerprint(secret)
+    )
 
 
 def _invoke(args: list[str], *lines: str) -> _Result:
@@ -1873,6 +1892,7 @@ def test_wallet_commands_initialize_selected_master_seed_destinations() -> None:
     assert xprv.stderr.endswith("Keep it secret.\n\n")
     assert private.stdout == ""
     assert private_core.imported == parse_codex32(VECTOR_1["secret_s"])
+    assert private_core.expected == private_core.fingerprint(private_core.imported)
     assert private_core.private is True
     assert "Warning: This imports private descriptors that can spend funds." in private.stderr
     assert "Use only the intended encrypted wallet" not in private.stderr
@@ -2748,3 +2768,73 @@ def test_incomplete_candidate_has_no_search_warning_and_is_never_accepted_automa
     assert "Search incomplete" not in result.stderr
     assert "may not be unique" not in result.stderr
     assert "only a correction suggestion" in result.stderr
+
+
+def _record_answers(monkeypatch: pytest.MonkeyPatch, *answers: str) -> list[str]:
+    prompts: list[str] = []
+    remaining = iter(answers)
+
+    def answer(prompt: str, **_options: object) -> str:
+        prompts.append(prompt)
+        return next(remaining)
+
+    monkeypatch.setattr(importlib.import_module("codex32.cli"), "_text", answer)
+    return prompts
+
+
+def test_restore_record_prompt_retries_until_the_library_accepts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    core, secret = _FakeBitcoinCore(), parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    right = core.fingerprint(secret)
+    wrong = bytes([right[0] ^ 1]) + right[1:]
+    prompts = _record_answers(monkeypatch, "not hex", wrong.hex(), right.hex().upper())
+
+    assert _RECORDED_FINGERPRINT(core, secret, False) == right
+    assert prompts == ["Type the master fingerprint from your wallet record (Enter if none)"] * 3
+    errors = capsys.readouterr().err
+    assert "8 characters" in errors and "does not match" in errors
+    assert right.hex() not in errors.lower()
+
+
+def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    core, secret = _FakeBitcoinCore(), parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    fingerprint = core.fingerprint(secret)
+
+    prompts = _record_answers(monkeypatch, "", "n", "", "y")
+    assert _RECORDED_FINGERPRINT(core, secret, False) is None
+    assert prompts[1] == prompts[3] == "Restore without a wallet record? [y/N]"
+    shown = capsys.readouterr().err
+    assert shown.count(f"Master fingerprint: {fingerprint.hex().upper()}") == 2
+    assert "was not made from this seed" in shown and "nothing can prove" in shown
+
+    derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
+    _record_answers(monkeypatch, "", "yes")
+    assert _RECORDED_FINGERPRINT(core, derived, False) is None
+    assert "matches this seed (codex32 rule)" in capsys.readouterr().err
+
+
+def test_fresh_record_is_typed_back_and_shown_again_after_a_mismatch(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    core, secret = _FakeBitcoinCore(), parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    right = core.fingerprint(secret)
+    wrong = bytes([right[0] ^ 1]) + right[1:]
+    prompts = _record_answers(monkeypatch, "", "", wrong.hex(), "", right.hex())
+
+    assert _RECORDED_FINGERPRINT(core, secret, True) == right
+    assert prompts == [
+        "Write it on the wallet record, then press Enter",
+        "Type the master fingerprint from your wallet record",
+        "Type the master fingerprint from your wallet record",
+        "Check the wallet record against it, then press Enter",
+        "Type the master fingerprint from your wallet record",
+    ]
+    errors = capsys.readouterr().err
+    assert errors.count(f"Master fingerprint: {right.hex().upper()}") == 2
+    assert "8 characters" in errors and "does not match" in errors

@@ -9,8 +9,16 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import (
+    BitcoinCore,
+    BitcoinCoreError,
+    FingerprintMismatch,
+    identifier_note,
+    identifier_origin,
+    parse_fingerprint,
+)
 from codex32.bip93 import parse_codex32
+from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
 from codex32.wallet import _with_checksum
 
@@ -37,7 +45,14 @@ _ACCOUNT_XPUBS = {
     ),
 }
 _ROOT_XPUB = "xpub-root-fixture"
+_FINGERPRINT = bytes.fromhex("3f3521a6")
 _PRIVATE_ACCOUNT = re.compile(r"/(?P<purpose>44|49|84|86)h/0h/0h/<0;1>/\*")
+
+
+@pytest.fixture(autouse=True)
+def _recorded_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer the pre-import identity check without the address-derivation RPCs tested separately."""
+    monkeypatch.setattr(BitcoinCore, "fingerprint", lambda _client, _secret: _FINGERPRINT)
 
 
 def _descriptor_info(descriptor: str) -> dict[str, object]:
@@ -380,7 +395,10 @@ def test_encrypted_import_retries_without_a_passphrase_verifies_and_relocks(
 
     monkeypatch.setattr("codex32._bitcoin_core.sleep", unlock)
 
-    assert client.initialize(_SEED, lambda _prompt: "yes", messages.append) == "signer"
+    assert (
+        client.initialize(_SEED, lambda _prompt: "yes", messages.append, expected_fingerprint=_FINGERPRINT)
+        == "signer"
+    )
     private_calls = [call for call in rpc.calls if "xprv" in (call[2] or "")]
     assert len(private_calls) == 1
     arguments, wallet, private_stdin = private_calls[0]
@@ -420,7 +438,9 @@ def test_failed_import_is_generic_and_relocks_encrypted_wallet(
     monkeypatch.setattr(BitcoinCore, "_rpc", fail)
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     with pytest.raises(BitcoinCoreError, match="did not import every private descriptor"):
-        client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None)
+        client.initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None, expected_fingerprint=_FINGERPRINT
+        )
     assert rpc.locked
     assert any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
 
@@ -446,7 +466,7 @@ def test_fingerprint_uses_stateless_core_address_derivation(monkeypatch: pytest.
 
     monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
 
-    assert BitcoinCore("bitcoin-cli", "main", 320000).fingerprint(_SEED) == bytes.fromhex("3f3521a6")
+    assert BitcoinCore("bitcoin-cli", "main", 320000).fingerprint_seed(_SEED.seed_bytes) == _FINGERPRINT
     assert calls == [
         (("getdescriptorinfo",), None),
         (("deriveaddresses",), None),
@@ -478,7 +498,9 @@ def test_exact_public_descriptor_verification_rejects_missing_or_extra_records(
     monkeypatch.setattr(BitcoinCore, "_rpc", alter)
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     with pytest.raises(BitcoinCoreError, match="accepted public descriptors did not match"):
-        client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None)
+        client.initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None, expected_fingerprint=_FINGERPRINT
+        )
     assert rpc.locked
 
 
@@ -500,7 +522,9 @@ def test_public_preparation_and_verification_failures_relock(
     monkeypatch.setattr(BitcoinCore, "_rpc", fail)
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     with pytest.raises(BitcoinCoreError, match="suppressed failure"):
-        client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None)
+        client.initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None, expected_fingerprint=_FINGERPRINT
+        )
     assert rpc.locked
     assert any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
 
@@ -519,7 +543,9 @@ def test_interruption_after_unlock_relocks(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(BitcoinCore, "_rpc", interrupt)
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     with pytest.raises(KeyboardInterrupt):
-        client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None)
+        client.initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None, expected_fingerprint=_FINGERPRINT
+        )
     assert rpc.locked
 
 
@@ -546,7 +572,9 @@ def test_ineligibility_after_operator_unlock_relocks(monkeypatch: pytest.MonkeyP
     )
 
     with pytest.raises(KeyboardInterrupt):
-        BitcoinCore("bitcoin-cli", "main", 300000).initialize(_SEED, lambda _prompt: "yes", messages.append)
+        BitcoinCore("bitcoin-cli", "main", 300000).initialize(
+            _SEED, lambda _prompt: "yes", messages.append, expected_fingerprint=_FINGERPRINT
+        )
     assert rpc.locked
     assert "That wallet is no longer eligible. Choose again." in messages
     assert any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
@@ -569,7 +597,7 @@ def test_interruption_while_waiting_relocks(monkeypatch: pytest.MonkeyPatch) -> 
 
     with pytest.raises(KeyboardInterrupt):
         BitcoinCore("bitcoin-cli", "main", 300000).initialize(
-            _SEED, lambda _prompt: "", lambda _message: None
+            _SEED, lambda _prompt: "", lambda _message: None, expected_fingerprint=_FINGERPRINT
         )
     assert rpc.locked
 
@@ -598,7 +626,7 @@ def test_wallet_relocking_before_import_repeats_wait_without_preparation(
 
     assert (
         BitcoinCore("bitcoin-cli", "main", 300000).initialize(
-            _SEED, lambda _prompt: "", lambda _message: None
+            _SEED, lambda _prompt: "", lambda _message: None, expected_fingerprint=_FINGERPRINT
         )
         == "signer"
     )
@@ -624,7 +652,12 @@ def test_interruption_during_walletlock_retries_cleanup(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(BitcoinCore, "_rpc", interrupt_once)
     client = BitcoinCore("bitcoin-cli", "main", 300000)
-    assert client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None) == "signer"
+    assert (
+        client.initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None, expected_fingerprint=_FINGERPRINT
+        )
+        == "signer"
+    )
     assert rpc.locked and lock_calls == 2
 
 
@@ -637,7 +670,10 @@ def test_unencrypted_wallet_imports_without_a_lock_call(monkeypatch: pytest.Monk
     )
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     messages: list[str] = []
-    assert client.initialize(_SEED, lambda _prompt: "yes", messages.append) == "signer"
+    assert (
+        client.initialize(_SEED, lambda _prompt: "yes", messages.append, expected_fingerprint=_FINGERPRINT)
+        == "signer"
+    )
     assert messages == []
     assert not any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
 
@@ -662,7 +698,7 @@ def test_immediate_revalidation_stops_before_private_import_and_relocks(
     )
 
     with pytest.raises(BitcoinCoreError, match="changed before import"):
-        client.initialize(_SEED, lambda _prompt: "", lambda _message: None)
+        client.initialize(_SEED, lambda _prompt: "", lambda _message: None, expected_fingerprint=_FINGERPRINT)
     assert rpc.locked
     assert not any(arguments == ("importdescriptors",) for arguments, _wallet, _stdin in rpc.calls)
 
@@ -685,3 +721,61 @@ def test_subprocess_adapter_uses_loopback_and_never_repeats_raw_core_errors(
     with pytest.raises(BitcoinCoreError) as failure:
         client._rpc("importdescriptors", wallet="wallet", stdin=marker + "\n")
     assert marker not in str(failure.value)
+
+
+@pytest.mark.parametrize("text", ("3f3521a6", "3F35 21A6", " 3f35\t21a6 "))
+def test_parse_fingerprint_accepts_record_spellings(text: str) -> None:
+    assert parse_fingerprint(text) == _FINGERPRINT
+
+
+@pytest.mark.parametrize("text", ("", "3f3521a", "3f3521a6ff", "3f3521ag", "0x3f3521"))
+def test_parse_fingerprint_rejects_other_text(text: str) -> None:
+    with pytest.raises(ValueError, match="8 characters"):
+        parse_fingerprint(text)
+
+
+def test_identity_mismatch_stops_before_any_wallet_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    rpc = _ImportRPC(locked=False)
+    monkeypatch.setattr(
+        BitcoinCore,
+        "_rpc",
+        lambda client, *args, wallet=None, stdin=None: rpc(client, *args, wallet=wallet, stdin=stdin),
+    )
+
+    with pytest.raises(FingerprintMismatch, match="Bitcoin Core was not changed"):
+        BitcoinCore("bitcoin-cli", "main", 300000).initialize(
+            _SEED,
+            lambda _prompt: "yes",
+            lambda _message: None,
+            expected_fingerprint=bytes.fromhex("3f3521a7"),
+        )
+    assert rpc.calls == []
+
+
+def test_no_record_is_the_operators_choice_and_checks_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unused(_client: BitcoinCore, _secret: MasterSeed) -> bytes:
+        raise AssertionError("no fingerprint is compared without a record")
+
+    monkeypatch.setattr(BitcoinCore, "fingerprint", unused)
+    BitcoinCore("bitcoin-cli", "main", 300000).verify_identity(_SEED, None)
+
+
+# Frozen from Bails' own ms32.seed_identifier for this seed: master (RIPEMD-160) and the
+# June 2023 alpha (SHA-256). Bails checked three characters and kept the fourth for re-sharing.
+_BAILS_SEED = bytes(range(16))
+
+
+@pytest.mark.parametrize(
+    ("identifier", "origin"),
+    (
+        (_fingerprint_identifier(_FINGERPRINT), "codex32"),
+        ("d9k8", "Bails"),
+        ("d9kq", "Bails"),
+        ("hezu", "Bails alpha"),
+        ("test", None),
+    ),
+)
+def test_identifier_origin_names_the_rule_that_made_it(identifier: str, origin: str | None) -> None:
+    secret = MasterSeed.from_seed(_BAILS_SEED, identifier=identifier)
+    assert identifier_origin(secret, _FINGERPRINT) == origin
+    assert ("matches this seed" in identifier_note(origin)) is (origin is not None)
