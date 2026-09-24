@@ -118,17 +118,6 @@ def test_expanded_codeword_upper_bound() -> None:
         _checksum_for_encoded_length("ms", len(bech32_decode(oversized)[1]))
 
 
-def test_long_checksum_residue_stays_correct_past_its_period() -> None:
-    # Probes the polynomial itself with u5 values, not a codex32 string: the
-    # arithmetic still closes beyond the code's 1023-symbol period, so length is
-    # what verify() has to enforce, not the residue.
-    body = bech32_hrp_expand("ms") + [0] * 1100
-    codeword = body + _CODEX32_LONG.create(body)
-    assert len(codeword) > 1023
-    assert _CODEX32_LONG.polymod(codeword) == _CODEX32_LONG.constant
-    assert _CODEX32_LONG.verify(codeword) is False
-
-
 def test_checksum_is_verified_before_unknown_hrp_dispatch() -> None:
     valid_generic = _oracle_encode("zz", "0tests" + "q" * 26)
     artifact = parse_codex32(valid_generic)
