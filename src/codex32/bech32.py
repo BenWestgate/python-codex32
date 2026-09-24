@@ -72,6 +72,8 @@ def bech32_decode(value: str, spec: _Checksum | None = None) -> tuple[str, list[
         raise MissingSeparator("No separator (1) was found.")
     if separator == 0:
         raise MissingSeparator("The application prefix before 1 is missing.")
+    if separator > 83:
+        raise InvalidLength(f"human-readable part exceeds 83 characters ({separator})")
     lowered = value.lower()
     hrp = lowered[:separator]
     data = _chars_to_u5(lowered[separator + 1 :], separator + 2)

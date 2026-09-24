@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from _codex32_oracle import oracle_encode
+from data.bip93_vectors import BIP93_GENERAL_HRP
 
 from codex32 import (
     CorrectionContext,
@@ -18,7 +19,7 @@ from codex32 import (
     recover_secret,
 )
 from codex32.cli import main, ms_main
-from codex32.errors import MismatchedHrp, MismatchedProfile
+from codex32.errors import InvalidChecksum, InvalidLength, MismatchedHrp, MismatchedProfile
 
 UNKNOWN = {
     "short": {
@@ -174,3 +175,33 @@ def test_cli_share_is_generic_and_ms32_share_is_scoped(monkeypatch) -> None:
     status, output, error = _invoke(main, ["share", "d", "--plain"], basis)
     assert (status, output.strip(), error) == (0, UNKNOWN["short"]["D"], "")
     assert _invoke(ms_main, ["share", "d", "--plain"], basis)[0] == 2
+
+
+def test_bip93_generalized_hrp_share_vectors() -> None:
+    share_a = parse_codex32(BIP93_GENERAL_HRP["share_a"])
+    share_c = parse_codex32(BIP93_GENERAL_HRP["share_c"])
+    assert share_a.hrp == share_c.hrp == "test_vector"
+    assert recover_secret([share_a, share_c]).text == BIP93_GENERAL_HRP["secret_s"]
+    assert derive_share([share_a, share_c], "d").text == BIP93_GENERAL_HRP["derived_d"]
+
+
+def test_bip93_generalized_hrp_boundary_vectors() -> None:
+    valid = BIP93_GENERAL_HRP["valid_83"]
+    invalid = BIP93_GENERAL_HRP["invalid_84"]
+    artifact = parse_codex32(valid)
+
+    assert len(artifact.hrp) == 83
+    assert artifact.hrp == valid.rsplit("1", 1)[0]
+    with pytest.raises(InvalidLength):
+        parse_codex32(invalid)
+
+
+@pytest.mark.parametrize("key", ("invalid_gap_regular", "invalid_gap_long"))
+def test_bip93_generalized_hrp_gap_vectors_are_invalid(key: str) -> None:
+    with pytest.raises(InvalidLength):
+        parse_codex32(BIP93_GENERAL_HRP[key])
+
+
+def test_bip93_generalized_hrp_checksum_uses_lowercase_hrp() -> None:
+    with pytest.raises(InvalidChecksum):
+        parse_codex32(BIP93_GENERAL_HRP["invalid_uppercase_hrp_checksum"])

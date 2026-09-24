@@ -767,6 +767,8 @@ def _validate_context(context: CorrectionContext) -> None:
         _validate_single_case_ascii(context.hrp)
         if context.hrp.lower() != context.hrp:
             raise ValueError("hrp must be a normalized application prefix")
+        if len(context.hrp) > 83:
+            raise ValueError(f"human-readable part exceeds 83 characters ({len(context.hrp)})")
         length = context.expected_length
         if length is not None:
             if isinstance(length, bool) or not isinstance(length, int):
