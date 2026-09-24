@@ -914,6 +914,7 @@ def _correct_complete(
             primary=frozenset(c.expected_length for c in contexts if c.expected_length is not None),
             deadline=deadline,
             capture_layers=capture_layers,
+            observed_text=damaged_text,
         )
         if result or not complete:
             return result, complete
