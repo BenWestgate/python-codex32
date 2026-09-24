@@ -1,9 +1,0 @@
-model = "gpt-6-astra"
-model_reasoning_effort = "light"
-sandbox_mode = "workspace-write"
-model_verbosity = "low"
-model_reasoning_summary = "concise"
-
-approval_policy = "untrusted"
-[sandbox_workspace_write]
-network_access = true
