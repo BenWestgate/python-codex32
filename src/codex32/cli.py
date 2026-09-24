@@ -562,6 +562,12 @@ def _correct(
     interpreted = _case_interpretation(value, immutable, context.profiles, None)
     if interpreted is not None:
         candidate, search_value, erased, immutable = interpreted
+        if (
+            candidate is not None
+            and isinstance(byte_length, int)
+            and len(candidate.artifact.text) != _ms_text_length(byte_length)
+        ):
+            raise _UsageError("--bytes does not match the corrected master-seed backup length.")
     else:
         candidate = None
     capture_layers: list[tuple[int, int]] = []
