@@ -17,7 +17,7 @@ from time import monotonic, perf_counter
 
 from codex32._alignment import _IncrementalSyndromes
 from codex32.bech32 import CHARSET, bech32_hrp_expand
-from codex32.bip93 import _checksum_for_encoded_length
+from codex32.bip93 import checksum_for_encoded_length
 from codex32.correction import (
     _LONG_SPEC,
     _SHORT_SPEC,
@@ -98,7 +98,7 @@ def public_case(
         "observed_body_length": len(text) - len(hrp + "1"),
         "target_body_lengths": {str(c.expected_length): c.expected_length - len(hrp + "1") for c in contexts},
         "expanded_length": len(bech32_hrp_expand(hrp)) + body,
-        "checksum_symbols": _checksum_for_encoded_length(hrp, body).length,
+        "checksum_symbols": checksum_for_encoded_length(hrp, body).length,
         "unknown": unknown,
         "delta": delta,
         "explicit_erasures": erasures,
