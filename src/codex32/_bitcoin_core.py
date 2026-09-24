@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
+import string
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,12 +12,18 @@ from time import sleep
 from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
+from codex32.bech32 import _u5_to_chars, convertbits
+from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
 from codex32.wallet import _descriptor_records, core_descriptors
 
 
 class BitcoinCoreError(Exception):
     pass
+
+
+class FingerprintMismatch(BitcoinCoreError):
+    """The recovered seed is not the wallet the operator's record describes."""
 
 
 _CHAINS = (
@@ -29,6 +37,25 @@ _CHAINS = (
 _ORIGIN = re.compile(r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]")
 _PRIVATE_MARKERS = ("xprv", "tprv")
 _PURPOSES = (44, 49, 84, 86)
+
+
+def parse_fingerprint(text: str) -> bytes:
+    """Read a master fingerprint as written on a wallet record: 8 hex digits, any case or spacing."""
+    compact = "".join(text.split())
+    if len(compact) != 8 or not all(character in string.hexdigits for character in compact):
+        raise ValueError("A master fingerprint is 8 characters, each 0-9 or A-F.")
+    return bytes.fromhex(compact)
+
+
+def _seed_identifiers(seed: bytes, fingerprint: bytes) -> tuple[str, str]:
+    """Return the backup identifiers that only this seed produces.
+
+    codex32 uses the first 20 bits of the BIP32 fingerprint. Bails' legacy
+    bails-wallet used the first 20 bits of RIPEMD-160 of the seed and offered
+    no way to change it.
+    """
+    legacy = hashlib.new("ripemd160", seed).digest()
+    return _fingerprint_identifier(fingerprint), _u5_to_chars(tuple(convertbits(legacy, 8, 5, pad=True)[:4]))
 
 
 @dataclass(frozen=True)
@@ -152,6 +179,26 @@ class BitcoinCore:
         if not isinstance(secret, MasterSeed):
             raise TypeError("wallet operations accept only MasterSeed")
         return self.fingerprint_seed(secret.seed_bytes)
+
+    def verify_identity(self, secret: MasterSeed, expected_fingerprint: bytes | None) -> None:
+        """Refuse a recovered seed that is not the recorded wallet, before any wallet is touched.
+
+        `expected_fingerprint` is what the operator typed from the wallet record.
+        `None` means there is no record: the backup identifier must then be one
+        derived from this seed, which catches mistakes but not replaced cards.
+        """
+        fingerprint = self.fingerprint(secret)
+        if expected_fingerprint is None:
+            if secret.header.identifier not in _seed_identifiers(secret.seed_bytes, fingerprint):
+                raise FingerprintMismatch(
+                    "This backup's identifier does not come from the recovered seed, so it cannot be "
+                    "checked without the wallet record. Bitcoin Core was not changed."
+                )
+        elif fingerprint != expected_fingerprint:
+            raise FingerprintMismatch(
+                "The recovered master fingerprint does not match the one from the wallet record. "
+                "Bitcoin Core was not changed."
+            )
 
     def _root_xpub(self, wallet: str) -> str:
         result = self._rpc("gethdkeys", wallet=wallet)
@@ -299,9 +346,16 @@ class BitcoinCore:
         ask: Callable[[str], str],
         tell: Callable[[str], None],
         *,
+        expected_fingerprint: bytes | None,
         account: int = 0,
         timestamp: int | Literal["now"] = "now",
     ) -> str:
+        """Import the recovered keys into one empty wallet the operator chooses.
+
+        The wallet record is checked first, so a wrong seed is refused before any
+        wallet is listed, created, unlocked or imported into.
+        """
+        self.verify_identity(secret, expected_fingerprint)
         while True:
             name = self._select(ask, tell)
             state = self._target(name)

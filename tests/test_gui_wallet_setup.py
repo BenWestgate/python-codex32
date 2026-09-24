@@ -253,7 +253,7 @@ def test_an_import_that_fails_before_the_library_arms_its_own_relock_still_locks
 
     monkeypatch.setattr(wallet_setup, "initialize", refuse)
     with pytest.raises(BitcoinCoreError, match="waiting"):
-        wallet_setup.fill(core, _SEED, "fresh", PASSPHRASE)
+        wallet_setup.fill(core, _SEED, "fresh", PASSPHRASE, expected_fingerprint=None)
     assert fake.called("walletlock")
     assert fake.wallets["fresh"].locked
 
@@ -263,7 +263,7 @@ def test_an_unlock_is_not_attempted_when_no_passphrase_was_given(
 ) -> None:
     core, fake = _client(monkeypatch, {"fresh": _Wallet()})
     monkeypatch.setattr(wallet_setup, "initialize", lambda *_a, **_k: "fresh")
-    assert wallet_setup.fill(core, _SEED, "fresh", "") == "fresh"
+    assert wallet_setup.fill(core, _SEED, "fresh", "", expected_fingerprint=None) == "fresh"
     assert not fake.called("walletpassphrase")
     assert not fake.called("walletlock")
 

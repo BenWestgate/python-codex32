@@ -45,8 +45,9 @@ The operator must:
   balances or history;
 - protect recovery cards and store shared cards in different trusted places;
 - confirm every newly recorded secret or share;
-- keep wallet records separate from shares and compare recovered fingerprints,
-  addresses, account, policy, and history with those records;
+- keep wallet records separate from shares, type the master fingerprint from
+  the record before import, and compare addresses, account, policy, and history
+  with those records;
 - compare every correction suggestion with the original codex32 string and stop
   when recovered information and wallet records disagree; and
 - never put recovery text in command arguments or transfer a master seed,
@@ -267,6 +268,19 @@ confirmed against the one connected, because the library asks which chain to use
 only while more than one answers. On screen a wallet is chosen by the position of
 its row, never by the text of its label, and Core's text is rendered without
 Pango markup, so a wallet name cannot hide or impersonate another.
+
+Every import, in the window and on the command line, goes through
+`BitcoinCore.initialize`, which requires the master fingerprint the operator
+typed from the wallet record. Core derives the recovered fingerprint
+statelessly, and a mismatch raises `FingerprintMismatch` before any wallet is
+listed, created, unlocked, or imported into. The prompt does not show the
+recovered value, so the operator compares by typing rather than by glancing. A
+new wallet shows its fingerprint once, then asks for it back from the written
+record. An operator without a record may continue only when the backup identifier is
+derived from the recovered seed: the codex32 fingerprint identifier or legacy
+Bails' RIPEMD-160 seed identifier. Both checks catch mistakes such as wrong or
+mixed cards; 32 bits, and 20 bits without a record, do not stop deliberately
+replaced cards.
 
 The program draws no entropy, opens no socket, starts no process of its own, and
 writes no file: no settings, no recent list, no log, and no clipboard write of

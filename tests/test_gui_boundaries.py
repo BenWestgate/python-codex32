@@ -56,6 +56,19 @@ def _imports(tree: ast.AST) -> set[str]:
     return found
 
 
+def _callers(tree: ast.Module, name: str) -> set[str]:
+    """Name the top-level functions whose bodies, callbacks included, call `name`."""
+    return {
+        function.name
+        for function in tree.body
+        if isinstance(function, ast.FunctionDef)
+        and any(
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name
+            for node in ast.walk(function)
+        )
+    }
+
+
 @pytest.mark.parametrize("path", _modules(), ids=lambda path: path.name)
 def test_the_gui_draws_no_entropy_opens_no_socket_and_touches_no_file(path: Path) -> None:
     imported = _imports(ast.parse(path.read_text()))
@@ -114,3 +127,11 @@ def test_the_gui_keeps_its_own_size_budget() -> None:
         for path in _modules()
     }
     assert sum(counts.values()) < BUDGET, counts
+
+
+def test_every_way_to_a_wallet_passes_the_wallet_record_check() -> None:
+    tree = ast.parse((_package() / "pages.py").read_text())
+
+    assert _callers(tree, "_wallets") == {"_fingerprint_page", "_wallet_page"}
+    assert _callers(tree, "_fingerprint_page") == {"_record_fingerprint", "_restore", "_fingerprint_page"}
+    assert _callers(tree, "_record_fingerprint") == {"_unshared_page", "_card_confirmed", "_fingerprint_page"}

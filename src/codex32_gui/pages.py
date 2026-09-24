@@ -76,6 +76,11 @@ _RESTORED = (
         "the beginning, so your balance and history are not complete until it has finished."
     ),
 )
+NO_RECORD = (
+    "Without the record, codex32 can only check that the backup identifier comes from this seed. "
+    "That works for backups made by Bails and catches wrong or mixed-up cards, but not cards "
+    "someone replaced on purpose."
+)
 CARDS_SAFE = (
     "Your cards are unharmed and still recover this wallet. Nothing was written onto them and "
     "nothing about them changed. When Bitcoin Core is ready, choose \u201cRestore my wallet\u201d "
@@ -647,7 +652,7 @@ def _unshared_page(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSe
         position=0,
         count=1,
         confirm=lambda text: _compare(secret.text, text),
-        after=lambda: _wallets(view, core, secret, "now"),
+        after=lambda: _record_fingerprint(view, core, secret),
         cancel=lambda page: _abandon(view, page),
     )
 
@@ -691,7 +696,7 @@ def _card_confirmed(
         if not isinstance(secret, MasterSeed):
             _failure(view, "That ceremony did not produce a Bitcoin master seed.")
             return
-        _wallets(view, core, secret, "now")
+        _record_fingerprint(view, core, secret)
 
     deliver = _then(view, page, follow, CARDS_SAFE)
     work.run(view, page, ceremony.finish, deliver)
@@ -705,6 +710,7 @@ def _wallets(
     core: BitcoinCore,
     secret: MasterSeed,
     timestamp: Timestamp,
+    expected: bytes | None,
     *,
     restoring: bool = False,
 ) -> None:
@@ -716,7 +722,7 @@ def _wallets(
         _then(
             view,
             page,
-            lambda found: _wallet_page(view, core, secret, found, timestamp, restoring),
+            lambda found: _wallet_page(view, core, secret, found, timestamp, expected, restoring),
             CARDS_SAFE,
         ),
     )
@@ -728,6 +734,7 @@ def _wallet_page(
     secret: MasterSeed,
     found: tuple[wallet_setup.Wallet, ...],
     timestamp: Timestamp,
+    expected: bytes | None,
     restoring: bool,
 ) -> Adw.NavigationPage:
     """Name the wallet that will hold the keys. The library confirms that name again."""
@@ -740,13 +747,13 @@ def _wallet_page(
         # By position, so that a wallet named like the create row is still reachable.
         index = _selected(buttons)
         if index == len(found):
-            view.push(_new_wallet_page(view, core, secret, timestamp, restoring))
+            view.push(_new_wallet_page(view, core, secret, timestamp, expected, restoring))
             return
         chosen = found[index]
         if chosen.locked:
-            view.push(_unlock_page(view, core, secret, chosen, timestamp, restoring))
+            view.push(_unlock_page(view, core, secret, chosen, timestamp, expected, restoring))
             return
-        _import(view, core, secret, chosen.name, "", timestamp, restoring)
+        _import(view, core, secret, chosen.name, "", timestamp, expected, restoring)
 
     content = _column(
         _title(
@@ -774,7 +781,9 @@ def _wallet_page(
         "Wallet",
         content,
         actions=_actions(
-            _button("Check again", lambda: _wallets(view, core, secret, timestamp)),
+            _button(
+                "Check again", lambda: _wallets(view, core, secret, timestamp, expected, restoring=restoring)
+            ),
             _button("Continue", go, style="suggested-action"),
         ),
     )
@@ -785,6 +794,7 @@ def _new_wallet_page(
     core: BitcoinCore,
     secret: MasterSeed,
     timestamp: Timestamp,
+    expected: bytes | None,
     restoring: bool = False,
 ) -> Adw.NavigationPage:
     """Ask Bitcoin Core for one blank wallet, with a passphrase the operator chooses."""
@@ -803,7 +813,7 @@ def _new_wallet_page(
 
         def job() -> Record:
             wallet_setup.create(core, chosen, passphrase)
-            return _record(core, secret, chosen, timestamp, passphrase)
+            return _record(core, secret, chosen, timestamp, expected, passphrase)
 
         work.run(
             view,
@@ -856,6 +866,7 @@ def _unlock_page(
     secret: MasterSeed,
     wallet: wallet_setup.Wallet,
     timestamp: Timestamp,
+    expected: bytes | None,
     restoring: bool = False,
 ) -> Adw.NavigationPage:
     """Unlock one already encrypted wallet, or step aside and let Bitcoin Core do it."""
@@ -884,7 +895,7 @@ def _unlock_page(
 
         def job() -> Record:
             wallet_setup.require_unlocked(core, wallet.name)
-            return _record(core, secret, wallet.name, timestamp)
+            return _record(core, secret, wallet.name, timestamp, expected)
 
         work.run(
             view,
@@ -894,7 +905,7 @@ def _unlock_page(
         )
 
     def go() -> None:
-        _import(view, core, secret, wallet.name, field.get_text(), timestamp, restoring)
+        _import(view, core, secret, wallet.name, field.get_text(), timestamp, expected, restoring)
 
     content = _column(
         _title(
@@ -921,9 +932,16 @@ def _unlock_page(
 
 
 def _record(
-    core: BitcoinCore, secret: MasterSeed, name: str, timestamp: Timestamp, passphrase: str = ""
+    core: BitcoinCore,
+    secret: MasterSeed,
+    name: str,
+    timestamp: Timestamp,
+    expected: bytes | None,
+    passphrase: str = "",
 ) -> Record:
-    final = wallet_setup.fill(core, secret, name, passphrase, timestamp=timestamp)
+    final = wallet_setup.fill(
+        core, secret, name, passphrase, expected_fingerprint=expected, timestamp=timestamp
+    )
     return Record(
         secret.header.identifier.upper(),
         final,
@@ -933,6 +951,109 @@ def _record(
     )
 
 
+def _record_fingerprint(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSeed) -> None:
+    """Have a new wallet's master fingerprint written on the wallet record, then typed back from it."""
+    page = _working(view, "Wallet record", "Asking Bitcoin Core for the master fingerprint…")
+
+    def follow(fingerprint: str) -> Adw.NavigationPage:
+        content = _column(
+            _title(
+                "Write this on your wallet record",
+                "Keep the record apart from every card. Restoring your wallet asks you to type this from it.",
+            ),
+            _rows(
+                "Wallet identity",
+                (
+                    ("Backup identifier", secret.header.identifier.upper()),
+                    ("Master fingerprint", fingerprint),
+                ),
+            ),
+        )
+        written = _button(
+            "I wrote it down",
+            lambda: _replace(view, _fingerprint_page(view, core, secret, "now")),
+            style="suggested-action",
+        )
+        return _page("Wallet record", content, actions=_actions(written), can_pop=False)
+
+    work.run(
+        view, page, lambda: wallet_setup.fingerprint(core, secret), _then(view, page, follow, CARDS_SAFE)
+    )
+
+
+def _fingerprint_page(
+    view: Adw.NavigationView,
+    core: BitcoinCore,
+    secret: MasterSeed,
+    timestamp: Timestamp,
+    *,
+    restoring: bool = False,
+    problem: str = "",
+) -> Adw.NavigationPage:
+    """Take the master fingerprint from the wallet record. The library refuses a mismatch."""
+    entered = Adw.EntryRow(title="Master fingerprint from your wallet record")
+    group = Adw.PreferencesGroup()
+    group.add(entered)
+    status = _note(problem, "error" if problem else "")
+
+    def check(expected: bytes | None) -> None:
+        page = _working(view, "Wallet record", "Checking the wallet record…")
+
+        def job() -> str:
+            try:
+                wallet_setup.verify(core, secret, expected)
+            except wallet_setup.FingerprintMismatch as error:
+                return str(error)
+            return ""
+
+        def follow(mismatch: str) -> Adw.NavigationPage | None:
+            if mismatch:
+                return _fingerprint_page(view, core, secret, timestamp, restoring=restoring, problem=mismatch)
+            _wallets(view, core, secret, timestamp, expected, restoring=restoring)
+            return None
+
+        work.run(view, page, job, _then(view, page, follow, CARDS_SAFE))
+
+    def go() -> None:
+        try:
+            expected = wallet_setup.parse_fingerprint(entered.get_text())
+        except ValueError as error:
+            _say(status, str(error), "error")
+            return
+        check(expected)
+
+    def without_record() -> None:
+        dialog = Adw.AlertDialog(heading="Restore without a wallet record?", body=NO_RECORD)
+        dialog.add_response("back", "Go back")
+        dialog.add_response("anyway", "Restore without it")
+        dialog.set_response_appearance("anyway", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("back")
+        dialog.connect("response", lambda _dialog, answer: check(None) if answer == "anyway" else None)
+        dialog.present(view)
+
+    buttons = [_button("Stop", lambda: view.replace([home(view)]))]
+    if restoring:
+        buttons.append(_button("I have no wallet record", without_record))
+    elif problem:
+        buttons.append(_button("Show it again", lambda: _record_fingerprint(view, core, secret)))
+    buttons.append(_button("Check and continue", go, style="suggested-action"))
+    content = _column(
+        _title(
+            "Type the master fingerprint",
+            "Copy it from the wallet record you keep apart from the cards.",
+        ),
+        group,
+        status,
+        _note(
+            "If it does not match, stop: these cards are not that wallet. Bitcoin Core has not been changed."
+            if restoring
+            else "This checks that your wallet record is right while it can still be fixed.",
+            "warning" if restoring else "",
+        ),
+    )
+    return _page("Wallet record", content, actions=_actions(*buttons), can_pop=False)
+
+
 def _import(
     view: Adw.NavigationView,
     core: BitcoinCore,
@@ -940,13 +1061,14 @@ def _import(
     name: str,
     passphrase: str,
     timestamp: Timestamp,
+    expected: bytes | None,
     restoring: bool = False,
 ) -> None:
     page = _working(view, "Bitcoin Core", f"Writing your keys into {name}…")
     work.run(
         view,
         page,
-        lambda: _record(core, secret, name, timestamp, passphrase),
+        lambda: _record(core, secret, name, timestamp, expected, passphrase),
         _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE),
     )
 
@@ -1410,7 +1532,7 @@ def _restore(view: Adw.NavigationView, core: BitcoinCore, secret: Secret) -> Non
     if not isinstance(secret, MasterSeed):
         _failure(view, "Only a Bitcoin master-seed backup can restore a wallet.")
         return
-    _wallets(view, core, secret, 0, restoring=True)
+    _replace(view, _fingerprint_page(view, core, secret, 0, restoring=True))
 
 
 def _start_restore(view: Adw.NavigationView) -> None:
