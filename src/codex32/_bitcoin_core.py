@@ -49,12 +49,11 @@ def parse_fingerprint(text: str) -> bytes:
 
 NO_RECORD_WARNING = (
     "Without the wallet record, nothing can prove these cards are the wallet you expect. Compare the "
-    "fingerprint with any other place it was kept, such as another wallet app, a hardware wallet or a "
-    "descriptor backup. After restoring, let Bitcoin Core finish scanning, and check that the balance, "
-    "past payments and addresses are ones you recognise before sending money to this wallet. Someone who "
-    "replaced the cards can give their wallet a history too, so if you do not know what this wallet "
-    "should hold, have someone you trust check it first. Once you are sure, write the fingerprint on a "
-    "new wallet record."
+    "fingerprint with any other copy, such as another wallet app, a hardware wallet or a descriptor backup. "
+    "After restoring, let Bitcoin Core finish scanning and check that the balance, past payments and "
+    "addresses are ones you recognise before sending money here. Replaced cards can come with a history "
+    "too: if you do not know what this wallet should hold, have someone you trust check it. Once you are "
+    "sure, write the fingerprint on a new wallet record."
 )
 
 
@@ -73,12 +72,10 @@ def identifier_note(origin: str | None) -> str:
 
 
 def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
-    """Name the program whose rule derived this backup's identifier from its seed, if any.
+    """Name the rule that derived this backup's identifier from its seed, if any.
 
-    codex32 uses the first 20 bits of the BIP32 fingerprint. Bails used the first
-    20 bits of RIPEMD-160 of the seed (SHA-256 in its mid-2023 alpha) and checked
-    only the first three characters, leaving the fourth free for re-sharing. A
-    match catches mixed-up cards; it cannot catch cards replaced on purpose.
+    codex32 uses the BIP32 fingerprint. Bails used RIPEMD-160 of the seed (SHA-256
+    in its mid-2023 alpha) and checked three characters, keeping the fourth for re-sharing.
     """
     identifier = secret.header.identifier
     if identifier == _fingerprint_identifier(fingerprint):
@@ -215,10 +212,7 @@ class BitcoinCore:
     def verify_identity(self, secret: MasterSeed, expected_fingerprint: bytes | None) -> None:
         """Refuse a recovered seed that is not the recorded wallet, before any wallet is touched.
 
-        `expected_fingerprint` is what the operator typed from the wallet record.
-        `None` is the operator's explicit choice to restore without a record,
-        made after being shown the recovered fingerprint and `identifier_origin`;
-        nothing is checked then.
+        `None` is the operator's explicit choice to restore without a record; nothing is checked.
         """
         if expected_fingerprint is None:
             return
@@ -378,11 +372,7 @@ class BitcoinCore:
         account: int = 0,
         timestamp: int | Literal["now"] = "now",
     ) -> str:
-        """Import the recovered keys into one empty wallet the operator chooses.
-
-        The wallet record is checked first, so a wrong seed is refused before any
-        wallet is listed, created, unlocked or imported into.
-        """
+        """Check the wallet record, then import the keys into one empty wallet the operator chooses."""
         self.verify_identity(secret, expected_fingerprint)
         while True:
             name = self._select(ask, tell)

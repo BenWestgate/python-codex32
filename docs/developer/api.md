@@ -644,7 +644,8 @@ reports as encrypted. Before any of this, `initialize` calls `verify_identity`
 with the required `expected_fingerprint`: bytes typed from the wallet record
 (read with `parse_fingerprint`), or `None`, the operator's explicit choice to
 restore without a record after seeing the fingerprint and `identifier_origin`.
-A mismatch raises `FingerprintMismatch` before any wallet RPC. Master-fingerprint display is likewise delegated to Core:
+A mismatch raises `FingerprintMismatch` before any wallet RPC.
+Master-fingerprint display is likewise delegated to Core:
 a stateless root P2PKH descriptor is normalized, `deriveaddresses` derives its
 address, and `validateaddress` returns the script hash whose first four bytes are
 the BIP32 fingerprint.
