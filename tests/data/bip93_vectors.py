@@ -79,6 +79,31 @@ VECTOR_6 = {
     "codex32_peev": "cl10peevst6cqh0wu7p5ssjyf4z4ez42ks9jlt3zneju9uuypr2hddak6tlqsjhsks4laxts8q",
 }
 
+# BIP-93 generalized-HRP draft, bitcoin/bips bip93-generalize-hrp @ 01374bf.
+BIP93_GENERAL_HRP = {
+    "share_a": "test_vector12spana320zyxwvutsrqpnmlkjhgfedca320zyxwvutsrqpnmlkjhgfedca304ppsqh4l7v3dh",
+    "share_c": "test_vector12spancacdefghjklmnpqrstuvwxyz023acdefghjklmnpqrstuvwxyz023jxmjy7q9xl7d3ul",
+    "derived_d": "test_vector12spandll4f8jlh4e5vdvuldlfxu2jhdnll4f8jlh4e5vdvuldlfxu2jhdnx3pe3yqzdl7p30y",
+    "secret_s": "test_vector12spans6xqguzttxkeqnjsjzv4jv3nz5k6xqguzttxkeqnjsjzv4jv3nz5kdf37v5qm2l7l3az",
+    "valid_83": (
+        "a83characterlongcodex32humanreadablepartforsecretsharewiththedigit1andthelettersbio"
+        "10keyss9mfjjk25y05e3nq"
+    ),
+    "invalid_gap_regular": (
+        "test_vector12spans6xqguzttxkeqnjsjzv4jv3nz5k6xqguzttxkeqnjsjzv4jv3nz5kp0f0tlr2cxh0t"
+    ),
+    "invalid_gap_long": (
+        "test_vector12spans6xqguzttxkeqnjsjzv4jv3nz5k6xqguzttxkeqnjsjzv4jv3nz5c2m7mxmk8s5qecp"
+    ),
+    "invalid_uppercase_hrp_checksum": (
+        "CL10PEEVST6CQH0WU7P5SSJYF4Z4EZ42KS9JLT3ZNEJU9UUYPR2HDDAK6TLQS3J5AYX4Y08079"
+    ),
+    "invalid_84": (
+        "a84characterslongcodex32humanreadablepartforsecretsharewiththedigit1andthelettersbio"
+        "10keyss9hqxu3pxsnkdkth"
+    ),
+}
+
 
 VALID_CODEX32 = [
     "A12UEL5LLGCHJ4UJCQVHG",
@@ -116,8 +141,6 @@ INVALID_CODEX32_LONG = {
     + "12fauxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx836hdd09mhkhkhx",  # HRP character out of range
     "\x80"
     + "12fauxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxlhf5ywnkmk4r3tc",  # HRP character out of range
-    # HRP exceeds 83 characters (also exceeds the overall max length)
-    "a1003characterslonghumanreadablepartthatcontainsthenumber1,theexcludedcharactersbio,andeveryus-asciicharacterin[33-126]!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~12fauxxru38cppmlpu0t6l",
     "y12bfauxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxt3y5fewy4gnw2hs",  # Invalid data character
     "lt12ifauxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxjxd0ehq868vm3zl",  # Invalid data character
     "in12fauxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxvgegljrsvs5w9q",  # Too short checksum
