@@ -195,10 +195,12 @@ before printing any candidate text, metadata, fingerprint, or residue addends.
 It then prints a conspicuous warning covering both deliberate completion of
 newly transcribed data and recovery with many missing characters. Literal
 uppercase `YES` is required before disclosure; other case variants, blank input,
-or EOF terminate the command with status 1. Redirected damaged data may still
-reach this gate, but disclosure requires an interactive terminal channel. If no
-such channel is available, the sole message is `codex32: interactive confirmation
-required` (or `ms32:`). Output formatting and `--plain` cannot bypass the gate.
+or EOF terminate standalone `correct` with status 3 and correction embedded in
+another workflow with status 1. Redirected damaged data may still reach this
+gate, but disclosure requires an interactive terminal channel. If no such
+channel is available, the sole message is `codex32: interactive confirmation
+required` (or `ms32:`), with the same command-specific status. Output formatting
+and `--plain` cannot bypass the gate.
 Existing whole-card `[y/N]` acceptance remains required after disclosure when a
 workflow will consume the corrected artifact. `correct` only displays the
 suggestion, so it has no second acceptance prompt. The gate does not verify the
