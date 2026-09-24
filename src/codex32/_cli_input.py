@@ -13,9 +13,9 @@ from typing import Any, Literal, cast
 from codex32.bip93 import (
     Secret,
     Share,
-    _checksum_for_encoded_length,
     _validate_basis_prefix,
     _validate_recovery_prefix,
+    checksum_for_encoded_length,
     parse_codex32,
     recover_secret,
 )
@@ -393,7 +393,7 @@ def _case_interpretation(
         candidate = None
     else:
         bits = (
-            5 * _checksum_for_encoded_length(artifact.hrp, len(artifact.text) - len(artifact.hrp) - 1).length
+            5 * checksum_for_encoded_length(artifact.hrp, len(artifact.text) - len(artifact.hrp) - 1).length
         )
         proposed = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=bits)
         candidate = proposed if allowed is None or allowed(proposed) else None

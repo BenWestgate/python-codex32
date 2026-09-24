@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Never, SupportsIndex, cast
 
 from codex32._bip32 import _valid_root
-from codex32.bech32 import CHARSET, _u5_to_chars, convertbits
+from codex32.bech32 import CHARSET, convertbits, u5_to_chars
 from codex32.bip93 import (
     IDX_SORT,
     Header,
@@ -112,7 +112,7 @@ def _selection(threshold: int, share_count: object, indices: Sequence[str] | str
 
 
 def _random_identifier() -> str:
-    return _u5_to_chars(tuple(value & 31 for value in secrets.token_bytes(4)))
+    return u5_to_chars(tuple(value & 31 for value in secrets.token_bytes(4)))
 
 
 def _fingerprint_identifier(fingerprint: bytes) -> str:
@@ -120,7 +120,7 @@ def _fingerprint_identifier(fingerprint: bytes) -> str:
         raise TypeError("fingerprint must be bytes")
     if len(fingerprint) != 4:
         raise ValueError("fingerprint must contain four bytes")
-    return _u5_to_chars(tuple(convertbits(fingerprint, 8, 5, pad=True)[:4]))
+    return u5_to_chars(tuple(convertbits(fingerprint, 8, 5, pad=True)[:4]))
 
 
 def _random_share(profile: Profile, threshold: int, identifier: str, index: str, length: int) -> Share:

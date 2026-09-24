@@ -32,8 +32,8 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.bech32 import _chars_to_u5, bech32_encode
-from codex32.checksums import _CODEX32, _CODEX32_LONG
+from codex32.bech32 import bech32_encode, chars_to_u5
+from codex32.checksums import CODEX32, CODEX32_LONG
 from codex32.cli import main, ms_main
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
@@ -316,9 +316,9 @@ def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> N
     ),
 )
 def test_check_reports_profile_lengths_for_people(hrp: str, payload_length: int, message: str) -> None:
-    body = _chars_to_u5("0tests" + "q" * payload_length)
+    body = chars_to_u5("0tests" + "q" * payload_length)
     expanded_body_length = 2 * len(hrp) + 1 + len(body)
-    checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
+    checksum = CODEX32 if expanded_body_length <= 80 else CODEX32_LONG
     result = _invoke(["check"], bech32_encode(hrp, body, checksum))
 
     assert result.exit_code == 2
