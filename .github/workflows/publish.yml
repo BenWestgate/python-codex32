@@ -6,21 +6,51 @@ on:
 
 env:
   SOURCE_DATE_EPOCH: "1763060600"
+  BITCOIN_CORE_ARCHIVE: bitcoin-32.0rc2-x86_64-linux-gnu.tar.gz
+  BITCOIN_CORE_SHA256: 0255103718033e6aee15fa944717fc277e047b845bff1e7408af0ea732d8d0c1
+  BITCOIN_CORE_URL: https://bitcoincore.org/bin/bitcoin-core-32.0/test.rc2
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      python_versions: ${{ steps.metadata.outputs.python_versions }}
+      version: ${{ steps.metadata.outputs.version }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
-      - run: >-
-          python -c "import os,tomllib;
-          version=tomllib.load(open('pyproject.toml','rb'))['project']['version'];
-          assert os.environ['GITHUB_REF_NAME'] == f'v{version}'"
+      - id: metadata
+        name: Check release metadata
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import tomllib
+
+          with open("pyproject.toml", "rb") as file:
+              project = tomllib.load(file)["project"]
+          version = project["version"]
+          if os.environ["GITHUB_REF_NAME"] != f"v{version}":
+              raise SystemExit("release tag does not match package version")
+          prefix = "Programming Language :: Python :: "
+          versions = sorted(
+              classifier.removeprefix(prefix)
+              for classifier in project["classifiers"]
+              if classifier.startswith(prefix) and classifier.removeprefix(prefix).count(".") == 1
+          )
+          if not versions:
+              raise SystemExit("no supported Python versions are classified")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+              output.write(f"python_versions={json.dumps(versions, separators=(',', ':'))}\n")
+          PY
       - run: >-
           python -m pip install --require-hashes
           -r requirements/release-build-dependencies.txt
@@ -33,28 +63,196 @@ jobs:
           tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
             -C normalized-sdist -cf - "codex32-${GITHUB_REF_NAME#v}" | gzip -n > "$archive.new"
           mv "$archive.new" "$archive"
-      - name: Attach distributions to the GitHub release
-        run: gh release upload "$GITHUB_REF_NAME" dist/*
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Record built artifact provenance
+        run: |
+          mkdir provenance
+          git rev-parse HEAD > provenance/source-commit.txt
+          sha256sum dist/* > provenance/artifact-sha256.txt
+          python -m pip freeze --all > provenance/build-environment.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: distributions
           path: dist/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-provenance
+          path: provenance/
+
+  supported-matrix:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ${{ fromJSON(needs.build.outputs.python_versions) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install --require-hashes -r requirements/cli-build-dependencies.txt
+      - name: Install legacy wallet-test oracle when present
+        shell: bash
+        run: |
+          if [[ -f requirements/test-wallet-dependencies.txt ]]; then
+            python -m pip install --no-build-isolation --require-hashes \
+              -r requirements/test-wallet-dependencies.txt
+          fi
+      - run: python -m pip install --no-build-isolation -e '.[dev]'
+      - run: python -m pip check
+      - run: python -m pytest -q
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: distributions
+          path: dist/
+      - name: Install and test the exact wheel and sdist
+        shell: bash
+        run: |
+          for artifact in dist/codex32-*.whl dist/codex32-*.tar.gz; do
+            python tools/verify_wheel_environment.py --artifact "$artifact"
+          done
+      - name: Record qualification dependencies
+        shell: bash
+        run: >-
+          python -m pip freeze --all >
+          "qualification-${RUNNER_OS}-${{ matrix.python-version }}.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qualification-${{ runner.os }}-${{ matrix.python-version }}
+          path: qualification-*.txt
+
+  quality:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install --require-hashes -r requirements/cli-build-dependencies.txt
+      - name: Install legacy wallet-test oracle when present
+        run: |
+          if [[ -f requirements/test-wallet-dependencies.txt ]]; then
+            python -m pip install --no-build-isolation --require-hashes \
+              -r requirements/test-wallet-dependencies.txt
+          fi
+      - run: python -m pip install --no-build-isolation -e '.[dev]'
+      - run: python -O -m pytest -q
+      - run: python -m mypy src/codex32
+      - run: python -m ruff check .
+      - run: python -m ruff format --check .
+      - run: python tools/differential_correction.py --verify
+      - name: Run legacy wallet differential when present
+        run: |
+          if [[ -f tools/differential_wallet.py ]]; then
+            python tools/differential_wallet.py --verify
+          fi
+
+  bitcoin-core:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - name: Download pinned Bitcoin Core
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$RUNNER_TEMP/$BITCOIN_CORE_ARCHIVE" \
+            "$BITCOIN_CORE_URL/$BITCOIN_CORE_ARCHIVE"
+          echo "$BITCOIN_CORE_SHA256  $RUNNER_TEMP/$BITCOIN_CORE_ARCHIVE" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/$BITCOIN_CORE_ARCHIVE" -C "$RUNNER_TEMP"
+      - name: Run real-Core release integration
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          core="$RUNNER_TEMP/bitcoin-32.0rc2/bin"
+          "$core/bitcoind" --version | head -1 | tee bitcoin-core-version.txt
+          python tools/bitcoin_core_regtest.py \
+            --bitcoind "$core/bitcoind" \
+            --bitcoin-cli "$core/bitcoin-cli"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bitcoin-core-provenance
+          path: bitcoin-core-version.txt
 
   publish:
-    needs: build
+    needs: [build, supported-matrix, quality, bitcoin-core]
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/codex32
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: distributions
           path: dist/
-      - name: Publish distributions to PyPI
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: build-provenance
+          path: provenance/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: bitcoin-core-provenance
+          path: provenance/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: qualification-*
+          path: provenance/dependencies/
+          merge-multiple: true
+      - name: Verify qualified artifact bytes
+        run: sha256sum --check provenance/artifact-sha256.txt
+      - name: Record release qualification
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          MATRIX_RESULT: ${{ needs.supported-matrix.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          CORE_RESULT: ${{ needs.bitcoin-core.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          hashes = {}
+          for line in Path("provenance/artifact-sha256.txt").read_text().splitlines():
+              digest, path = line.split(maxsplit=1)
+              hashes[Path(path).name] = digest
+          record = {
+              "source_commit": Path("provenance/source-commit.txt").read_text().strip(),
+              "tag": os.environ["GITHUB_REF_NAME"],
+              "version": os.environ["RELEASE_VERSION"],
+              "bitcoin_core": Path("provenance/bitcoin-core-version.txt").read_text().strip(),
+              "artifact_sha256": hashes,
+              "qualification": {
+                  "supported_matrix": os.environ["MATRIX_RESULT"],
+                  "quality": os.environ["QUALITY_RESULT"],
+                  "bitcoin_core": os.environ["CORE_RESULT"],
+              },
+          }
+          Path("provenance/release-qualification.json").write_text(
+              json.dumps(record, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Bundle release provenance
+        run: >-
+          tar -czf "codex32-${{ needs.build.outputs.version }}-provenance.tar.gz"
+          -C provenance .
+      - name: Attach qualified distributions and provenance
+        run: >-
+          gh release upload "$GITHUB_REF_NAME" dist/*
+          "codex32-${{ needs.build.outputs.version }}-provenance.tar.gz" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish qualified distributions to PyPI
         uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26 # v1.14.2
+        with:
+          packages-dir: dist/
