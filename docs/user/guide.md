@@ -32,6 +32,12 @@ disclosure, workflows that consume the repaired artifact ask the usual `[y/N]`
 whole-card confirmation. `correct` only reports a suggestion, so it does not ask
 that second question. A checksum cannot make weak input secure.
 
+The `correct` exit status distinguishes outcomes for scripts: `0` means the
+input is already valid, `1` means a suggestion was emitted, `2` means the
+command or input syntax was invalid, and `3` means no usable suggestion was
+emitted. Status `3` includes incomplete or ambiguous searches, declined
+disclosure, and an unavailable dependency needed to present a suggestion.
+
 Choose the setup that fits you:
 
 - **Recommended: dedicated online spending wallet — easiest.** A normally

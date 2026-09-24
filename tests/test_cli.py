@@ -1713,7 +1713,7 @@ def test_cli_rejects_statistically_inadmissible_structural_burst() -> None:
 
     result = _invoke(["correct"], damaged)
 
-    assert result.exit_code == 1
+    assert result.exit_code == 3
     assert "No valid correction found" in result.stderr
 
 
@@ -1724,7 +1724,7 @@ def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> 
 
     assert len("".join(damaged.split())) == 48
     assert damaged.count("?") == 16
-    assert result.exit_code == 1
+    assert result.exit_code == 3
     assert "No valid correction found" in result.stderr
 
 
@@ -1766,7 +1766,7 @@ def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     with patch("codex32.cli._correction_candidates", return_value=((), False, 0.0, False)):
         result = _invoke(["correct"], damaged)
 
-    assert result.exit_code != 0
+    assert result.exit_code == 3
     assert result.stdout == ""
     assert "did not complete" in result.stderr and original not in result.stderr
 
@@ -1788,7 +1788,7 @@ def test_correction_options_control_lengths_deadline_and_search_envelope(
     with patch("codex32.indel._search_many", return_value=((), True)) as search:
         result = _invoke(["correct", *options], damaged)
 
-    assert result.exit_code == 1 and result.stdout == ""
+    assert result.exit_code == 3 and result.stdout == ""
     assert search.call_count == 1
     contexts, observed = search.call_args.args
     assert observed == damaged
@@ -1815,7 +1815,7 @@ def test_fixed_correction_repairs_legacy_cl_header_and_residue_reverse_positions
     residue = _invoke(["correct", "--residue"], "2ppjkw73qdjvc")
 
     assert fixed.exit_code == 1 and original in fixed.stderr
-    assert residue.exit_code == 0
+    assert residue.exit_code == 1
     assert "Add x at position 38, counting backward from the end." in residue.stdout
 
 
@@ -1848,7 +1848,7 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
     bip39 = _invoke(["correct"], BIP39_12W_ZERO)
     assert removed.exit_code == 2
     assert "Remove or correct these arguments: --prefix" in removed.stderr
-    assert damaged_prefix.exit_code == 1
+    assert damaged_prefix.exit_code == 3
     assert bip39.exit_code == 0 and "already valid" in bip39.stdout
 
 
@@ -1873,7 +1873,7 @@ def test_correct_suggests_the_majority_case_for_mixed_case_damage() -> None:
 def test_correction_hides_internal_candidate_reparse_failures() -> None:
     result = _invoke(["correct"], "ms12auxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg")
 
-    assert result.exit_code != 0
+    assert result.exit_code == 3
     assert result.stdout == ""
     assert result.stderr.strip() in {
         "codex32 correct: No valid correction found. Check the original backup.",
