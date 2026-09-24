@@ -231,7 +231,8 @@ its public wallet data with the separate wallet record.
 
 5. Type the master fingerprint from the wallet record. A mismatch stops before
    Bitcoin Core is changed. Press Enter with nothing typed only if there is no
-   record; then only a seed-derived backup identifier is accepted.
+   record; codex32 then shows the recovered fingerprint and what the backup
+   identifier says, and asks before restoring.
 6. Select and confirm that wallet. If it is locked, follow the displayed
    Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
    It imports the private descriptors, verifies the public set, and relocks an

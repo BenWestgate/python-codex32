@@ -13,8 +13,9 @@ and evidence.
 4. Wallet setup uses the original ceremony result or a validated recovered seed.
    `BitcoinCore.initialize` requires the master fingerprint typed from the
    wallet record and refuses a mismatch before any wallet is listed, created,
-   unlocked, or imported into. Without a record, the backup identifier must be
-   derived from the recovered seed.
+   unlocked, or imported into. Restoring without a record is an explicit
+   operator choice, made after seeing the recovered fingerprint and whether the
+   backup identifier was derived from the seed.
 5. Correction shares one mass bound and deadline across target lengths. The
    public API fails closed on incomplete required work; CLI searches may return
    one primary-best-so-far eligible candidate at the deadline. Incomplete

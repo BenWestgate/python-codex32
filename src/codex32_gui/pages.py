@@ -76,11 +76,6 @@ _RESTORED = (
         "the beginning, so your balance and history are not complete until it has finished."
     ),
 )
-NO_RECORD = (
-    "Without the record, codex32 can only check that the backup identifier comes from this seed. "
-    "That works for backups made by Bails and catches wrong or mixed-up cards, but not cards "
-    "someone replaced on purpose."
-)
 CARDS_SAFE = (
     "Your cards are unharmed and still recover this wallet. Nothing was written onto them and "
     "nothing about them changed. When Bitcoin Core is ready, choose \u201cRestore my wallet\u201d "
@@ -652,7 +647,7 @@ def _unshared_page(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSe
         position=0,
         count=1,
         confirm=lambda text: _compare(secret.text, text),
-        after=lambda: _record_fingerprint(view, core, secret),
+        after=lambda: _identity(view, core, secret),
         cancel=lambda page: _abandon(view, page),
     )
 
@@ -696,7 +691,7 @@ def _card_confirmed(
         if not isinstance(secret, MasterSeed):
             _failure(view, "That ceremony did not produce a Bitcoin master seed.")
             return
-        _record_fingerprint(view, core, secret)
+        _identity(view, core, secret)
 
     deliver = _then(view, page, follow, CARDS_SAFE)
     work.run(view, page, ceremony.finish, deliver)
@@ -939,9 +934,7 @@ def _record(
     expected: bytes | None,
     passphrase: str = "",
 ) -> Record:
-    final = wallet_setup.fill(
-        core, secret, name, passphrase, expected_fingerprint=expected, timestamp=timestamp
-    )
+    final = wallet_setup.fill(core, secret, name, passphrase, expected=expected, timestamp=timestamp)
     return Record(
         secret.header.identifier.upper(),
         final,
@@ -951,34 +944,48 @@ def _record(
     )
 
 
-def _record_fingerprint(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSeed) -> None:
-    """Have a new wallet's master fingerprint written on the wallet record, then typed back from it."""
+def _identity(
+    view: Adw.NavigationView, core: BitcoinCore, secret: MasterSeed, restoring: bool = False
+) -> None:
+    """Show the recovered identity: for a new wallet's record, or for a restore without one."""
     page = _working(view, "Wallet record", "Asking Bitcoin Core for the master fingerprint…")
 
-    def follow(fingerprint: str) -> Adw.NavigationPage:
-        content = _column(
-            _title(
-                "Write this on your wallet record",
-                "Keep the record apart from every card. Restoring your wallet asks you to type this from it.",
-            ),
-            _rows(
-                "Wallet identity",
-                (
-                    ("Backup identifier", secret.header.identifier.upper()),
-                    ("Master fingerprint", fingerprint),
+    def follow(identity: tuple[str, str]) -> Adw.NavigationPage:
+        fingerprint, note = identity
+        shown = (("Backup identifier", secret.header.identifier.upper()), ("Master fingerprint", fingerprint))
+        if not restoring:
+            return _page(
+                "Wallet record",
+                _column(
+                    _title("Write this on your wallet record", "Next, type it back."),
+                    _rows("Identity", shown),
                 ),
-            ),
+                actions=_actions(
+                    _button(
+                        "I wrote it down",
+                        lambda: _replace(view, _fingerprint_page(view, core, secret, "now")),
+                        style="suggested-action",
+                    )
+                ),
+                can_pop=False,
+            )
+        content = _column(
+            _title("Restore without a wallet record?", "Nothing here can prove these cards are your wallet."),
+            _rows("What the cards say", shown),
+            _note(note, "warning"),
+            _note(wallet_setup.NO_RECORD_WARNING, "warning"),
         )
-        written = _button(
-            "I wrote it down",
-            lambda: _replace(view, _fingerprint_page(view, core, secret, "now")),
-            style="suggested-action",
+        back = _button(
+            "Go back", lambda: _replace(view, _fingerprint_page(view, core, secret, 0, restoring=True))
         )
-        return _page("Wallet record", content, actions=_actions(written), can_pop=False)
+        anyway = _button(
+            "Restore anyway",
+            lambda: _wallets(view, core, secret, 0, None, restoring=True),
+            style="destructive-action",
+        )
+        return _page("No wallet record", content, actions=_actions(back, anyway), can_pop=False)
 
-    work.run(
-        view, page, lambda: wallet_setup.fingerprint(core, secret), _then(view, page, follow, CARDS_SAFE)
-    )
+    work.run(view, page, lambda: wallet_setup.identity(core, secret), _then(view, page, follow, CARDS_SAFE))
 
 
 def _fingerprint_page(
@@ -996,7 +1003,12 @@ def _fingerprint_page(
     group.add(entered)
     status = _note(problem, "error" if problem else "")
 
-    def check(expected: bytes | None) -> None:
+    def go() -> None:
+        try:
+            expected = wallet_setup.parse_fingerprint(entered.get_text())
+        except ValueError as error:
+            _say(status, str(error), "error")
+            return
         page = _working(view, "Wallet record", "Checking the wallet record…")
 
         def job() -> str:
@@ -1014,33 +1026,17 @@ def _fingerprint_page(
 
         work.run(view, page, job, _then(view, page, follow, CARDS_SAFE))
 
-    def go() -> None:
-        try:
-            expected = wallet_setup.parse_fingerprint(entered.get_text())
-        except ValueError as error:
-            _say(status, str(error), "error")
-            return
-        check(expected)
-
-    def without_record() -> None:
-        dialog = Adw.AlertDialog(heading="Restore without a wallet record?", body=NO_RECORD)
-        dialog.add_response("back", "Go back")
-        dialog.add_response("anyway", "Restore without it")
-        dialog.set_response_appearance("anyway", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.set_default_response("back")
-        dialog.connect("response", lambda _dialog, answer: check(None) if answer == "anyway" else None)
-        dialog.present(view)
-
     buttons = [_button("Stop", lambda: view.replace([home(view)]))]
     if restoring:
-        buttons.append(_button("I have no wallet record", without_record))
+        buttons.append(
+            _button("I have no wallet record", lambda: _identity(view, core, secret, restoring=True))
+        )
     elif problem:
-        buttons.append(_button("Show it again", lambda: _record_fingerprint(view, core, secret)))
+        buttons.append(_button("Show it again", lambda: _identity(view, core, secret)))
     buttons.append(_button("Check and continue", go, style="suggested-action"))
     content = _column(
         _title(
-            "Type the master fingerprint",
-            "Copy it from the wallet record you keep apart from the cards.",
+            "Type the master fingerprint", "Copy it from the wallet record you keep apart from the cards."
         ),
         group,
         status,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import subprocess
@@ -10,8 +9,14 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError, FingerprintMismatch, parse_fingerprint
-from codex32.bech32 import _u5_to_chars, convertbits
+from codex32._bitcoin_core import (
+    BitcoinCore,
+    BitcoinCoreError,
+    FingerprintMismatch,
+    identifier_note,
+    identifier_origin,
+    parse_fingerprint,
+)
 from codex32.bip93 import parse_codex32
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
@@ -729,11 +734,7 @@ def test_parse_fingerprint_rejects_other_text(text: str) -> None:
         parse_fingerprint(text)
 
 
-@pytest.mark.parametrize("expected", (bytes.fromhex("3f3521a7"), None))
-def test_identity_mismatch_stops_before_any_wallet_call(
-    expected: bytes | None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_identity_mismatch_stops_before_any_wallet_call(monkeypatch: pytest.MonkeyPatch) -> None:
     rpc = _ImportRPC(locked=False)
     monkeypatch.setattr(
         BitcoinCore,
@@ -743,17 +744,38 @@ def test_identity_mismatch_stops_before_any_wallet_call(
 
     with pytest.raises(FingerprintMismatch, match="Bitcoin Core was not changed"):
         BitcoinCore("bitcoin-cli", "main", 300000).initialize(
-            _SEED, lambda _prompt: "yes", lambda _message: None, expected_fingerprint=expected
+            _SEED,
+            lambda _prompt: "yes",
+            lambda _message: None,
+            expected_fingerprint=bytes.fromhex("3f3521a7"),
         )
     assert rpc.calls == []
 
 
-def test_without_a_record_only_seed_derived_identifiers_pass() -> None:
-    client = BitcoinCore("bitcoin-cli", "main", 300000)
-    seed = _SEED.seed_bytes
-    legacy = _u5_to_chars(tuple(convertbits(hashlib.new("ripemd160", seed).digest(), 8, 5, pad=True)[:4]))
+def test_no_record_is_the_operators_choice_and_checks_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unused(_client: BitcoinCore, _secret: MasterSeed) -> bytes:
+        raise AssertionError("no fingerprint is compared without a record")
 
-    for identifier in (_fingerprint_identifier(_FINGERPRINT), legacy):
-        client.verify_identity(MasterSeed.from_seed(seed, identifier=identifier), None)
-    with pytest.raises(FingerprintMismatch, match="without the wallet record"):
-        client.verify_identity(_SEED, None)
+    monkeypatch.setattr(BitcoinCore, "fingerprint", unused)
+    BitcoinCore("bitcoin-cli", "main", 300000).verify_identity(_SEED, None)
+
+
+# Frozen from Bails' own ms32.seed_identifier for this seed: master (RIPEMD-160) and the
+# June 2023 alpha (SHA-256). Bails checked three characters and kept the fourth for re-sharing.
+_BAILS_SEED = bytes(range(16))
+
+
+@pytest.mark.parametrize(
+    ("identifier", "origin"),
+    (
+        (_fingerprint_identifier(_FINGERPRINT), "codex32"),
+        ("d9k8", "Bails"),
+        ("d9kq", "Bails"),
+        ("hezu", "Bails alpha"),
+        ("test", None),
+    ),
+)
+def test_identifier_origin_names_the_rule_that_made_it(identifier: str, origin: str | None) -> None:
+    secret = MasterSeed.from_seed(_BAILS_SEED, identifier=identifier)
+    assert identifier_origin(secret, _FINGERPRINT) == origin
+    assert ("matches this seed" in identifier_note(origin)) is (origin is not None)

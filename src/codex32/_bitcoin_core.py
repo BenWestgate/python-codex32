@@ -47,15 +47,47 @@ def parse_fingerprint(text: str) -> bytes:
     return bytes.fromhex(compact)
 
 
-def _seed_identifiers(seed: bytes, fingerprint: bytes) -> tuple[str, str]:
-    """Return the backup identifiers that only this seed produces.
+NO_RECORD_WARNING = (
+    "Without the wallet record, nothing can prove these cards are the wallet you expect. Compare the "
+    "fingerprint with any other place it was kept, such as another wallet app, a hardware wallet or a "
+    "descriptor backup. After restoring, let Bitcoin Core finish scanning, and check that the balance, "
+    "past payments and addresses are ones you recognise before sending money to this wallet. Someone who "
+    "replaced the cards can give their wallet a history too, so if you do not know what this wallet "
+    "should hold, have someone you trust check it first. Once you are sure, write the fingerprint on a "
+    "new wallet record."
+)
 
-    codex32 uses the first 20 bits of the BIP32 fingerprint. Bails' legacy
-    bails-wallet used the first 20 bits of RIPEMD-160 of the seed and offered
-    no way to change it.
+
+def identifier_note(origin: str | None) -> str:
+    """Say what `identifier_origin` found, for an operator restoring without a record."""
+    if origin is None:
+        return (
+            "The backup identifier was not made from this seed. That is normal for split backups made by "
+            "codex32, but Bails made every identifier from its seed, so for a Bails backup these are the "
+            "wrong or mixed-up cards."
+        )
+    return (
+        f"The backup identifier matches this seed ({origin} rule). That rules out most mixed-up cards, "
+        "but not cards replaced on purpose."
+    )
+
+
+def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
+    """Name the program whose rule derived this backup's identifier from its seed, if any.
+
+    codex32 uses the first 20 bits of the BIP32 fingerprint. Bails used the first
+    20 bits of RIPEMD-160 of the seed (SHA-256 in its mid-2023 alpha) and checked
+    only the first three characters, leaving the fourth free for re-sharing. A
+    match catches mixed-up cards; it cannot catch cards replaced on purpose.
     """
-    legacy = hashlib.new("ripemd160", seed).digest()
-    return _fingerprint_identifier(fingerprint), _u5_to_chars(tuple(convertbits(legacy, 8, 5, pad=True)[:4]))
+    identifier = secret.header.identifier
+    if identifier == _fingerprint_identifier(fingerprint):
+        return "codex32"
+    for name, digest in (("Bails", "ripemd160"), ("Bails alpha", "sha256")):
+        derived = convertbits(hashlib.new(digest, secret.seed_bytes).digest(), 8, 5, pad=True)
+        if identifier[:3] == _u5_to_chars(tuple(derived[:3])):
+            return name
+    return None
 
 
 @dataclass(frozen=True)
@@ -184,17 +216,13 @@ class BitcoinCore:
         """Refuse a recovered seed that is not the recorded wallet, before any wallet is touched.
 
         `expected_fingerprint` is what the operator typed from the wallet record.
-        `None` means there is no record: the backup identifier must then be one
-        derived from this seed, which catches mistakes but not replaced cards.
+        `None` is the operator's explicit choice to restore without a record,
+        made after being shown the recovered fingerprint and `identifier_origin`;
+        nothing is checked then.
         """
-        fingerprint = self.fingerprint(secret)
         if expected_fingerprint is None:
-            if secret.header.identifier not in _seed_identifiers(secret.seed_bytes, fingerprint):
-                raise FingerprintMismatch(
-                    "This backup's identifier does not come from the recovered seed, so it cannot be "
-                    "checked without the wallet record. Bitcoin Core was not changed."
-                )
-        elif fingerprint != expected_fingerprint:
+            return
+        if self.fingerprint(secret) != expected_fingerprint:
             raise FingerprintMismatch(
                 "The recovered master fingerprint does not match the one from the wallet record. "
                 "Bitcoin Core was not changed."

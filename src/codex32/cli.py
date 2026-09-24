@@ -8,7 +8,15 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import Literal, NamedTuple, cast
 
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError, FingerprintMismatch, parse_fingerprint
+from codex32._bitcoin_core import (
+    NO_RECORD_WARNING,
+    BitcoinCore,
+    BitcoinCoreError,
+    FingerprintMismatch,
+    identifier_note,
+    identifier_origin,
+    parse_fingerprint,
+)
 from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
@@ -340,6 +348,15 @@ def _show_fingerprint(core: BitcoinCore, secret: MasterSeed, action: str) -> Non
         _print("\x1b[3J\x1b[2J\x1b[H", err=True)
 
 
+def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
+    fingerprint = core.fingerprint(secret)
+    _print(f"\nMaster fingerprint: {fingerprint.hex().upper()}", err=True)
+    _print(f"Backup identifier: {secret.header.identifier.upper()}", err=True)
+    _print(identifier_note(identifier_origin(secret, fingerprint)), err=True)
+    _print(NO_RECORD_WARNING, err=True)
+    return _text("Restore without a wallet record? [y/N]", optional=True).lower() in ("y", "yes")
+
+
 def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed, fresh: bool) -> bytes | None:
     """Take the master fingerprint from the wallet record until the library accepts it."""
     if fresh:
@@ -347,22 +364,18 @@ def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed, fresh: bool) ->
     prompt = "Type the master fingerprint from your wallet record" + ("" if fresh else " (Enter if none)")
     while True:
         text = _text(prompt, optional=True)
-        expected: bytes | None = None
-        if text or fresh:
-            try:
-                expected = parse_fingerprint(text)
-            except ValueError as error:
-                _print(str(error), err=True)
-                continue
-        elif _text(
-            "Without the record, only the backup identifier can be checked. Continue? [y/N]", optional=True
-        ).lower() not in ("y", "yes"):
+        if not text and not fresh:
+            if _without_record(core, secret):
+                return None
+            continue
+        try:
+            expected = parse_fingerprint(text)
+        except ValueError as error:
+            _print(str(error), err=True)
             continue
         try:
             core.verify_identity(secret, expected)
         except FingerprintMismatch as error:
-            if expected is None:
-                raise
             _print(str(error), err=True)
             if fresh:
                 _show_fingerprint(core, secret, "Check the wallet record against it")

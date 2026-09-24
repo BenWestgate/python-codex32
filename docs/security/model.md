@@ -276,11 +276,12 @@ statelessly, and a mismatch raises `FingerprintMismatch` before any wallet is
 listed, created, unlocked, or imported into. The prompt does not show the
 recovered value, so the operator compares by typing rather than by glancing. A
 new wallet shows its fingerprint once, then asks for it back from the written
-record. An operator without a record may continue only when the backup identifier is
-derived from the recovered seed: the codex32 fingerprint identifier or legacy
-Bails' RIPEMD-160 seed identifier. Both checks catch mistakes such as wrong or
-mixed cards; 32 bits, and 20 bits without a record, do not stop deliberately
-replaced cards.
+record. An operator without a record is shown the recovered fingerprint, whether
+the backup identifier was derived from the seed (the codex32 fingerprint rule,
+Bails' RIPEMD-160 rule, or its mid-2023 alpha's SHA-256 rule), and a warning, and
+may then choose to restore anyway. The typed fingerprint catches mistakes such as
+wrong or mixed cards. Neither it nor the identifier stops deliberately replaced
+cards, but anyone able to replace a threshold of cards could already read them.
 
 The program draws no entropy, opens no socket, starts no process of its own, and
 writes no file: no settings, no recent list, no log, and no clipboard write of

@@ -149,9 +149,10 @@ another one, or ask Bitcoin Core for a fresh blank wallet.
 When you restore, the window first asks you to type the master fingerprint from
 your wallet record. If it does not match, nothing is written to Bitcoin Core:
 check what you typed, and if it still does not match, these cards are not that
-wallet. If you have no record, **I have no wallet record** checks only that the
-backup identifier comes from the recovered seed. That works for backups made by
-Bails, but it cannot catch cards someone replaced on purpose.
+wallet. If you have no record, **I have no wallet record** shows the master
+fingerprint and whether the backup identifier was made from the recovered seed,
+explains what that can and cannot prove, and restores only if you still choose
+to. Check the balance and history before you send money to that wallet.
 
 After the restore, **check** the remaining wallet details against your record
 rather than copy them onto it. It shows no creation date on that screen, because the

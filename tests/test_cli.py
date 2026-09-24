@@ -32,7 +32,7 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
-from codex32._bitcoin_core import BitcoinCore, FingerprintMismatch
+from codex32._bitcoin_core import BitcoinCore
 from codex32.bech32 import _chars_to_u5, bech32_encode
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
@@ -2798,18 +2798,24 @@ def test_restore_record_prompt_retries_until_the_library_accepts(
     assert right.hex() not in errors.lower()
 
 
-def test_restore_without_a_record_needs_a_seed_derived_identifier(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     core, secret = _FakeBitcoinCore(), parse_codex32(VECTOR_1["secret_s"])
     assert isinstance(secret, MasterSeed)
-    derived = MasterSeed.from_seed(
-        secret.seed_bytes, identifier=_fingerprint_identifier(core.fingerprint(secret))
-    )
+    fingerprint = core.fingerprint(secret)
 
-    _record_answers(monkeypatch, "", "n", "", "y")
-    assert _RECORDED_FINGERPRINT(core, derived, False) is None
+    prompts = _record_answers(monkeypatch, "", "n", "", "y")
+    assert _RECORDED_FINGERPRINT(core, secret, False) is None
+    assert prompts[1] == prompts[3] == "Restore without a wallet record? [y/N]"
+    shown = capsys.readouterr().err
+    assert shown.count(f"Master fingerprint: {fingerprint.hex().upper()}") == 2
+    assert "was not made from this seed" in shown and "nothing can prove" in shown
+
+    derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
     _record_answers(monkeypatch, "", "yes")
-    with pytest.raises(FingerprintMismatch, match="without the wallet record"):
-        _RECORDED_FINGERPRINT(core, secret, False)
+    assert _RECORDED_FINGERPRINT(core, derived, False) is None
+    assert "matches this seed (codex32 rule)" in capsys.readouterr().err
 
 
 def test_fresh_record_is_typed_back_and_shown_again_after_a_mismatch(

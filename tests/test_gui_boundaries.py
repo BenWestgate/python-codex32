@@ -132,6 +132,6 @@ def test_the_gui_keeps_its_own_size_budget() -> None:
 def test_every_way_to_a_wallet_passes_the_wallet_record_check() -> None:
     tree = ast.parse((_package() / "pages.py").read_text())
 
-    assert _callers(tree, "_wallets") == {"_fingerprint_page", "_wallet_page"}
-    assert _callers(tree, "_fingerprint_page") == {"_record_fingerprint", "_restore", "_fingerprint_page"}
-    assert _callers(tree, "_record_fingerprint") == {"_unshared_page", "_card_confirmed", "_fingerprint_page"}
+    assert _callers(tree, "_wallets") == {"_fingerprint_page", "_identity", "_wallet_page"}
+    assert _callers(tree, "_fingerprint_page") == {"_identity", "_restore", "_fingerprint_page"}
+    assert _callers(tree, "_identity") == {"_unshared_page", "_card_confirmed", "_fingerprint_page"}
