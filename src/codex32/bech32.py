@@ -53,6 +53,24 @@ def _validate_single_case_ascii(value: str) -> bool:
     return value.isupper()
 
 
+def interpret_mixed_case(value: str, immutable_length: int) -> tuple[str, str, bool] | None:
+    """Return majority-cased and minority-erased interpretations of mixed-case text."""
+    if value.upper() == value or value.lower() == value:
+        return None
+    letters = [character for character in value[immutable_length:] if character.lower() != character.upper()]
+    uppercase = sum(character.isupper() for character in letters) > len(letters) / 2
+    normalized = value.upper() if uppercase else value.lower()
+    erased = "".join(
+        normalized[index]
+        if index < immutable_length
+        or character.lower() == character.upper()
+        or character.isupper() == uppercase
+        else "?"
+        for index, character in enumerate(value)
+    )
+    return normalized, erased, uppercase
+
+
 def bech32_encode(hrp: str, data: list[int], spec: _Checksum) -> str:
     """Compute a Bech32 string given HRP and data values."""
     checksum = spec.create(bech32_hrp_expand(hrp) + list(data))

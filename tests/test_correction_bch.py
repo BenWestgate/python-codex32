@@ -264,6 +264,20 @@ def test_uppercase_input_preserves_case_and_reverse_addends() -> None:
     assert result.addend_hamming_weight == addend.bit_count()
 
 
+@pytest.mark.parametrize("uppercase", (False, True))
+def test_public_correction_interprets_mixed_case_by_majority(uppercase: bool) -> None:
+    source = VECTOR_1["secret_s"].upper() if uppercase else VECTOR_1["secret_s"]
+    position = next(
+        index for index, character in enumerate(source[3:], 3) if character.lower() != character.upper()
+    )
+    mixed = source[:position] + source[position].swapcase() + source[position + 1 :]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), mixed)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+
+
 def test_fixed_failures_are_fail_closed() -> None:
     mixed = "M" + VECTOR_1["secret_s"][1:]
     damaged = list(VECTOR_1["secret_s"])

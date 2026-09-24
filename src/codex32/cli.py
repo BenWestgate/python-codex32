@@ -13,6 +13,7 @@ from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
     _card_text,
+    _case_interpretation,
     _confirm_correction,
     _correction_candidates,
     _entered_groups,
@@ -35,7 +36,12 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import _best, _residue_low_discrimination, correct_worksheet_residue
+from codex32.correction import (
+    CorrectionCandidate,
+    _best,
+    _residue_low_discrimination,
+    correct_worksheet_residue,
+)
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 from codex32.generation import (
     ConfirmationResult,
@@ -550,12 +556,35 @@ def _correct(
             raise _UsageError("--bytes does not match the valid master-seed backup length.")
         _print("The codex32 string is already valid.")
         return 0
-    candidates, complete, _deadline, ambiguous = _correction_candidates(
-        value,
-        hrp,
-        byte_length,
-        value[: separator + 1],
-    )
+    search_value = value
+    erased = value
+    immutable = value[: separator + 1]
+    interpreted = _case_interpretation(value, immutable, context.profiles, None)
+    if interpreted is not None:
+        candidate, search_value, erased, immutable = interpreted
+    else:
+        candidate = None
+    capture_layers: list[tuple[int, int]] = []
+    candidates: tuple[CorrectionCandidate, ...]
+    if candidate is not None:
+        candidates, complete, deadline, ambiguous = (candidate,), True, None, False
+    else:
+        candidates, complete, deadline, ambiguous = _correction_candidates(
+            search_value,
+            hrp,
+            byte_length,
+            immutable,
+            capture_layers=capture_layers,
+        )
+        if complete and not candidates and erased != search_value:
+            candidates, complete, deadline, ambiguous = _correction_candidates(
+                erased,
+                hrp,
+                byte_length,
+                immutable,
+                deadline=deadline,
+                capture_layers=capture_layers,
+            )
     if not complete and not candidates:
         raise _CommandError("The correction search did not complete within ten seconds.")
     if ambiguous:
