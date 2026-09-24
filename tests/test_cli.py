@@ -93,7 +93,6 @@ class _FakeBitcoinCore:
     chain: str = "main"
     version: int = 320000
     imported: MasterSeed | None = None
-    private: bool | None = None
     account: int | None = None
     timestamp: int | str | None = None
 
@@ -109,12 +108,11 @@ class _FakeBitcoinCore:
         _ask: Callable[[str], str],
         _tell: Callable[[str], None],
         *,
-        private: bool = True,
         account: int = 0,
         timestamp: int | str = "now",
     ) -> str:
         self.imported = secret
-        self.private, self.account, self.timestamp = private, account, timestamp
+        self.account, self.timestamp = account, timestamp
         return "test-wallet"
 
 
@@ -1763,7 +1761,7 @@ def test_correction_bytes_rejects_an_unsupported_ms_size() -> None:
 def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:19] + original[20:]
-    with patch("codex32.cli._correction_candidates", return_value=((), False, 0.0, False)):
+    with patch("codex32.cli._correction_candidates", return_value=((), False, 0.0)):
         result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 3
@@ -1887,7 +1885,6 @@ def test_wallet_commands_initialize_selected_master_seed_destinations() -> None:
     assert xprv.stderr.endswith("Keep it secret.\n\n")
     assert private.stdout == ""
     assert private_core.imported == parse_codex32(VECTOR_1["secret_s"])
-    assert private_core.private is True
     assert "Warning: This imports private descriptors that can spend funds." in private.stderr
     assert "Use only the intended encrypted wallet" not in private.stderr
     assert "\x1b[" not in private.stderr + private.stdout
@@ -2756,7 +2753,7 @@ def test_incomplete_candidate_has_no_search_warning_and_is_never_accepted_automa
     candidate = _correct_fixed(source, suspected_profile=Profile.MS)
     assert candidate is not None
     candidate = replace(candidate, search_complete=False)
-    with patch("codex32.cli._correction_candidates", return_value=((candidate,), False, 0.0, False)):
+    with patch("codex32.cli._correction_candidates", return_value=((candidate,), False, 0.0)):
         result = _invoke(["correct"], source[:-1] + "?")
     assert result.exit_code == 1 and result.stdout == ""
     assert "Search incomplete" not in result.stderr
