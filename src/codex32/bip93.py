@@ -134,17 +134,32 @@ class _Artifact:
         object.__setattr__(self, "payload_symbols", payload_symbols)
 
     def __str__(self) -> str:
-        return self.text
+        return f"<{type(self).__name__}: redacted>"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(<redacted>)"
 
     def __len__(self) -> int:
         return len(self.text)
 
 
 class Share(_Artifact):
+    """Validated codex32 share; use ``.text`` for the explicit serialized value.
+
+    ``str(share)`` and ``repr(share)`` are deliberately redacted so accidental
+    logging or interpolation does not disclose recovery material.
+    """
+
     __slots__ = ()
 
 
 class Secret(_Artifact):
+    """Validated codex32 secret; use ``.text`` for the explicit serialized value.
+
+    ``str(secret)`` and ``repr(secret)`` are deliberately redacted so accidental
+    logging or interpolation does not disclose recovery material.
+    """
+
     __slots__ = ()
 
 

@@ -90,6 +90,10 @@ lengths or interpret payload semantics.
 
 Only parsers and profile-specific factories construct immutable validated
 artifacts. A share has symbol semantics and cannot be converted to bytes.
+Default `str()` and `repr()` rendering of artifacts is redacted; callers must
+use `.text` explicitly when they intentionally need the serialized recovery
+string. This reduces accidental disclosure through logs and interpolation but
+does not make `.text` safe to expose.
 Registration adds semantics but is not required for generic parsing, recovery,
 derivation, or correction. Wallet and profile-specific generation APIs do not
 accept opaque artifacts or raw strings.

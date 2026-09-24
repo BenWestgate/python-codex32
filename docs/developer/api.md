@@ -62,6 +62,9 @@ generic parse-length failure.
   modules. Labels, lengths, padding, diagnostics, and S types stay with their
   application; unknown HRPs remain opaque and there is no runtime registration.
 - Headers and artifacts are immutable; shares expose symbols, not bytes.
+- Artifact `str()` and `repr()` render redacted placeholders. Code that
+  intentionally serializes a validated `Share` or `Secret` must use its explicit
+  `.text` attribute.
 - Sharing interpolates payload and checksum together, explicitly constructs the
   target header, and reparses the result.
 - `generation.py` is the only entropy owner and generates only `ms` and `cl`.
