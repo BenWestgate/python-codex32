@@ -1860,10 +1860,14 @@ def test_correct_suggests_the_majority_case_for_mixed_case_damage() -> None:
     mixed = source[:position] + source[position].upper() + source[position + 1 :]
 
     result = _invoke(["correct"], mixed)
+    wrong_length = _invoke(["correct", "--bytes", "32"], mixed)
 
     assert result.exit_code == 1
     assert source in result.stderr
     assert "No valid correction found" not in result.stderr
+    assert wrong_length.exit_code == 2
+    assert "--bytes does not match" in wrong_length.stderr
+    assert source not in wrong_length.stderr
 
 
 def test_correction_hides_internal_candidate_reparse_failures() -> None:
