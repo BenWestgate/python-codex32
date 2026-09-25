@@ -115,6 +115,7 @@ def test_master_seed_factory_can_only_construct_index_s() -> None:
     ("arguments", "error"),
     (
         ((1, "test", "s"), InvalidThreshold),
+        ((2.0, "test", "a"), InvalidThreshold),
         ((2, "bad", "a"), InvalidIdentifier),
         ((0, "test", "a"), InvalidShareIndex),
     ),
