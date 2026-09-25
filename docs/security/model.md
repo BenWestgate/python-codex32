@@ -45,8 +45,9 @@ The operator must:
   balances or history;
 - protect recovery cards and store shared cards in different trusted places;
 - confirm every newly recorded secret or share;
-- keep wallet records separate from shares and compare recovered fingerprints,
-  addresses, account, policy, and history with those records;
+- keep wallet records separate from shares, type the master fingerprint from
+  the record before a restore import, and compare addresses, account, policy,
+  and history with those records;
 - compare every correction suggestion with the original codex32 string and stop
   when recovered information and wallet records disagree; and
 - never put recovery text in command arguments or transfer a master seed,
@@ -228,6 +229,7 @@ signing setup belong to Bitcoin Core's maintained v32 workflow.
 | Control | Required behavior |
 |---|---|
 | Preflight | Before entropy or recovery input, explicit chain arguments probe the five standard local networks for Bitcoin Core 32 or newer. One response is selected automatically; multiple responses require operator selection. |
+| Recovery identity | `ms32 wallet` authenticates a recovered seed before any wallet is listed. Core derives the recovered fingerprint statelessly, and a mismatch raises `FingerprintMismatch` before any wallet RPC. The restore prompt does not show the recovered value, so the operator compares by typing the fingerprint from the wallet record. Without a record, the operator is shown the recovered fingerprint, whether the backup identifier was derived from the seed (the codex32 fingerprint rule, Bails' RIPEMD-160 rule, or its mid-2023 alpha's SHA-256 rule), and a warning, and then chooses. `ms32 create` does not authenticate against a pre-existing wallet: it shows the newly created seed's fingerprint and requires the operator to acknowledge recording it. These checks catch mistakes such as wrong or mixed cards; anyone able to replace a threshold of cards could already read them. |
 | Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, wallet database, or wallet-creation operation. Every call uses loopback and the selected chain. |
 | Destination | Only an empty descriptor wallet with private keys enabled, no external signer, transactions, descriptors, keypool entries, or active scan is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
 | Seed source | The original ceremony result or validated recovered master seed supplies root-xprv private descriptors for Core's reported chain. After import, Core v32's wallet HD-key RPCs derive the requested BIP44, BIP49, BIP84, and BIP86 account xpubs. |

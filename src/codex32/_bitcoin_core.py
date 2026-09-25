@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import string
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +19,10 @@ class BitcoinCoreError(Exception):
     pass
 
 
+class FingerprintMismatch(BitcoinCoreError):
+    """The recovered seed is not the wallet the operator's record describes."""
+
+
 _CHAINS = (
     ("main", "mainnet"),
     ("test", "testnet3"),
@@ -29,6 +34,24 @@ _CHAINS = (
 _ORIGIN = re.compile(r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]")
 _PRIVATE_MARKERS = ("xprv", "tprv")
 _PURPOSES = (44, 49, 84, 86)
+
+
+def parse_fingerprint(text: str) -> bytes:
+    """Read a master fingerprint as written on a wallet record: 8 hex digits, any case or spacing."""
+    compact = "".join(text.split())
+    if len(compact) != 8 or not all(character in string.hexdigits for character in compact):
+        raise ValueError("A master fingerprint is 8 characters, each 0-9 or A-F.")
+    return bytes.fromhex(compact)
+
+
+NO_RECORD_WARNING = (
+    "Without the wallet record, nothing can prove these cards are the wallet you expect. Compare the "
+    "fingerprint with any other copy, such as another wallet app, a hardware wallet or a descriptor backup. "
+    "After restoring, let Bitcoin Core finish scanning and check that the balance, past payments and "
+    "addresses are ones you recognise before sending money here. Replaced cards can come with a history "
+    "too: if you do not know what this wallet should hold, have someone you trust check it. Once you are "
+    "sure, write the fingerprint on a new wallet record."
+)
 
 
 @dataclass(frozen=True)
@@ -152,6 +175,19 @@ class BitcoinCore:
         if not isinstance(secret, MasterSeed):
             raise TypeError("wallet operations accept only MasterSeed")
         return self.fingerprint_seed(secret.seed_bytes)
+
+    def verify_identity(self, secret: MasterSeed, expected_fingerprint: bytes | None) -> None:
+        """Refuse a recovered seed that is not the recorded wallet, before any wallet is touched.
+
+        `None` is the operator's explicit choice to restore without a record; nothing is checked.
+        """
+        if expected_fingerprint is None:
+            return
+        if self.fingerprint(secret) != expected_fingerprint:
+            raise FingerprintMismatch(
+                "The recovered master fingerprint does not match the one from the wallet record. "
+                "Bitcoin Core was not changed."
+            )
 
     def _root_xpub(self, wallet: str) -> str:
         result = self._rpc("gethdkeys", wallet=wallet)
@@ -299,9 +335,12 @@ class BitcoinCore:
         ask: Callable[[str], str],
         tell: Callable[[str], None],
         *,
+        expected_fingerprint: bytes | None,
         account: int = 0,
         timestamp: int | Literal["now"] = "now",
     ) -> str:
+        """Optionally check recovery identity, then import into one empty wallet the operator chooses."""
+        self.verify_identity(secret, expected_fingerprint)
         while True:
             name = self._select(ask, tell)
             state = self._target(name)
