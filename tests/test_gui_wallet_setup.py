@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from codex32 import parse_codex32
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError, FingerprintMismatch
 from codex32_gui import wallet_setup
 
 _SEED = parse_codex32("MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW")
@@ -255,6 +255,19 @@ def test_an_import_that_fails_before_the_library_arms_its_own_relock_still_locks
     with pytest.raises(BitcoinCoreError, match="waiting"):
         wallet_setup.fill(core, _SEED, "fresh", PASSPHRASE, expected=None)
     assert fake.called("walletlock")
+    assert fake.wallets["fresh"].locked
+
+
+def test_identity_mismatch_is_refused_before_unlock(monkeypatch: pytest.MonkeyPatch) -> None:
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
+
+    def mismatch(_core: BitcoinCore, _secret: object, _expected: bytes | None) -> None:
+        raise FingerprintMismatch("wrong wallet")
+
+    monkeypatch.setattr(wallet_setup, "verify", mismatch)
+    with pytest.raises(FingerprintMismatch, match="wrong wallet"):
+        wallet_setup.fill(core, _SEED, "fresh", PASSPHRASE, expected=b"expected")
+    assert not fake.called("walletpassphrase")
     assert fake.wallets["fresh"].locked
 
 

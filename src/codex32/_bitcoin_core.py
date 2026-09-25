@@ -61,9 +61,9 @@ def identifier_note(origin: str | None) -> str:
     """Say what `identifier_origin` found, for an operator restoring without a record."""
     if origin is None:
         return (
-            "The backup identifier was not made from this seed. That is normal for split backups made by "
-            "codex32, but Bails made every identifier from its seed, so for a Bails backup these are the "
-            "wrong or mixed-up cards."
+            "The backup identifier was not made from this seed. That can be normal for codex32 backups "
+            "made from split shares, supplied seed bytes or an explicit identifier. Bails made every "
+            "identifier from its seed, so for a Bails backup these are the wrong or mixed-up cards."
         )
     return (
         f"The backup identifier matches this seed ({origin} rule). That rules out most mixed-up cards, "
@@ -81,7 +81,11 @@ def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
     if identifier == _fingerprint_identifier(fingerprint):
         return "codex32"
     for name, digest in (("Bails", "ripemd160"), ("Bails alpha", "sha256")):
-        derived = convertbits(hashlib.new(digest, secret.seed_bytes).digest(), 8, 5, pad=True)
+        try:
+            hashed = hashlib.new(digest, secret.seed_bytes).digest()
+        except ValueError:
+            continue
+        derived = convertbits(hashed, 8, 5, pad=True)
         if identifier[:3] == _u5_to_chars(tuple(derived[:3])):
             return name
     return None

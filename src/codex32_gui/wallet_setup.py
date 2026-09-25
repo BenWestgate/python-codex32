@@ -320,6 +320,7 @@ def fill(
     """
     if not passphrase:
         return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)
+    verify(core, secret, expected)
     unlock(core, name, passphrase)
     try:
         return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)

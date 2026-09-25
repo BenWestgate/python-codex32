@@ -807,6 +807,7 @@ def _new_wallet_page(
         page = _working(view, "Bitcoin Core", "Creating the wallet and writing your keys into it…")
 
         def job() -> Record:
+            wallet_setup.verify(core, secret, expected)
             wallet_setup.create(core, chosen, passphrase)
             return _record(core, secret, chosen, timestamp, expected, passphrase)
 

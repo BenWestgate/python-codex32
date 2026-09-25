@@ -135,3 +135,19 @@ def test_every_way_to_a_wallet_passes_the_wallet_record_check() -> None:
     assert _callers(tree, "_wallets") == {"_fingerprint_page", "_identity", "_wallet_page"}
     assert _callers(tree, "_fingerprint_page") == {"_identity", "_restore", "_fingerprint_page"}
     assert _callers(tree, "_identity") == {"_unshared_page", "_card_confirmed", "_fingerprint_page"}
+
+
+def test_new_wallet_is_verified_before_creation() -> None:
+    tree = ast.parse((_package() / "pages.py").read_text())
+    new_wallet = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_new_wallet_page"
+    )
+    calls = [
+        f"{node.func.value.id}.{node.func.attr}"
+        for node in ast.walk(new_wallet)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "wallet_setup"
+    ]
+    assert calls.index("wallet_setup.verify") < calls.index("wallet_setup.create")
