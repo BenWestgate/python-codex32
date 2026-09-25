@@ -28,6 +28,10 @@ jobs:
       - run: python -m pip install --no-build-isolation -e '.[dev]'
       - run: python -m pip check
       - run: python -m pytest -q
+      - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
+        run: python -O -m pytest -q
+      - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
+        run: python tools/verify_correction_constants.py
       - run: python -m mypy src/codex32
       - run: python -m ruff check .
       - run: python -m ruff format --check .
