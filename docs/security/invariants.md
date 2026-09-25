@@ -24,8 +24,11 @@ and evidence.
    warning and literal `YES` confirmation for every HRP. The bound includes all
    admitted classes ranked equal to or better than the candidate, independently
    of execution order.
-6. Secrets stay out of arguments, logs, ordinary output, and public transfers.
-   Private descriptors exist only in Python memory and child stdin.
+6. Secrets stay out of command arguments, logs, unrelated output, and public
+   transfers. Commands whose purpose is to create, recover, derive, correct, or
+   explicitly export recovery material may intentionally display that material
+   to the operator. Private descriptors exist only in Python memory and child
+   stdin.
 7. Bitcoin Core chains are discovered before entropy or recovery input. The
    operator confirms an eligible descriptor wallet by exact name.
 8. Wallet state is revalidated before import. Every import must succeed and the
@@ -34,8 +37,8 @@ and evidence.
    and verified on every exit path.
 10. External text, Core output, public wallet data, and PSBTs are untrusted.
 11. Only Bitcoin Core descriptor wallets sign with codex32-derived keys.
-    Sensitive operations use only codex32 or Core on malware-free computers
-    with trusted software.
+    Sensitive operations use only codex32 or Core on a trusted computer as
+    defined by the security model.
 12. Offline hosts disable every network path, including Ethernet, internet,
     Tor, Wi-Fi, Bluetooth, and cellular. Online Core nodes synchronize before
     their balances or history are trusted.
