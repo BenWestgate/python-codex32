@@ -67,7 +67,12 @@ the paper with the original off the screen. That catches a slip of the pen now
 rather than years from now. If a group does not match, the window says which one;
 correct that group and try again, as many times as you like.
 
-When every card is confirmed, choose the Bitcoin Core wallet that will hold the
+When every card is confirmed, the window shows the master fingerprint. Write it
+on your [wallet record](wallet-verification-record.html), then press **I wrote it
+down**. This is a new wallet ceremony, so there is no pre-existing fingerprint
+or descriptor to authenticate against.
+
+Next, choose the Bitcoin Core wallet that will hold the
 keys. Only empty wallets are offered, so no wallet you already use can be
 overwritten. If you have none, the window can ask Bitcoin Core to create one:
 give it a name and a passphrase, and codex32 fills it in and locks it again.
@@ -142,10 +147,16 @@ wallet**, which would make a different backup. If the wallet was part-filled
 before it failed, it is no longer empty, so it will not be offered again: create
 another one, or ask Bitcoin Core for a fresh blank wallet.
 
-When you restore, the window asks you to **check** the wallet details against
-your record rather than copy them onto it. That comparison — the master
-fingerprint above all — is the only thing that proves the cards you just typed
-belong to that wallet. It shows no creation date on that screen, because the
+When you restore, the window first asks you to type the master fingerprint from
+your wallet record. If it does not match, nothing is written to Bitcoin Core:
+check what you typed, and if it still does not match, these cards are not that
+wallet. If you have no record, **I have no wallet record** shows the master
+fingerprint and whether the backup identifier was made from the recovered seed,
+explains what that can and cannot prove, and restores only if you still choose
+to. Check the balance and history before you send money to that wallet.
+
+After the restore, **check** the remaining wallet details against your record
+rather than copy them onto it. It shows no creation date on that screen, because the
 real one is already on your record and today's would replace it.
 
 The window always uses account 0, which is what it writes onto your wallet

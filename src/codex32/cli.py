@@ -8,7 +8,15 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import Literal, NamedTuple, cast
 
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import (
+    NO_RECORD_WARNING,
+    BitcoinCore,
+    BitcoinCoreError,
+    FingerprintMismatch,
+    identifier_note,
+    identifier_origin,
+    parse_fingerprint,
+)
 from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
@@ -333,6 +341,44 @@ def _generated_secret(
     )
 
 
+def _show_fingerprint(core: BitcoinCore, secret: MasterSeed, action: str) -> None:
+    _print(f"\nMaster fingerprint: {core.fingerprint(secret).hex().upper()}", err=True)
+    _text(f"{action}, then press Enter", optional=True, prompt_end=". ")
+    if sys.stderr.isatty():
+        _print("\x1b[3J\x1b[2J\x1b[H", err=True)
+
+
+def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
+    fingerprint = core.fingerprint(secret)
+    _print(f"\nMaster fingerprint: {fingerprint.hex().upper()}", err=True)
+    _print(f"Backup identifier: {secret.header.identifier.upper()}", err=True)
+    _print(identifier_note(identifier_origin(secret, fingerprint)), err=True)
+    _print(NO_RECORD_WARNING, err=True)
+    return _text("Restore without a wallet record? [y/N]", optional=True).lower() in ("y", "yes")
+
+
+def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed) -> bytes | None:
+    """Take the master fingerprint from a recovery record until the library accepts it."""
+    prompt = "Type the master fingerprint from your wallet record (Enter if none)"
+    while True:
+        text = _text(prompt, optional=True)
+        if not text:
+            if _without_record(core, secret):
+                return None
+            continue
+        try:
+            expected = parse_fingerprint(text)
+        except ValueError as error:
+            _print(str(error), err=True)
+            continue
+        try:
+            core.verify_identity(secret, expected)
+        except FingerprintMismatch as error:
+            _print(str(error), err=True)
+            continue
+        return expected
+
+
 def _initialize_wallet(
     core: BitcoinCore,
     secret: MasterSeed,
@@ -340,16 +386,23 @@ def _initialize_wallet(
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
     fresh: bool = True,
+    restore: bool = False,
     confirmed: bool = True,
 ) -> int:
     assert isinstance(secret, MasterSeed)
     try:
         if confirmed:
             _print("Master-seed backup confirmed.\n", err=True)
+        if restore:
+            expected = _recorded_fingerprint(core, secret)
+        else:
+            _show_fingerprint(core, secret, "Write it on the wallet record")
+            expected = None
         name = core.initialize(
             secret,
             lambda prompt: _text(prompt, optional=True),
             lambda message: _print(message, err=True),
+            expected_fingerprint=expected,
             account=account,
             timestamp=timestamp,
         )
@@ -597,6 +650,7 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
         account=account,
         timestamp=timestamp,
         fresh=False,
+        restore=True,
         confirmed=False,
     )
 
