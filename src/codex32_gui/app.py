@@ -11,13 +11,14 @@ from codex32_gui import __version__, pages
 from codex32_gui.style import CSS
 
 USAGE = "usage: codex32-gui\n\nOpens the codex32 window. It takes no arguments: never put a secret in one.\n"
+APP_ID = "io.github.benwestgate.codex32"
 
 
 class Application(Adw.Application):
-    """One window, with no D-Bus name, no settings, no recent list, and no files."""
+    """One non-unique window with a stable desktop identity and no recent list or files."""
 
     def __init__(self) -> None:
-        super().__init__(application_id=None, flags=Gio.ApplicationFlags.NON_UNIQUE)
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
 
     def do_activate(self) -> None:
         display = Gdk.Display.get_default()
