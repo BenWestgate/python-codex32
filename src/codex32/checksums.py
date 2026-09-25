@@ -20,7 +20,9 @@ _DESCSUM_GEN = (0xF5DEE51989, 0xA9FDCA3312, 0x1BAB10E32D, 0x3706B1677A, 0x644D62
 
 
 @dataclass(frozen=True, slots=True)
-class _Checksum:
+class Checksum:
+    """Immutable checksum specification for reference-vector construction."""
+
     kind: str
     generators: tuple[int, ...]
     length: int
@@ -49,21 +51,21 @@ class _Checksum:
         return [(residue >> (width * (self.length - 1 - index))) & mask for index in range(self.length)]
 
 
-_CODEX32 = _Checksum("codex32", _CODEX32_GEN, 13, 0x10CE0795C2FD1E62A, 93)
-_CODEX32_LONG = _Checksum("Long codex32", _CODEX32_LONG_GEN, 15, 0x43381E570BF4798AB26, 1023)
+CODEX32 = Checksum("codex32", _CODEX32_GEN, 13, 0x10CE0795C2FD1E62A, 93)
+CODEX32_LONG = Checksum("Long codex32", _CODEX32_LONG_GEN, 15, 0x43381E570BF4798AB26, 1023)
 
 # Descriptor checksum remains an independently specified, non-codex32 helper.
-DESCSUM = _Checksum("Descriptor", _DESCSUM_GEN, 8, 1)
+DESCSUM = Checksum("Descriptor", _DESCSUM_GEN, 8, 1)
 
 _CRC = (
     None,
-    # ``_Checksum`` consumes input bits most-significant bit first.  With its
+    # ``Checksum`` consumes input bits most-significant bit first.  With its
     # implicit leading term, these generator values spell x+1, x^2+x+1,
     # x^3+x+1, and x^4+x+1 respectively.
-    _Checksum("CRC1", (1,), 1, 0),
-    _Checksum("CRC2", (3,), 2, 0),
-    _Checksum("CRC3", (3,), 3, 0),
-    _Checksum("CRC4", (3,), 4, 0),
+    Checksum("CRC1", (1,), 1, 0),
+    Checksum("CRC2", (3,), 2, 0),
+    Checksum("CRC3", (3,), 3, 0),
+    Checksum("CRC4", (3,), 4, 0),
 )
 
 

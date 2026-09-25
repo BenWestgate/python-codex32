@@ -2,7 +2,7 @@
 
 from functools import reduce
 
-from codex32.bech32 import CHARSET, _chars_to_u5
+from codex32.bech32 import CHARSET, chars_to_u5
 from codex32.correction import (
     _LONG_SPEC,
     _SHORT_SPEC,
@@ -42,7 +42,7 @@ def _derive(base: int, first_root: int, target: str) -> _Spec:
     return _Spec(
         base,
         first_root,
-        tuple(_chars_to_u5(target)),
+        tuple(chars_to_u5(target)),
         roots,
         reduce(_monic_mul, map(_minimal_poly, roots)),
         _order(base),

@@ -30,20 +30,20 @@ from typing import Literal
 
 from codex32.bech32 import (
     CHARSET,
-    _chars_to_u5,
-    _u5_to_chars,
     _validate_single_case_ascii,
     bech32_hrp_expand,
+    chars_to_u5,
+    u5_to_chars,
 )
 from codex32.bip93 import (
     IDX_SORT,
     Header,
     Secret,
     Share,
-    _checksum_for_encoded_length,
+    checksum_for_encoded_length,
     parse_codex32,
 )
-from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
+from codex32.checksums import CODEX32, CODEX32_LONG, Checksum
 from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
@@ -255,10 +255,10 @@ _LONG_SPEC = _Spec(
 _ALIGNMENT_CACHE_SIZE = 11
 
 
-def _spec_for_checksum(checksum: _Checksum) -> _Spec:
-    if checksum is _CODEX32:
+def _spec_for_checksum(checksum: Checksum) -> _Spec:
+    if checksum is CODEX32:
         return _SHORT_SPEC
-    if checksum is _CODEX32_LONG:
+    if checksum is CODEX32_LONG:
         return _LONG_SPEC
     raise AssertionError("registered profile selected a non-codex32 checksum")
 
@@ -544,7 +544,7 @@ class _FixedCorrector:
     ) -> None:
         normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
         profile_rules = _optional_profile_rules(normalized_hrp)
-        checksum = _checksum_for_encoded_length(normalized_hrp, body_length)
+        checksum = checksum_for_encoded_length(normalized_hrp, body_length)
         if profile_rules is not None:
             profile_rules.validate_payload_length(body_length - checksum.length - 6)
         self.hrp = normalized_hrp
@@ -598,7 +598,7 @@ class _FixedCorrector:
             return None
         for index, addend in result:
             corrected_reversed[index] ^= addend
-        corrected = self.prefix + _u5_to_chars(list(reversed(corrected_reversed)))
+        corrected = self.prefix + u5_to_chars(list(reversed(corrected_reversed)))
         corrected = corrected.upper() if self.uppercase else corrected
         try:
             artifact = parse_codex32(corrected)
@@ -774,7 +774,7 @@ def _validate_context(context: CorrectionContext) -> None:
             if length < 21:
                 raise ValueError("expected_length must permit the generic codex32 minimum length")
             body_length = length - len(context.hrp) - 1
-            checksum = _checksum_for_encoded_length(context.hrp, body_length)
+            checksum = checksum_for_encoded_length(context.hrp, body_length)
             if body_length < checksum.length + 6:
                 raise ValueError("expected_length must contain a header and checksum")
             rules = _optional_profile_rules(context.hrp)
@@ -913,7 +913,7 @@ def correct_worksheet_residue(
         raise InvalidCorrectionInput("codex32 input exceeds 15 characters")
     try:
         _validate_single_case_ascii(residue)
-        values = list(reversed(_chars_to_u5(residue)))
+        values = list(reversed(chars_to_u5(residue)))
     except TypeError:
         raise
     except CodexError as error:

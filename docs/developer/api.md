@@ -100,8 +100,57 @@ generic parse-length failure.
   hidden state.
 
 Private Python names are convention rather than access control. The supported
-surface is the 25-name package `__all__`; direct use of private helpers is
-unsupported but remains in the review scope.
+top-level surface is the 24-name package `__all__`; direct use of private helpers
+is unsupported but remains in the review scope.
+
+### Reference-vector construction API
+
+Reference-vector authors may use the following module-level interfaces without
+depending on implementation-private names:
+
+- `codex32.bech32`: `CHARSET`, `bech32_decode`, `bech32_encode`,
+  `bech32_hrp_expand`, `chars_to_u5`, and `u5_to_chars`;
+- `codex32.checksums`: `Checksum`, `CODEX32`, and `CODEX32_LONG`;
+- `codex32.bip93`: `checksum_for_body_length` and
+  `checksum_for_encoded_length`.
+
+For example, a generic codex32 vector can be constructed without importing an
+underscore-prefixed name:
+
+```python
+from codex32.bech32 import bech32_encode, chars_to_u5
+from codex32.bip93 import checksum_for_body_length
+
+hrp = "zz"
+body = chars_to_u5("0tests" + "q" * 26)
+checksum = checksum_for_body_length(hrp, len(body))
+text = bech32_encode(hrp, body, checksum)
+```
+
+These are supported module interfaces for codec and vector work; they are not
+added to the package-level `codex32.__all__`, whose backup/recovery surface stays
+deliberately narrow.
+
+The remaining production cross-module private imports are intentional internal
+couplings rather than user-facing APIs:
+
+- `_alignment.py`, `_competitors.py`, `correction.py`, and `indel.py` form one
+  bounded correction engine. Their underscored search state, views, and pruning
+  helpers are exchanged only inside that engine.
+- `bip93.py` and `correction.py` use the shared private GF(32) arithmetic in
+  `gf32.py`; profile factories use `_from_parts` and profile-rule helpers to
+  preserve one artifact-validation path without publishing construction hooks.
+- `generation.py`, `wallet.py`, and `_bitcoin_core.py` share the private BIP32
+  root primitives. `_bitcoin_core.py` also consumes wallet descriptor records
+  while remaining the sole process/state adapter.
+- `_cli_input.py` and `cli.py` share private correction/profile orchestration,
+  input state, and parser plumbing. Those names exist to compose the CLI, not as
+  a second domain API.
+
+Internal benchmark and verification tools may import those implementation names
+when they are explicitly testing the implementation itself. Tools or examples
+that model external vector construction use the supported module interfaces
+above.
 
 ### Size budget
 

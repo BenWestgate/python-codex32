@@ -8,7 +8,7 @@ from time import monotonic
 
 from codex32._alignment import _IncrementalSyndromes, _View
 from codex32.bech32 import CHARSET, _validate_single_case_ascii
-from codex32.bip93 import _checksum_for_encoded_length
+from codex32.bip93 import checksum_for_encoded_length
 from codex32.correction import (
     CorrectionCandidate,
     CorrectionContext,
@@ -310,7 +310,7 @@ def _prepare(
         for shape in shapes
     }
     base = len(context.hrp) + 1
-    degree = _checksum_for_encoded_length(context.hrp, target - base).length
+    degree = checksum_for_encoded_length(context.hrp, target - base).length
     return _Target(context, text, immutable, target, base, degree, counts)
 
 

@@ -14,7 +14,7 @@ from test_profiles import _oracle_encode
 import codex32
 from codex32 import CorrectionCandidate, CorrectionContext, CorrectionEdit, Profile, correct
 from codex32.bech32 import CHARSET
-from codex32.checksums import _CODEX32, _CODEX32_LONG
+from codex32.checksums import CODEX32, CODEX32_LONG
 from codex32.correction import (
     _LONG_SPEC,
     _SHORT_SPEC,
@@ -59,8 +59,8 @@ def _pack(values: tuple[int, ...]) -> int:
 
 
 def test_p70_target_constants_match_checksum_layer() -> None:
-    assert _pack(_SHORT_SPEC.target) == _CODEX32.constant
-    assert _pack(_LONG_SPEC.target) == _CODEX32_LONG.constant
+    assert _pack(_SHORT_SPEC.target) == CODEX32.constant
+    assert _pack(_LONG_SPEC.target) == CODEX32_LONG.constant
 
 
 def test_frozen_bch_constants_are_reproducible() -> None:

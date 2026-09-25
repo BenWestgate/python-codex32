@@ -1,6 +1,6 @@
 """Bech32 character, container, and bit-conversion helpers."""
 
-from codex32.checksums import _Checksum
+from codex32.checksums import Checksum
 from codex32.errors import (
     InvalidCase,
     InvalidCharacter,
@@ -19,14 +19,18 @@ def bech32_hrp_expand(hrp: str) -> list[int]:
     return [ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp]
 
 
-def _u5_to_chars(values: list[int] | tuple[int, ...]) -> str:
+def u5_to_chars(values: list[int] | tuple[int, ...]) -> str:
+    """Convert 5-bit values to Bech32 characters."""
+
     for index, value in enumerate(values):
         if not 0 <= value < 32:
             raise InvalidCharacter(f"u5 value {value} at index {index} is outside 0..31")
     return "".join(CHARSET[value] for value in values)
 
 
-def _chars_to_u5(value: str, first_position: int = 1) -> list[int]:
+def chars_to_u5(value: str, first_position: int = 1) -> list[int]:
+    """Convert Bech32 characters to 5-bit values."""
+
     result: list[int] = []
     for index, character in enumerate(value.lower()):
         position = CHARSET.find(character)
@@ -53,18 +57,18 @@ def _validate_single_case_ascii(value: str) -> bool:
     return value.isupper()
 
 
-def bech32_encode(hrp: str, data: list[int], spec: _Checksum) -> str:
+def bech32_encode(hrp: str, data: list[int], spec: Checksum) -> str:
     """Compute a Bech32 string given HRP and data values."""
     checksum = spec.create(bech32_hrp_expand(hrp) + list(data))
-    return f"{hrp}1{_u5_to_chars([*data, *checksum])}"
+    return f"{hrp}1{u5_to_chars([*data, *checksum])}"
 
 
-def bech32_verify_checksum(hrp: str, data: list[int], spec: _Checksum) -> bool:
+def bech32_verify_checksum(hrp: str, data: list[int], spec: Checksum) -> bool:
     """Verify the checksum selected by the calling application."""
     return spec.verify(bech32_hrp_expand(hrp) + list(data))
 
 
-def bech32_decode(value: str, spec: _Checksum | None = None) -> tuple[str, list[int]]:
+def bech32_decode(value: str, spec: Checksum | None = None) -> tuple[str, list[int]]:
     """Validate a Bech32 string, optionally including its checksum."""
     _validate_single_case_ascii(value)
     separator = value.rfind("1")
@@ -74,7 +78,7 @@ def bech32_decode(value: str, spec: _Checksum | None = None) -> tuple[str, list[
         raise MissingSeparator("The application prefix before 1 is missing.")
     lowered = value.lower()
     hrp = lowered[:separator]
-    data = _chars_to_u5(lowered[separator + 1 :], separator + 2)
+    data = chars_to_u5(lowered[separator + 1 :], separator + 2)
     if spec is None:
         return hrp, data
     if len(data) < spec.length or not bech32_verify_checksum(hrp, data, spec):

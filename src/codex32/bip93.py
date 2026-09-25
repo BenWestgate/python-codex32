@@ -6,13 +6,13 @@ from dataclasses import dataclass
 
 from codex32.bech32 import (
     CHARSET,
-    _chars_to_u5,
-    _u5_to_chars,
     bech32_decode,
     bech32_encode,
     bech32_verify_checksum,
+    chars_to_u5,
+    u5_to_chars,
 )
-from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
+from codex32.checksums import CODEX32, CODEX32_LONG, Checksum
 from codex32.errors import (
     DuplicateShareIndex,
     ExistingTargetIndex,
@@ -68,7 +68,7 @@ class Header:
     def _from_symbols(cls, symbols: tuple[int, ...]) -> "Header":
         if len(symbols) != 6:
             raise InvalidLength("codex32 header must contain six symbols")
-        text = _u5_to_chars(symbols)
+        text = u5_to_chars(symbols)
         if text[0] not in "023456789":
             raise InvalidThreshold(
                 f"The threshold must be 0 or a number from 2 through 9; found {text[0]!r}."
@@ -77,25 +77,36 @@ class Header:
 
     @property
     def _symbols(self) -> tuple[int, ...]:
-        return tuple(_chars_to_u5(f"{self.threshold}{self.identifier}{self.index}"))
+        return tuple(chars_to_u5(f"{self.threshold}{self.identifier}{self.index}"))
 
 
-def _checksum_for_encoded_length(hrp: str, encoded_length: int) -> _Checksum:
+def checksum_for_encoded_length(hrp: str, encoded_length: int) -> Checksum:
+    """Return the codex32 checksum required by an encoded HRP/data length."""
+
     expanded_length = 2 * len(hrp) + 1 + encoded_length
     if expanded_length <= 93:
-        return _CODEX32
+        return CODEX32
     if expanded_length < 96:
         raise InvalidLength("expanded codex32 lengths 94 and 95 are invalid")
     if expanded_length <= 1023:
-        return _CODEX32_LONG
+        return CODEX32_LONG
     raise InvalidLength("expanded codex32 codeword exceeds 1023 symbols")
 
 
-def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ...], _Checksum]:
+def checksum_for_body_length(hrp: str, body_length: int) -> Checksum:
+    """Return the checksum required when constructing a codex32 body."""
+
+    expanded_body_length = 2 * len(hrp) + 1 + body_length
+    checksum = CODEX32 if expanded_body_length <= 80 else CODEX32_LONG
+    checksum_for_encoded_length(hrp, body_length + checksum.length)
+    return checksum
+
+
+def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ...], Checksum]:
     hrp, encoded = bech32_decode(text)
     if len(hrp) + 1 + len(encoded) < 21:
         raise InvalidLength("codex32 string must contain at least 21 characters")
-    checksum = _checksum_for_encoded_length(hrp, len(encoded))
+    checksum = checksum_for_encoded_length(hrp, len(encoded))
     body = tuple(encoded[: -checksum.length])
     Header._from_symbols(body[:6])
     if not bech32_verify_checksum(hrp, encoded, checksum):
@@ -205,10 +216,7 @@ def _from_parts(
     if rules is not None:
         _validate_payload(rules.profile, header, payload)
     body = [*header._symbols, *payload]
-    expanded_body_length = 2 * len(normalized_hrp) + 1 + len(body)
-    checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
-    # Validate the completed generic codeword, including the 94/95 gap.
-    _checksum_for_encoded_length(normalized_hrp, len(body) + checksum.length)
+    checksum = checksum_for_body_length(normalized_hrp, len(body))
     text = bech32_encode(normalized_hrp, body, checksum)
     return parse_codex32(text.upper() if uppercase else text)
 
@@ -330,7 +338,7 @@ def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
             value ^= _gf32_multiply(weight, row[column])
         result.append(value)
     header = Header(share_set.threshold, share_set.identifier, target)
-    text = f"{share_set.hrp}1{_u5_to_chars((*header._symbols, *result))}"
+    text = f"{share_set.hrp}1{u5_to_chars((*header._symbols, *result))}"
     return parse_codex32(text.upper() if share_set.uppercase else text)
 
 

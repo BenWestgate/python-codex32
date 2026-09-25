@@ -17,9 +17,9 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.bech32 import CHARSET, _u5_to_chars
+from codex32.bech32 import CHARSET, u5_to_chars
 from codex32.bip93 import IDX_SORT
-from codex32.checksums import _Checksum
+from codex32.checksums import Checksum
 from codex32.errors import (
     DuplicateShareIndex,
     ExistingTargetIndex,
@@ -37,7 +37,7 @@ from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
 
 
 def _payload_text(artifact: Share | MasterSeed | CoreLightningSecret) -> str:
-    return _u5_to_chars(artifact.payload_symbols)
+    return u5_to_chars(artifact.payload_symbols)
 
 
 def _ms_basis(byte_length: int = 16, threshold: int = 2):
@@ -89,7 +89,7 @@ def test_interpolation_does_not_create_a_checksum(
     def fail_create(*_args: object, **_kwargs: object) -> tuple[int, ...]:
         raise AssertionError("sharing must interpolate the existing checksum")
 
-    monkeypatch.setattr(_Checksum, "create", fail_create)
+    monkeypatch.setattr(Checksum, "create", fail_create)
     recovered = recover_secret([a, c])  # type: ignore[list-item]
     derived = derive_share([a, c], "d")  # type: ignore[list-item]
     assert parse_codex32(recovered.text) == recovered
