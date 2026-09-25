@@ -15,13 +15,12 @@ from codex32.bech32 import CHARSET
 from codex32.correction import CorrectionContext
 from codex32.indel import (
     _CHARACTER_CLASSES,
-    _alignment_count,
     _required_header_substitutions,
     _search_many,
-    _variants,
 )
 from codex32.profiles import Profile
 from codex32.profiles.ms32 import TEXT_LENGTHS
+from tools.correction_reference import _alignment_count, _variants
 
 DELTAS = (-8, -4, -3, -2, -1, 0, 1, 2, 3, 4, 8)
 AUTOMATIC_48_COUNTS = (40, *range(44, 53), 56)
