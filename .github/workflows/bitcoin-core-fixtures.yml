@@ -1,0 +1,39 @@
+name: Bitcoin Core wallet fixtures
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  BITCOIN_CORE_ARCHIVE: bitcoin-32.0rc2-x86_64-linux-gnu.tar.gz
+  BITCOIN_CORE_SHA256: 0255103718033e6aee15fa944717fc277e047b845bff1e7408af0ea732d8d0c1
+  BITCOIN_CORE_URL: https://bitcoincore.org/bin/bitcoin-core-32.0/test.rc2
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - name: Download pinned Bitcoin Core
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$RUNNER_TEMP/$BITCOIN_CORE_ARCHIVE" \
+            "$BITCOIN_CORE_URL/$BITCOIN_CORE_ARCHIVE"
+          echo "$BITCOIN_CORE_SHA256  $RUNNER_TEMP/$BITCOIN_CORE_ARCHIVE" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/$BITCOIN_CORE_ARCHIVE" -C "$RUNNER_TEMP"
+      - name: Verify every frozen wallet fingerprint against Core
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          core="$RUNNER_TEMP/bitcoin-32.0rc2/bin"
+          "$core/bitcoind" --version | head -1
+          python tools/bitcoin_core_regtest.py \
+            --bitcoind "$core/bitcoind" \
+            --bitcoin-cli "$core/bitcoin-cli"
