@@ -25,6 +25,7 @@ from codex32 import (
 from codex32.bech32 import _u5_to_chars
 from codex32.errors import (
     CeremonyStateError,
+    CodexError,
     HeaderCollision,
     InvalidIdentifier,
     InvalidLength,
@@ -137,6 +138,12 @@ def test_raw_bytes_accept_random_or_explicit_identifiers() -> None:
     secret = generate_master_seed(raw, identifier="TEST")
     assert len(random_secret.header.identifier) == 4
     assert secret.header.identifier == "test"
+
+
+def test_supplied_seed_must_form_a_valid_bip32_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(generation_module, "_valid_root", lambda _seed: False)
+    with pytest.raises(CodexError, match="master seed does not form a valid BIP32 root"):
+        generate_master_seed(bytes(16), identifier="test")
 
 
 def test_explicit_and_random_output_order_contracts() -> None:
