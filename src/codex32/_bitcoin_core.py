@@ -376,7 +376,7 @@ class BitcoinCore:
         account: int = 0,
         timestamp: int | Literal["now"] = "now",
     ) -> str:
-        """Check the wallet record, then import the keys into one empty wallet the operator chooses."""
+        """Optionally check recovery identity, then import into one empty wallet the operator chooses."""
         self.verify_identity(secret, expected_fingerprint)
         while True:
             name = self._select(ask, tell)

@@ -357,14 +357,12 @@ def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
     return _text("Restore without a wallet record? [y/N]", optional=True).lower() in ("y", "yes")
 
 
-def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed, fresh: bool) -> bytes | None:
-    """Take the master fingerprint from the wallet record until the library accepts it."""
-    if fresh:
-        _show_fingerprint(core, secret, "Write it on the wallet record")
-    prompt = "Type the master fingerprint from your wallet record" + ("" if fresh else " (Enter if none)")
+def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed) -> bytes | None:
+    """Take the master fingerprint from a recovery record until the library accepts it."""
+    prompt = "Type the master fingerprint from your wallet record (Enter if none)"
     while True:
         text = _text(prompt, optional=True)
-        if not text and not fresh:
+        if not text:
             if _without_record(core, secret):
                 return None
             continue
@@ -377,8 +375,6 @@ def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed, fresh: bool) ->
             core.verify_identity(secret, expected)
         except FingerprintMismatch as error:
             _print(str(error), err=True)
-            if fresh:
-                _show_fingerprint(core, secret, "Check the wallet record against it")
             continue
         return expected
 
@@ -390,13 +386,18 @@ def _initialize_wallet(
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
     fresh: bool = True,
+    restore: bool = False,
     confirmed: bool = True,
 ) -> int:
     assert isinstance(secret, MasterSeed)
     try:
         if confirmed:
             _print("Master-seed backup confirmed.\n", err=True)
-        expected = _recorded_fingerprint(core, secret, fresh)
+        if restore:
+            expected = _recorded_fingerprint(core, secret)
+        else:
+            _show_fingerprint(core, secret, "Write it on the wallet record")
+            expected = None
         name = core.initialize(
             secret,
             lambda prompt: _text(prompt, optional=True),
@@ -649,6 +650,7 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
         account=account,
         timestamp=timestamp,
         fresh=False,
+        restore=True,
         confirmed=False,
     )
 

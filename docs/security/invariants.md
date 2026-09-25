@@ -11,11 +11,12 @@ and evidence.
 3. Shared creation uses a separate OS-CSPRNG call for each random initial share,
    gated by confirmation. Input cannot replace entropy or the original secret.
 4. Wallet setup uses the original ceremony result or a validated recovered seed.
-   `BitcoinCore.initialize` requires the master fingerprint typed from the
-   wallet record and refuses a mismatch before any wallet is listed, created,
-   unlocked, or imported into. Restoring without a record is an explicit
-   operator choice, made after seeing the recovered fingerprint and whether the
-   backup identifier was derived from the seed.
+   Restore authenticates the recovered seed before any wallet is listed,
+   unlocked, or imported into: normally with the master fingerprint typed from
+   the wallet record, or by an explicit no-record choice made after seeing the
+   recovered fingerprint and whether the backup identifier was derived from the
+   seed. Fresh `ms32 create` ceremonies do not authenticate against a
+   pre-existing wallet; they require the operator to record the new fingerprint.
 5. Correction shares one mass bound and deadline across target lengths. The
    public API fails closed on incomplete required work; CLI searches may return
    one primary-best-so-far eligible candidate at the deadline. Incomplete
