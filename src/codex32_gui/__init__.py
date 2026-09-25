@@ -13,11 +13,13 @@ setting is left alone when the operator has already chosen one, so anyone who
 needs a screen reader can run `GTK_A11Y=atspi codex32-gui` and get it back.
 """
 
+from importlib.resources import files
 from importlib.util import find_spec
 
 __all__ = ["__version__"]
 
 __version__ = "1.0.0rc1"
+ARTWORK = files("codex32_gui").joinpath("artwork")
 
 if find_spec("gi") is not None:
     import gi
