@@ -1,0 +1,296 @@
+name: Codex review gate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: codex-review-gate-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  checks: write
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  review:
+    name: Codex review coordinator
+    if: >-
+      github.event_name != 'issue_comment' ||
+      github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reconcile Codex reviews
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const gateName = 'codex-review-gate';
+            const gateVersion = 'simple-v1';
+            const codexLogins = new Set([
+              'chatgpt-codex-connector',
+              'chatgpt-codex-connector[bot]',
+            ]);
+            const trustedRequestAssociations = new Set([
+              'OWNER',
+              'MEMBER',
+              'COLLABORATOR',
+            ]);
+            const quotaText = 'reached your Codex usage limits for code reviews';
+            const retryCooldownMs = 5.5 * 60 * 60 * 1000;
+            const automaticReviewGraceMs = 90 * 60 * 1000;
+            const { owner, repo } = context.repo;
+            const now = Date.now();
+
+            const isCodex = (login) => codexLogins.has(login || '');
+            const asTime = (value) => {
+              const time = Date.parse(value || '');
+              return Number.isNaN(time) ? 0 : time;
+            };
+            const latest = (values) =>
+              values.reduce((best, value) => Math.max(best, value), 0);
+
+            function reviewedCommit(body) {
+              const match = String(body || '').match(
+                /\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`/i,
+              );
+              return match ? match[1].toLowerCase() : null;
+            }
+
+            function matchesHead(body, headSha) {
+              const commit = reviewedCommit(body);
+              return Boolean(commit && headSha.toLowerCase().startsWith(commit));
+            }
+
+            async function latestGateRun(headSha, pullNumber) {
+              const response = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: headSha,
+                check_name: gateName,
+                filter: 'all',
+                per_page: 100,
+              });
+              return response.data.check_runs
+                .filter(
+                  (run) =>
+                    run.app?.slug === 'github-actions' &&
+                    run.external_id === `${gateVersion}:${pullNumber}`,
+                )
+                .sort((a, b) => b.id - a.id)[0];
+            }
+
+            async function ensureGate(pull) {
+              const existing = await latestGateRun(pull.head.sha, pull.number);
+              if (existing) return existing;
+              const created = await github.rest.checks.create({
+                owner,
+                repo,
+                name: gateName,
+                head_sha: pull.head.sha,
+                external_id: `${gateVersion}:${pull.number}`,
+                status: 'in_progress',
+                started_at: new Date().toISOString(),
+                details_url: `${context.serverUrl}/${owner}/${repo}/pull/${pull.number}`,
+                output: {
+                  title: 'Codex review pending',
+                  summary: 'Waiting for a Codex result tied to this pull request head commit.',
+                },
+              });
+              return created.data;
+            }
+
+            async function setGate(run, conclusion, title, summary) {
+              await github.rest.checks.update({
+                owner,
+                repo,
+                check_run_id: run.id,
+                status: 'completed',
+                conclusion,
+                completed_at: new Date().toISOString(),
+                output: { title, summary },
+              });
+            }
+
+            async function inspectPull(pull) {
+              const run = await ensureGate(pull);
+              const [issueComments, reviews, reviewComments] = await Promise.all([
+                github.paginate(github.rest.issues.listComments, {
+                  owner,
+                  repo,
+                  issue_number: pull.number,
+                  per_page: 100,
+                }),
+                github.paginate(github.rest.pulls.listReviews, {
+                  owner,
+                  repo,
+                  pull_number: pull.number,
+                  per_page: 100,
+                }),
+                github.paginate(github.rest.pulls.listReviewComments, {
+                  owner,
+                  repo,
+                  pull_number: pull.number,
+                  per_page: 100,
+                }),
+              ]);
+
+              const commentsByReview = new Map();
+              for (const comment of reviewComments) {
+                if (!isCodex(comment.user?.login)) continue;
+                const reviewId = Number(comment.pull_request_review_id);
+                commentsByReview.set(
+                  reviewId,
+                  (commentsByReview.get(reviewId) || 0) + 1,
+                );
+              }
+
+              const terminal = [];
+              for (const review of reviews) {
+                if (!isCodex(review.user?.login)) continue;
+                if (review.commit_id !== pull.head.sha) continue;
+                const findingCount = commentsByReview.get(Number(review.id)) || 0;
+                if (!findingCount) continue;
+                terminal.push({
+                  at: asTime(review.submitted_at),
+                  kind: 'findings',
+                  findingCount,
+                });
+              }
+
+              for (const comment of issueComments) {
+                if (!isCodex(comment.user?.login)) continue;
+                const body = String(comment.body || '');
+                if (!body.includes("Didn't find any major issues")) continue;
+                if (!matchesHead(body, pull.head.sha)) continue;
+                terminal.push({
+                  at: asTime(comment.created_at),
+                  kind: 'clean',
+                  findingCount: 0,
+                });
+              }
+
+              terminal.sort((a, b) => {
+                const timeOrder = b.at - a.at;
+                if (timeOrder !== 0) return timeOrder;
+                return a.kind === 'findings' ? -1 : 1;
+              });
+              const verdict = terminal[0];
+              if (verdict?.kind === 'findings') {
+                await setGate(
+                  run,
+                  'failure',
+                  'Codex review found blocking issues',
+                  `Codex posted ${verdict.findingCount} finding(s) for this head commit.`,
+                );
+              } else if (verdict?.kind === 'clean') {
+                await setGate(
+                  run,
+                  'success',
+                  'Codex review passed',
+                  'Codex completed review of this head commit without review findings.',
+                );
+              }
+
+              const quotaTimes = issueComments
+                .filter(
+                  (comment) =>
+                    isCodex(comment.user?.login) &&
+                    String(comment.body || '').includes(quotaText),
+                )
+                .map((comment) => asTime(comment.created_at));
+              const requestTimes = issueComments
+                .filter((comment) => {
+                  if (String(comment.body || '').trim() !== '@codex review') return false;
+                  if (comment.user?.login === 'github-actions[bot]') return true;
+                  return trustedRequestAssociations.has(comment.author_association || '');
+                })
+                .map((comment) => asTime(comment.created_at));
+
+              return {
+                pull,
+                run,
+                pending: !verdict,
+                latestQuotaAt: latest(quotaTimes),
+                latestRequestAt: latest(requestTimes),
+                startedAt: asTime(run.started_at || run.created_at),
+              };
+            }
+
+            const repository = await github.rest.repos.get({ owner, repo });
+            const defaultBranch = repository.data.default_branch;
+            const openPulls = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              base: defaultBranch,
+              per_page: 100,
+            });
+            const reviewablePulls = openPulls.filter((pull) => !pull.draft);
+            const inspected = [];
+            for (const pull of reviewablePulls) {
+              inspected.push(await inspectPull(pull));
+            }
+
+            const pending = inspected.filter((item) => item.pending);
+            const globalQuotaAt = latest(
+              inspected.map((item) => item.latestQuotaAt),
+            );
+            const quotaCoolingDown =
+              globalQuotaAt && now - globalQuotaAt < retryCooldownMs;
+            if (!pending.length || quotaCoolingDown) return;
+
+            let candidate = null;
+            if (context.eventName === 'schedule') {
+              const due = pending.filter((item) => {
+                const requestAfterGate = item.latestRequestAt > item.startedAt;
+                if (requestAfterGate) {
+                  return now - item.latestRequestAt >= retryCooldownMs;
+                }
+                return now - item.startedAt >= automaticReviewGraceMs;
+              });
+              due.sort(
+                (a, b) =>
+                  a.startedAt - b.startedAt || a.pull.number - b.pull.number,
+              );
+              candidate = due[0] || null;
+            }
+
+            if (!candidate) return;
+            const requestAfterGate = candidate.latestRequestAt > candidate.startedAt;
+            if (
+              requestAfterGate &&
+              now - candidate.latestRequestAt < retryCooldownMs
+            ) {
+              return;
+            }
+
+            const comment = await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: candidate.pull.number,
+              body: '@codex review',
+            });
+            await github.rest.checks.update({
+              owner,
+              repo,
+              check_run_id: candidate.run.id,
+              status: 'in_progress',
+              output: {
+                title: 'Codex review requested',
+                summary: [
+                  `Request comment: ${comment.data.id}`,
+                  `Head commit: ${candidate.pull.head.sha}`,
+                  'Waiting for the managed Codex result.',
+                ].join('\n'),
+              },
+            });
