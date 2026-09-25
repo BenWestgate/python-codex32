@@ -28,7 +28,7 @@ from codex32 import (
 )
 from codex32.errors import CodexError
 from codex32.generation import ORDINARY_INDICES
-from codex32_gui import reading, wallet_setup, work
+from codex32_gui import ARTWORK, reading, wallet_setup, work
 from codex32_gui.entry import Codex32Entry
 from codex32_gui.wallet_setup import BitcoinCore
 
@@ -159,6 +159,13 @@ def _button(label: str, on_click: Callable[[], None], *, style: str = "") -> Gtk
         button.add_css_class(style)
     button.connect("clicked", lambda _button: on_click())
     return button
+
+
+def _book_art(name: str) -> Gtk.Image:
+    """Show one static illustration from the MIT-licensed Codex32 book."""
+    image = Gtk.Image.new_from_file(str(ARTWORK.joinpath(f"{name}.png")))
+    image.set_pixel_size(42)
+    return image
 
 
 def _actions(*buttons: Gtk.Widget) -> Gtk.Widget:
@@ -362,9 +369,11 @@ def home(view: Adw.NavigationView) -> Adw.NavigationPage:
         ("Replace a lost card", "Make a fresh card for a set you still have enough of", _start_share),
         ("Show my master seed", "Advanced. Displays the secret itself on screen.", _start_seed),
     )
+    arts = ("sun", "lock", "potion", "dragon", "potion", "lock")
     group = Adw.PreferencesGroup()
-    for label, detail, start in tasks:
+    for (label, detail, start), art in zip(tasks, arts, strict=True):
         row = Adw.ActionRow(title=label, subtitle=detail, activatable=True)
+        row.add_prefix(_book_art(art))
         row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
         row.connect("activated", lambda _row, begin=start: begin(view))
         group.add(row)
