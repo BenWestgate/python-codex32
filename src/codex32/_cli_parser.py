@@ -86,8 +86,9 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
             if master_seed
             else "Check, correct, recover, and derive shares from codex32 backups."
         ),
-        epilog="Never include a secret or share in command arguments.\n"
-        "Enter it when prompted. Some commands also accept piped input.",
+        epilog="Never put a secret or share in command arguments or shell command text.\n"
+        "Enter it when prompted; some commands also accept redirected standard input.\n"
+        "Protect redirected sources separately: shells, terminals, and wrappers may retain text.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
