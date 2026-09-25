@@ -68,8 +68,9 @@ rather than years from now. If a group does not match, the window says which one
 correct that group and try again, as many times as you like.
 
 When every card is confirmed, the window shows the master fingerprint. Write it
-on your [wallet record](wallet-verification-record.html), then type it back from
-what you wrote. That catches a writing mistake while it can still be fixed.
+on your [wallet record](wallet-verification-record.html), then press **I wrote it
+down**. This is a new wallet ceremony, so there is no pre-existing fingerprint
+or descriptor to authenticate against.
 
 Next, choose the Bitcoin Core wallet that will hold the
 keys. Only empty wallets are offered, so no wallet you already use can be

@@ -807,7 +807,8 @@ def _new_wallet_page(
         page = _working(view, "Bitcoin Core", "Creating the wallet and writing your keys into it…")
 
         def job() -> Record:
-            wallet_setup.verify(core, secret, expected)
+            if restoring:
+                wallet_setup.verify(core, secret, expected)
             wallet_setup.create(core, chosen, passphrase)
             return _record(core, secret, chosen, timestamp, expected, passphrase)
 
@@ -958,13 +959,13 @@ def _identity(
             return _page(
                 "Wallet record",
                 _column(
-                    _title("Write this on your wallet record", "Next, type it back."),
+                    _title("Write this on your wallet record", "Keep the record apart from your cards."),
                     _rows("Identity", shown),
                 ),
                 actions=_actions(
                     _button(
                         "I wrote it down",
-                        lambda: _replace(view, _fingerprint_page(view, core, secret, "now")),
+                        lambda: _wallets(view, core, secret, "now", None),
                         style="suggested-action",
                     )
                 ),

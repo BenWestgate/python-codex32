@@ -129,7 +129,7 @@ def test_the_gui_keeps_its_own_size_budget() -> None:
     assert sum(counts.values()) < BUDGET, counts
 
 
-def test_every_way_to_a_wallet_passes_the_wallet_record_check() -> None:
+def test_every_restore_way_to_a_wallet_passes_the_identity_choice() -> None:
     tree = ast.parse((_package() / "pages.py").read_text())
 
     assert _callers(tree, "_wallets") == {"_fingerprint_page", "_identity", "_wallet_page"}
@@ -137,17 +137,19 @@ def test_every_way_to_a_wallet_passes_the_wallet_record_check() -> None:
     assert _callers(tree, "_identity") == {"_unshared_page", "_card_confirmed", "_fingerprint_page"}
 
 
-def test_new_wallet_is_verified_before_creation() -> None:
+def test_restore_verifies_identity_before_creating_a_destination_wallet() -> None:
     tree = ast.parse((_package() / "pages.py").read_text())
     new_wallet = next(
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_new_wallet_page"
     )
-    calls = [
-        f"{node.func.value.id}.{node.func.attr}"
-        for node in ast.walk(new_wallet)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "wallet_setup"
-    ]
-    assert calls.index("wallet_setup.verify") < calls.index("wallet_setup.create")
+    job = next(
+        node for node in ast.walk(new_wallet) if isinstance(node, ast.FunctionDef) and node.name == "job"
+    )
+    guard = job.body[0]
+    assert isinstance(guard, ast.If) and isinstance(guard.test, ast.Name) and guard.test.id == "restoring"
+    verify = guard.body[0]
+    assert isinstance(verify, ast.Expr) and isinstance(verify.value, ast.Call)
+    assert isinstance(verify.value.func, ast.Attribute) and verify.value.func.attr == "verify"
+    create = job.body[1]
+    assert isinstance(create, ast.Expr) and isinstance(create.value, ast.Call)
+    assert isinstance(create.value.func, ast.Attribute) and create.value.func.attr == "create"

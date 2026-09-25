@@ -15,8 +15,9 @@ and evidence.
    unlocked, or imported into: normally with the master fingerprint typed from
    the wallet record, or by an explicit no-record choice made after seeing the
    recovered fingerprint and whether the backup identifier was derived from the
-   seed. Fresh `ms32 create` ceremonies do not authenticate against a
-   pre-existing wallet; they require the operator to record the new fingerprint.
+   seed. Fresh creation ceremonies, in `ms32 create` or the GUI, do not
+   authenticate against a pre-existing wallet; they require the operator to
+   record the new fingerprint.
 5. Correction shares one mass bound and deadline across target lengths. The
    public API fails closed on incomplete required work; CLI searches may return
    one primary-best-so-far eligible candidate at the deadline. Incomplete

@@ -228,7 +228,7 @@ signing setup belong to Bitcoin Core's maintained v32 workflow.
 | Control | Required behavior |
 |---|---|
 | Preflight | Before entropy or recovery input, explicit chain arguments probe the five standard local networks for Bitcoin Core 32 or newer. One response is selected automatically; multiple responses require operator selection. |
-| Recovery identity | `ms32 wallet` authenticates a recovered seed before any wallet is listed. Core derives the recovered fingerprint statelessly, and a mismatch raises `FingerprintMismatch` before any wallet RPC. The restore prompt does not show the recovered value, so the operator compares by typing the fingerprint from the wallet record. Without a record, the operator is shown the recovered fingerprint, whether the backup identifier was derived from the seed (the codex32 fingerprint rule, Bails' RIPEMD-160 rule, or its mid-2023 alpha's SHA-256 rule), and a warning, and then chooses. `ms32 create` does not authenticate against a pre-existing wallet: it shows the newly created seed's fingerprint and requires the operator to acknowledge recording it. These checks catch mistakes such as wrong or mixed cards; anyone able to replace a threshold of cards could already read them. |
+| Recovery identity | Restore authenticates a recovered seed before any wallet is listed. Core derives the recovered fingerprint statelessly, and a mismatch raises `FingerprintMismatch` before any wallet RPC. The restore prompt does not show the recovered value, so the operator compares by typing the fingerprint from the wallet record. Without a record, the operator is shown the recovered fingerprint, whether the backup identifier was derived from the seed (the codex32 fingerprint rule, Bails' RIPEMD-160 rule, or its mid-2023 alpha's SHA-256 rule), and a warning, and then chooses. Fresh creation (`ms32 create` or GUI setup) does not authenticate against a pre-existing wallet: it shows the newly created seed's fingerprint and requires the operator to acknowledge recording it. These checks catch mistakes such as wrong or mixed cards; anyone able to replace a threshold of cards could already read them. |
 | Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, wallet database, or wallet-creation operation. Every call uses loopback and the selected chain. |
 | Destination | Only an empty descriptor wallet with private keys enabled, no external signer, transactions, descriptors, keypool entries, or active scan is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
 | Seed source | The original ceremony result or validated recovered master seed supplies root-xprv private descriptors for Core's reported chain. After import, Core v32's wallet HD-key RPCs derive the requested BIP44, BIP49, BIP84, and BIP86 account xpubs. |
@@ -270,10 +270,11 @@ only while more than one answers. On screen a wallet is chosen by the position o
 its row, never by the text of its label, and Core's text is rendered without
 Pango markup, so a wallet name cannot hide or impersonate another.
 
-The window uses the same recovery-identity gate. Its restore page asks for the
-fingerprint without showing it, a new wallet's fingerprint is shown once and then
-typed back, and **I have no wallet record** shows the recovered fingerprint, the
-identifier result, and the warning before the operator chooses.
+The window uses the same recovery-identity gate on restore. Its restore page
+asks for the fingerprint without showing it, while fresh setup only shows the
+new fingerprint and requires **I wrote it down** because there is no pre-existing
+wallet identity to authenticate. **I have no wallet record** shows the recovered
+fingerprint, the identifier result, and the warning before the operator chooses.
 
 The program draws no entropy, opens no socket, starts no process of its own, and
 writes no file: no settings, no recent list, no log, and no clipboard write of
