@@ -100,7 +100,7 @@ def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
         patch.object(sys, "stdin", io.StringIO(VECTOR_1["secret_s"][:-1] + "?")),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
-        patch.object(cli, "_correction_candidates", return_value=((_candidate(),), True, None, False)),
+        patch.object(cli, "_correction_candidates", return_value=((_candidate(),), True, None)),
     ):
         status = entrypoint(["correct", *(["--plain"] if plain else [])])
     prog = "codex32" if entrypoint is cli.main else "ms32"
@@ -127,9 +127,7 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
     monkeypatch.setattr(_cli_input, "_editable_input", respond)
     monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: (candidate,))
-    monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
-    )
+    monkeypatch.setattr(cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None))
     core = _FakeBitcoinCore()
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
     stdout, stderr = _TTYOutput(), _TTYOutput()
@@ -163,9 +161,7 @@ def test_yes_reveals_candidate_after_gate_with_plain_output(monkeypatch):
         return next(responses)
 
     monkeypatch.setattr(_cli_input, "_editable_input", respond)
-    monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
-    )
+    monkeypatch.setattr(cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None))
     with (
         patch.object(sys, "stdin", _TTYInput()),
         contextlib.redirect_stdout(stdout),
@@ -181,9 +177,7 @@ def test_redirected_stderr_blocks_low_discrimination_disclosure(monkeypatch):
     candidate = _candidate(source)
     responses = iter((source[:-1] + "?",))
     monkeypatch.setattr(_cli_input, "_editable_input", lambda *args, **kwargs: next(responses))
-    monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
-    )
+    monkeypatch.setattr(cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None))
     stdout, stderr = io.StringIO(), io.StringIO()
     with (
         patch.object(sys, "stdin", _TTYInput()),
@@ -218,9 +212,7 @@ def test_redirected_correct_uses_terminal_gate_without_second_confirmation(monke
         return "YES"
 
     monkeypatch.setattr(_cli_input, "_confirmation_input", confirm)
-    monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
-    )
+    monkeypatch.setattr(cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None))
     stdout, stderr = io.StringIO(), _TTYOutput()
     with (
         patch.object(sys, "stdin", io.StringIO(source[:-1] + "?")),

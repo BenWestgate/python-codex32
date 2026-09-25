@@ -452,7 +452,7 @@ def _correction_candidates(
     deadline: float | None = None,
     capture_layers: list[tuple[int, int]] | None = None,
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
-) -> tuple[tuple[CorrectionCandidate, ...], bool, float | None, bool]:
+) -> tuple[tuple[CorrectionCandidate, ...], bool, float | None]:
     count = len(value.replace(" ", ""))
     targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
     deadline = monotonic() + 10 if deadline is None else deadline
@@ -478,7 +478,7 @@ def _correction_candidates(
         if len(candidates) == 1 and not candidates[0].search_complete
         else ()
     )
-    return results, complete, deadline, False
+    return results, complete, deadline
 
 
 def _fingerprint_matcher(
