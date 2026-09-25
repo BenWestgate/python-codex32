@@ -252,5 +252,5 @@ initialization.
 | Parsing and profiles | [`test_bech32.py`](../../tests/test_bech32.py), [`test_bip93.py`](../../tests/test_bip93.py), and [`test_profiles.py`](../../tests/test_profiles.py) |
 | Creation, sharing, and recovery | [`test_generation.py`](../../tests/test_generation.py), [`test_sharing.py`](../../tests/test_sharing.py), and the BIP93 vectors under `tests/data/` |
 | Correction | [`test_correction_bch.py`](../../tests/test_correction_bch.py), [`test_correction_indel.py`](../../tests/test_correction_indel.py), [`correction_capture.py`](../../tools/correction_capture.py), and [`differential_correction.py --verify`](../../tools/differential_correction.py) |
-| Bitcoin Core and wallets | [`test_bitcoin_core.py`](../../tests/test_bitcoin_core.py), [`test_wallet.py`](../../tests/test_wallet.py), [`bitcoin_core_regtest.py`](../../tools/bitcoin_core_regtest.py), and [`differential_wallet.py`](../../tools/differential_wallet.py) |
+| Bitcoin Core and wallets | [`test_bitcoin_core.py`](../../tests/test_bitcoin_core.py), [`test_wallet.py`](../../tests/test_wallet.py), [`bitcoin_core_regtest.py`](../../tools/bitcoin_core_regtest.py), and [`bitcoin_core_main_smoke.py`](../../tools/bitcoin_core_main_smoke.py) |
 | CLI channels and input | [`test_cli.py`](../../tests/test_cli.py) |
