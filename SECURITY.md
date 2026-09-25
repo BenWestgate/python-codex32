@@ -1,9 +1,15 @@
 # Security
 
-codex32 handles wallet recovery material. Use a trusted computer and have the
+codex32 handles wallet recovery material. A **trusted computer** is under your
+exclusive control, is not known or suspected to be compromised, and runs an
+operating system and other software you trust for the operation. For wallet
+work, that trusted software includes Python, codex32, the terminal,
+`bitcoin-cli`, Bitcoin Core, and their relevant configuration. Wallet encryption,
+application permissions, and RPC authentication do not make a compromised
+computer trusted. Have the
 software and recovery plan reviewed before relying on it with funds. For
-stronger isolation, use codex32 and the Bitcoin Core signing wallet only on a
-computer kept permanently offline.
+stronger isolation, keep the trusted computer disconnected from every network
+before, while, and after it handles private recovery or signing material.
 
 A valid checksum detects many copying mistakes. It does not prove that a backup
 belongs to your wallet. A correction is only a suggestion; compare it with the
@@ -11,10 +17,16 @@ physical backup and wallet information kept elsewhere.
 
 Python, your terminal, and your operating system may retain secret text in
 memory or scrollback. codex32 does not intentionally save secrets and keeps
-them out of command arguments and normal machine output, but it cannot
-guarantee that every copy is erased from swap, hibernation data, or crash
-dumps. Using Tails and shutting down when finished helps mitigate this Python
-limitation.
+them out of command arguments, logs, and unrelated output. Commands that create,
+recover, derive, correct, or explicitly export recovery material intentionally
+display it when that is their purpose. codex32 cannot guarantee that every copy
+is erased from swap, hibernation data, or crash dumps. Using Tails and shutting
+down when finished helps mitigate this Python limitation.
+
+Run a command first and enter recovery material at its prompt, or redirect its
+standard input from a separately protected source. Do not embed recovery text in
+shell command text: shell history, terminal logging, wrappers, and process
+tooling may retain it even though codex32 never receives it as an argument.
 
 ## Report a security problem
 
