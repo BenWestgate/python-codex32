@@ -198,6 +198,11 @@ def test_candidate_filter_rejects_every_unsafe_wallet_property(
         "transactions": (_empty_info(txcount=1), []),
         "keys": (_empty_info(keypoolsize=1), []),
         "change": (_empty_info(keypoolsize_hd_internal=1), []),
+        "boolean transactions": (_empty_info(txcount=False), []),
+        "boolean keys": (_empty_info(keypoolsize=False), []),
+        "boolean change": (_empty_info(keypoolsize_hd_internal=False), []),
+        "invalid unlock": (_empty_info(unlocked_until="unlocked"), []),
+        "null unlock": (_empty_info(unlocked_until=None), []),
         "scanning": (_empty_info(scanning={"duration": 1}), []),
         "descriptors": (_empty_info(), [{"desc": "public"}]),
         "bad\x1bname": (_empty_info(), []),
@@ -626,6 +631,54 @@ def test_interruption_during_walletlock_retries_cleanup(monkeypatch: pytest.Monk
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     assert client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None) == "signer"
     assert rpc.locked and lock_calls == 2
+
+
+def test_walletlock_failure_requires_manual_lock_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
+    rpc = _ImportRPC(locked=False)
+    original = rpc.__call__
+
+    def fail_lock(
+        client: BitcoinCore, *arguments: str, wallet: str | None = None, stdin: str | None = None
+    ) -> object:
+        if arguments == ("walletlock",):
+            raise BitcoinCoreError("suppressed lock failure")
+        return original(client, *arguments, wallet=wallet, stdin=stdin)
+
+    monkeypatch.setattr(BitcoinCore, "_rpc", fail_lock)
+    with pytest.raises(
+        BitcoinCoreError, match="Confirm immediately in Bitcoin Core that the wallet is locked"
+    ):
+        BitcoinCore("bitcoin-cli", "main", 300000).initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None
+        )
+
+
+@pytest.mark.parametrize("unlocked_until", (100, False, "locked"))
+def test_failed_lock_verification_requires_manual_confirmation(
+    monkeypatch: pytest.MonkeyPatch, unlocked_until: object
+) -> None:
+    rpc = _ImportRPC(locked=False)
+    original = rpc.__call__
+    lock_requested = False
+
+    def remain_unlocked(
+        client: BitcoinCore, *arguments: str, wallet: str | None = None, stdin: str | None = None
+    ) -> object:
+        nonlocal lock_requested
+        if arguments == ("walletlock",):
+            lock_requested = True
+            return None
+        if lock_requested and arguments == ("getwalletinfo",):
+            return _empty_info(unlocked_until=unlocked_until)
+        return original(client, *arguments, wallet=wallet, stdin=stdin)
+
+    monkeypatch.setattr(BitcoinCore, "_rpc", remain_unlocked)
+    with pytest.raises(
+        BitcoinCoreError, match="Confirm immediately in Bitcoin Core that the wallet is locked"
+    ):
+        BitcoinCore("bitcoin-cli", "main", 300000).initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None
+        )
 
 
 def test_unencrypted_wallet_imports_without_a_lock_call(monkeypatch: pytest.MonkeyPatch) -> None:
