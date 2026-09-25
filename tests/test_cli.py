@@ -132,14 +132,14 @@ def _offline_core(monkeypatch):
 
 
 _RECORDED_FINGERPRINT = importlib.import_module("codex32.cli")._recorded_fingerprint
+_SHOW_FINGERPRINT = importlib.import_module("codex32.cli")._show_fingerprint
 
 
 @pytest.fixture(autouse=True)
 def _matching_record(monkeypatch):
-    """Answer the wallet-record prompt correctly; its own behavior is tested directly below."""
-    monkeypatch.setattr(
-        "codex32.cli._recorded_fingerprint", lambda core, secret, _fresh: core.fingerprint(secret)
-    )
+    """Keep unrelated CLI tests independent of wallet-record interaction."""
+    monkeypatch.setattr("codex32.cli._recorded_fingerprint", lambda core, secret: core.fingerprint(secret))
+    monkeypatch.setattr("codex32.cli._show_fingerprint", lambda _core, _secret, _action: None)
 
 
 def _invoke(args: list[str], *lines: str) -> _Result:
@@ -2791,7 +2791,7 @@ def test_restore_record_prompt_retries_until_the_library_accepts(
     wrong = bytes([right[0] ^ 1]) + right[1:]
     prompts = _record_answers(monkeypatch, "not hex", wrong.hex(), right.hex().upper())
 
-    assert _RECORDED_FINGERPRINT(core, secret, False) == right
+    assert _RECORDED_FINGERPRINT(core, secret) == right
     assert prompts == ["Type the master fingerprint from your wallet record (Enter if none)"] * 3
     errors = capsys.readouterr().err
     assert "8 characters" in errors and "does not match" in errors
@@ -2806,7 +2806,7 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     fingerprint = core.fingerprint(secret)
 
     prompts = _record_answers(monkeypatch, "", "n", "", "y")
-    assert _RECORDED_FINGERPRINT(core, secret, False) is None
+    assert _RECORDED_FINGERPRINT(core, secret) is None
     assert prompts[1] == prompts[3] == "Restore without a wallet record? [y/N]"
     shown = capsys.readouterr().err
     assert shown.count(f"Master fingerprint: {fingerprint.hex().upper()}") == 2
@@ -2814,27 +2814,35 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
 
     derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
     _record_answers(monkeypatch, "", "yes")
-    assert _RECORDED_FINGERPRINT(core, derived, False) is None
+    assert _RECORDED_FINGERPRINT(core, derived) is None
     assert "matches this seed (codex32 rule)" in capsys.readouterr().err
 
 
-def test_fresh_record_is_typed_back_and_shown_again_after_a_mismatch(
+def test_create_only_requires_acknowledging_that_the_fingerprint_was_recorded(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     core, secret = _FakeBitcoinCore(), parse_codex32(VECTOR_1["secret_s"])
     assert isinstance(secret, MasterSeed)
     right = core.fingerprint(secret)
-    wrong = bytes([right[0] ^ 1]) + right[1:]
-    prompts = _record_answers(monkeypatch, "", "", wrong.hex(), "", right.hex())
+    prompts = _record_answers(monkeypatch, "")
 
-    assert _RECORDED_FINGERPRINT(core, secret, True) == right
-    assert prompts == [
-        "Write it on the wallet record, then press Enter",
-        "Type the master fingerprint from your wallet record",
-        "Type the master fingerprint from your wallet record",
-        "Check the wallet record against it, then press Enter",
-        "Type the master fingerprint from your wallet record",
-    ]
-    errors = capsys.readouterr().err
-    assert errors.count(f"Master fingerprint: {right.hex().upper()}") == 2
-    assert "8 characters" in errors and "does not match" in errors
+    _SHOW_FINGERPRINT(core, secret, "Write it on the wallet record")
+    assert prompts[0] == "Write it on the wallet record, then press Enter"
+    shown = capsys.readouterr().err
+    assert f"Master fingerprint: {right.hex().upper()}" in shown
+
+
+def test_create_initialization_does_not_authenticate_against_a_preexisting_wallet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core, secret = _FakeBitcoinCore(), parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    shown: list[str] = []
+    monkeypatch.setattr(
+        "codex32.cli._show_fingerprint",
+        lambda _core, _secret, action: shown.append(action),
+    )
+
+    assert importlib.import_module("codex32.cli")._initialize_wallet(core, secret, confirmed=False) == 0
+    assert shown == ["Write it on the wallet record"]
+    assert core.expected is None

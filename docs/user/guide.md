@@ -164,7 +164,8 @@ wallet should be trusted until initialization completes.
 ### 4. Complete the record and store the cards
 
 Before the wallet is filled, write the displayed master fingerprint on the
-wallet record and type it back from what you wrote. Then copy the displayed
+wallet record and confirm that you wrote it down. Creation is not a restore, so
+there is no pre-existing fingerprint or descriptor to authenticate here. Then copy the displayed
 backup identifier, wallet name, Bitcoin Core version, derivation standards, and
 account number to the wallet record. Add the approximate
 creation / earliest-use date. Do not put a descriptor timestamp on a recovery
