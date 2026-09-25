@@ -1,6 +1,6 @@
 include LICENSE README.md SECURITY.md
 recursive-include LICENSES *
-recursive-include docs *.html *.md
+recursive-include docs *.csv *.html *.json *.md
 prune docs/planning
 exclude docs/developer/provenance.md
 recursive-include requirements *.txt
