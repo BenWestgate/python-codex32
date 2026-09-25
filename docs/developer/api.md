@@ -638,7 +638,7 @@ with `expected_fingerprint`. Restore callers normally supply bytes typed from
 the wallet record (read with `parse_fingerprint`); `None` means either a fresh
 creation, where there is no pre-existing wallet identity to authenticate, or
 the operator's explicit choice to restore without a record after seeing the
-fingerprint and `identifier_origin`. A mismatch raises `FingerprintMismatch`
+recovered fingerprint and backup identifier. A mismatch raises `FingerprintMismatch`
 before any wallet RPC.
 Master-fingerprint display is likewise delegated to Core:
 a stateless root P2PKH descriptor is normalized, `deriveaddresses` derives its

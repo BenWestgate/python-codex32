@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import shutil
@@ -12,8 +11,6 @@ from time import sleep
 from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
-from codex32.bech32 import _u5_to_chars, convertbits
-from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
 from codex32.wallet import _descriptor_records, core_descriptors
 
@@ -55,40 +52,6 @@ NO_RECORD_WARNING = (
     "too: if you do not know what this wallet should hold, have someone you trust check it. Once you are "
     "sure, write the fingerprint on a new wallet record."
 )
-
-
-def identifier_note(origin: str | None) -> str:
-    """Say what `identifier_origin` found, for an operator restoring without a record."""
-    if origin is None:
-        return (
-            "The backup identifier was not made from this seed. That can be normal for codex32 backups "
-            "made from split shares, supplied seed bytes or an explicit identifier. Bails made every "
-            "identifier from its seed, so for a Bails backup these are the wrong or mixed-up cards."
-        )
-    return (
-        f"The backup identifier matches this seed ({origin} rule). That rules out most mixed-up cards, "
-        "but not cards replaced on purpose."
-    )
-
-
-def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
-    """Name the rule that derived this backup's identifier from its seed, if any.
-
-    codex32 uses the BIP32 fingerprint. Bails used RIPEMD-160 of the seed (SHA-256
-    in its mid-2023 alpha) and checked three characters, keeping the fourth for re-sharing.
-    """
-    identifier = secret.header.identifier
-    if identifier == _fingerprint_identifier(fingerprint):
-        return "codex32"
-    for name, digest in (("Bails", "ripemd160"), ("Bails alpha", "sha256")):
-        try:
-            hashed = hashlib.new(digest, secret.seed_bytes).digest()
-        except ValueError:
-            continue
-        derived = convertbits(hashed, 8, 5, pad=True)
-        if identifier[:3] == _u5_to_chars(tuple(derived[:3])):
-            return name
-    return None
 
 
 @dataclass(frozen=True)

@@ -13,8 +13,6 @@ from codex32._bitcoin_core import (
     BitcoinCore,
     BitcoinCoreError,
     FingerprintMismatch,
-    identifier_note,
-    identifier_origin,
     parse_fingerprint,
 )
 from codex32._cli_input import (
@@ -352,7 +350,6 @@ def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
     fingerprint = core.fingerprint(secret)
     _print(f"\nMaster fingerprint: {fingerprint.hex().upper()}", err=True)
     _print(f"Backup identifier: {secret.header.identifier.upper()}", err=True)
-    _print(identifier_note(identifier_origin(secret, fingerprint)), err=True)
     _print(NO_RECORD_WARNING, err=True)
     return _text("Restore without a wallet record? [y/N]", optional=True).lower() in ("y", "yes")
 
