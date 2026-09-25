@@ -264,6 +264,53 @@ def test_uppercase_input_preserves_case_and_reverse_addends() -> None:
     assert result.addend_hamming_weight == addend.bit_count()
 
 
+@pytest.mark.parametrize("uppercase", (False, True))
+def test_public_correction_interprets_mixed_case_by_majority(uppercase: bool) -> None:
+    source = VECTOR_1["secret_s"].upper() if uppercase else VECTOR_1["secret_s"]
+    position = next(
+        index for index, character in enumerate(source[3:], 3) if character.lower() != character.upper()
+    )
+    mixed = source[:position] + source[position].swapcase() + source[position + 1 :]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), mixed)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+
+
+@pytest.mark.parametrize("uppercase", (False, True))
+@pytest.mark.parametrize(("entered", "kind"), (("P", "substitution"), ("B", "erasure")))
+def test_mixed_case_correction_edits_preserve_the_entered_character(
+    uppercase: bool,
+    entered: str,
+    kind: str,
+) -> None:
+    source = VECTOR_1["secret_s"].upper() if uppercase else VECTOR_1["secret_s"]
+    position = 3
+    observed = entered.lower() if uppercase else entered
+    damaged = source[:position] + observed + source[position + 1 :]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+    assert tuple(
+        (edit.kind, edit.reverse_index, edit.observed, edit.replacement) for edit in result[0].edits
+    ) == ((kind, len(source) - position - 1, observed, source[position]),)
+
+
+def test_mixed_case_structural_edits_preserve_the_entered_character() -> None:
+    source = VECTOR_1["secret_s"]
+    damaged = source[:3] + "P" + source[4:20] + source[21:]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+    assert {edit.kind for edit in result[0].edits} == {"insertion", "substitution"}
+    assert next(edit for edit in result[0].edits if edit.kind == "substitution").observed == "P"
+
+
 def test_fixed_failures_are_fail_closed() -> None:
     mixed = "M" + VECTOR_1["secret_s"][1:]
     damaged = list(VECTOR_1["secret_s"])

@@ -1852,6 +1852,24 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
     assert bip39.exit_code == 0 and "already valid" in bip39.stdout
 
 
+def test_correct_suggests_the_majority_case_for_mixed_case_damage() -> None:
+    source = VECTOR_1["secret_s"]
+    position = next(
+        index for index, character in enumerate(source[3:], 3) if character.lower() != character.upper()
+    )
+    mixed = source[:position] + source[position].upper() + source[position + 1 :]
+
+    result = _invoke(["correct"], mixed)
+    wrong_length = _invoke(["correct", "--bytes", "32"], mixed)
+
+    assert result.exit_code == 1
+    assert source in result.stderr
+    assert "No valid correction found" not in result.stderr
+    assert wrong_length.exit_code == 2
+    assert "--bytes does not match" in wrong_length.stderr
+    assert source not in wrong_length.stderr
+
+
 def test_correction_hides_internal_candidate_reparse_failures() -> None:
     result = _invoke(["correct"], "ms12auxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg")
 

@@ -284,6 +284,7 @@ def _capacities(erasures: int, _degree: int) -> range:
 class _Target:
     context: CorrectionContext
     text: str
+    observed_text: str
     immutable: int
     target: int
     base: int
@@ -292,12 +293,18 @@ class _Target:
 
 
 def _prepare(
-    context: CorrectionContext, damaged_text: str, classes: Sequence[_StructuralClass]
+    context: CorrectionContext,
+    damaged_text: str,
+    classes: Sequence[_StructuralClass],
+    observed_text: str | None = None,
 ) -> _Target | None:
     normalized = _normalize(context, damaged_text)
     if normalized is None:
         return None
     text, immutable = normalized
+    observed = text if observed_text is None else observed_text.replace(" ", "")
+    if len(observed) != len(text):
+        raise ValueError("observed text must preserve the searched text length")
     target = context.expected_length
     assert target is not None
     shapes = tuple(shape for shape in classes if shape.delta == len(text) - target)
@@ -311,7 +318,35 @@ def _prepare(
     }
     base = len(context.hrp) + 1
     degree = _checksum_for_encoded_length(context.hrp, target - base).length
-    return _Target(context, text, immutable, target, base, degree, counts)
+    return _Target(context, text, observed, immutable, target, base, degree, counts)
+
+
+def _restore_observed(
+    candidate: CorrectionCandidate,
+    state: _Target,
+    view: _View | None = None,
+) -> CorrectionCandidate:
+    """Restore diagnostic characters transformed only to make mixed-case text searchable."""
+
+    def source_position(position: int) -> int | None:
+        if view is None:
+            return position
+        offset = 0
+        for start, size in view.spans:
+            if position < offset + size:
+                return None if start < 0 else start + position - offset
+            offset += size
+        return None
+
+    restored = []
+    body_length = state.target - state.base
+    for edit in candidate.edits:
+        position = body_length - edit.reverse_index - 1
+        source = source_position(position)
+        if edit.observed and source is not None and 0 <= source < len(state.observed_text) - state.base:
+            edit = replace(edit, observed=state.observed_text[state.base + source])
+        restored.append(edit)
+    return replace(candidate, edits=tuple(restored))
 
 
 def _layers(
@@ -443,6 +478,8 @@ def _search_fixed(
         suspected_profile=state.context.hrp,
         immutable_prefix=state.context.immutable_prefix,
     )
+    if fixed is not None:
+        fixed = _restore_observed(fixed, state)
     if fixed is None or not _allowed(state.context, fixed) or allowed is not None and not allowed(fixed):
         return None
     substitutions = sum(edit.kind == "substitution" for edit in fixed.edits)
@@ -508,10 +545,12 @@ def _search_target(
             erasures = tuple(sorted(len(view) - p - 1 for p, _ in unknown))
             fixed = solver.correct(
                 view,
-                tuple((p, text[state.base + source]) for p, source in unknown if source >= 0),
+                tuple((p, state.observed_text[state.base + source]) for p, source in unknown if source >= 0),
                 erasures,
                 incremental.packed(view),
             )
+            if fixed is not None:
+                fixed = _restore_observed(fixed, state, view)
             if fixed is None or not _allowed(context, fixed) or allowed is not None and not allowed(fixed):
                 continue
             substitutions = sum(edit.kind == "substitution" for edit in fixed.edits)
@@ -520,7 +559,7 @@ def _search_target(
                 continue
             candidate = _adapt(
                 fixed,
-                _view_variant(view, text, state.base),
+                _view_variant(view, state.observed_text, state.base),
                 state.counts[shape][remaining],
                 len(text),
                 state.target,
@@ -541,7 +580,7 @@ def _search_target(
                                     CorrectionEdit(
                                         "transposition",
                                         len(view) - offset - i - 1,
-                                        text[state.base + observed_position],
+                                        state.observed_text[state.base + observed_position],
                                         candidate.artifact.text[state.base + offset + i],
                                     )
                                 )
@@ -563,6 +602,7 @@ def _search_many(
     competitors: bool = False,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     capture_layers: list[tuple[int, int]] | None = None,
+    observed_text: str | None = None,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
     deadline = monotonic() + 10 if deadline is None else deadline
     states = tuple(
@@ -573,6 +613,7 @@ def _search_many(
                 context,
                 damaged_text,
                 _CLASSES,
+                observed_text,
             )
         )
         is not None

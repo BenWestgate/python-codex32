@@ -45,7 +45,6 @@
   "correction": [
     {"id": "damaged-prefix", "profile": "ms", "text": "cl10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
     {"id": "damaged-separator", "profile": "ms", "text": "msx0testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
-    {"id": "mixed-case", "profile": "ms", "text": "Ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
     {"id": "too-many-errors", "profile": "ms", "text": "ms12test5xxyxxuxxxxxxxxxpxxxxxxxxxx4nzvca9cmczlw"},
     {"id": "non-printable", "profile": "ms", "text": "ms10testsxxxxxxxxxxxxxxxx\nxxxxxxxxxx4nzvca9cmczlw"}
   ],

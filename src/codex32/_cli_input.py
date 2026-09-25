@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterator
 from time import monotonic
 from typing import Any, Literal, cast
 
+from codex32.bech32 import interpret_mixed_case
 from codex32.bip93 import (
     Secret,
     Share,
@@ -378,14 +379,13 @@ def _case_interpretation(
     allowed: Callable[[CorrectionCandidate], bool] | None,
 ) -> tuple[CorrectionCandidate | None, str, str, str] | None:
     """Normalize likely casing and mark contrary-case data as erasures."""
-    if value.upper() == value or value.lower() == value:
-        return None
     separator = value.find("1")
     base_length = separator + 1 if separator >= 0 else 0
     immutable_length = len(prefix) if prefix and value.lower().startswith(prefix.lower()) else base_length
-    letters = [character for character in value[immutable_length:] if character.lower() != character.upper()]
-    uppercase = sum(character.isupper() for character in letters) > len(letters) / 2
-    corrected = value.upper() if uppercase else value.lower()
+    interpretation = interpret_mixed_case(value, immutable_length)
+    if interpretation is None:
+        return None
+    corrected, erased, uppercase = interpretation
     corrected_prefix = prefix.upper() if uppercase else prefix.lower()
     try:
         artifact = _parse(corrected, profiles)
@@ -397,14 +397,6 @@ def _case_interpretation(
         )
         proposed = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=bits)
         candidate = proposed if allowed is None or allowed(proposed) else None
-    erased = "".join(
-        corrected[index]
-        if index < immutable_length
-        or character.lower() == character.upper()
-        or character.isupper() == uppercase
-        else "?"
-        for index, character in enumerate(value)
-    )
     return candidate, corrected, erased, corrected_prefix
 
 
