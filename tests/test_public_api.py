@@ -116,7 +116,9 @@ def test_master_seed_factory_can_only_construct_index_s() -> None:
     (
         ((1, "test", "s"), InvalidThreshold),
         ((2, "bad", "a"), InvalidIdentifier),
+        ((2, "tesK", "a"), InvalidIdentifier),
         ((0, "test", "a"), InvalidShareIndex),
+        ((2, "test", "K"), InvalidShareIndex),
     ),
 )
 def test_header_invariants(arguments: tuple[object, ...], error: type[Exception]) -> None:

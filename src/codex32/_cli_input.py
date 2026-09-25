@@ -63,6 +63,11 @@ class InteractiveConfirmationRequired(Exception):
     pass
 
 
+def _ascii_lower(value: str) -> str:
+    """Lowercase ASCII letters without normalizing Unicode lookalikes."""
+    return "".join(character.lower() if character.isascii() else character for character in value)
+
+
 def _confirmation_input(prompt: str) -> str:
     if sys.stdin.isatty():
         return _editable_input(prompt)
@@ -236,13 +241,13 @@ def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
     compact = "".join(observed.split())
     expected = "".join(expected.split()).lower()
     tokens = observed.split()
-    grouped = len(tokens) > 1 and compact.lower() != expected
+    grouped = len(tokens) > 1 and _ascii_lower(compact) != expected
     boundaries = {0}
     splits: set[tuple[int, int]] = set()
     position = 0
     for token in tokens:
         for offset in range(0, len(expected), 4):
-            if expected[offset : offset + len(token)] == token.lower() and (
+            if expected[offset : offset + len(token)] == _ascii_lower(token) and (
                 len(token) % 4 == 0 or offset + len(token) == len(expected)
             ):
                 splits.update((position + i, offset + i) for i in range(4, len(token), 4))
@@ -258,7 +263,7 @@ def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
                 if end > start:
                     current = [(end - start, b"\x02" * (end - start))]
                     for j, char in enumerate(canonical, 1):
-                        edit = compact[end - 1].lower() != char
+                        edit = _ascii_lower(compact[end - 1]) != char
                         current.append(
                             min(
                                 (row[j - 1][0] + edit, row[j - 1][1] + bytes([edit])),
@@ -271,7 +276,7 @@ def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
                     continue
                 score = (
                     edits + row[-1][0],
-                    disturbed + (not grouped and compact[start:end].lower() != canonical),
+                    disturbed + (not grouped and _ascii_lower(compact[start:end]) != canonical),
                     trace + row[-1][1],
                     (*ends, end),
                 )
@@ -285,7 +290,9 @@ def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
         groups.append(observed[start:stop])
         start = stop
     changed = {
-        i for i, value in enumerate(groups) if "".join(value.split()).lower() != expected[i * 4 : i * 4 + 4]
+        i
+        for i, value in enumerate(groups)
+        if _ascii_lower("".join(value.split())) != expected[i * 4 : i * 4 + 4]
     }
     return groups, changed
 

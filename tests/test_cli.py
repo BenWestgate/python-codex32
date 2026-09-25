@@ -1434,6 +1434,34 @@ def test_creation_confirmation_highlights_groups_without_correction(
     assert "\x1b[3J\x1b[2J\x1b[H" in prompts[1][0]
 
 
+def test_creation_confirmation_retries_unicode_aliases_before_accepting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+
+    class Card:
+        text = "MS10TESK"
+
+    answers = iter(("", "MS10TESK", "TESK"))
+    prefills: list[str] = []
+    confirmed: list[str] = []
+
+    def answer(_prompt: str, **options: object) -> str:
+        if "prefill" in options:
+            prefills.append(str(options["prefill"]))
+        return next(answers)
+
+    def confirm(value: str) -> ConfirmationResult:
+        confirmed.append(value)
+        return ConfirmationResult(True)
+
+    monkeypatch.setattr(cli_module, "_text", answer)
+    cli_module._confirm_card(Card(), confirm)
+
+    assert prefills == ["TESK"]
+    assert confirmed == [Card.text]
+
+
 @pytest.mark.parametrize(
     ("observed", "shown", "red"),
     (
@@ -1561,6 +1589,13 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
     assert all(isinstance(share, Share) for share in shares)
     basis = [share for share in shares[:3] if isinstance(share, Share)]
     assert recover_secret(basis).header.identifier == "cash"
+
+
+def test_create_rejects_unicode_header_aliases_before_normalizing() -> None:
+    result = _invoke(["create", "MS12TESK"])
+
+    assert result.exit_code == 2
+    assert "ASCII" in result.stderr
 
 
 @pytest.mark.parametrize(("threshold", "count"), ((2, 3), (3, 5)))
