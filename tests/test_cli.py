@@ -2846,3 +2846,30 @@ def test_create_initialization_does_not_authenticate_against_a_preexisting_walle
     assert importlib.import_module("codex32.cli")._initialize_wallet(core, secret, confirmed=False) == 0
     assert shown == ["Write it on the wallet record"]
     assert core.expected is None
+
+
+@pytest.mark.parametrize("header", (None, "2"))
+def test_create_existing_checks_the_record_before_import(monkeypatch: pytest.MonkeyPatch, header: str | None):
+    cli = importlib.import_module("codex32.cli")
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    core = _FakeBitcoinCore()
+    checked = []
+
+    def record(_core, recovered):
+        assert core.imported is None
+        checked.append(recovered.seed_bytes)
+        return core.fingerprint(recovered)
+
+    def confirm(artifact, accept=None):
+        if accept:
+            accept(artifact.text)
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput())
+    monkeypatch.setattr(cli, "_creation_source", lambda *args: secret)
+    monkeypatch.setattr(cli, "_confirm_card", confirm)
+    monkeypatch.setattr(cli, "_recorded_fingerprint", record)
+    monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
+    assert ms_main(["create", "--existing", *([header] if header else [])]) == 0
+    assert checked == [secret.seed_bytes]
+    assert core.expected == core.fingerprint(secret)

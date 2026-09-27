@@ -500,7 +500,9 @@ def _create(
             if sys.stdin.isatty():
                 _confirm_card(secret)
             return (
-                _initialize_wallet(core, secret, timestamp=0 if existing else "now", fresh=not existing)
+                _initialize_wallet(
+                    core, secret, timestamp=0 if existing else "now", fresh=not existing, restore=existing
+                )
                 if core is not None
                 else 0
             )
@@ -542,7 +544,9 @@ def _create(
     finished = ceremony.finish()
     assert isinstance(finished, MasterSeed)
     if core is not None:
-        return _initialize_wallet(core, finished, timestamp=0 if existing else "now", fresh=not existing)
+        return _initialize_wallet(
+            core, finished, timestamp=0 if existing else "now", fresh=not existing, restore=existing
+        )
     _print("\nEvery recovery card was confirmed from its re-entered text.", err=True)
     return 0
 

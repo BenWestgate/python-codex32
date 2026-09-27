@@ -202,6 +202,8 @@ requires a complete explicit `ms1` string; it never infers or corrects a missing
 HRP or separator. No entropy is drawn for this path; raw hexadecimal seeds retain
 the generation path. Existing imports use timestamp zero to include prior
 history. Changing a supplied secret's identifier requires a sharing threshold.
+Existing-seed creation uses the same recorded-fingerprint or explicit no-record
+confirmation as wallet restoration before import, including after re-sharing.
 Shared creation
 uses an explicit threshold or full backup header. Without an explicit share
 count or indices, thresholds 2 and 3 produce the reviewed 2-of-3 and 3-of-5

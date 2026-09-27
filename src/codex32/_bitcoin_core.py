@@ -72,11 +72,7 @@ def identifier_note(origin: str | None) -> str:
 
 
 def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
-    """Name the rule that derived this backup's identifier from its seed, if any.
-
-    codex32 uses the BIP32 fingerprint. Bails used RIPEMD-160 of the seed (SHA-256
-    in its mid-2023 alpha) and checked three characters, keeping the fourth for re-sharing.
-    """
+    """Check codex32's fingerprint or Bails' three-character seed-digest identifier."""
     identifier = secret.header.identifier
     if identifier == _fingerprint_identifier(fingerprint):
         return "codex32"
