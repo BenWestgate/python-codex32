@@ -79,7 +79,7 @@ VECTOR_6 = {
     "codex32_peev": "cl10peevst6cqh0wu7p5ssjyf4z4ez42ks9jlt3zneju9uuypr2hddak6tlqsjhsks4laxts8q",
 }
 
-# BIP-93 generalized-HRP draft, bitcoin/bips bip93-generalize-hrp @ 01374bf.
+# BIP-93 generalized-HRP draft, BenWestgate/bips PR #2 @ 01374bf.
 BIP93_GENERAL_HRP = {
     "share_a": "test_vector12spana320zyxwvutsrqpnmlkjhgfedca320zyxwvutsrqpnmlkjhgfedca304ppsqh4l7v3dh",
     "share_c": "test_vector12spancacdefghjklmnpqrstuvwxyz023acdefghjklmnpqrstuvwxyz023jxmjy7q9xl7d3ul",
