@@ -127,7 +127,7 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
         "    xprv      export the root extended private key\n\n"
         "Never put a secret or share in command arguments or shell command text.\n"
         "Enter it when prompted; some commands also accept redirected standard input.\n"
-        "Protect redirected sources separately: shells, terminals, and wrappers may retain text.\n"
+        "Protect redirected files; shells and terminals may keep text.\n"
     )
     for command in ("check", "correct", "secret", "share"):
         assert command in generic_help and command in ms_help
