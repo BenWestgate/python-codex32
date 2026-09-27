@@ -369,7 +369,7 @@ def home(view: Adw.NavigationView) -> Adw.NavigationPage:
         ("Replace a lost card", "Make a fresh card for a set you still have enough of", _start_share),
         ("Show my master seed", "Advanced. Displays the secret itself on screen.", _start_seed),
     )
-    arts = ("sun", "lock", "potion", "dragon", "potion", "lock")
+    arts = ("sun", "lock", "potion", "dragon", "codex", "bitcoin")
     group = Adw.PreferencesGroup()
     for (label, detail, start), art in zip(tasks, arts, strict=True):
         row = Adw.ActionRow(title=label, subtitle=detail, activatable=True)

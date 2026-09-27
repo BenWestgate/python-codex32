@@ -177,3 +177,14 @@ library's.
 - A spinner page cannot be left. Every operation behind one is bounded — by the
   correction deadline or by `bitcoin-cli`'s 120-second timeout — but a wedged
   node means waiting for that timeout rather than pressing Back.
+
+## Desktop identity and artwork
+
+The six home actions use six distinct crops from the MIT-licensed Codex32 book
+cover. `artwork/LICENSE` carries the attribution and source. The central Codex32
+orb is also installed as `io.github.benwestgate.codex32` in the hicolor icon
+theme, next to `io.github.benwestgate.codex32.desktop`. That desktop-file name
+matches `app.APP_ID`, which is what GNOME uses to associate a running window
+with its launcher. The wheel build verifies both files are present; an installed
+build can be checked with `Gio.DesktopAppInfo` after adding that installation's
+`share` directory to `XDG_DATA_DIRS`.

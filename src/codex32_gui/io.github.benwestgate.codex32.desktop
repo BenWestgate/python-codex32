@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=codex32
+Comment=Create, check, repair, and restore codex32 Bitcoin backups
+Exec=codex32-gui
+Icon=io.github.benwestgate.codex32
+Terminal=false
+Categories=Utility;Finance;
+Keywords=Bitcoin;Wallet;Backup;Recovery;codex32;
+StartupNotify=true

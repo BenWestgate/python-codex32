@@ -167,6 +167,14 @@ class Walkthrough(app.Application):
     def home(self) -> bool:
         listed = rows(self.page())
         check("home offers six tasks", len(listed) == 6, [row.get_title() for row in listed])
+        artwork = [
+            item.get_property("file")
+            for item in walk(self.page())
+            if isinstance(item, Gtk.Image) and item.get_property("file")
+        ]
+        check(
+            "all six tasks use distinct book illustrations", len(artwork) == 6 == len(set(artwork)), artwork
+        )
         listed[2].emit("activated")
         return True
 
