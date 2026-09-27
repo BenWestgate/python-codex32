@@ -1,13 +1,9 @@
 # codex32 window
 
-`codex32-gui` does the same Bitcoin master-seed jobs as the `ms32` command, in a
-window. It is meant for someone who has never seen codex32 before: every screen
-asks one question, in plain words, and the recovery text is only ever on the
-screen while it is needed.
+`codex32-gui` provides the main `ms32` jobs in a GTK window. Recovery text stays
+on screen only while it is needed.
 
-The window does the six things on its first page:
-
-| Task | The command it matches |
+| Task | Command |
 |---|---|
 | Set up a new wallet | `ms32 create` |
 | Restore my wallet | `ms32 wallet` |
@@ -16,13 +12,12 @@ The window does the six things on its first page:
 | Replace a lost card | `ms32 share` |
 | Show my master seed | `ms32 secret` |
 
-`ms32 xprv`, Core Lightning secrets, and the BIP39 worksheet profiles stay in the
-command line.
+`ms32 xprv`, Core Lightning secrets, and BIP39 worksheet profiles remain
+command-line tasks.
 
 ## Install
 
-The window is drawn with GTK 4 and libadwaita, which arrive as system packages
-rather than as Python wheels, so it is an optional extra:
+GTK 4 and libadwaita come from the operating system:
 
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
@@ -31,152 +26,94 @@ python3 -m venv --system-site-packages .venv
 .venv/bin/codex32-gui
 ```
 
-Tails 7 and Debian 13 already carry those three packages, so an amnesic session
-needs no download. `--system-site-packages` is what lets the virtual environment
-see them; without it PyGObject cannot be imported. The base `codex32` install
-still has no third-party runtime dependency, and it still works without any of
-this.
+`--system-site-packages` lets the virtual environment import the system PyGObject
+package. The base `codex32` install still has no third-party runtime dependency.
 
 `codex32-gui` takes no arguments. Never put a secret in one.
 
-The window turns off the desktop's accessibility bus, because GTK otherwise
-offers every line on screen — your cards, your master seed and your wallet
-passphrase — to any other program running as you. If you use a screen reader,
-start it with `GTK_A11Y=atspi codex32-gui` instead; that gives the screen reader
-what it needs, and everything else on that bus too.
+The GUI disables GTK's accessibility bus by default because it can expose seed
+text and passphrases to other desktop processes. Screen-reader users can opt in
+with `GTK_A11Y=atspi codex32-gui`.
 
 ## Before you start
 
-Start Bitcoin Core first. Setting up and restoring a wallet both look for it
-before anything else happens, so that you never write cards by hand only to find
-that the last step cannot run. Practise on signet before you use mainnet: start
-Bitcoin Core with `bitcoin-qt -signet -server`, and the window will ask which
-network to use if more than one is running.
+Start Bitcoin Core first. Wallet setup and restore discover it before any card is
+created or entered. Practise on signet with `bitcoin-qt -signet -server`.
 
-Checking a card, repairing a card, replacing a card, and showing your master seed
-never open a Bitcoin Core wallet at all.
+Checking, repairing, replacing a card, and showing the master seed do not open a
+Bitcoin Core wallet.
 
 ## Making a backup
 
-Choose how many cards you want. Three cards where any two recover the wallet is
-the recommended shape: one card can be lost, burned or stolen and your bitcoin is
-still safe, and one card on its own tells a finder nothing.
+The recommended layout is three cards where any two recover the wallet. One card
+can be lost, and one card alone reveals nothing.
 
-Each card is shown once. Copy it onto paper with a pen, then type it back from
-the paper with the original off the screen. The read-back field starts completely
-empty, including `MS1`: type every character from the paper. That catches a slip
-of the pen now rather than years from now. If a group does not match, the window
-highlights that group in what you typed but does not show the expected characters;
-correct your transcription from the paper and try again, as many times as you
-like.
+Copy each card to paper, hide the on-screen original, then type the paper copy
+back. Read-back starts completely empty, including `MS1`. A mismatch highlights
+only the groups you typed differently; the expected text stays hidden.
 
-When every card is confirmed, choose the Bitcoin Core wallet that will hold the
-keys. Only empty wallets are offered, so no wallet you already use can be
-overwritten. If you have none, the window can ask Bitcoin Core to create one:
-give it a name and a passphrase, and codex32 fills it in and locks it again.
+After all cards are confirmed, choose an empty Bitcoin Core wallet or create a
+new blank one. A passphrase protects the wallet on this computer; the recovery
+cards still recover the seed if that passphrase is lost.
 
-Forgetting that passphrase does not lose your bitcoin. Your cards still recover
-the seed. It protects the wallet on this computer.
+Copy the final wallet details to the
+[wallet record](wallet-verification-record.html) and store it separately from the
+cards.
 
-Finally, copy the wallet details onto your
-[wallet record](wallet-verification-record.html) and keep it apart from every
-card. The window shows exactly the fields that record asks for.
+A card never contains **B**, **I**, **O**, or **1**. If one is entered, the GUI
+reports the likely look-alike instead of silently deleting it.
 
-A card never contains **B**, **I**, **O** or **1**: those four are left out of
-the alphabet precisely because handwriting confuses them with 8, J, L and 0. If
-you type one, the window says so and names what the card probably says, rather
-than quietly swallowing it.
+## Repairing a damaged card
 
-## A card that is damaged
+Type what you can read and `?` for each unknown character. The repair field
+preserves damaged headers and explicit `?` characters so the correction engine
+sees what is actually on the card. **Suggest a repair** appears whenever the
+input is within the supported correction bounds, including missing or extra
+characters.
 
-Type what you can still read, and `?` for each character you cannot make out.
-Unlike ordinary check and restore fields, this repair field does not stop at a
-damaged header: it preserves what the card actually says so the correction
-engine can work on it. **Suggest a repair** appears whenever the text is within
-the correction engine's supported bounds, including a card with a missing or
-extra character. The window shows one candidate and may highlight groups that
-changed from what you typed. Those highlights are changes, not proof that the
-original error was in those positions. Hold your card next to the screen and
-compare the entire string, character by character, before you accept it.
+A repair candidate may highlight groups that changed. Those are changes, not
+proven error locations. Hold your card next to the screen and compare the entire
+string, character by character.
 
-If too much is missing, the window stops and asks you to type `YES` in capitals
-first. That is not a formality: with that little checksum left, a repair can look
-correct without being correct. The screen says so twice over, because two
-different people reach it. If you are filling in the last squares of a backup you
-are making by hand, it tells you to check every character against what you wrote,
-since completing the squares locks any earlier mistake in for good. If you are
-recovering a damaged card, it tells you the answer may simply be wrong, and that
-you may have to try likely misreadings one at a time. If the funds matter, stop
-there and get help.
+When too little checksum remains, the GUI requires literal `YES` before showing a
+candidate. Completing new hand-written data can lock earlier transcription
+errors in; recovery from a damaged card can produce a valid-looking but wrong
+guess. Never erase or replace a card's ending just to make it validate. If the
+funds matter, stop and get help.
 
-**Never erase a card's last characters to make it check out.** A card that fails
-its check is telling you something is wrong. Replacing the ending hides that
-mistake inside a result that now looks valid, and you lose the one signal that
-would have found it. Type what the card actually says, `?` included, and let the
-window work from that.
-
-If more than one repair fits, the window shows none of them. Check the card again.
-
-A repaired card is never called intact. The window says it is what the card
-*should* say, marks it as guesswork, and tells you to copy it onto a fresh card
-and prove it by restoring your wallet and checking the master fingerprint.
+If more than one repair fits, none is shown. A repaired card is always presented
+as a guess; copy it to a fresh card and verify the restored wallet's master
+fingerprint.
 
 ## What the window never claims
 
-A card carries how many cards recovery needs, and its own letter. It does not
-carry how many cards exist, nothing writes that number down, and `ms32 share` can
-mint another card at any time. So the window will say "any 2 cards recover the
-wallet"; it will never say "2 of 3". Only your own records know how many cards
-you made.
+A share records its recovery threshold and its own index, not how many shares
+exist. The GUI can say “any 2 cards recover the wallet”; it cannot infer “2 of
+3”. `ms32 share` can add another card at any time.
 
-A card that checks out is undamaged. That does not prove it belongs to your
-wallet. Only restoring the wallet and comparing it with your wallet record shows
-that.
+A valid checksum shows that a card is internally consistent. It does not prove
+that the card belongs to your wallet. Restore and compare the master fingerprint
+with your wallet record.
 
-## What it does with your text
+## Secret handling
 
-Nothing is saved. There is no settings file, no recent-files list, no log, and
-nothing is copied to the clipboard for you. The typed text lives in the field and
-the card on screen, and both are cleared when you leave the page. The only
-program codex32 starts is `bitcoin-cli`, on the loopback address, and secrets
-reach it on standard input rather than in a command argument, so they never
-appear in the list of running programs.
+The GUI writes no settings, recent-file list, log, or clipboard data containing
+recovery text. Card text is cleared when its page is left. Bitcoin Core secrets
+go to `bitcoin-cli` on standard input, not command arguments.
 
-One thing is worth knowing: on X11, selecting text inside the entry field hands
-it to the primary selection, which some clipboard managers copy to disk. The
-window takes it back immediately, but the safest habit is not to select the text
-of a card at all. You never need to: nothing here asks you to copy and paste.
+On X11, selecting entry text briefly owns the primary selection, which some
+clipboard managers persist. Avoid selecting recovery text.
 
-The window asks for a Bitcoin Core wallet passphrase, which the command line
-deliberately does not; see [the security model](../security/model.md). It is sent
-straight to `bitcoin-cli` and is never stored.
-
-Ordinary card fields begin with `MS1` and protect that prefix from accidental
-deletion or duplication. A bad threshold or incompatible header stops forward
-typing immediately; choose **Type it as written** only when you really need to
-preserve damaged text for correction. **Repair a damaged card** deliberately
-does not impose that stop. Read-back after writing a new card is stricter still:
-it begins empty and supplies no prefix or correction at all.
+Ordinary entry supplies and protects `MS1` and blocks forward typing after an
+invalid header unless you explicitly choose to keep damaged text. **Repair a
+damaged card** accepts damaged headers. Read-back supplies nothing and performs
+no correction.
 
 ## If something goes wrong
 
-The window stops and says so, and it says in as many words that your cards are
-unharmed and still recover the wallet. Nothing is ever written onto a card by
-Bitcoin Core, so a failure here cannot damage one. Once Bitcoin Core is healthy,
-choose **Restore my wallet** and enter the same cards — not **Set up a new
-wallet**, which would make a different backup. If the wallet was part-filled
-before it failed, it is no longer empty, so it will not be offered again: create
-another one, or ask Bitcoin Core for a fresh blank wallet.
+GUI failure does not alter a paper card. Fix Bitcoin Core, then use **Restore my
+wallet** with the existing cards; do not create a new backup.
 
-When you restore, the window asks you to **check** the wallet details against
-your record rather than copy them onto it. That comparison — the master
-fingerprint above all — is the only thing that proves the cards you just typed
-belong to that wallet. It shows no creation date on that screen, because the
-real one is already on your record and today's would replace it.
-
-The window always uses account 0, which is what it writes onto your wallet
-record. If you are restoring a wallet whose record shows a different account
-number, use `ms32 wallet --account N` instead.
-
-The command line remains the fuller tool: `ms32 --help` lists everything,
-including the parts this window leaves out.
+Restore asks you to compare wallet identity, especially the master fingerprint,
+with your wallet record. The GUI always uses account 0. For another account, use
+`ms32 wallet --account N`.

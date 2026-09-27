@@ -65,8 +65,8 @@ def lookalike_fault(raw: str) -> str:
     dropping it quietly is right. These four are not: bech32 leaves out B, I, O
     and 1 precisely because handwriting confuses them with 8, J, L and 0, so they
     are exactly what someone misreads from their own card. Swallowing them would
-    turn the read-back, whose whole purpose is to catch a slip of the pen, into
-    the step that hides one.
+    turn the read-back, whose whole purpose is to catch a transcription error,
+    into the step that hides one.
     """
     typed = "".join(raw.split()).upper()
     keep = max(size for size in range(len(PREFIX) + 1) if typed[:size] == PREFIX[:size])

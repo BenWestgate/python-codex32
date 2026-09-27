@@ -417,19 +417,24 @@ class Walkthrough(app.Application):
         shown = labels(page)
         check("nothing about the guess is disclosed yet", card(page) == "", card(page))
         check(
-            "the gate addresses someone completing new data",
-            any("making by hand" in text and "locks it in" in text for text in shown),
-            [text for text in shown if "hand" in text],
+            "the gate warns that completion locks earlier errors in",
+            any(
+                "hand-written data" in text and "locks earlier transcription errors in" in text
+                for text in shown
+            ),
+            [text for text in shown if "hand-written" in text],
         )
         check(
             "and someone recovering a damaged card",
-            any("may simply be wrong" in text for text in shown),
-            [text for text in shown if "wrong" in text],
+            any(
+                "damaged card" in text and "valid-looking guess may still be wrong" in text for text in shown
+            ),
+            [text for text in shown if "damaged card" in text],
         )
         check(
             "and forbids replacing a checksum outright",
-            any("Never erase" in text for text in shown),
-            [text for text in shown if "Never" in text],
+            any("Never erase or replace" in text for text in shown),
+            [text for text in shown if "Never erase" in text],
         )
         show = button(page, "Show the guess")
         check("the guess stays hidden until YES is typed", not show.get_sensitive())
