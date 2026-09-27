@@ -1132,15 +1132,7 @@ def _collect(
 def _guess_gate_page(
     view: Adw.NavigationView, following: Callable[[], Adw.NavigationPage]
 ) -> Adw.NavigationPage:
-    """Invariant 5: disclose nothing about the candidate until literal YES is typed.
-
-    Thirteen or fifteen unreadable characters at the end of a card are the whole
-    checksum, depending on card length, so this screen is also what someone
-    filling in the last squares of a hand-made backup reaches. It has to speak to
-    both of them: a person recovering a damaged card, who may be shown something
-    simply wrong, and a person completing new data, whose earlier mistakes this
-    would set in stone.
-    """
+    """Invariant 5: disclose nothing until YES; whole-checksum completion reaches this gate too."""
     field = Gtk.Entry(placeholder_text="YES")
     show = _button("Show the guess", lambda: view.push(following()), style="destructive-action")
     show.set_sensitive(False)
