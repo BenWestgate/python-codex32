@@ -24,12 +24,23 @@ from dataclasses import dataclass
 from typing import Literal
 
 from codex32 import MasterSeed
-from codex32._bitcoin_core import _CHAINS, BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import (
+    _CHAINS,
+    NO_RECORD_WARNING,
+    BitcoinCore,
+    BitcoinCoreError,
+    FingerprintMismatch,
+    identifier_note,
+    identifier_origin,
+    parse_fingerprint,
+)
 
 __all__ = [
+    "NO_RECORD_WARNING",
     "UNLOCK_SECONDS",
     "BitcoinCore",
     "BitcoinCoreError",
+    "FingerprintMismatch",
     "Offer",
     "Wallet",
     "connect",
@@ -38,11 +49,14 @@ __all__ = [
     "fill",
     "fingerprint",
     "fingerprint_provider",
+    "identity",
     "initialize",
     "network",
+    "parse_fingerprint",
     "relock",
     "require_unlocked",
     "unlock",
+    "verify",
     "version_text",
 ]
 
@@ -138,6 +152,17 @@ def network(core: BitcoinCore) -> str:
 def fingerprint(core: BitcoinCore, secret: MasterSeed) -> str:
     """Return the BIP32 master fingerprint, derived by Bitcoin Core out of process."""
     return core.fingerprint(secret).hex()
+
+
+def identity(core: BitcoinCore, secret: MasterSeed) -> tuple[str, str]:
+    """Return the recovered fingerprint and what the backup identifier says about the seed."""
+    fingerprint = core.fingerprint(secret)
+    return fingerprint.hex(), identifier_note(identifier_origin(secret, fingerprint))
+
+
+def verify(core: BitcoinCore, secret: MasterSeed, expected: bytes | None) -> None:
+    """Refuse a seed that is not the recorded wallet before any wallet is listed or touched."""
+    core.verify_identity(secret, expected)
 
 
 def fingerprint_provider(core: BitcoinCore) -> Callable[[bytes], bytes]:
@@ -265,12 +290,15 @@ def initialize(
     secret: MasterSeed,
     name: str,
     *,
+    expected: bytes | None,
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
 ) -> str:
     """Hand the library the wallet the operator named, and let it do the import."""
     answer = _Answer(name, quoted=True)
-    return core.initialize(secret, answer.ask, answer.tell, account=account, timestamp=timestamp)
+    return core.initialize(
+        secret, answer.ask, answer.tell, expected_fingerprint=expected, account=account, timestamp=timestamp
+    )
 
 
 def fill(
@@ -279,6 +307,7 @@ def fill(
     name: str,
     passphrase: str,
     *,
+    expected: bytes | None,
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
 ) -> str:
@@ -290,9 +319,10 @@ def fill(
     covers the whole sequence; locking an already locked wallet is harmless.
     """
     if not passphrase:
-        return initialize(core, secret, name, account=account, timestamp=timestamp)
+        return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)
+    verify(core, secret, expected)
     unlock(core, name, passphrase)
     try:
-        return initialize(core, secret, name, account=account, timestamp=timestamp)
+        return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)
     finally:
         relock(core, name)

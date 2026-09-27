@@ -115,12 +115,14 @@ def main() -> None:
             if not isinstance(secret, MasterSeed):
                 raise TypeError("synthetic fixture was not a master seed")
             client = BitcoinCore.connect()
+            expected_fingerprint = client.fingerprint(secret)
             answers = iter(("yes",))
             if (
                 client.initialize(
                     secret,
                     lambda _prompt: next(answers),
                     lambda _message: None,
+                    expected_fingerprint=expected_fingerprint,
                     account=0,
                     timestamp=0,
                 )
@@ -145,6 +147,7 @@ def main() -> None:
                     secret,
                     lambda _prompt: next(account_answers),
                     lambda _message: None,
+                    expected_fingerprint=expected_fingerprint,
                     account=7,
                     timestamp="now",
                 )
