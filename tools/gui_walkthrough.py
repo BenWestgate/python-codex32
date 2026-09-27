@@ -18,9 +18,10 @@ from typing import Any
 import gi
 
 gi.require_version("Adw", "1")
+gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Adw, Gdk, GLib, Gtk
 
 from codex32_gui import app, pages, reading, wallet_setup
 
@@ -133,6 +134,8 @@ class Walkthrough(app.Application):
             self.home,
             self.typing,
             self.intact,
+            self.short_repair_entry,
+            self.short_repair_candidate,
             self.damaged,
             self.candidate,
             self.back_to_entry,
@@ -183,10 +186,37 @@ class Walkthrough(app.Application):
         check("checking a card opens one entry page", page.get_title() == "Check a card", page.get_title())
         field = field_of(page)
         check("the field starts with the frozen prefix", field.get_text() == reading.PREFIX)
+        check("typing starts after the frozen prefix", field.get_position() == len(reading.PREFIX))
+        field.insert_text(SHARE_C.lower(), field.get_position())
+        settle()
+        check(
+            "pasting a full card after the frozen prefix does not duplicate it",
+            "".join(field.get_text().split()) == SHARE_C,
+            field.get_text(),
+        )
+        field.clear()
+        settle()
+        field.delete_text(0, 1)
+        settle()
+        check("the frozen prefix cannot be deleted", field.get_text() == reading.PREFIX, field.get_text())
         go = next(
             item for item in walk(page) if isinstance(item, Gtk.Button) and item.get_label() == "Continue"
         )
         check("nothing may be submitted yet", not go.get_sensitive())
+        field.insert_text("X", len(reading.PREFIX))
+        settle()
+        check("a bad threshold is kept so it can be corrected", field.get_text() == "MS1X", field.get_text())
+        check("a bad threshold pauses ordinary entry", button(page, "Type it as written") is not None)
+        field.insert_text("N", len(field.get_text()))
+        settle()
+        check(
+            "forward typing stays frozen after the bad threshold",
+            field.get_text() == "MS1X",
+            field.get_text(),
+        )
+        field.delete_text(3, 4)
+        field.insert_text("2", 3)
+        settle()
         field.set_text("ms12nameacd")
         settle()
         check("text is uppercased and grouped", field.get_text() == "MS12 NAME ACD", field.get_text())
@@ -209,7 +239,7 @@ class Walkthrough(app.Application):
         field.set_text(SHARE_C)
         settle()
         check("a valid card may be submitted", go.get_sensitive())
-        go.emit("clicked")
+        field.emit("activate")
         return True
 
     def intact(self) -> bool:
@@ -225,14 +255,82 @@ class Walkthrough(app.Application):
         press(page, "Done")
         return True
 
+    def short_repair_entry(self) -> bool:
+        page = self.page()
+        if page.get_title() != "codex32":
+            return False
+        rows(page)[2].emit("activated")
+        page = self.page()
+        field = field_of(page)
+        field.set_text(SHARE_C[:-1])
+        settle()
+        check(
+            "a 47-character card is eligible for correction", button(page, "Suggest a repair").get_sensitive()
+        )
+        field.emit("activate")
+        return True
+
+    def short_repair_candidate(self) -> bool:
+        page = self.page()
+        if page.get_title() != "Repair" or button(page, "It does not match my card") is None:
+            return False
+        groups = [item for item in walk(page) if "card-group" in item.get_css_classes()]
+        flow = next(item for item in walk(page) if isinstance(item, Gtk.FlowBox))
+
+        def row_positions() -> list[float]:
+            children = [flow.get_child_at_index(index) for index in range(len(groups))]
+            return [child.compute_bounds(flow)[1].origin.y for child in children]
+
+        def four_columns(rows_y: list[float]) -> bool:
+            return len(set(rows_y)) == (len(groups) + 3) // 4 and all(
+                rows_y[index] == rows_y[(index // 4) * 4] for index in range(len(rows_y))
+            )
+
+        rows_y = row_positions()
+        check("Enter invokes repair for short input", "".join(item.get_label() for item in groups) == SHARE_C)
+        check(
+            "ordinary repair does not claim where the error was",
+            not any("guessed" in item.get_css_classes() for item in groups),
+        )
+        check(
+            "card display uses four aligned groups per row",
+            flow.get_min_children_per_line() == 4
+            and flow.get_max_children_per_line() == 4
+            and four_columns(rows_y),
+            rows_y,
+        )
+        window = self.get_active_window()
+        window.set_default_size(640, 620)
+        settle()
+        narrow = row_positions()
+        window.set_default_size(1100, 620)
+        settle()
+        wide = row_positions()
+        check(
+            "card columns stay aligned when the window is resized",
+            four_columns(narrow) and four_columns(wide),
+        )
+        press(page, "It does not match my card")
+        settle()
+        self.view.replace([pages.home(self.view)])
+        return True
+
     def damaged(self) -> bool:
         page = self.page()
         check("done returns home", page.get_title() == "codex32", page.get_title())
         rows(page)[3].emit("activated")
         page = self.page()
         field = field_of(page)
+        field.insert_text("X", len(reading.PREFIX))
+        field.insert_text("N", len(reading.PREFIX) + 1)
+        settle()
+        check(
+            "explicit correction does not freeze a damaged header",
+            "X" in field.get_text() and "N" in field.get_text(),
+        )
         field.set_text(SHARE_C[:-1] + "?")
         settle()
+        check("explicit correction preserves a literal erasure", "?" in field.get_text(), field.get_text())
         fix = next(
             item
             for item in walk(page)
@@ -240,6 +338,15 @@ class Walkthrough(app.Application):
         )
         check("a repair is offered for an unreadable character", fix.get_sensitive())
         fix.emit("clicked")
+        working = self.page()
+        spinners = [item for item in walk(working) if isinstance(item, Adw.Spinner)]
+        settings = Gtk.Settings.get_default()
+        animations = settings is None or bool(settings.get_property("gtk-enable-animations"))
+        check(
+            "an actual repair search shows the Adwaita spinner when animations are enabled",
+            len(spinners) == 1 and spinners[0].get_visible() == animations,
+            [spinner.get_visible() for spinner in spinners],
+        )
         return True
 
     def candidate(self) -> bool:
@@ -254,7 +361,7 @@ class Walkthrough(app.Application):
             "".join(item.get_label() for item in groups),
         )
         guessed = [item.get_label() for item in groups if "guessed" in item.get_css_classes()]
-        check("only the guessed window is highlighted", guessed == ["Y6PN"], guessed)
+        check("explicit correction may highlight changed windows", guessed == ["Y6PN"], guessed)
         press(page, "It does not match my card")
         return True
 
@@ -398,11 +505,27 @@ class Walkthrough(app.Application):
         field.set_text(SHARE_A)
         settle()
         check("the same card cannot be entered twice", not button(page, "Continue").get_sensitive())
+        field.set_text("MS12C")
+        settle()
+        check(
+            "the first incompatible backup-identifier character pauses entry",
+            any("backup identifier NAME" in text for text in labels(page)),
+            [text for text in labels(page) if "backup" in text],
+        )
+        field.insert_text("A", len(field.get_text()))
+        settle()
+        check(
+            "forward typing stays frozen after the incompatible identifier",
+            "".join(field.get_text().split()) == "MS12C",
+            field.get_text(),
+        )
+        field.set_text("MS12NAME")
+        settle()
         field.set_text(OTHER_BACKUP)
         settle()
         check(
-            "a card from another backup is named and refused",
-            any("belongs to backup CASH" in text for text in labels(page)),
+            "a card from a different split is refused at its threshold",
+            any("different split" in text for text in labels(page)),
             [text for text in labels(page) if "backup" in text],
         )
         field.set_text(SHARE_C)
@@ -429,6 +552,7 @@ class Walkthrough(app.Application):
         page = self.page()
         field = field_of(page)
         check("the read-back is named the same way", page.get_title() == "Card D", page.get_title())
+        check("read-back starts completely empty", field.get_text() == "", field.get_text())
         field.set_text(self.made)
         settle()
         field.select_region(0, -1)
@@ -437,14 +561,24 @@ class Walkthrough(app.Application):
         field.set_text(self.made[:-4] + "QQQQ")
         settle()
         press(page, "Confirm card")
+        mismatches = [
+            item.get_label()
+            for item in walk(page)
+            if "card-group" in item.get_css_classes() and "mismatch" in item.get_css_classes()
+        ]
         check(
-            "a mistyped group is named and refused",
-            any("Group 12 does not match" in text for text in labels(page)),
-            [text for text in labels(page) if "Group" in text],
+            "a mistyped group is highlighted without revealing its correction",
+            mismatches == ["QQQQ"],
+            mismatches,
+        )
+        check(
+            "the mismatch display contains only what was typed",
+            card(page) == self.made[:-4] + "QQQQ",
+            card(page),
         )
         field.set_text(self.made.lower())
         settle()
-        press(page, "Confirm card")
+        field.emit("activate")
         return True
 
     def new_card_done(self) -> bool:

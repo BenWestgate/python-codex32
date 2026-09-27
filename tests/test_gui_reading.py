@@ -10,6 +10,7 @@ from codex32_gui.reading import (
     header_fault,
     lookalike_fault,
     normalize,
+    normalize_readback,
     read,
     repair,
 )
@@ -46,7 +47,13 @@ def test_text_is_shown_in_four_character_windows() -> None:
     assert grouped(SHARE_C) == "MS12 NAME CACD EFGH JKLM NPQR STUV WXYZ 023F TR2G DZMP Y6PN"
 
 
+def test_readback_supplies_and_drops_nothing() -> None:
+    assert normalize_readback(" ms1 2name cb! ") == "MS12NAMECB!"
+    assert normalize_readback("S12NAMEC") == "S12NAMEC"
+
+
 def test_a_header_that_cannot_belong_to_any_card_is_reported() -> None:
+    assert "0, or 2 through 9" in header_fault("MS1X")
     assert "0, or 2 through 9" in header_fault("MS1XNAMEA")
     assert "never split is card S" in header_fault("MS10NAMEA")
     assert header_fault("MS12NAMEA") == ""
@@ -61,6 +68,12 @@ def test_an_unreadable_header_is_not_judged() -> None:
 def test_a_card_already_entered_is_refused_by_name() -> None:
     assert "Card A has already been entered" in header_fault("MS12NAMEA", ("a",))
     assert header_fault("MS12NAMEC", ("a",)) == ""
+
+
+def test_a_known_set_header_is_checked_before_the_checksum() -> None:
+    assert "different split" in header_fault("MS13", expected_header=(2, "name"))
+    assert "backup identifier NAME" in header_fault("MS12C", expected_header=(2, "name"))
+    assert header_fault("MS12N?", expected_header=(2, "name")) == ""
 
 
 def test_a_complete_card_reports_its_artifact() -> None:
@@ -92,6 +105,13 @@ def test_partial_input_counts_towards_the_length_being_typed() -> None:
     result = read(SHARE_C[:20])
     assert result.message == "20 of 48 characters"
     assert not result.complete and not result.repairable
+
+
+def test_short_or_long_input_is_repairable_when_the_cli_search_can_reach_a_valid_length() -> None:
+    assert read(SHARE_C[:-1]).repairable
+    assert read(SHARE_C + "Q").repairable
+    assert not read(SHARE_C[:39]).repairable
+    assert not read(SHARE_C + "Q" * 5, length=48).repairable
 
 
 def test_the_length_of_the_first_card_fixes_the_rest_of_the_set() -> None:

@@ -29,7 +29,7 @@ from codex32 import (
 from codex32.errors import CodexError
 from codex32.generation import ORDINARY_INDICES
 from codex32_gui import ARTWORK, reading, wallet_setup, work
-from codex32_gui.entry import Codex32Entry
+from codex32_gui.entry import Codex32Entry, EntryMode
 from codex32_gui.wallet_setup import BitcoinCore
 
 Artifact = Share | Secret
@@ -178,21 +178,24 @@ def _actions(*buttons: Gtk.Widget) -> Gtk.Widget:
     return box
 
 
-def _card(text: str, guessed: frozenset[int] = frozenset()) -> Gtk.FlowBox:
+def _card(
+    text: str,
+    highlighted: frozenset[int] = frozenset(),
+    *,
+    highlight_class: str = "guessed",
+) -> Gtk.FlowBox:
     """Show one card the way wallets.md asks: uppercase, in four-character windows."""
     text = text.upper()
-    flow = Gtk.FlowBox(
-        selection_mode=Gtk.SelectionMode.NONE,
-        column_spacing=8,
-        row_spacing=8,
-        max_children_per_line=12,
-        halign=Gtk.Align.CENTER,
-    )
+    flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, column_spacing=8, row_spacing=8)
+    flow.set_homogeneous(True)
+    flow.set_min_children_per_line(4)
+    flow.set_max_children_per_line(4)
+    flow.set_hexpand(True)
     for start in range(0, len(text), reading.GROUP):
-        label = Gtk.Label(label=text[start : start + reading.GROUP])
+        label = Gtk.Label(label=text[start : start + reading.GROUP], halign=Gtk.Align.CENTER)
         label.add_css_class("card-group")
-        if start // reading.GROUP in guessed:
-            label.add_css_class("guessed")
+        if start // reading.GROUP in highlighted:
+            label.add_css_class(highlight_class)
         flow.append(label)
     return flow
 
@@ -217,13 +220,7 @@ def _rows(title: str, values: Sequence[tuple[str, str]]) -> Adw.PreferencesGroup
 
 
 def _forget_when_gone(view: Adw.NavigationView, page: Adw.NavigationPage, clear: Callable[[], None]) -> None:
-    """Clear recovery text as soon as its page leaves the navigation stack.
-
-    Both ways out are covered: the operator pressing Back or Escape, which emits
-    `popped`, and a step rewriting the stack, which emits `replaced` instead.
-    Membership of the stack is the test, so a page a rewrite has just added
-    keeps what it holds.
-    """
+    """Clear recovery text as soon as its page leaves the navigation stack."""
     handlers: list[int] = []
 
     def gone(*_arguments: object) -> None:
@@ -269,8 +266,9 @@ def _working(view: Adw.NavigationView, title: str, message: str) -> Adw.Navigati
     would strand its cards. Every operation behind this page is bounded, by the
     correction deadline or by `bitcoin-cli`'s own timeout.
     """
-    spinner = Gtk.Spinner(halign=Gtk.Align.CENTER, width_request=32, height_request=32)
-    spinner.start()
+    spinner = Adw.Spinner(halign=Gtk.Align.CENTER, width_request=32, height_request=32)
+    settings = Gtk.Settings.get_default()
+    spinner.set_visible(settings is None or bool(settings.get_property("gtk-enable-animations")))
     page = _page(title, _column(spinner, _title(message)), can_pop=False)
     view.push(page)
     return page
@@ -486,34 +484,41 @@ def _read_back_page(
     after: Callable[[], None],
 ) -> Adw.NavigationPage:
     """Read the card back from the paper, with the original off the screen."""
-    field = Codex32Entry(length=len(card.text))
+    field = Codex32Entry(length=len(card.text), mode="readback")
     status = _note("")
+    comparison = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
     accept = _button("Confirm card", lambda: None, style="suggested-action")
 
+    def clear_comparison() -> None:
+        while (child := comparison.get_first_child()) is not None:
+            comparison.remove(child)
+
     def update(*_arguments: object) -> None:
+        clear_comparison()
         state = field.reading()
         accept.set_sensitive(state.complete)
-        # A character a card can never carry is named, never quietly deleted: this
-        # is the step whose whole purpose is to catch a misread glyph.
-        fault = state.message if state.level == "error" else ""
-        counted = f"{len(state.text)} of {state.expected} characters"
-        _say(status, fault or counted, "error" if fault else "")
+        _say(status, state.message, state.level)
 
     def check() -> None:
         try:
-            result = confirm(reading.normalize(field.get_text()))
+            state = field.reading()
+            result = confirm(state.text)
         except CodexError as error:
             _failure(view, error, CARDS_SAFE)
             return
         if not result.accepted:
-            groups = result.mismatched_groups
-            where = f"Group {min(groups)}" if groups else "What you typed"
-            _say(status, f"{where} does not match. Check it against your card.", "error")
+            groups = frozenset(group - 1 for group in result.mismatched_groups)
+            clear_comparison()
+            comparison.append(_card(state.text, groups, highlight_class="mismatch"))
+            plural = "s" if len(groups) != 1 else ""
+            message = f"Highlighted group{plural} {'do' if plural else 'does'} not match. Re-read the card."
+            _say(status, message, "error")
             return
         field.clear()
         after()
 
     accept.connect("clicked", lambda _button: check())
+    field.connect("activate", lambda _entry: check() if accept.get_sensitive() else None)
     field.connect("changed", update)
     content = _column(
         _title("Now type it back from the card", _counted(card.header.index.upper(), position, count)),
@@ -523,9 +528,10 @@ def _read_back_page(
         ),
         field,
         status,
+        comparison,
         _note(
-            "Spaces and capitals do not matter, and you may try as many times as you like. Correct only "
-            "the group named above; the rest stays as you typed it."
+            "Spaces and capitals do not matter. After a mismatch, only what you typed is shown; the "
+            "original stays hidden. Re-read the highlighted groups from your card and try again."
         ),
     )
     page = _page(
@@ -533,7 +539,12 @@ def _read_back_page(
         content,
         actions=_actions(_button("Show the card again", view.pop), accept),
     )
-    _forget_when_gone(view, page, field.clear)
+
+    def clear_page() -> None:
+        field.clear()
+        clear_comparison()
+
+    _forget_when_gone(view, page, clear_page)
     update()
     return page
 
@@ -1039,6 +1050,7 @@ def _collect(
     wanted: int | None = None,
     reserved: tuple[str, ...] = (),
     repaired: bool = False,
+    correcting: bool = False,
     then: Callable[[tuple[Artifact, ...], bool], None],
 ) -> Adw.NavigationPage:
     """Take one card, and keep taking them until the backup has enough."""
@@ -1047,11 +1059,13 @@ def _collect(
     blocked = tuple(dict.fromkeys([*(item.header.index for item in accepted), *reserved]))
     # Correction accepts ordinary indices only; S is refused by the field instead.
     excluded = tuple(index for index in blocked if index != "s")
-    field = Codex32Entry(accepted=blocked, length=length)
+    expected_header = (first.header.threshold, first.header.identifier) if first is not None else None
+    mode: EntryMode = "correct" if correcting else "import"
+    field = Codex32Entry(accepted=blocked, length=length, mode=mode, expected_header=expected_header)
     if first is not None:
         field.prefill(f"{reading.PREFIX}{first.header.threshold}{first.header.identifier}")
     status = _note("")
-    fix = _button("Suggest a repair", lambda: suggest())
+    fix = _button("Suggest a repair", lambda: repair_or_allow())
     go = _button("Continue", lambda: proceed(), style="suggested-action")
 
     def refuse(artifact: Artifact | None) -> str:
@@ -1065,7 +1079,9 @@ def _collect(
         state = field.reading()
         problem = refuse(state.artifact)
         go.set_sensitive(state.artifact is not None and not problem)
-        fix.set_sensitive(state.repairable)
+        blocked_header = field.header_blocked()
+        fix.set_label("Type it as written" if blocked_header else "Suggest a repair")
+        fix.set_sensitive(blocked_header or state.repairable)
         _say(status, problem or state.message, "error" if problem else state.level)
 
     def accept(artifact: Artifact, guessed: bool = False) -> None:
@@ -1091,6 +1107,7 @@ def _collect(
                     wanted=wanted,
                     reserved=reserved,
                     repaired=repaired or guessed,
+                    correcting=correcting,
                     then=then,
                 ),
             )
@@ -1101,6 +1118,13 @@ def _collect(
         artifact = field.reading().artifact
         if artifact is not None:
             accept(artifact)
+
+    def repair_or_allow() -> None:
+        if field.header_blocked():
+            field.allow_damaged_header()
+            update()
+        else:
+            suggest()
 
     def suggest() -> None:
         observed = field.reading().text
@@ -1113,13 +1137,20 @@ def _collect(
                 return
 
             def following() -> Adw.NavigationPage:
-                return _repair_page(view, result, observed, lambda card: accept(card, True), page)
+                return _repair_page(view, result, observed, lambda card: accept(card, True), page, correcting)
 
             gated = result.low_checksum_discrimination
             view.push(_guess_gate_page(view, following) if gated else following())
 
         work.run(view, spinner, lambda: reading.repair(observed, length, excluded), deliver)
 
+    def activate(_entry: Gtk.Entry) -> None:
+        if go.get_sensitive():
+            proceed()
+        elif fix.get_sensitive():
+            repair_or_allow()
+
+    field.connect("activate", activate)
     field.connect("changed", update)
     progress = []
     if first is not None:
@@ -1189,15 +1220,18 @@ def _repair_page(
     observed: str,
     accept: Accept,
     back: Adw.NavigationPage,
+    highlight_changes: bool,
 ) -> Adw.NavigationPage:
     corrected = candidate.artifact.text
-    shown = _card(corrected, _guessed(observed, corrected))
+    changed = _guessed(observed, corrected) if highlight_changes else frozenset()
+    shown = _card(corrected, changed)
+    comparison = "Highlighted groups show changes, not proven error locations. " if highlight_changes else ""
     content = _column(
         _title("One possible repair", "It might not be the only one."),
         shown,
         _note(
-            "Hold this next to your card and compare it character by character. The highlighted groups "
-            "are the guesses. If they do not match what you can still read on the paper, say no."
+            f"Hold your card next to the screen and compare the entire string, character by character. "
+            f"{comparison}Accept it only if the entire string exactly matches your card."
         ),
     )
     page = _page(
@@ -1266,6 +1300,7 @@ def _start_repair(view: Adw.NavigationView) -> None:
             heading="What you can read on the card",
             body="Type ? for anything you cannot make out. Nothing is saved and nothing leaves this computer.",
             wanted=1,
+            correcting=True,
             then=lambda found, guessed: _replace(view, _intact_page(view, found[0], guessed)),
         )
     )

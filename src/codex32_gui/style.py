@@ -22,6 +22,9 @@ CSS = """
 .card-group.guessed {
   background-color: alpha(@warning_color, 0.35);
 }
+.card-group.mismatch {
+  background-color: alpha(@error_color, 0.35);
+}
 .card-frame {
   border: 2px solid @error_color;
   border-radius: 12px;

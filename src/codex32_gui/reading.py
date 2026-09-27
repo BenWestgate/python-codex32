@@ -24,7 +24,9 @@ ALLOWED = frozenset(CHARSET.upper() + "?")
 HEADER_LENGTH = 6
 GROUP = 4
 SLACK = 8
+CORRECTION_LENGTH_DELTAS = frozenset((0, 1, 2, 3, 4, 8))
 LOOKALIKE = {"B": "8", "I": "J or L", "O": "0, a zero", "1": "L"}
+_ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,14 +39,11 @@ class Reading:
     level: str
     expected: int
     unreadable: int
+    repairable: bool
 
     @property
     def complete(self) -> bool:
         return len(self.text) == self.expected
-
-    @property
-    def repairable(self) -> bool:
-        return self.complete and self.artifact is None
 
 
 def normalize(raw: str) -> str:
@@ -52,6 +51,11 @@ def normalize(raw: str) -> str:
     typed = "".join(raw.split()).upper()
     keep = max(size for size in range(len(PREFIX) + 1) if typed[:size] == PREFIX[:size])
     return PREFIX + "".join(character for character in typed[keep:] if character in ALLOWED)
+
+
+def normalize_readback(raw: str) -> str:
+    """Compact a transcription without supplying or deleting any character."""
+    return "".join(raw.split()).translate(_ASCII_UPPER)
 
 
 def lookalike_fault(raw: str) -> str:
@@ -79,13 +83,25 @@ def grouped(text: str) -> str:
     return " ".join(text[start : start + GROUP] for start in range(0, len(text), GROUP))
 
 
-def header_fault(text: str, accepted: tuple[str, ...] = ()) -> str:
+def header_fault(
+    text: str,
+    accepted: tuple[str, ...] = (),
+    expected_header: tuple[int, str] | None = None,
+) -> str:
     """Report a header that cannot belong to any card, before more is typed."""
     body = text[len(PREFIX) :]
-    if len(body) < HEADER_LENGTH or "?" in body[:HEADER_LENGTH]:
+    if not body or body[0] == "?":
         return ""
     if body[0] not in "023456789":
         return "The character after MS1 is how many cards recovery needs: 0, or 2 through 9."
+    if expected_header is not None:
+        if int(body[0]) != expected_header[0]:
+            return "This card comes from a different split of that backup."
+        found, expected = body[1:5], expected_header[1].upper()
+        if any(character != "?" and character != expected[index] for index, character in enumerate(found)):
+            return f"This card does not have backup identifier {expected}."
+    if len(body) < HEADER_LENGTH or "?" in body[:HEADER_LENGTH]:
+        return ""
     try:
         Header(int(body[0]), body[1:5], body[5])
     except InvalidShareIndex:
@@ -111,31 +127,36 @@ def read(text: str, *, accepted: tuple[str, ...] = (), length: int | None = None
     """Describe one field value without ever accepting it on the operator's behalf."""
     unreadable = text.count("?")
     expected = expected_length(len(text), length)
+    targets = (length,) if length is not None else TEXT_LENGTHS
+    repairable = any(abs(target - len(text)) in CORRECTION_LENGTH_DELTAS for target in targets)
     if fault := header_fault(text, accepted):
-        return Reading(text, None, fault, "error", expected, unreadable)
+        return Reading(text, None, fault, "error", expected, unreadable, repairable)
     if len(text) == len(PREFIX):
-        return Reading(text, None, "Start typing what the card says.", "", expected, unreadable)
+        return Reading(text, None, "Start typing what the card says.", "", expected, unreadable, repairable)
     if len(text) != expected:
         counted = f"{len(text)} of {expected} characters"
-        return Reading(
-            text,
-            None,
-            f"{counted}, {unreadable} unreadable" if unreadable else counted,
-            "",
-            expected,
-            unreadable,
-        )
+        message = f"{counted}, {unreadable} unreadable" if unreadable else counted
+        return Reading(text, None, message, "", expected, unreadable, repairable)
     if unreadable:
         plural = "s" if unreadable > 1 else ""
-        return Reading(
-            text, None, f"{unreadable} character{plural} unreadable.", "warning", expected, unreadable
-        )
+        message = f"{unreadable} character{plural} unreadable."
+        return Reading(text, None, message, "warning", expected, unreadable, repairable)
     try:
         artifact = parse_codex32(text)
     except CodexError:
         message = "Every character is there, but they do not check out together."
-        return Reading(text, None, message, "error", expected, unreadable)
-    return Reading(artifact.text, artifact, "Every character checks out.", "success", expected, 0)
+        return Reading(text, None, message, "error", expected, unreadable, repairable)
+    return Reading(artifact.text, artifact, "Every character checks out.", "success", expected, 0, False)
+
+
+def readback(raw: str, length: int) -> Reading:
+    """Describe an independently re-entered card without interpreting or repairing it."""
+    text = normalize_readback(raw)
+    unreadable = text.count("?")
+    fault = lookalike_fault(text)
+    level = "error" if fault else ""
+    message = fault or f"{len(text)} of {length} characters"
+    return Reading(text, None, message, level, length, unreadable, False)
 
 
 def repair(text: str, length: int | None, excluded: tuple[str, ...] = ()) -> CorrectionCandidate | str:

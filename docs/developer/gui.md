@@ -12,17 +12,17 @@ Design and screen mock-ups: `docs/planning/gui-plan.md` and
 
 | File | Logical lines | What it holds |
 |---|---:|---|
-| `reading.py` | 131 | What a field of codex32 text means, and the repair policy. No toolkit. |
+| `reading.py` | 149 | What a field of codex32 text means, and the repair policy. No toolkit. |
 | `wallet_setup.py` | 243 | Every Bitcoin Core call, including the passphrase and the relock. No toolkit. |
 | `work.py` | 67 | One background operation at a time. |
-| `entry.py` | 73 | The `Gtk.Entry` subclass that applies `reading.py`. |
-| `pages.py` | 1225 | One function per screen: widgets and wording, no decisions. |
-| `app.py` | 43 | The window. |
-| `style.py` | 40 | The stylesheet, as a string. |
-| `__init__.py`, `__main__.py` | 26 | Version pinning, the accessibility setting, and the entry point. |
+| `entry.py` | 139 | The `Gtk.Entry` subclass and its ordinary, correction, and read-back modes. |
+| `pages.py` | 1286 | One function per screen: widgets and wording, no decisions. |
+| `app.py` | 44 | The window and stable application ID. |
+| `style.py` | 43 | The stylesheet, as a string. |
+| `__init__.py`, `__main__.py` | 28 | Version pinning, the accessibility setting, and the entry point. |
 
 The first three are where review effort belongs: they are the only modules that
-decide anything, they total 441 lines, and none of them imports a toolkit, so
+decide anything, they total 459 lines, and none of them imports a toolkit, so
 `tests/test_gui_reading.py` and `tests/test_gui_wallet_setup.py` cover them
 without a display and run in ordinary CI. `tools/gui_walkthrough.py` drives the
 real widgets through every task under a throwaway X server and is the cheapest
@@ -74,6 +74,19 @@ about 250 lines, and the rest of the difference is user-facing wording in
    never by their text, and every row built from Bitcoin Core's output sets
    `use_markup=False`. Otherwise a wallet named with a Pango span could render
    as another wallet's name.
+
+The entry widget has three internal modes. Ordinary entry supplies and protects
+`MS1`, blocks forward typing after an invalid header until the operator explicitly
+accepts the damaged header, and treats Enter like the enabled primary action.
+Explicit correction preserves damaged headers and literal `?` characters so it
+matches the command line's correction job. Read-back starts empty and only
+normalizes spacing and ASCII case; after a mismatch it displays the operator's
+typed groups, never the expected text. The GTK walkthrough covers all three.
+
+Every rendered card uses four four-character groups per row, the same geometry
+as `docs/user/recovery-card.html`. Ordinary check/import repairs show an
+unmarked candidate; explicit correction may mark groups changed by the candidate
+but labels them as changes rather than known error locations.
 
 ## The deliberate departures from the command line
 

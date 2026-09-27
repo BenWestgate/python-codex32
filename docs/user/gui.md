@@ -63,9 +63,12 @@ the recommended shape: one card can be lost, burned or stolen and your bitcoin i
 still safe, and one card on its own tells a finder nothing.
 
 Each card is shown once. Copy it onto paper with a pen, then type it back from
-the paper with the original off the screen. That catches a slip of the pen now
-rather than years from now. If a group does not match, the window says which one;
-correct that group and try again, as many times as you like.
+the paper with the original off the screen. The read-back field starts completely
+empty, including `MS1`: type every character from the paper. That catches a slip
+of the pen now rather than years from now. If a group does not match, the window
+highlights that group in what you typed but does not show the expected characters;
+correct your transcription from the paper and try again, as many times as you
+like.
 
 When every card is confirmed, choose the Bitcoin Core wallet that will hold the
 keys. Only empty wallets are offered, so no wallet you already use can be
@@ -87,9 +90,14 @@ than quietly swallowing it.
 ## A card that is damaged
 
 Type what you can still read, and `?` for each character you cannot make out.
-When the line is full length, **Suggest a repair** appears. The window shows one
-candidate with the guessed groups highlighted; hold it next to the card and
-compare it character by character before you accept it.
+Unlike ordinary check and restore fields, this repair field does not stop at a
+damaged header: it preserves what the card actually says so the correction
+engine can work on it. **Suggest a repair** appears whenever the text is within
+the correction engine's supported bounds, including a card with a missing or
+extra character. The window shows one candidate and may highlight groups that
+changed from what you typed. Those highlights are changes, not proof that the
+original error was in those positions. Hold your card next to the screen and
+compare the entire string, character by character, before you accept it.
 
 If too much is missing, the window stops and asks you to type `YES` in capitals
 first. That is not a formality: with that little checksum left, a repair can look
@@ -142,6 +150,13 @@ of a card at all. You never need to: nothing here asks you to copy and paste.
 The window asks for a Bitcoin Core wallet passphrase, which the command line
 deliberately does not; see [the security model](../security/model.md). It is sent
 straight to `bitcoin-cli` and is never stored.
+
+Ordinary card fields begin with `MS1` and protect that prefix from accidental
+deletion or duplication. A bad threshold or incompatible header stops forward
+typing immediately; choose **Type it as written** only when you really need to
+preserve damaged text for correction. **Repair a damaged card** deliberately
+does not impose that stop. Read-back after writing a new card is stricter still:
+it begins empty and supplies no prefix or correction at all.
 
 ## If something goes wrong
 
