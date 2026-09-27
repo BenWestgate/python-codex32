@@ -19,14 +19,11 @@ from codex32.indel import (
     _CLASSES,
     _FIXED,
     _GROUP_CLASSES,
-    _REDUCED_CLASSES,
-    _alignment_count,
     _alignment_counts,
     _capacities,
     _frontier,
     _keep,
     _prepare,
-    _reductions,
     _required_header_substitutions,
     _search_many,
     _search_target,
@@ -34,6 +31,7 @@ from codex32.indel import (
 from codex32.profiles.ms32 import TEXT_LENGTHS
 from tools._wallet_reference import fingerprint_seed
 from tools.correction_capture import cross_length_classes
+from tools.correction_reference import _REDUCED_CLASSES, _alignment_count, _reductions
 
 SOURCE = VECTOR_1["secret_s"]
 CONTEXT = CorrectionContext(Profile.MS, expected_length=len(SOURCE))

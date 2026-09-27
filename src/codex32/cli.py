@@ -479,8 +479,6 @@ def _create(
         raise _UsageError("--bytes applies only to a new random seed.")
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise _UsageError("Bitcoin backup creation requires an interactive terminal.")
-    if threshold and not sys.stdin.isatty():
-        raise _UsageError("Shared creation requires an interactive terminal.")
     if threshold and shares is None and indices is None:
         if threshold in (2, 3):
             shares = {2: 3, 3: 5}[threshold]
@@ -488,8 +486,6 @@ def _create(
             raise _UsageError("For thresholds 4 through 9, choose --shares or --indices.")
     core = _connected_core()
     source = _creation_source(profile) if existing else None
-    if not existing and not sys.stdin.isatty() and _text("", optional=True):
-        raise _UsageError("Use --existing when supplying a seed or secret.")
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
     try:
@@ -503,14 +499,9 @@ def _create(
             else:
                 secret = _generated_secret(source, byte_length, identifier, core.fingerprint_seed)
             _emit(secret, False, fingerprint=None if existing else core.fingerprint)
-            if sys.stdin.isatty():
-                _confirm_card(secret)
-            return (
-                _initialize_wallet(
-                    core, secret, timestamp=0 if existing else "now", fresh=not existing, restore=existing
-                )
-                if core is not None
-                else 0
+            _confirm_card(secret)
+            return _initialize_wallet(
+                core, secret, timestamp=0 if existing else "now", fresh=not existing, restore=existing
             )
         if isinstance(source, MasterSeed):
             ceremony = CreationCeremony.from_secret(
@@ -549,12 +540,9 @@ def _create(
         _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
     finished = ceremony.finish()
     assert isinstance(finished, MasterSeed)
-    if core is not None:
-        return _initialize_wallet(
-            core, finished, timestamp=0 if existing else "now", fresh=not existing, restore=existing
-        )
-    _print("\nEvery recovery card was confirmed from its re-entered text.", err=True)
-    return 0
+    return _initialize_wallet(
+        core, finished, timestamp=0 if existing else "now", fresh=not existing, restore=existing
+    )
 
 
 def _correct(
@@ -630,7 +618,7 @@ def _correct(
     capture_layers: list[tuple[int, int]] = []
     if candidate is not None:
         candidates: tuple[CorrectionCandidate, ...] = (candidate,)
-        complete, deadline, ambiguous = True, None, False
+        complete, deadline = True, None
     else:
         first_search = erased if erased != search_value else search_value
         retry_search = search_value if erased != search_value else None
@@ -641,7 +629,7 @@ def _correct(
             # either full search can spend the shared deadline on optional
             # alignment work.  Full searches below own capture accounting.
             for required_value in (first_search, retry_search):
-                required, required_complete, deadline, _ = _correction_candidates(
+                required, required_complete, deadline = _correction_candidates(
                     required_value,
                     hrp,
                     byte_length,
@@ -653,7 +641,7 @@ def _correct(
                 if not required_complete:
                     raise _CommandError("The correction search did not complete within ten seconds.")
                 seeded = required
-        candidates, complete, deadline, ambiguous = _correction_candidates(
+        candidates, complete, deadline = _correction_candidates(
             first_search,
             hrp,
             byte_length,
@@ -663,7 +651,7 @@ def _correct(
             seed_candidates=seeded,
         )
         if retry_search is not None:
-            retry_candidates, complete, deadline, retry_ambiguous = _correction_candidates(
+            retry_candidates, complete, deadline = _correction_candidates(
                 retry_search,
                 hrp,
                 byte_length,
@@ -672,7 +660,6 @@ def _correct(
                 capture_layers=capture_layers,
                 seed_candidates=(*seeded, *candidates),
             )
-            ambiguous = ambiguous or retry_ambiguous
             combined = (*candidates, *retry_candidates)
             if combined:
                 annotated = []
@@ -686,8 +673,6 @@ def _correct(
                 candidates = tuple(unique.values())
     if not complete and not candidates:
         raise _CommandError("The correction search did not complete within ten seconds.")
-    if ambiguous:
-        raise _CommandError("More than one correction is possible; none was selected.")
     if not candidates:
         raise _CommandError("No valid correction found. Check the original backup.")
     if context.master_seed and len(candidates) > 1:
