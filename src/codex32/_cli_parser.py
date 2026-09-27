@@ -88,7 +88,7 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         ),
         epilog="Never put a secret or share in command arguments or shell command text.\n"
         "Enter it when prompted; some commands also accept redirected standard input.\n"
-        "Protect redirected sources separately: shells, terminals, and wrappers may retain text.",
+        "Protect redirected files; shells and terminals may keep text.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
