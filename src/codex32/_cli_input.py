@@ -456,7 +456,7 @@ def _correction_candidates(
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
     seed_candidates: Sequence[CorrectionCandidate] = (),
     required_only: bool = False,
-) -> tuple[tuple[CorrectionCandidate, ...], bool, float, bool]:
+) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
     count = len(value.replace(" ", ""))
     targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
     deadline = monotonic() + 10 if deadline is None else deadline
@@ -484,7 +484,7 @@ def _correction_candidates(
         if len(candidates) == 1 and not candidates[0].search_complete
         else ()
     )
-    return results, complete, deadline, False
+    return results, complete, deadline
 
 
 def _scheduled_candidates(
@@ -499,7 +499,7 @@ def _scheduled_candidates(
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     deadline: float | None = None,
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
-) -> tuple[tuple[CorrectionCandidate, ...], bool, bool]:
+) -> tuple[tuple[CorrectionCandidate, ...], bool]:
     """Search both case interpretations under one deadline and capture ledger."""
     search = partial(
         _correction_candidates,
@@ -519,18 +519,18 @@ def _scheduled_candidates(
         # These discovery passes deliberately do not charge capture_layers;
         # the full searches below account each admitted frontier once.
         for required_value in (first, retry):
-            seeded, complete, deadline, _ = search(
+            seeded, complete, deadline = search(
                 required_value, deadline=deadline, seed_candidates=seeded, required_only=True
             )
             if not complete:
-                return (), False, False
+                return (), False
     capture_layers: list[tuple[int, int]] = []
-    candidates, complete, deadline, ambiguous = search(
+    candidates, complete, deadline = search(
         first, deadline=deadline, capture_layers=capture_layers, seed_candidates=seeded
     )
     if retry is None:
-        return candidates, complete, ambiguous
-    retry_candidates, complete, _deadline, retry_ambiguous = search(
+        return candidates, complete
+    retry_candidates, complete, _deadline = search(
         retry, deadline=deadline, capture_layers=capture_layers, seed_candidates=(*seeded, *candidates)
     )
     annotated = []
@@ -540,7 +540,7 @@ def _scheduled_candidates(
     unique: dict[str, CorrectionCandidate] = {}
     for item in _best(annotated, prefer_common=byte_length == "?", fingerprint_match=fingerprint_match):
         unique.setdefault(item.artifact.text.lower(), item)
-    return tuple(unique.values()), complete, ambiguous or retry_ambiguous
+    return tuple(unique.values()), complete
 
 
 def _fingerprint_matcher(
