@@ -27,7 +27,7 @@ from .profiles import Profile
 from .profiles.bip39 import Bip39Secret
 from .profiles.cl32 import CoreLightningSecret
 from .profiles.ms32 import MasterSeed
-from .wallet import core_descriptors, master_xprv
+from .wallet import master_xprv
 
 __all__ = [
     "Bip39Secret",
@@ -45,7 +45,6 @@ __all__ = [
     "Secret",
     "Share",
     "WorksheetCorrection",
-    "core_descriptors",
     "correct",
     "correct_worksheet_residue",
     "derive_share",

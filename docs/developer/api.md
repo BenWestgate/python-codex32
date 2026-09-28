@@ -100,7 +100,7 @@ generic parse-length failure.
   hidden state.
 
 Private Python names are convention rather than access control. The supported
-surface is the 25-name package `__all__`; direct use of private helpers is
+surface is the 23-name package `__all__`; direct use of private helpers is
 unsupported but remains in the review scope.
 
 ### Size budget
@@ -580,27 +580,24 @@ Public wallet operations accept only a validated `MasterSeed`. `wallet.py` is
 stateless and never accepts shares, Core Lightning secrets, BIP39 migration
 artifacts, or raw bytes.
 
-The public adapter has two functions:
-
-- `master_xprv(secret, testnet=False)` returns the BIP32 root extended private
-  key.
-- `core_descriptors(...)` returns fixed BIP44, BIP49, BIP84, and BIP86 Bitcoin
-  Core `importdescriptors` records. Private records use stdlib-only root xprv
-  serialization; public records require an explicit wallet integration and the
-  Core wallet whose imported root key will perform hardened derivation.
+The supported package surface exposes one wallet primitive:
+`master_xprv(secret, testnet=False)`, which returns the BIP32 root extended
+private key. Bitcoin Core descriptor-record construction is an internal
+test/reference detail rather than a supported package API.
 
 No installed Python dependency performs secp256k1 operations. The private
 Bitcoin Core adapter gives Core the root xprv over stdin and asks Core to
-create the four standard account-0 descriptor types. Public descriptor
-derivation remains available through the explicit integration API.
+create the four standard account-0 descriptor types. Descriptor normalization
+and public derivation stay behind that private Core boundary.
 
 Public descriptors contain account xpubs. Private descriptors intentionally
 follow Bitcoin Core's root-key form: they contain the root xprv followed by the
 complete derivation path. They therefore grant authority over the entire root,
 not only the selected account. The CLI warns before printing them.
 
-Account, private/public mode, network serialization, and timestamp are explicit
-API inputs. The `ms32 wallet` CLI takes `--account 0` and `--timestamp`; the
+Account and timestamp remain explicit at the Core boundary, while network
+serialization is explicit for `master_xprv`. The `ms32 wallet` CLI takes
+`--account 0` and `--timestamp`; the
 selected Bitcoin Core chain is authoritative and there is no wallet
 `--testnet` flag. `ms32 xprv --testnet` remains explicit because it directly
 selects xprv versus tprv serialization. The timestamp defaults to `0` so

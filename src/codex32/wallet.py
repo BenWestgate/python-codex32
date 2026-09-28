@@ -1,6 +1,6 @@
 """Bitcoin wallet interoperability for validated master seeds."""
 
-from typing import Literal, Protocol
+from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
 from codex32.bech32 import _u5_to_chars
@@ -16,21 +16,6 @@ _TEMPLATES = (
     ("wpkh({key})", 84),
     ("tr({key})", 86),
 )
-
-
-class WalletPublicDeriver(Protocol):
-    """Out-of-process provider for EC-dependent BIP32 public derivation."""
-
-    def fingerprint(self, secret: MasterSeed) -> bytes: ...
-
-    def public_descriptors(
-        self,
-        secret: MasterSeed,
-        *,
-        wallet: str,
-        account: int = 0,
-        timestamp: int | Literal["now"] = 0,
-    ) -> tuple[dict[str, object], ...]: ...
 
 
 def _master(secret: MasterSeed) -> MasterSeed:
@@ -86,42 +71,22 @@ def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:
     return _master_xprv_from_seed(_master(secret).seed_bytes, testnet=testnet)
 
 
-def core_descriptors(
+def _core_descriptors(
     secret: MasterSeed,
     *,
-    integration: WalletPublicDeriver | None = None,
-    wallet: str | None = None,
     account: int = 0,
     testnet: bool = False,
-    private: bool = False,
     timestamp: int | Literal["now"] = 0,
 ) -> tuple[dict[str, object], ...]:
-    """Return fixed Bitcoin Core records.
-
-    Private records are constructed with stdlib-only root xprv serialization.
-    Public records require an explicit out-of-process integration provider.
-    """
+    """Return fixed private descriptor records for verification tooling."""
     _master(secret)
     account = _account(account)
     if not isinstance(testnet, bool):
         raise TypeError("testnet must be bool")
-    if not isinstance(private, bool):
-        raise TypeError("private must be bool")
     if timestamp != "now" and (
         isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0
     ):
         raise ValueError("timestamp must be a nonnegative integer or 'now'")
-    if not private:
-        if integration is None:
-            raise TypeError("public descriptors require a wallet integration")
-        if wallet is None:
-            raise TypeError("public descriptors require a Bitcoin Core wallet name")
-        return integration.public_descriptors(
-            secret,
-            wallet=wallet,
-            account=account,
-            timestamp=timestamp,
-        )
     coin_type = int(testnet)
     xprv = master_xprv(secret, testnet=testnet)
     keys = []
