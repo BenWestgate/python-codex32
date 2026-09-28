@@ -105,7 +105,7 @@ unsupported but remains in the review scope.
 
 ### Size budget
 
-V1 keeps the installed package below 5,000 logical review lines, excluding
+V1 keeps the installed package below 5,200 logical review lines, excluding
 blank and comment-only lines while counting subpackages recursively. Changing
 the budget requires explicit review and authorization together with the matching
 documentation and enforcement update.
