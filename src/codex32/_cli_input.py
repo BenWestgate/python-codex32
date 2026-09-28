@@ -12,7 +12,7 @@ from functools import partial
 from time import monotonic
 from typing import Any, Literal, cast
 
-from codex32.bech32 import interpret_mixed_case
+from codex32.bech32 import _ascii_lower, interpret_mixed_case
 from codex32.bip93 import (
     Secret,
     Share,
@@ -64,11 +64,6 @@ class CorrectionDeclined(Exception):
 
 class InteractiveConfirmationRequired(Exception):
     pass
-
-
-def _ascii_lower(value: str) -> str:
-    """Lowercase ASCII letters without normalizing Unicode lookalikes."""
-    return "".join(character.lower() if character.isascii() else character for character in value)
 
 
 def _confirmation_input(prompt: str) -> str:

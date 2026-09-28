@@ -28,6 +28,11 @@ def test_u5_character_round_trip() -> None:
     assert chars_to_u5(CHARSET.upper()) == values
 
 
+def test_u5_character_conversion_does_not_fold_unicode_lookalikes() -> None:
+    with pytest.raises(InvalidCharacter, match="K"):
+        chars_to_u5("K")
+
+
 @pytest.mark.parametrize("value", (-1, 32))
 def test_u5_rejects_out_of_range_values(value: int) -> None:
     with pytest.raises(InvalidCharacter):

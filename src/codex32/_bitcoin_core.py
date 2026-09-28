@@ -12,7 +12,7 @@ from time import sleep
 from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
-from codex32.bech32 import _u5_to_chars, convertbits
+from codex32.bech32 import convertbits, u5_to_chars
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
 from codex32.wallet import _descriptor_records
@@ -92,7 +92,7 @@ def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
                 ripemd_unavailable = True
             continue
         derived = convertbits(hashed, 8, 5, pad=True)
-        if identifier[:3] == _u5_to_chars(tuple(derived[:3])):
+        if identifier[:3] == u5_to_chars(tuple(derived[:3])):
             return name
     return "Bails check unavailable" if ripemd_unavailable else None
 
