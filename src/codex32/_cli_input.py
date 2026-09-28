@@ -12,7 +12,7 @@ from functools import partial
 from time import monotonic
 from typing import Any, Literal, cast
 
-from codex32.bech32 import interpret_mixed_case
+from codex32.bech32 import _ascii_lower, interpret_mixed_case
 from codex32.bip93 import (
     Secret,
     Share,

@@ -34,6 +34,7 @@ from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
+from codex32.bech32 import _ascii_lower
 from codex32.bip93 import (
     IDX_SORT,
     Header,
