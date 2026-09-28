@@ -92,20 +92,17 @@ def checksum_for_encoded_length(hrp: str, encoded_length: int) -> Checksum:
     """Return the codex32 checksum required by an encoded HRP/data length."""
 
     expanded_length = 2 * len(hrp) + 1 + encoded_length
-    if expanded_length <= 93:
-        return CODEX32
-    if expanded_length < 96:
+    if 94 <= expanded_length <= 95:
         raise InvalidLength("expanded codex32 lengths 94 and 95 are invalid")
-    if expanded_length <= 1023:
-        return CODEX32_LONG
-    raise InvalidLength("expanded codex32 codeword exceeds 1023 symbols")
+    if expanded_length > 1023:
+        raise InvalidLength("expanded codex32 codeword exceeds 1023 symbols")
+    return CODEX32 if expanded_length <= 93 else CODEX32_LONG
 
 
 def checksum_for_body_length(hrp: str, body_length: int) -> Checksum:
     """Return the checksum required when constructing a codex32 body."""
 
-    expanded_body_length = 2 * len(hrp) + 1 + body_length
-    checksum = CODEX32 if expanded_body_length <= 80 else CODEX32_LONG
+    checksum = CODEX32 if 2 * len(hrp) + 1 + body_length <= 80 else CODEX32_LONG
     checksum_for_encoded_length(hrp, body_length + checksum.length)
     return checksum
 
