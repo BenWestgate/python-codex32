@@ -23,6 +23,7 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Adw, Gdk, GLib, Gtk
 
+from codex32 import MasterSeed, parse_codex32
 from codex32_gui import app, pages, reading, wallet_setup
 
 SHARE_A = "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM"
@@ -144,6 +145,11 @@ class Walkthrough(app.Application):
             self.completion_gate,
             self.preflight,
             self.network,
+            self.wallet_poll_start,
+            self.wallet_poll_update,
+            self.wallet_poll_retries,
+            self.wallet_poll_disappears,
+            self.wallet_poll_stops,
             self.letters,
             self.basis,
             self.second_card,
@@ -483,6 +489,90 @@ class Walkthrough(app.Application):
         settle()
         check("the chosen network is the one used", asked == [None, "signet"], asked)
         self.view.replace([pages.home(self.view)])
+        return True
+
+    def wallet_poll_start(self) -> bool:
+        seed = parse_codex32(SECRET_S)
+        check("the wallet poll uses a master seed", isinstance(seed, MasterSeed), type(seed).__name__)
+        if not isinstance(seed, MasterSeed):
+            return True
+        self.wallet_polls = 0
+        self.wallet_fail_once = False
+        self.wallet_include_zeta = True
+        self.wallet_zeta = wallet_setup.Wallet("zeta", False, False)
+
+        def eligible(_core: Any) -> tuple[wallet_setup.Wallet, ...]:
+            self.wallet_polls += 1
+            if self.wallet_fail_once:
+                self.wallet_fail_once = False
+                raise wallet_setup.BitcoinCoreError("wallet disappeared during refresh")
+            wallets = (wallet_setup.Wallet("alpha", False, False),)
+            return wallets + ((self.wallet_zeta,) if self.wallet_include_zeta else ())
+
+        wallet_setup.eligible = eligible  # type: ignore[assignment]
+        wallet_setup.version_text = lambda _core: "32.0.0"  # type: ignore[assignment]
+        wallet_setup.network = lambda _core: "signet"  # type: ignore[assignment]
+        page = pages._wallet_page(self.view, _Stub(), seed, (self.wallet_zeta,), 0, False)
+        self.view.replace([pages.home(self.view), page])
+        return True
+
+    def wallet_poll_update(self) -> bool:
+        if self.wallet_polls == 0:
+            return False
+        page = self.page()
+        listed = rows(page)
+        check(
+            "a newly empty wallet appears without a button press",
+            [row.get_title() for row in listed] == ["alpha", "zeta", pages.CREATE_WALLET],
+            [row.get_title() for row in listed],
+        )
+        zeta = next(row for row in listed if row.get_title() == "zeta")
+        check("refresh preserves the selected wallet by name", zeta.get_activatable_widget().get_active())
+        check("manual wallet refresh is no longer needed", button(page, "Check again") is None)
+        self.wallet_fail_once = True
+        self.wallet_retry_poll = self.wallet_polls
+        return True
+
+    def wallet_poll_retries(self) -> bool:
+        if self.wallet_polls == self.wallet_retry_poll:
+            return False
+        check(
+            "a transient refresh failure leaves the wallet chooser in place",
+            self.page().get_title() == "Wallet",
+        )
+        self.wallet_include_zeta = False
+        self.wallet_removal_poll = self.wallet_polls
+        return True
+
+    def wallet_poll_disappears(self) -> bool:
+        if self.wallet_polls == self.wallet_removal_poll:
+            return False
+        page = self.page()
+        listed = rows(page)
+        check(
+            "a selected wallet that stops being eligible disappears",
+            [row.get_title() for row in listed] == ["alpha", pages.CREATE_WALLET],
+            [row.get_title() for row in listed],
+        )
+        check(
+            "a disappearing selected wallet does not select a different destination",
+            not any(row.get_activatable_widget().get_active() for row in listed),
+        )
+        check(
+            "Continue is disabled until the operator chooses again",
+            not button(page, "Continue").get_sensitive(),
+        )
+        listed[0].get_activatable_widget().set_active(True)
+        check("choosing again re-enables Continue", button(page, "Continue").get_sensitive())
+        self.wallet_poll_count = self.wallet_polls
+        self.wallet_poll_left = GLib.get_monotonic_time()
+        self.view.replace([pages.home(self.view)])
+        return True
+
+    def wallet_poll_stops(self) -> bool:
+        if GLib.get_monotonic_time() - self.wallet_poll_left < 1_300_000:
+            return False
+        check("wallet polling stops after leaving the page", self.wallet_polls == self.wallet_poll_count)
         return True
 
     def letters(self) -> bool:

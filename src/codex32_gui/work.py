@@ -14,8 +14,7 @@ _UNFINISHED = (
     "That operation stopped in a way this program did not expect. If it was writing to Bitcoin "
     "Core, check there what state the wallet is in before trying again."
 )
-_BUSY = "Another operation is still finishing. Try again in a moment."
-_running = False
+_gate = threading.Lock()
 
 
 def showing(view: Adw.NavigationView, page: Adw.NavigationPage) -> bool:
@@ -35,50 +34,58 @@ def run[Result](
     work: Callable[[], Result],
     done: Callable[[Result | Exception], None],
 ) -> None:
-    """Run one blocking library call off the main loop and deliver its result back.
+    """Queue one blocking library call off the main loop and deliver its result back.
 
     `correct` runs for up to ten seconds and every Bitcoin Core call waits on a
-    subprocess, so neither may run on the main loop. The page that starts an
-    operation shows a spinner and cannot be left, so only one is ever in flight,
-    and a result for a page that is gone anyway is dropped. The result is
-    delivered from `finally`, so a failure no screen anticipated still releases
-    the program instead of leaving it spinning.
+    subprocess, so neither may run on the main loop. Background jobs share one
+    gate, so a wallet-list poll cannot overlap an import. A result for a page
+    that is gone is dropped.
 
     The thread is deliberately not a daemon. `BitcoinCore.initialize` locks an
     unlocked wallet again from a `finally`, and Python does not run `finally`
     blocks in daemon threads while the interpreter is shutting down, so closing
     the window during an import would otherwise leave that wallet open.
     """
-    global _running
-    if _running:
-        GLib.idle_add(_busy, view, page, done)
-        return
-    _running = True
+    _start(view, page, work, done, claimed=False)
+
+
+def poll[Result](
+    view: Adw.NavigationView,
+    page: Adw.NavigationPage,
+    work: Callable[[], Result],
+    done: Callable[[Result | Exception], None],
+) -> bool:
+    """Start one low-priority poll, or skip it while another job owns the gate."""
+    if not _gate.acquire(blocking=False):
+        return False
+    _start(view, page, work, done, claimed=True)
+    return True
+
+
+def _start[Result](
+    view: Adw.NavigationView,
+    page: Adw.NavigationPage,
+    work: Callable[[], Result],
+    done: Callable[[Result | Exception], None],
+    *,
+    claimed: bool,
+) -> None:
 
     def worker() -> None:
         outcome: Result | Exception = RuntimeError(_UNFINISHED)
+        if not claimed:
+            _gate.acquire()
         try:
             outcome = work()
         except (CodexError, BitcoinCoreError, OSError, TypeError, ValueError) as error:
             outcome = error
         finally:
+            _gate.release()
             GLib.idle_add(deliver, outcome)
 
     def deliver(outcome: Result | Exception) -> bool:
-        global _running
-        _running = False
         if showing(view, page):
             done(outcome)
         return False
 
     threading.Thread(target=worker).start()
-
-
-def _busy[Result](
-    view: Adw.NavigationView,
-    page: Adw.NavigationPage,
-    done: Callable[[Result | Exception], None],
-) -> bool:
-    if showing(view, page):
-        done(RuntimeError(_BUSY))
-    return False
