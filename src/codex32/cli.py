@@ -537,14 +537,16 @@ def _correct(
                 f"Add {correction.addend} at position "
                 f"{correction.reverse_index + 1}, counting backward from the end."
             )
-        return 0
+        return 1 if result else 0
     if erasures:
         raise _UsageError("--erasure can be used only with --residue.")
     normalized = "".join(value.split())
     separator = normalized.lower().rfind("1")
     if separator <= 0:
         raise _UsageError("Enter a complete application prefix followed by the separator 1.")
-    hrp = normalized[:separator].lower()
+    if len(raw_hrp := normalized[:separator]) > 83 or not all("!" <= c <= "~" for c in raw_hrp):
+        raise _UsageError("The application prefix must be at most 83 printable ASCII characters.")
+    hrp = raw_hrp.lower()
     if context.master_seed and hrp != Profile.MS.value:
         raise _UsageError("This command accepts only Bitcoin master-seed input beginning with ms1.")
     try:
@@ -698,22 +700,20 @@ def _main(context: _CliContext, argv: Sequence[str] | None = None) -> int:
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else 1
     scope = f"{context.prog} {arguments.command}"
+    correction_failed = 3 if arguments.command == "correct" else 1
     try:
         return _dispatch(arguments, context)
     except CorrectionDeclined:
-        return 1
+        return correction_failed
     except InteractiveConfirmationRequired:
         _print(f"{context.prog}: interactive confirmation required", err=True)
-        return 1
+        return correction_failed
     except _UsageError as error:
         _print(f"{scope}: {error}", err=True)
         return 2
-    except (_CommandError, CodexError) as error:
+    except (_CommandError, CodexError, BitcoinCoreError) as error:
         _print(f"{scope}: {error}", err=True)
-        return 1
-    except BitcoinCoreError as error:
-        _print(f"{scope}: {error}", err=True)
-        return 1
+        return correction_failed
     except EOFError:
         _print(f"{scope}: Input ended before recovery completed.", err=True)
         return 2
