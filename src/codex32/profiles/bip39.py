@@ -57,7 +57,7 @@ class _Bip39Rules:
         semantic = value >> self.outer_padding
         embedded = semantic & ((1 << self.checksum_bits) - 1)
         entropy = semantic >> self.checksum_bits
-        entropy_bytes = entropy.to_bytes(self.entropy_bits // 8)
+        entropy_bytes = entropy.to_bytes(self.entropy_bits // 8, "big")
         expected = hashlib.sha256(entropy_bytes).digest()[0] >> (8 - self.checksum_bits)
         if embedded != expected:
             raise InvalidBip39Checksum("embedded BIP39 entropy checksum is invalid")

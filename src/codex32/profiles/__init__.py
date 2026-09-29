@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import TYPE_CHECKING
+from enum import Enum
+from typing import TYPE_CHECKING, TypeAlias, Union
 
 from codex32.errors import UnknownProfile
 
@@ -11,10 +11,12 @@ if TYPE_CHECKING:
     from codex32.profiles.bip39 import _Bip39Rules
     from codex32.profiles.cl32 import _Cl32Rules
     from codex32.profiles.ms32 import _Ms32Rules
-type _ProfileRules = _Ms32Rules | _Cl32Rules | _Bip39Rules
+_ProfileRules: TypeAlias = Union["_Ms32Rules", "_Cl32Rules", "_Bip39Rules"]
 
 
-class Profile(StrEnum):
+class Profile(str, Enum):
+    __str__ = str.__str__
+
     MS = "ms"
     CL = "cl"
     BIP39_12W = "bip39_12w"

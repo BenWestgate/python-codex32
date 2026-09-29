@@ -12,6 +12,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from _wallet_test_vectors import CORE_FINGERPRINTS
+
 from codex32._bitcoin_core import BitcoinCore
 from codex32.bip93 import parse_codex32
 from codex32.profiles.ms32 import MasterSeed
@@ -123,6 +125,9 @@ def main() -> None:
             if not isinstance(secret, MasterSeed):
                 raise TypeError("synthetic fixture was not a master seed")
             client = BitcoinCore.connect()
+            for seed, expected_fingerprint in CORE_FINGERPRINTS.items():
+                if client.fingerprint_seed(seed) != expected_fingerprint:
+                    raise RuntimeError("Bitcoin Core fingerprint fixture mismatch")
             answers = iter(("yes",))
             if (
                 client.initialize(
