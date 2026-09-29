@@ -37,7 +37,7 @@ from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
-from tools._wallet_reference import fingerprint_seed
+from tools._wallet_test_vectors import stub_fingerprint
 
 
 @dataclass(frozen=True)
@@ -78,14 +78,12 @@ class _TTYInput(io.StringIO):
 
 
 class _CreationOutput(io.StringIO):
-    def __init__(self, *, pretty: bool = False) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.pretty = pretty
-        self.checks = 0
+        self.interactive = True
 
     def isatty(self) -> bool:
-        self.checks += 1
-        return self.pretty or self.checks == 1
+        return self.interactive
 
 
 @dataclass
@@ -98,7 +96,7 @@ class _FakeBitcoinCore:
     timestamp: int | str | None = None
 
     def fingerprint_seed(self, seed: bytes) -> bytes:
-        return fingerprint_seed(seed)
+        return stub_fingerprint(seed)
 
     def fingerprint(self, secret: MasterSeed) -> bytes:
         return self.fingerprint_seed(secret.seed_bytes)
@@ -151,12 +149,16 @@ def _invoke_terminal(args: list[str], *lines: str) -> _Result:
 def _invoke_confirmed_create(
     args: list[str],
     *lines: str,
-    terminal_output: bool = False,
     core: _FakeBitcoinCore | None = None,
 ) -> _Result:
     stdin = _TTYInput("\n".join(lines) + "\n")
-    stdout = _CreationOutput(pretty=terminal_output)
+    stdout = _CreationOutput()
     stderr = io.StringIO()
+    selected_core = core or _FakeBitcoinCore()
+
+    def connect(*_args: object, **_kwargs: object) -> _FakeBitcoinCore:
+        stdout.interactive = False
+        return selected_core
 
     def confirm_card(
         artifact: Share | Secret,
@@ -169,7 +171,7 @@ def _invoke_confirmed_create(
     with (
         patch.object(sys, "stdin", stdin),
         patch("codex32.cli._confirm_card", confirm_card),
-        patch("codex32.cli.BitcoinCore.connect", return_value=core or _FakeBitcoinCore()),
+        patch("codex32.cli.BitcoinCore.connect", side_effect=connect),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
@@ -1224,7 +1226,7 @@ def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:
     secret = artifacts[0]
     assert isinstance(secret, MasterSeed) and len(secret.seed_bytes) == 16
     assert secret.header.threshold == 0
-    assert secret.header.identifier == _fingerprint_identifier(fingerprint_seed(secret.seed_bytes))
+    assert secret.header.identifier == _fingerprint_identifier(stub_fingerprint(secret.seed_bytes))
 
 
 def test_fresh_bitcoin_terminal_and_core_preflight_precede_entropy() -> None:
@@ -1360,7 +1362,7 @@ def test_bare_create_requires_exact_confirmation_on_a_terminal(
         assert ms_main(["create"]) == 0
     artifact = parse_codex32(emitted[0])
     assert isinstance(artifact, MasterSeed)
-    assert artifact.header.identifier == _fingerprint_identifier(fingerprint_seed(artifact.seed_bytes))
+    assert artifact.header.identifier == _fingerprint_identifier(stub_fingerprint(artifact.seed_bytes))
 
 
 def test_fresh_shared_create_confirms_each_card_on_a_terminal(
@@ -1549,7 +1551,7 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
     shares = _output_artifacts(shared)
     assert isinstance(fingerprinted_secret, MasterSeed)
     assert fingerprinted_secret.header.identifier == _fingerprint_identifier(
-        fingerprint_seed(fingerprinted_secret.seed_bytes)
+        stub_fingerprint(fingerprinted_secret.seed_bytes)
     )
     assert unshared_secret.header.identifier == "test"
     assert len(automatic) == 3

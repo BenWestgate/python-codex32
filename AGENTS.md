@@ -28,8 +28,9 @@ contains offline verification utilities.
 
 ## Development and verification
 
-Use the existing virtual environment when available. Python 3.12 is the minimum;
-CI also covers 3.13. Install development dependencies only when needed:
+Use the existing virtual environment when available. Python 3.10 is the minimum;
+the supported range is Python 3.10 through 3.15. Install development
+dependencies only when needed:
 `python -m pip install -e '.[dev]'`. Run the CLI with `codex32 --help`.
 
 Choose checks according to the changed behavior:
