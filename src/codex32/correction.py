@@ -34,6 +34,7 @@ from codex32.bech32 import (
     _u5_to_chars,
     _validate_single_case_ascii,
     bech32_hrp_expand,
+    interpret_mixed_case,
 )
 from codex32.bip93 import (
     IDX_SORT,
@@ -839,6 +840,24 @@ def _primary(
     )
 
 
+def _restore_case_edits(
+    candidates: tuple[CorrectionCandidate, ...], *, uppercase: bool
+) -> tuple[CorrectionCandidate, ...]:
+    # Hide erasures synthesized only to search minority-case symbols.
+    def restore(edit: CorrectionEdit) -> CorrectionEdit:
+        minority_case = edit.observed.isalpha() and edit.observed.isupper() != uppercase
+        kind = (
+            "substitution"
+            if edit.kind == "erasure" and minority_case and edit.observed.lower() in CHARSET
+            else edit.kind
+        )
+        return replace(edit, kind=kind) if kind != edit.kind else edit
+
+    return tuple(
+        replace(candidate, edits=tuple(restore(edit) for edit in candidate.edits)) for candidate in candidates
+    )
+
+
 def _best(
     candidates: Sequence[CorrectionCandidate],
     *,
@@ -874,30 +893,103 @@ def _correct_complete(
     # displayed strings are no longer than the largest expanded codeword.
     if len(damaged_text) > 2 * (_LONG_SPEC.period + 8):
         return (), True
+    deadline = monotonic() + 10 if deadline is None else deadline
+    base = f"{context.hrp}1"
+    locked = context.immutable_prefix or base
+    # The search strips grouping spaces, so locate the immutable boundary in
+    # that same coordinate system before classifying minority-case symbols.
+    compacted = damaged_text.replace(" ", "")
+    immutable_length = len(locked) if compacted.lower().startswith(locked.lower()) else len(base)
+    interpretation = interpret_mixed_case(compacted, immutable_length)
+    inputs: tuple[tuple[CorrectionContext, str], ...]
+    if interpretation is None:
+        inputs = ((context, damaged_text),)
+    else:
+        normalized, erased, uppercase = interpretation
+        normalized_prefix = locked.upper() if uppercase else locked.lower()
+        normalized_context = replace(
+            context, immutable_prefix=normalized_prefix if context.immutable_prefix is not None else None
+        )
+        # Minority-case symbols are explicit erasures, so search that stronger
+        # interpretation before optional alignment work on the normalized text
+        # can consume the shared correction deadline.
+        inputs = (
+            ((normalized_context, erased),)
+            if erased == normalized
+            else ((normalized_context, erased), (normalized_context, normalized))
+        )
+
     from codex32.indel import _search_many
 
-    deadline = monotonic() + 10 if deadline is None else deadline
-    contexts: tuple[CorrectionContext, ...]
-    if context.expected_length is not None:
-        contexts = (context,)
-    else:
-        # Only lengths reachable by either disjoint family are eligible.
-        observed = len(damaged_text.replace(" ", ""))
-        contexts_list = []
-        for target in sorted({observed + delta for delta in (*range(-4, 5), -8, 8)}):
-            candidate_context = replace(context, expected_length=target)
-            try:
-                _validate_context(candidate_context)
-            except InvalidCorrectionInput:
-                continue
-            contexts_list.append(candidate_context)
-        contexts = tuple(contexts_list)
-    return _search_many(
-        contexts,
-        damaged_text,
-        primary=frozenset(c.expected_length for c in contexts if c.expected_length is not None),
-        deadline=deadline,
+    capture_layers: list[tuple[int, int]] = []
+    candidates: tuple[CorrectionCandidate, ...] = ()
+    complete = True
+    if interpretation is not None:
+        # Establish both interpretations' fixed/required candidates before
+        # either interpretation can spend the shared deadline on optional
+        # alignment work.  These discovery passes use a private accounting
+        # ledger; the full searches below account every admitted layer once.
+        for input_context, value in inputs:
+            preflight_contexts: tuple[CorrectionContext, ...]
+            if input_context.expected_length is not None:
+                preflight_contexts = (input_context,)
+            else:
+                observed = len(value.replace(" ", ""))
+                contexts_list = []
+                for target in sorted({observed + delta for delta in (*range(-4, 5), -8, 8)}):
+                    candidate_context = replace(input_context, expected_length=target)
+                    try:
+                        _validate_context(candidate_context)
+                    except InvalidCorrectionInput:
+                        continue
+                    contexts_list.append(candidate_context)
+                preflight_contexts = tuple(contexts_list)
+            candidates, current_complete = _search_many(
+                preflight_contexts,
+                value,
+                primary=frozenset(
+                    c.expected_length for c in preflight_contexts if c.expected_length is not None
+                ),
+                deadline=deadline,
+                observed_text=damaged_text,
+                seed_candidates=candidates,
+                required_only=True,
+            )
+            if not current_complete:
+                return (), False
+    for input_context, value in inputs:
+        contexts: tuple[CorrectionContext, ...]
+        if input_context.expected_length is not None:
+            contexts = (input_context,)
+        else:
+            # Only lengths reachable by either disjoint family are eligible.
+            observed = len(value.replace(" ", ""))
+            contexts_list = []
+            for target in sorted({observed + delta for delta in (*range(-4, 5), -8, 8)}):
+                candidate_context = replace(input_context, expected_length=target)
+                try:
+                    _validate_context(candidate_context)
+                except InvalidCorrectionInput:
+                    continue
+                contexts_list.append(candidate_context)
+            contexts = tuple(contexts_list)
+        candidates, current_complete = _search_many(
+            contexts,
+            value,
+            primary=frozenset(c.expected_length for c in contexts if c.expected_length is not None),
+            deadline=deadline,
+            capture_layers=capture_layers,
+            observed_text=damaged_text,
+            seed_candidates=candidates,
+            optional_only=interpretation is not None,
+        )
+        complete &= current_complete
+        if not current_complete and not candidates:
+            return (), False
+    candidates = (
+        _restore_case_edits(candidates, uppercase=uppercase) if interpretation is not None else candidates
     )
+    return candidates, complete
 
 
 def correct(context: CorrectionContext, damaged_text: str) -> tuple[CorrectionCandidate, ...]:

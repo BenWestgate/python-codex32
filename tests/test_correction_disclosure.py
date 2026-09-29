@@ -100,7 +100,7 @@ def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
         patch.object(sys, "stdin", io.StringIO(VECTOR_1["secret_s"][:-1] + "?")),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
-        patch.object(cli, "_correction_candidates", return_value=((_candidate(),), True, None, False)),
+        patch.object(_cli_input, "_correction_candidates", return_value=((_candidate(),), True, None, False)),
     ):
         status = entrypoint(["correct", *(["--plain"] if plain else [])])
     prog = "codex32" if entrypoint is cli.main else "ms32"
@@ -128,7 +128,7 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
     monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: (candidate,))
     monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
     )
     core = _FakeBitcoinCore()
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
@@ -163,7 +163,7 @@ def test_yes_reveals_candidate_after_gate_with_plain_output(monkeypatch):
 
     monkeypatch.setattr(_cli_input, "_editable_input", respond)
     monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
     )
     with (
         patch.object(sys, "stdin", _TTYInput()),
@@ -181,7 +181,7 @@ def test_redirected_stderr_blocks_low_discrimination_disclosure(monkeypatch):
     responses = iter((source[:-1] + "?",))
     monkeypatch.setattr(_cli_input, "_editable_input", lambda *args, **kwargs: next(responses))
     monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
     )
     stdout, stderr = io.StringIO(), io.StringIO()
     with (
@@ -218,7 +218,7 @@ def test_redirected_correct_uses_terminal_gate_without_second_confirmation(monke
 
     monkeypatch.setattr(_cli_input, "_confirmation_input", confirm)
     monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
     )
     stdout, stderr = io.StringIO(), _TTYOutput()
     with (
@@ -319,6 +319,21 @@ def test_previous_case_interpretation_search_is_charged_even_without_a_candidate
     )
     assert result[0].cumulative_capture_volume == (1 << 60) + 1
     assert result[0].low_checksum_discrimination
+
+
+def test_seed_candidate_is_reannotated_after_later_search_admission(monkeypatch):
+    candidate = replace(_candidate(), capture_volume=10)
+    monkeypatch.setattr(indel, "_frontier", lambda *args: {(48, indel._FIXED, 0, 0): 10})
+    monkeypatch.setattr(indel, "_search_target", lambda *args: True)
+    result, complete = indel._search_many(
+        (CorrectionContext("ms", 48),),
+        VECTOR_1["secret_s"],
+        primary=frozenset((48,)),
+        capture_layers=[(5, 65)],
+        seed_candidates=(candidate,),
+    )
+    assert complete and result[0].cumulative_capture_volume == 15
+    assert result[0].capture_space_bits == 65
 
 
 @pytest.mark.parametrize("profile", ("bip39_12w", "bip39_24w"))
