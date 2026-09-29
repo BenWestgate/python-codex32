@@ -6,10 +6,13 @@ import contextlib
 import difflib
 import os
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import replace
+from functools import partial
 from time import monotonic
 from typing import Any, Literal, cast
 
+from codex32.bech32 import interpret_mixed_case
 from codex32.bip93 import (
     Secret,
     Share,
@@ -19,7 +22,7 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import CorrectionCandidate, CorrectionContext, _best
+from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _capture_mass
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
@@ -377,15 +380,14 @@ def _case_interpretation(
     profiles: tuple[Profile, ...] | None,
     allowed: Callable[[CorrectionCandidate], bool] | None,
 ) -> tuple[CorrectionCandidate | None, str, str, str] | None:
-    """Normalize likely casing and mark contrary-case data as erasures."""
-    if value.upper() == value or value.lower() == value:
-        return None
+    # Normalize likely casing and mark contrary-case data as erasures.
     separator = value.find("1")
     base_length = separator + 1 if separator >= 0 else 0
     immutable_length = len(prefix) if prefix and value.lower().startswith(prefix.lower()) else base_length
-    letters = [character for character in value[immutable_length:] if character.lower() != character.upper()]
-    uppercase = sum(character.isupper() for character in letters) > len(letters) / 2
-    corrected = value.upper() if uppercase else value.lower()
+    interpretation = interpret_mixed_case(value, immutable_length)
+    if interpretation is None:
+        return None
+    corrected, erased, uppercase = interpretation
     corrected_prefix = prefix.upper() if uppercase else prefix.lower()
     try:
         artifact = _parse(corrected, profiles)
@@ -397,14 +399,6 @@ def _case_interpretation(
         )
         proposed = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=bits)
         candidate = proposed if allowed is None or allowed(proposed) else None
-    erased = "".join(
-        corrected[index]
-        if index < immutable_length
-        or character.lower() == character.upper()
-        or character.isupper() == uppercase
-        else "?"
-        for index, character in enumerate(value)
-    )
     return candidate, corrected, erased, corrected_prefix
 
 
@@ -460,7 +454,9 @@ def _correction_candidates(
     deadline: float | None = None,
     capture_layers: list[tuple[int, int]] | None = None,
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
-) -> tuple[tuple[CorrectionCandidate, ...], bool, float | None, bool]:
+    seed_candidates: Sequence[CorrectionCandidate] = (),
+    required_only: bool = False,
+) -> tuple[tuple[CorrectionCandidate, ...], bool, float, bool]:
     count = len(value.replace(" ", ""))
     targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
     deadline = monotonic() + 10 if deadline is None else deadline
@@ -476,6 +472,8 @@ def _correction_candidates(
         competitors=True,
         allowed=allowed,
         capture_layers=capture_layers,
+        seed_candidates=seed_candidates,
+        required_only=required_only,
     )
     if allowed is not None:
         candidates = tuple(candidate for candidate in candidates if allowed(candidate))
@@ -487,6 +485,62 @@ def _correction_candidates(
         else ()
     )
     return results, complete, deadline, False
+
+
+def _scheduled_candidates(
+    value: str,
+    erased: str,
+    profile: str | Profile,
+    byte_length: int | Literal["?"] | None,
+    immutable: str,
+    excluded: tuple[str, ...] = (),
+    *,
+    target: int | None = None,
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
+    deadline: float | None = None,
+    fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
+) -> tuple[tuple[CorrectionCandidate, ...], bool, bool]:
+    """Search both case interpretations under one deadline and capture ledger."""
+    search = partial(
+        _correction_candidates,
+        profile=profile,
+        byte_length=byte_length,
+        immutable=immutable,
+        excluded=excluded,
+        target=target,
+        allowed=allowed,
+        fingerprint_match=fingerprint_match,
+    )
+    first, retry = (erased, value) if erased != value else (value, None)
+    seeded: tuple[CorrectionCandidate, ...] = ()
+    if retry is not None:
+        # Find required candidates for both case interpretations before either
+        # full search can spend the shared deadline on optional alignment.
+        # These discovery passes deliberately do not charge capture_layers;
+        # the full searches below account each admitted frontier once.
+        for required_value in (first, retry):
+            seeded, complete, deadline, _ = search(
+                required_value, deadline=deadline, seed_candidates=seeded, required_only=True
+            )
+            if not complete:
+                return (), False, False
+    capture_layers: list[tuple[int, int]] = []
+    candidates, complete, deadline, ambiguous = search(
+        first, deadline=deadline, capture_layers=capture_layers, seed_candidates=seeded
+    )
+    if retry is None:
+        return candidates, complete, ambiguous
+    retry_candidates, complete, _deadline, retry_ambiguous = search(
+        retry, deadline=deadline, capture_layers=capture_layers, seed_candidates=(*seeded, *candidates)
+    )
+    annotated = []
+    for item in (*candidates, *retry_candidates):
+        volume, bits = _capture_mass(capture_layers, item.capture_volume)
+        annotated.append(replace(item, cumulative_capture_volume=volume, capture_space_bits=bits))
+    unique: dict[str, CorrectionCandidate] = {}
+    for item in _best(annotated, prefer_common=byte_length == "?", fingerprint_match=fingerprint_match):
+        unique.setdefault(item.artifact.text.lower(), item)
+    return tuple(unique.values()), complete, ambiguous or retry_ambiguous
 
 
 def _fingerprint_matcher(
@@ -538,23 +592,8 @@ def _suggestions(
         if prefix and value.lower().startswith(prefix.lower())
         else prefix or value[: separator + 1]
     )
-    deadline = monotonic() + 10
-    capture_layers: list[tuple[int, int]] = []
-    candidates = _correction_candidates(
+    return _scheduled_candidates(
         value,
-        hrp,
-        None,
-        immutable,
-        excluded,
-        target=target,
-        allowed=allowed,
-        deadline=deadline,
-        capture_layers=capture_layers,
-        fingerprint_match=fingerprint_match,
-    )[0]
-    if candidates or erased == value:
-        return candidates
-    return _correction_candidates(
         erased,
         hrp,
         None,
@@ -562,8 +601,7 @@ def _suggestions(
         excluded,
         target=target,
         allowed=allowed,
-        deadline=deadline,
-        capture_layers=capture_layers,
+        deadline=monotonic() + 10,
         fingerprint_match=fingerprint_match,
     )[0]
 
