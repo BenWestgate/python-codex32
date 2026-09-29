@@ -5,7 +5,8 @@ checksummed, secret-sharing-aware Base32 format for Bitcoin master seeds. A
 master seed is the private recovery secret from which a Bitcoin wallet derives
 its keys.
 
-This project provides a command-line tool and Python library that can:
+This project provides a command-line tool, an optional graphical user interface, and a Python
+library that can:
 - create an unshared master-seed backup or an M-of-N shared backup;
 - check backup text and suggest possible repairs after damage;
 - recover a master seed from the required shares;
@@ -16,10 +17,9 @@ This project provides a command-line tool and Python library that can:
 With an M-of-N backup, any M of the N paper shares can recover the master seed.
 A set with fewer than M shares cannot recover it.
 
-This is not a Bitcoin wallet. It has no graphical interface, cannot show
-balances or send bitcoin, and does not produce BIP39 mnemonic words. codex32
-makes no network connection; it communicates with a local Bitcoin Core
-instance through `bitcoin-cli`.
+This is not a Bitcoin wallet. It cannot show balances or send bitcoin, and does
+not produce BIP39 mnemonic words. codex32 makes no network connection; it
+communicates with a local Bitcoin Core instance through `bitcoin-cli`.
 
 This is security-critical reference software. Use it on a trusted computer and
 obtain an independent review before relying on it with funds. See
@@ -53,6 +53,37 @@ BIP39 worksheet profiles are supported for existing-backup recovery but are
 [not recommended for creating backups](https://secretcodex32.com/docs/index.html).
 Powerful correction searches, including recovery of genuinely unreadable
 characters, require interactive confirmation.
+
+### The optional GUI
+
+`codex32-gui` does the same master-seed jobs in a graphical interface, for someone
+who has never used codex32 before. It adds no Python dependency: GTK 4 and libadwaita
+arrive as system packages. If your system does not already provide them, install
+them first:
+
+```bash
+sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+```
+
+Then create the environment with `--system-site-packages` so that it can see
+those packages:
+
+```bash
+python -m venv --system-site-packages .venv
+source .venv/bin/activate
+
+python -m pip install --require-hashes \
+  -r requirements/cli-build-dependencies.txt
+python -m pip install --no-build-isolation --no-deps '.[gui]'
+python -m pip check
+codex32-gui
+```
+
+Because this environment can see system Python packages, `pip check` may also
+report pre-existing problems in unrelated applications. Those packages are not
+GUI dependencies. Tails 7 and Debian 13 already carry the three
+required system packages, so an amnesic session needs no download. See the
+[GUI guide](docs/user/gui.md).
 
 ## Start here
 
