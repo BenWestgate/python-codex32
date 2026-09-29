@@ -63,6 +63,9 @@ cards.
 A card never contains **B**, **I**, **O**, or **1**. If one is entered, the GUI
 reports the likely look-alike instead of silently deleting it.
 
+When recovering from several cards, use `?` for a header or card-index character
+you genuinely cannot read. **Check a card** requires the printed character.
+
 ## Repairing a damaged card
 
 Type what you can read and `?` for each unknown character. The repair field

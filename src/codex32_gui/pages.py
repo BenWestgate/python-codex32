@@ -1051,6 +1051,7 @@ def _collect(
     reserved: tuple[str, ...] = (),
     repaired: bool = False,
     correcting: bool = False,
+    allow_header_erasures: bool = True,
     then: Callable[[tuple[Artifact, ...], bool], None],
 ) -> Adw.NavigationPage:
     """Take one card, and keep taking them until the backup has enough."""
@@ -1061,11 +1062,17 @@ def _collect(
     excluded = tuple(index for index in blocked if index != "s")
     expected_header = (first.header.threshold, first.header.identifier) if first is not None else None
     mode: EntryMode = "correct" if correcting else "import"
-    field = Codex32Entry(accepted=blocked, length=length, mode=mode, expected_header=expected_header)
+    field = Codex32Entry(
+        accepted=blocked,
+        length=length,
+        mode=mode,
+        expected_header=expected_header,
+        allow_header_erasures=allow_header_erasures,
+    )
     if first is not None:
         field.prefill(f"{reading.PREFIX}{first.header.threshold}{first.header.identifier}")
     status = _note("")
-    fix = _button("Suggest a repair", lambda: repair_or_allow())
+    fix: Gtk.Button
     go = _button("Continue", lambda: proceed(), style="suggested-action")
 
     def refuse(artifact: Artifact | None) -> str:
@@ -1079,9 +1086,7 @@ def _collect(
         state = field.reading()
         problem = refuse(state.artifact)
         go.set_sensitive(state.artifact is not None and not problem)
-        blocked_header = field.header_blocked()
-        fix.set_label("Type it as written" if blocked_header else "Suggest a repair")
-        fix.set_sensitive(blocked_header or state.repairable)
+        fix.set_sensitive(state.repairable and state.artifact is None)
         _say(status, problem or state.message, "error" if problem else state.level)
 
     def accept(artifact: Artifact, guessed: bool = False) -> None:
@@ -1108,6 +1113,7 @@ def _collect(
                     reserved=reserved,
                     repaired=repaired or guessed,
                     correcting=correcting,
+                    allow_header_erasures=allow_header_erasures,
                     then=then,
                 ),
             )
@@ -1118,13 +1124,6 @@ def _collect(
         artifact = field.reading().artifact
         if artifact is not None:
             accept(artifact)
-
-    def repair_or_allow() -> None:
-        if field.header_blocked():
-            field.allow_damaged_header()
-            update()
-        else:
-            suggest()
 
     def suggest() -> None:
         observed = field.reading().text
@@ -1144,11 +1143,13 @@ def _collect(
 
         work.run(view, spinner, lambda: reading.repair(observed, length, excluded), deliver)
 
+    fix = _button("Suggest a repair", suggest)
+
     def activate(_entry: Gtk.Entry) -> None:
         if go.get_sensitive():
             proceed()
         elif fix.get_sensitive():
-            repair_or_allow()
+            suggest()
 
     field.connect("activate", activate)
     field.connect("changed", update)
@@ -1273,6 +1274,7 @@ def _start_check(view: Adw.NavigationView) -> None:
             heading="Type what your card says",
             body="Nothing is saved and nothing leaves this computer.",
             wanted=1,
+            allow_header_erasures=False,
             then=lambda found, guessed: _replace(view, _intact_page(view, found[0], guessed)),
         )
     )

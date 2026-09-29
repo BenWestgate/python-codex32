@@ -206,7 +206,6 @@ class Walkthrough(app.Application):
         field.insert_text("X", len(reading.PREFIX))
         settle()
         check("a bad threshold is kept so it can be corrected", field.get_text() == "MS1X", field.get_text())
-        check("a bad threshold pauses ordinary entry", button(page, "Type it as written") is not None)
         field.insert_text("N", len(field.get_text()))
         settle()
         check(
@@ -214,6 +213,16 @@ class Walkthrough(app.Application):
             field.get_text() == "MS1X",
             field.get_text(),
         )
+        field.set_text("MS1?")
+        settle()
+        check(
+            "check rejects an unreadable threshold marker",
+            any("? cannot be used" in text for text in labels(page)),
+            labels(page),
+        )
+        field.insert_text("N", len(field.get_text()))
+        settle()
+        check("check freezes after a question mark in the header", field.get_text() == "MS1?", field.get_text())
         field.delete_text(3, 4)
         field.insert_text("2", 3)
         settle()
@@ -522,6 +531,15 @@ class Walkthrough(app.Application):
         check(
             "forward typing stays frozen after the incompatible identifier",
             "".join(field.get_text().split()) == "MS12C",
+            field.get_text(),
+        )
+        field.set_text("MS12?")
+        settle()
+        field.insert_text("A", len(field.get_text()))
+        settle()
+        check(
+            "an erasure in an incompatible header lets multi-card entry continue",
+            "".join(field.get_text().split()) == "MS12?A",
             field.get_text(),
         )
         field.set_text("MS12NAME")

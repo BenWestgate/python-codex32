@@ -37,15 +37,20 @@ class Codex32Entry(Gtk.Entry):
         length: int | None = None,
         mode: EntryMode = "import",
         expected_header: tuple[int, str] | None = None,
+        allow_header_erasures: bool = False,
     ) -> None:
         super().__init__()
         if mode == "readback" and length is None:
             raise ValueError("read-back entry requires the card length")
         self._accepted, self._length, self._mode = accepted, length, mode
-        self._expected_header, self._pending = expected_header, 0
+        self._expected_header, self._allow_header_erasures, self._pending = (
+            expected_header,
+            allow_header_erasures,
+            0,
+        )
         self._limit = (length or TEXT_LENGTHS[-1]) + SLACK
         self._dropped, self._rewriting, self._unpublishing = "", False, 0
-        self._damaged_header, self._last_header_fault = False, ""
+        self._last_header_fault = ""
         self._stable = "" if mode == "readback" else PREFIX
         self.set_hexpand(True)
         self.add_css_class("card-entry")
@@ -61,7 +66,6 @@ class Codex32Entry(Gtk.Entry):
         """Offer a known header that the operator may still overtype."""
         if self._mode == "readback":
             raise ValueError("read-back entry cannot be prefilled")
-        self._damaged_header = False
         self._stable = grouped(normalize(text))
         self.set_text(self._stable)
         self.set_position(-1)
@@ -71,24 +75,15 @@ class Codex32Entry(Gtk.Entry):
         if self._mode == "readback":
             return readback(self.get_text(), cast(int, self._length))
         state = read(normalize(self.get_text()), accepted=self._accepted, length=self._length)
-        if not self._damaged_header and (fault := self._header_fault()):
+        if fault := self._header_fault():
             state = replace(state, artifact=None, message=fault, level="error")
         if self._dropped and state.artifact is None and state.level != "error":
             return replace(state, message=self._dropped, level="error")
         return state
 
-    def header_blocked(self) -> bool:
-        """Report whether ordinary entry is waiting for a damaged-header decision."""
-        return self._mode == "import" and not self._damaged_header and bool(self._header_fault())
-
-    def allow_damaged_header(self) -> None:
-        """Let ordinary entry continue after the operator chooses to transcribe damage literally."""
-        self._damaged_header = True
-        self._last_header_fault = ""
-
     def clear(self) -> None:
         """Drop the entered recovery text."""
-        self._dropped, self._damaged_header, self._last_header_fault = "", False, ""
+        self._dropped, self._last_header_fault = "", ""
         self._stable = "" if self._mode == "readback" else PREFIX
         self.set_text(self._stable)
         self.set_position(-1)
@@ -99,6 +94,8 @@ class Codex32Entry(Gtk.Entry):
         value = self.get_text() if raw is None else raw
         compact = "".join(value.split()).upper()
         text = compact if compact.startswith(PREFIX) else normalize(value)
+        if self._mode == "import" and not self._allow_header_erasures and "?" in text[len(PREFIX) : 9]:
+            return "? cannot be used in this header. Type the character printed on the card."
         return header_fault(text, self._accepted, self._expected_header)
 
     def _unpublish(self, *_arguments: object) -> None:
@@ -138,7 +135,7 @@ class Codex32Entry(Gtk.Entry):
         canonical = normalizer(source)[: self._limit]
         shown = grouped(canonical)
         self._dropped = "" if self._mode == "readback" else lookalike_fault(raw)
-        fault = self._header_fault(canonical) if self._mode == "import" and not self._damaged_header else ""
+        fault = self._header_fault(canonical) if self._mode == "import" else ""
         if fault and self._last_header_fault and len(canonical) > len(normalize(self._stable)):
             self.error_bell()
             self._rewrite(self._stable, -1)

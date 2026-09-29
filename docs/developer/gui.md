@@ -48,8 +48,9 @@ logical-line GUI budget.
 
 The entry widget has three internal modes:
 
-- **Ordinary:** supplies and protects `MS1`, blocks forward typing after an
-  invalid header, and lets the operator explicitly keep damaged text.
+- **Ordinary:** supplies and protects `MS1` and blocks forward typing after an
+  invalid header. Multi-card jobs may use `?` for an unreadable header character;
+  Check a card does not accept `?`.
 - **Correction:** preserves damaged headers and literal `?`, matching the CLI's
   correction input.
 - **Read-back:** starts empty, normalizes only spacing and ASCII case, and never
