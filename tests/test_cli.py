@@ -1852,6 +1852,133 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
     assert bip39.exit_code == 0 and "already valid" in bip39.stdout
 
 
+def test_correct_suggests_the_majority_case_for_mixed_case_damage() -> None:
+    source = VECTOR_1["secret_s"]
+    position = next(
+        index for index, character in enumerate(source[3:], 3) if character.lower() != character.upper()
+    )
+    mixed = source[:position] + source[position].upper() + source[position + 1 :]
+
+    result = _invoke(["correct"], mixed)
+    wrong_length = _invoke(["correct", "--bytes", "32"], mixed)
+
+    assert result.exit_code == 1
+    assert source in result.stderr
+    assert "No valid correction found" not in result.stderr
+    assert wrong_length.exit_code == 2
+    assert "--bytes does not match" in wrong_length.stderr
+    assert source not in wrong_length.stderr
+
+
+def test_correct_grouped_mixed_case_recognizes_case_only_repair() -> None:
+    source = VECTOR_1["secret_s"]
+    positions = [
+        index for index, character in enumerate(source[3:], 3) if character.lower() != character.upper()
+    ][:13]
+    mixed = "".join(
+        character.upper() if index in positions else character for index, character in enumerate(source)
+    )
+    grouped = " ".join(mixed[index : index + 4] for index in range(0, len(mixed), 4))
+
+    result = _invoke(["correct"], grouped)
+
+    assert result.exit_code == 1 and source in result.stderr
+    assert "interactive confirmation required" not in result.stderr
+
+
+def test_correct_searches_mixed_case_erasures_before_normalized_alignment(monkeypatch) -> None:
+    source = VECTOR_1["secret_s"]
+    letter_positions = [
+        index
+        for index, character in enumerate(source[3:], 3)
+        if index >= 9 and character.lower() != character.upper()
+    ]
+    positions = letter_positions[1:26:6]
+    damaged = "".join(
+        ("P" if character.lower() != "p" else "Q") if index in positions else character
+        for index, character in enumerate(source)
+    )
+    searched: list[str] = []
+
+    def stop_after_first(value, *_args, **_kwargs):
+        searched.append(value)
+        return (), False, None, False
+
+    monkeypatch.setattr("codex32.cli._correction_candidates", stop_after_first)
+
+    result = _invoke(["correct"], damaged)
+    assert result.exit_code != 0
+    assert len(searched) == 1
+    assert searched[0].count("?") == len(positions)
+
+
+def test_correct_reranks_mixed_case_erasure_and_normalized_interpretations() -> None:
+    source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
+    start = source.index("x")
+    positions = range(start, start + 13)
+    damaged = "".join(
+        ("P" if index == start + 6 else character.upper()) if index in positions else character
+        for index, character in enumerate(source)
+    )
+
+    result = _invoke(["correct"], damaged)
+
+    assert result.exit_code == 1
+    assert source in result.stderr
+    assert "interactive confirmation required" not in result.stderr
+
+
+def test_correct_required_work_is_not_starved_by_erasure_alignment() -> None:
+    source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
+    damaged = "ms10TpstsxXxxxxxXxxxxxXxxxxXxxxxxXx4nzvcA9cmczlW"
+
+    result = _invoke(["correct"], damaged)
+
+    assert result.exit_code == 1
+    assert source in result.stderr
+    assert "did not complete within ten seconds" not in result.stderr
+    assert "interactive confirmation required" not in result.stderr
+
+
+def test_correct_accounts_retry_frontier_after_incomplete_first_search(monkeypatch) -> None:
+    source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
+    start = source.index("x")
+    positions = range(start, start + 13)
+    damaged = "".join(
+        ("P" if index == start + 6 else character.upper()) if index in positions else character
+        for index, character in enumerate(source)
+    )
+    candidate = CorrectionCandidate(
+        parse_codex32(source),
+        (),
+        1,
+        0,
+        0,
+        None,
+        search_complete=False,
+    )
+    full_searches: list[str] = []
+
+    def incomplete_first(value, *_args, **kwargs):
+        if kwargs.get("required_only"):
+            return (), True, 0.0, False
+        full_searches.append(value)
+        kwargs["capture_layers"].append((1, 5))
+        if len(full_searches) == 1:
+            return (candidate,), False, 0.0, False
+        return (), False, 0.0, False
+
+    monkeypatch.setattr("codex32.cli._correction_candidates", incomplete_first)
+
+    result = _invoke(["correct"], damaged)
+
+    assert len(full_searches) == 2
+    assert full_searches[0].count("?") == len(positions)
+    assert "?" not in full_searches[1]
+    assert result.exit_code == 1
+    assert "interactive confirmation required" in result.stderr
+
+
 def test_correction_hides_internal_candidate_reparse_failures() -> None:
     result = _invoke(["correct"], "ms12auxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg")
 

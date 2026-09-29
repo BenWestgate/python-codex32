@@ -264,6 +264,131 @@ def test_uppercase_input_preserves_case_and_reverse_addends() -> None:
     assert result.addend_hamming_weight == addend.bit_count()
 
 
+@pytest.mark.parametrize("uppercase", (False, True))
+def test_public_correction_interprets_mixed_case_by_majority(uppercase: bool) -> None:
+    source = VECTOR_1["secret_s"].upper() if uppercase else VECTOR_1["secret_s"]
+    position = next(
+        index for index, character in enumerate(source[3:], 3) if character.lower() != character.upper()
+    )
+    mixed = source[:position] + source[position].swapcase() + source[position + 1 :]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), mixed)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+
+
+def test_public_correction_does_not_casefold_non_ascii() -> None:
+    source = VECTOR_1["secret_s"].upper()
+    damaged = source[:10] + "ß" + source[11:]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+
+    assert result == ()
+
+
+def test_public_correction_searches_identical_case_interpretation_once() -> None:
+    source = VECTOR_1["secret_s"]
+    damaged = source[0].upper() + source[1:]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+    assert result[0].cumulative_capture_volume == 1
+
+
+def test_mixed_case_erasure_search_precedes_normalized_alignment(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = VECTOR_1["secret_s"]
+    letter_positions = [
+        index
+        for index, character in enumerate(source[3:], 3)
+        if index >= 9 and character.lower() != character.upper()
+    ]
+    positions = letter_positions[1:26:6]
+    damaged = "".join(
+        ("P" if character.lower() != "p" else "Q") if index in positions else character
+        for index, character in enumerate(source)
+    )
+    searched: list[str] = []
+
+    def stop_after_first(_contexts, value, **_kwargs):
+        searched.append(value)
+        return (), False
+
+    monkeypatch.setattr("codex32.indel._search_many", stop_after_first)
+
+    assert correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged) == ()
+    assert len(searched) == 1
+    assert searched[0].count("?") == len(positions)
+
+
+def test_mixed_case_candidate_still_searches_normalized_competitors(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = VECTOR_1["secret_s"]
+    position = next(
+        index for index, character in enumerate(source[3:], 3) if character.lower() != character.upper()
+    )
+    damaged = source[:position] + source[position].upper() + source[position + 1 :]
+    candidate = CorrectionCandidate(codex32.parse_codex32(source), (), 1, 0, 0, None)
+    searched: list[tuple[str, tuple[CorrectionCandidate, ...], bool]] = []
+
+    def search(_contexts, value, **kwargs):  # type: ignore[no-untyped-def]
+        seeded = kwargs["seed_candidates"]
+        searched.append((value, seeded, kwargs.get("required_only", False)))
+        return ((candidate,), True) if len(searched) == 1 else (seeded, True)
+
+    monkeypatch.setattr("codex32.indel._search_many", search)
+
+    assert correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged) == (candidate,)
+    assert len(searched) == 4
+    assert ["?" in value for value, _seeded, _required in searched] == [True, False, True, False]
+    assert [required for _value, _seeded, required in searched] == [True, True, False, False]
+    assert all(seeded == (candidate,) for _value, seeded, _required in searched[1:])
+
+
+def test_mixed_case_required_work_is_not_starved_by_erasure_alignment() -> None:
+    source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
+    damaged = "ms10TpstsxXxxxxxXxxxxxXxxxxXxxxxxXx4nzvcA9cmczlW"
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+
+
+@pytest.mark.parametrize("uppercase", (False, True))
+@pytest.mark.parametrize(("entered", "kind"), (("P", "substitution"), ("B", "erasure")))
+def test_mixed_case_correction_edits_preserve_the_entered_character(
+    uppercase: bool,
+    entered: str,
+    kind: str,
+) -> None:
+    source = VECTOR_1["secret_s"].upper() if uppercase else VECTOR_1["secret_s"]
+    position = 3
+    observed = entered.lower() if uppercase else entered
+    damaged = source[:position] + observed + source[position + 1 :]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+    assert tuple(
+        (edit.kind, edit.reverse_index, edit.observed, edit.replacement) for edit in result[0].edits
+    ) == ((kind, len(source) - position - 1, observed, source[position]),)
+
+
+def test_mixed_case_structural_edits_preserve_the_entered_character() -> None:
+    source = VECTOR_1["secret_s"]
+    damaged = source[:3] + "P" + source[4:20] + source[21:]
+
+    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+    assert {edit.kind for edit in result[0].edits} == {"insertion", "substitution"}
+    assert next(edit for edit in result[0].edits if edit.kind == "substitution").observed == "P"
+
+
 def test_fixed_failures_are_fail_closed() -> None:
     mixed = "M" + VECTOR_1["secret_s"][1:]
     damaged = list(VECTOR_1["secret_s"])

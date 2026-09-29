@@ -6,10 +6,11 @@ import contextlib
 import difflib
 import os
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from time import monotonic
 from typing import Any, Literal, cast
 
+from codex32.bech32 import interpret_mixed_case
 from codex32.bip93 import (
     Secret,
     Share,
@@ -377,15 +378,14 @@ def _case_interpretation(
     profiles: tuple[Profile, ...] | None,
     allowed: Callable[[CorrectionCandidate], bool] | None,
 ) -> tuple[CorrectionCandidate | None, str, str, str] | None:
-    """Normalize likely casing and mark contrary-case data as erasures."""
-    if value.upper() == value or value.lower() == value:
-        return None
+    # Normalize likely casing and mark contrary-case data as erasures.
     separator = value.find("1")
     base_length = separator + 1 if separator >= 0 else 0
     immutable_length = len(prefix) if prefix and value.lower().startswith(prefix.lower()) else base_length
-    letters = [character for character in value[immutable_length:] if character.lower() != character.upper()]
-    uppercase = sum(character.isupper() for character in letters) > len(letters) / 2
-    corrected = value.upper() if uppercase else value.lower()
+    interpretation = interpret_mixed_case(value, immutable_length)
+    if interpretation is None:
+        return None
+    corrected, erased, uppercase = interpretation
     corrected_prefix = prefix.upper() if uppercase else prefix.lower()
     try:
         artifact = _parse(corrected, profiles)
@@ -397,14 +397,6 @@ def _case_interpretation(
         )
         proposed = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=bits)
         candidate = proposed if allowed is None or allowed(proposed) else None
-    erased = "".join(
-        corrected[index]
-        if index < immutable_length
-        or character.lower() == character.upper()
-        or character.isupper() == uppercase
-        else "?"
-        for index, character in enumerate(value)
-    )
     return candidate, corrected, erased, corrected_prefix
 
 
@@ -460,6 +452,8 @@ def _correction_candidates(
     deadline: float | None = None,
     capture_layers: list[tuple[int, int]] | None = None,
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
+    seed_candidates: Sequence[CorrectionCandidate] = (),
+    required_only: bool = False,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool, float | None, bool]:
     count = len(value.replace(" ", ""))
     targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
@@ -476,6 +470,8 @@ def _correction_candidates(
         competitors=True,
         allowed=allowed,
         capture_layers=capture_layers,
+        seed_candidates=seed_candidates,
+        required_only=required_only,
     )
     if allowed is not None:
         candidates = tuple(candidate for candidate in candidates if allowed(candidate))

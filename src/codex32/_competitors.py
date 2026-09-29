@@ -173,8 +173,10 @@ def _search_competitors(
     frontier: dict[_Layer, int],
     deadline: float,
     allowed: Callable[[CorrectionCandidate], bool] | None,
+    *,
+    seed_candidates: Sequence[CorrectionCandidate] = (),
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
-    results: dict[str, CorrectionCandidate] = {}
+    results = {candidate.artifact.text.lower(): candidate for candidate in seed_candidates}
     fixed: dict[int, CorrectionCandidate | None] = {}
     completed: set[_Layer] = set()
     try:

@@ -321,6 +321,21 @@ def test_previous_case_interpretation_search_is_charged_even_without_a_candidate
     assert result[0].low_checksum_discrimination
 
 
+def test_seed_candidate_is_reannotated_after_later_search_admission(monkeypatch):
+    candidate = replace(_candidate(), capture_volume=10)
+    monkeypatch.setattr(indel, "_frontier", lambda *args: {(48, indel._FIXED, 0, 0): 10})
+    monkeypatch.setattr(indel, "_search_target", lambda *args: True)
+    result, complete = indel._search_many(
+        (CorrectionContext("ms", 48),),
+        VECTOR_1["secret_s"],
+        primary=frozenset((48,)),
+        capture_layers=[(5, 65)],
+        seed_candidates=(candidate,),
+    )
+    assert complete and result[0].cumulative_capture_volume == 15
+    assert result[0].capture_space_bits == 65
+
+
 @pytest.mark.parametrize("profile", ("bip39_12w", "bip39_24w"))
 def test_cli_derives_hand_produced_bip39_set_but_rejects_invalid_implied_secret(profile):
     from test_generic_hrp import _invoke

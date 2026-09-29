@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from typing import Literal, NamedTuple, cast
 
 from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
@@ -13,6 +14,7 @@ from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
     _card_text,
+    _case_interpretation,
     _confirm_correction,
     _correction_candidates,
     _entered_groups,
@@ -35,7 +37,13 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import _best, _residue_low_discrimination, correct_worksheet_residue
+from codex32.correction import (
+    CorrectionCandidate,
+    _best,
+    _capture_mass,
+    _residue_low_discrimination,
+    correct_worksheet_residue,
+)
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 from codex32.generation import (
     ConfirmationResult,
@@ -550,12 +558,75 @@ def _correct(
             raise _UsageError("--bytes does not match the valid master-seed backup length.")
         _print("The codex32 string is already valid.")
         return 0
-    candidates, complete, _deadline, ambiguous = _correction_candidates(
-        value,
-        hrp,
-        byte_length,
-        value[: separator + 1],
-    )
+    search_value, erased, immutable = normalized, normalized, normalized[: separator + 1]
+    interpreted = _case_interpretation(normalized, immutable, context.profiles, None)
+    if interpreted is not None:
+        candidate, search_value, erased, immutable = interpreted
+        if (
+            candidate is not None
+            and isinstance(byte_length, int)
+            and len(candidate.artifact.text) != _ms_text_length(byte_length)
+        ):
+            raise _UsageError("--bytes does not match the corrected master-seed backup length.")
+    else:
+        candidate = None
+    capture_layers: list[tuple[int, int]] = []
+    if candidate is not None:
+        candidates: tuple[CorrectionCandidate, ...] = (candidate,)
+        complete, deadline, ambiguous = True, None, False
+    else:
+        first_search = erased if erased != search_value else search_value
+        retry_search = search_value if erased != search_value else None
+        seeded: tuple[CorrectionCandidate, ...] = ()
+        deadline = None
+        if retry_search is not None:
+            # Discover required candidates for both case interpretations before
+            # either full search can spend the shared deadline on optional
+            # alignment work.  Full searches below own capture accounting.
+            for required_value in (first_search, retry_search):
+                required, required_complete, deadline, _ = _correction_candidates(
+                    required_value,
+                    hrp,
+                    byte_length,
+                    immutable,
+                    deadline=deadline,
+                    seed_candidates=seeded,
+                    required_only=True,
+                )
+                if not required_complete:
+                    raise _CommandError("The correction search did not complete within ten seconds.")
+                seeded = required
+        candidates, complete, deadline, ambiguous = _correction_candidates(
+            first_search,
+            hrp,
+            byte_length,
+            immutable,
+            deadline=deadline,
+            capture_layers=capture_layers,
+            seed_candidates=seeded,
+        )
+        if retry_search is not None:
+            retry_candidates, complete, deadline, retry_ambiguous = _correction_candidates(
+                retry_search,
+                hrp,
+                byte_length,
+                immutable,
+                deadline=deadline,
+                capture_layers=capture_layers,
+                seed_candidates=(*seeded, *candidates),
+            )
+            ambiguous = ambiguous or retry_ambiguous
+            combined = (*candidates, *retry_candidates)
+            if combined:
+                annotated = []
+                for item in combined:
+                    volume, bits = _capture_mass(capture_layers, item.capture_volume)
+                    annotated.append(replace(item, cumulative_capture_volume=volume, capture_space_bits=bits))
+                ranked = _best(annotated, prefer_common=byte_length == "?")
+                unique: dict[str, CorrectionCandidate] = {}
+                for item in ranked:
+                    unique.setdefault(item.artifact.text.lower(), item)
+                candidates = tuple(unique.values())
     if not complete and not candidates:
         raise _CommandError("The correction search did not complete within ten seconds.")
     if ambiguous:
