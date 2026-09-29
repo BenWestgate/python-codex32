@@ -1,0 +1,177 @@
+"""What a field of codex32 text means. No toolkit, no widgets, no state."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from codex32 import (
+    CorrectionCandidate,
+    CorrectionContext,
+    Header,
+    Profile,
+    Secret,
+    Share,
+    correct,
+    parse_codex32,
+)
+from codex32.bech32 import CHARSET
+from codex32.correction import _best
+from codex32.errors import CodexError, InvalidShareIndex
+from codex32.profiles.ms32 import TEXT_LENGTHS
+
+PREFIX = "MS1"
+ALLOWED = frozenset(CHARSET.upper() + "?")
+HEADER_LENGTH = 6
+GROUP = 4
+SLACK = 8
+CORRECTION_LENGTH_DELTAS = frozenset((0, 1, 2, 3, 4, 8))
+LOOKALIKE = {"B": "8", "I": "J or L", "O": "0, a zero", "1": "L"}
+_ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+@dataclass(frozen=True, slots=True)
+class Reading:
+    """What the field currently holds, and what may be done with it."""
+
+    text: str
+    artifact: Share | Secret | None
+    message: str
+    level: str
+    expected: int
+    unreadable: int
+    repairable: bool
+
+    @property
+    def complete(self) -> bool:
+        return len(self.text) == self.expected
+
+
+def normalize(raw: str) -> str:
+    """Return the canonical compact text for whatever was typed or pasted."""
+    typed = "".join(raw.split()).upper()
+    keep = max(size for size in range(len(PREFIX) + 1) if typed[:size] == PREFIX[:size])
+    return PREFIX + "".join(character for character in typed[keep:] if character in ALLOWED)
+
+
+def normalize_readback(raw: str) -> str:
+    """Compact a transcription without supplying or deleting any character."""
+    return "".join(raw.split()).translate(_ASCII_UPPER)
+
+
+def lookalike_fault(raw: str) -> str:
+    """Name a character no card can contain, rather than deleting it in silence.
+
+    Every other character outside the alphabet is punctuation or a stray key, and
+    dropping it quietly is right. These four are not: bech32 leaves out B, I, O
+    and 1 precisely because handwriting confuses them with 8, J, L and 0, so they
+    are exactly what someone misreads from their own card. Swallowing them would
+    turn the read-back, whose whole purpose is to catch a transcription error,
+    into the step that hides one.
+    """
+    typed = "".join(raw.split()).upper()
+    keep = max(size for size in range(len(PREFIX) + 1) if typed[:size] == PREFIX[:size])
+    found = sorted({character for character in typed[keep:] if character in LOOKALIKE})
+    if not found:
+        return ""
+    named = found[0] if len(found) == 1 else ", ".join(found[:-1]) + " or " + found[-1]
+    hints = ", ".join(f"{character} is probably {LOOKALIKE[character]}" for character in found)
+    return f"A card never contains {named}. Look at the card again: {hints}."
+
+
+def grouped(text: str) -> str:
+    """Return the text in four-character windows."""
+    return " ".join(text[start : start + GROUP] for start in range(0, len(text), GROUP))
+
+
+def header_fault(
+    text: str,
+    accepted: tuple[str, ...] = (),
+    expected_header: tuple[int, str] | None = None,
+) -> str:
+    """Report a header that cannot belong to any card, before more is typed."""
+    body = text[len(PREFIX) :]
+    if not body or body[0] == "?":
+        return ""
+    if body[0] not in "023456789":
+        return "The character after MS1 is how many cards recovery needs: 0, or 2 through 9."
+    if expected_header is not None:
+        if int(body[0]) != expected_header[0]:
+            return "This card comes from a different split of that backup."
+        found, expected = body[1:5], expected_header[1].upper()
+        if any(character != "?" and character != expected[index] for index, character in enumerate(found)):
+            return f"This card does not have backup identifier {expected}."
+    if len(body) < HEADER_LENGTH or "?" in body[:HEADER_LENGTH]:
+        return ""
+    try:
+        Header(int(body[0]), body[1:5], body[5])
+    except InvalidShareIndex:
+        return (
+            "A backup that was never split is card S. Change the last letter to S, or change the "
+            "first character to how many cards recovery should need."
+        )
+    except CodexError as error:
+        return str(error)
+    if body[5].lower() in accepted:
+        return f"Card {body[5].upper()} has already been entered. This must be a different card."
+    return ""
+
+
+def expected_length(count: int, length: int | None) -> int:
+    """Return the backup length being typed towards."""
+    if length is not None:
+        return length
+    return next((valid for valid in TEXT_LENGTHS if valid >= count), TEXT_LENGTHS[-1])
+
+
+def read(text: str, *, accepted: tuple[str, ...] = (), length: int | None = None) -> Reading:
+    """Describe one field value without ever accepting it on the operator's behalf."""
+    unreadable = text.count("?")
+    expected = expected_length(len(text), length)
+    targets = (length,) if length is not None else TEXT_LENGTHS
+    repairable = any(abs(target - len(text)) in CORRECTION_LENGTH_DELTAS for target in targets)
+    if fault := header_fault(text, accepted):
+        return Reading(text, None, fault, "error", expected, unreadable, repairable)
+    if len(text) == len(PREFIX):
+        return Reading(text, None, "Start typing what the card says.", "", expected, unreadable, repairable)
+    if len(text) != expected:
+        counted = f"{len(text)} of {expected} characters"
+        message = f"{counted}, {unreadable} unreadable" if unreadable else counted
+        return Reading(text, None, message, "", expected, unreadable, repairable)
+    if unreadable:
+        plural = "s" if unreadable > 1 else ""
+        message = f"{unreadable} character{plural} unreadable."
+        return Reading(text, None, message, "warning", expected, unreadable, repairable)
+    try:
+        artifact = parse_codex32(text)
+    except CodexError:
+        message = "Every character is there, but they do not check out together."
+        return Reading(text, None, message, "error", expected, unreadable, repairable)
+    return Reading(artifact.text, artifact, "Every character checks out.", "success", expected, 0, False)
+
+
+def readback(raw: str, length: int) -> Reading:
+    """Describe an independently re-entered card without interpreting or repairing it."""
+    text = normalize_readback(raw)
+    unreadable = text.count("?")
+    fault = lookalike_fault(text)
+    level = "error" if fault else ""
+    message = fault or f"{len(text)} of {length} characters"
+    return Reading(text, None, message, level, length, unreadable, False)
+
+
+def repair(text: str, length: int | None, excluded: tuple[str, ...] = ()) -> CorrectionCandidate | str:
+    """Ask the library for one repair, and offer nothing at all when it is unsure.
+
+    `_best` is the command line's own tie-breaker, minus its Bitcoin Core
+    fingerprint hint, which would make repairing a card need a running node.
+    Anything still tied afterwards is reported as ambiguous rather than shown.
+    """
+    try:
+        found = _best(correct(CorrectionContext(Profile.MS, length, PREFIX, excluded), text))
+    except CodexError as error:
+        return str(error)
+    if not found:
+        return "No repair fits this card. Compare what you typed with the paper again."
+    if len(found) > 1:
+        return "More than one repair is possible, so none is shown. Check the card again."
+    return found[0]
