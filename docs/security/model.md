@@ -72,9 +72,12 @@ The operator must:
   default identifier; fingerprints are metadata, not secrets.
 - Private Bitcoin Core descriptors contain the root xprv and temporarily exist
   in Python objects, serialized JSON, and the child process's standard input.
-- Wallet encryption belongs to Bitcoin Core. codex32 accepts an eligible
-  unencrypted or unlocked encrypted wallet and never evaluates or handles a
-  passphrase.
+- Wallet encryption belongs to Bitcoin Core. The library and both command-line
+  programs accept an eligible unencrypted or unlocked encrypted wallet and never
+  evaluate or handle a passphrase. The graphical program does handle one; see
+  the graphical program below. Neither can evaluate passphrase strength, and
+  neither can prevent a passphrase from remaining in Python objects or in the
+  child process's standard input buffer.
 - A malicious or failing `bitcoin-cli`, Core instance, configuration, or host
   can violate the destination boundary. Process termination, power loss, or a
   Core failure can prevent application cleanup; codex32 reports when locking
@@ -231,7 +234,7 @@ signing setup belong to Bitcoin Core's maintained v32 workflow.
 | Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, wallet database, or wallet-creation operation. Every call uses loopback and the selected chain. |
 | Destination | Only an empty descriptor wallet with private keys enabled, no external signer, transactions, descriptors, keypool entries, or active scan is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
 | Seed source | The original ceremony result or validated recovered master seed supplies root-xprv private descriptors for Core's reported chain. After import, Core v32's wallet HD-key RPCs derive the requested BIP44, BIP49, BIP84, and BIP86 account xpubs. |
-| Secret channel | Private descriptor JSON is sent only through the child's standard input. It is absent from arguments, ordinary output, and diagnostics. codex32 has no passphrase channel and suppresses raw Core errors. |
+| Secret channel | Private descriptor JSON is sent only through the child's standard input. It is absent from arguments, ordinary output, and diagnostics. The library and the command-line programs have no passphrase channel, and raw Core errors are suppressed. |
 | Revalidation | Every destination property is checked again immediately before import. Every private import must succeed before public verification begins. `gethdkeys` must expose one private wallet root; `derivehdkey` must return the requested hardened account paths with one consistent fingerprint and the correct network xpub/tpub version. `getdescriptorinfo` then validates and expands the fixed public templates, and the exact eight active descriptors must match Core's accepted set. |
 | Relocking | Once Core reports an encrypted private-key wallet unlocked, a `finally`-protected obligation requests `walletlock` and verifies the locked state after success, failure, state change, or interruption. |
 
@@ -245,10 +248,56 @@ and escaped for presentation; they never become shell syntax. A failure after
 share-string confirmation leaves valid shares but an incomplete wallet
 initialization.
 
+### The graphical program
+
+`codex32-gui` shares every control above, because import and revalidation remain
+`BitcoinCore.initialize`. It declares three departures, all confined to
+`codex32_gui/wallet_setup.py`, the only module in that package that imports the
+Core adapter.
+
+| Departure | Required behavior |
+|---|---|
+| Passphrase | The operator may supply a Bitcoin Core wallet passphrase. It reaches `bitcoin-cli` through `-stdinwalletpassphrase`, never through an argument, so it is absent from `/proc` and process listings. It is not stored, not logged, and not written to disk, and a passphrase containing a line break is refused rather than truncated. A passphrase this computer's locale would encode as something other than what Bitcoin-Qt sends is refused, so no half-encoded secret reaches a screen or a traceback. The screen keeps the command line's behavior as an alternative: the operator may unlock in Bitcoin-Qt instead, and the program then only rechecks wallet state. |
+| Wallet creation | `createwallet` may be issued once, with `wallet_name`, `disable_private_keys=false`, `blank=true`, and a `passphrase` only when one was given. No other option is sent, and the resulting wallet must pass the same eligibility test as any other destination before it is used. Names are restricted to printable text without leading or trailing spaces, and may not contain a slash or be `.` or `..`, so a name can neither span the one-argument-per-line channel nor describe a path. |
+| Relocking | Every wallet this program unlocks carries a `finally`-protected obligation of its own, in `wallet_setup.fill`, that requests `walletlock` and verifies `unlocked_until` is zero. The library's obligation is armed only after it has chosen a wallet, so a refusal raised before that point would otherwise leave an unlocked wallet open until Bitcoin Core's own timeout. Worker threads are not daemons, so closing the window during an import runs both obligations rather than skipping them. |
+
+Destination selection is unchanged and is not delegated to prompt wording. The
+program answers the library's selection prompts only for a name the operator
+already chose on screen, confirms that exact name when the library asks again,
+and otherwise raises rather than answering, so a stale or unexpected listing can
+produce a refusal but never a different wallet. The library's terminal-only
+waiting loops are refused for the same reason. The chain the operator chose is
+confirmed against the one connected, because the library asks which chain to use
+only while more than one answers. On screen a wallet is chosen by the position of
+its row, never by the text of its label, and Core's text is rendered without
+Pango markup, so a wallet name cannot hide or impersonate another.
+
+The program draws no entropy, opens no socket, starts no process of its own, and
+writes no file: no settings, no recent list, no log, and no clipboard write of
+recovery text. Entered recovery text is cleared when its screen is left, subject
+to the zeroization limitation above.
+
+Two disclosure channels belong to the toolkit rather than to this program, and
+are named here because a static import check cannot see either.
+
+- **The accessibility bus.** GTK publishes every label and entry on the desktop's
+  shared accessibility bus, where any program running as the same user can read
+  them and can invoke a password entry's own reveal action. The window therefore
+  sets `GTK_A11Y=none` before GTK starts, in `codex32_gui/__init__.py`, and
+  leaves the setting alone when the operator has already chosen one, so
+  `GTK_A11Y=atspi codex32-gui` restores screen-reader support for anyone who
+  needs it and accepts that exposure.
+- **The primary selection.** Selecting text inside the entry field hands it to
+  the primary selection, which a clipboard manager may copy to disk. The field
+  takes the selection back on the next main-loop turn, which closes the window
+  to one turn but does not remove it; an operator who runs a clipboard manager
+  should not select the text of a card.
+
 ## Verification map
 
 | Boundary | Focused evidence |
 |---|---|
+| Graphical program | [`test_gui_boundaries.py`](../../tests/test_gui_boundaries.py), [`test_gui_reading.py`](../../tests/test_gui_reading.py), and [`test_gui_wallet_setup.py`](../../tests/test_gui_wallet_setup.py) |
 | Parsing and profiles | [`test_bech32.py`](../../tests/test_bech32.py), [`test_bip93.py`](../../tests/test_bip93.py), and [`test_profiles.py`](../../tests/test_profiles.py) |
 | Creation, sharing, and recovery | [`test_generation.py`](../../tests/test_generation.py), [`test_sharing.py`](../../tests/test_sharing.py), and the BIP93 vectors under `tests/data/` |
 | Correction | [`test_correction_bch.py`](../../tests/test_correction_bch.py), [`test_correction_indel.py`](../../tests/test_correction_indel.py), [`correction_capture.py`](../../tools/correction_capture.py), and [`differential_correction.py --verify`](../../tools/differential_correction.py) |
