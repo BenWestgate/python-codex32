@@ -104,7 +104,7 @@ def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
     ):
         status = entrypoint(["correct", *(["--plain"] if plain else [])])
     prog = "codex32" if entrypoint is cli.main else "ms32"
-    assert status == 1 and stdout.getvalue() == ""
+    assert status == 3 and stdout.getvalue() == ""
     assert stderr.getvalue() == f"{prog}: interactive confirmation required\n"
 
 
@@ -140,7 +140,8 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
         contextlib.redirect_stderr(stderr),
     ):
         status = (cli.ms_main if command == "create" else cli.main)(args)
-    assert status == 1 and stdout.getvalue() == ""
+    expected_status = 3 if command == "correct" else 1
+    assert status == expected_status and stdout.getvalue() == ""
     assert len(prompts) == 2 and core.imported is None
     warning = stderr.getvalue()
     assert "\x1b[1;31mWarning:\x1b[0m If you are generating new data" in warning
@@ -189,7 +190,7 @@ def test_redirected_stderr_blocks_low_discrimination_disclosure(monkeypatch):
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        assert cli.main(["correct", "--plain"]) == 1
+        assert cli.main(["correct", "--plain"]) == 3
     assert stdout.getvalue() == ""
     assert stderr.getvalue().strip() == "codex32: interactive confirmation required"
 
@@ -292,7 +293,7 @@ def test_residue_completion_is_gated_but_ordinary_repair_is_not(degree):
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        assert cli.main(args) == 1
+        assert cli.main(args) == 3
     assert stdout.getvalue() == ""
     assert stderr.getvalue() == "codex32: interactive confirmation required\n"
 
