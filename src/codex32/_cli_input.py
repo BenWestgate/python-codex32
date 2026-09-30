@@ -455,7 +455,7 @@ def _correction_candidates(
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
     seed_candidates: Sequence[CorrectionCandidate] = (),
     required_only: bool = False,
-) -> tuple[tuple[CorrectionCandidate, ...], bool, float | None, bool]:
+) -> tuple[tuple[CorrectionCandidate, ...], bool, float, bool]:
     count = len(value.replace(" ", ""))
     targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
     deadline = monotonic() + 10 if deadline is None else deadline
