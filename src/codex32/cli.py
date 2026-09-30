@@ -401,16 +401,15 @@ def _initialize_wallet(
     try:
         if confirmed:
             _print("Master-seed backup confirmed.\n", err=True)
-        expected = expected_fingerprint
         if restore and not identity_checked:
-            expected = _recorded_fingerprint(core, secret)
+            expected_fingerprint = _recorded_fingerprint(core, secret)
         if not restore:
             _show_fingerprint(core, secret, "Write it on the wallet record")
         name = core.initialize(
             secret,
             lambda prompt: _text(prompt, optional=True),
             lambda message: _print(message, err=True),
-            expected_fingerprint=expected,
+            expected_fingerprint=expected_fingerprint,
             account=account,
             timestamp=timestamp,
         )
@@ -496,6 +495,7 @@ def _create(
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
     try:
+        existing_secret: MasterSeed | None = None
         if isinstance(source, MasterSeed):
             if threshold == 0 and identifier is not None and identifier != source.header.identifier:
                 raise _UsageError(
@@ -504,8 +504,6 @@ def _create(
             existing_secret = source
         elif source is not None:
             existing_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
-        else:
-            existing_secret = None
         try:
             expected = _recorded_fingerprint(core, existing_secret) if existing_secret is not None else None
         except (EOFError, KeyboardInterrupt) as error:
