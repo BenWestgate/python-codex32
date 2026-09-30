@@ -132,12 +132,14 @@ def main() -> None:
             for seed, expected_fingerprint in CORE_FINGERPRINTS.items():
                 if client.fingerprint_seed(seed) != expected_fingerprint:
                     raise RuntimeError("Bitcoin Core fingerprint fixture mismatch")
+            expected_fingerprint = CORE_FINGERPRINTS[secret.seed_bytes]
             answers = iter(("yes",))
             if (
                 client.initialize(
                     secret,
                     lambda _prompt: next(answers),
                     lambda _message: None,
+                    expected_fingerprint=expected_fingerprint,
                     account=0,
                     timestamp=0,
                 )
@@ -177,6 +179,7 @@ def main() -> None:
                     secret,
                     lambda _prompt: next(restore_answers),
                     lambda _message: None,
+                    expected_fingerprint=expected_fingerprint,
                     account=0,
                     timestamp=0,
                 )
@@ -204,6 +207,7 @@ def main() -> None:
                     lambda _prompt: "yes",
                     lambda _message: None,
                     account=0,
+                    expected_fingerprint=expected_fingerprint,
                     timestamp=recent_timestamp,
                 )
                 != "restore_recent"
