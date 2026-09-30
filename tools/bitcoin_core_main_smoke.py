@@ -131,34 +131,12 @@ def main() -> None:
                 raise RuntimeError("automatic initialization did not relock the wallet")
             _verify_origins(rpc("listdescriptors", wallet="signer"), account=0)
 
-            rpc(
-                "-named",
-                "createwallet",
-                "wallet_name=account7",
-                "disable_private_keys=false",
-                "blank=true",
-                "descriptors=true",
-            )
-            account_answers = iter(("yes",))
-            if (
-                client.initialize(
-                    secret,
-                    lambda _prompt: next(account_answers),
-                    lambda _message: None,
-                    account=7,
-                    timestamp="now",
-                )
-                != "account7"
-            ):
-                raise RuntimeError("account-7 initialization selected the wrong wallet")
-            _verify_origins(rpc("listdescriptors", wallet="account7"), account=7)
-
             print(
                 json.dumps(
                     {
                         "bitcoin_core": network["subversion"],
                         "chain": blockchain["chain"],
-                        "account": 7,
+                        "account": 0,
                         "status": "pass",
                     }
                 )

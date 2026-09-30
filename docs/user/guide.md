@@ -225,8 +225,8 @@ its public wallet data with the separate wallet record.
 
 5. Select and confirm that wallet. If it is locked, follow the displayed
    Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
-   It imports the private descriptors, verifies the public set, and relocks an
-   encrypted wallet.
+   It gives Core the master private key, asks Core to create the standard
+   account-0 descriptors, scans history, and relocks an encrypted wallet.
 6. If you need an online watch-only counterpart, keep the restored signer
    offline and follow Bitcoin Core v32's
    [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)

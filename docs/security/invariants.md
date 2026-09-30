@@ -25,11 +25,11 @@ and evidence.
    admitted classes ranked equal to or better than the candidate, independently
    of execution order.
 6. Secrets stay out of arguments, logs, ordinary output, and public transfers.
-   Private descriptors exist only in Python memory and child stdin.
+   During wallet setup, codex32 transfers the master xprv only through child stdin.
 7. Bitcoin Core chains are discovered before entropy or recovery input. The
    operator confirms an eligible descriptor wallet by exact name.
-8. Wallet state is revalidated before import. Every import must succeed and the
-   exact accepted public descriptor set must match.
+8. Wallet state is revalidated before handing Core the master key. Core must
+   accept that key and create every requested account-0 wallet descriptor.
 9. codex32 has no passphrase channel. An unlocked encrypted signer is relocked
    and verified on every exit path.
 10. External text, Core output, public wallet data, and PSBTs are untrusted.

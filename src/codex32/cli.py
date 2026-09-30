@@ -588,7 +588,11 @@ def _correct(
 def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
     if not sys.stdin.isatty():
         raise _UsageError("Bitcoin Core wallet initialization requires an interactive terminal.")
-    _print("Warning: This imports private descriptors that can spend funds.", err=True, danger=True)
+    _print(
+        "Warning: This gives Bitcoin Core the master private key, which can spend funds.",
+        err=True,
+        danger=True,
+    )
     core = _connected_core()
     secret = _master_seed(core.fingerprint)
     return _initialize_wallet(

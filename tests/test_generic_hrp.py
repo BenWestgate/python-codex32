@@ -158,7 +158,7 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
         "Restore a Bitcoin Core wallet.\n\n"
         "options:\n"
         "  -h, --help            show this help message and exit\n"
-        "  --account ACCOUNT     account number (default: 0)\n"
+        "  --account ACCOUNT     account number (currently only 0)\n"
         "  --timestamp TIMESTAMP\n"
         "                        search for transactions since this Unix timestamp; use\n"
         "                        0 for all history or now for a new wallet\n"

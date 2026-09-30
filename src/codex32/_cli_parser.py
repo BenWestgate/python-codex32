@@ -66,9 +66,9 @@ def _terminal_output(parser: argparse.ArgumentParser) -> None:
 def _wallet_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--account",
-        type=_integer("account", 0, 2**31 - 1),
+        type=_integer("account", 0, 0),
         default=0,
-        help="account number (default: 0)",
+        help="account number (currently only 0)",
     )
     parser.add_argument(
         "--timestamp",
