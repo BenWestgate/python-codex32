@@ -539,6 +539,17 @@ def test_xprv_suggests_mixed_case_input_with_symbol_errors(monkeypatch, capsys) 
     assert captured.out.strip() == VECTOR_2["xprv"]
 
 
+def test_embedded_correction_schedules_both_mixed_case_interpretations_before_alignment() -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+    source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
+    damaged = "ms10testsxPxxxxxPxxxxxPxxxxxPxxxxxP4nzvca9cmczlw"
+
+    candidates = input_module._suggestions(damaged, "", (Profile.MS,), [])
+
+    assert len(candidates) == 1
+    assert candidates[0].artifact.text == source
+
+
 def test_xprv_groups_the_next_prefix_after_spaced_correction(monkeypatch, capsys) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     damaged = "NAME DLL4 F8JL  H4E5 VDVU LDLF XU2J  HDNL SM97 XVEN r"

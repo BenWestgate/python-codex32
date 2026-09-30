@@ -7,6 +7,7 @@ import difflib
 import os
 import sys
 from collections.abc import Callable, Iterator, Sequence
+from dataclasses import replace
 from time import monotonic
 from typing import Any, Literal, cast
 
@@ -20,7 +21,7 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import CorrectionCandidate, CorrectionContext, _best
+from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _capture_mass
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
@@ -536,8 +537,33 @@ def _suggestions(
     )
     deadline = monotonic() + 10
     capture_layers: list[tuple[int, int]] = []
-    candidates = _correction_candidates(
-        value,
+    first_search = erased if erased != value else value
+    retry_search = value if erased != value else None
+    seeded: tuple[CorrectionCandidate, ...] = ()
+    if retry_search is not None:
+        # Find required candidates for both case interpretations before either
+        # full search can spend the shared deadline on optional alignment.
+        # These discovery passes deliberately do not charge capture_layers;
+        # the full searches below account each admitted frontier once.
+        for required_value in (first_search, retry_search):
+            required, complete, deadline, _ = _correction_candidates(
+                required_value,
+                hrp,
+                None,
+                immutable,
+                excluded,
+                target=target,
+                allowed=allowed,
+                deadline=deadline,
+                fingerprint_match=fingerprint_match,
+                seed_candidates=seeded,
+                required_only=True,
+            )
+            if not complete:
+                return ()
+            seeded = required
+    candidates, _complete, deadline, _ = _correction_candidates(
+        first_search,
         hrp,
         None,
         immutable,
@@ -547,11 +573,12 @@ def _suggestions(
         deadline=deadline,
         capture_layers=capture_layers,
         fingerprint_match=fingerprint_match,
-    )[0]
-    if candidates or erased == value:
+        seed_candidates=seeded,
+    )
+    if retry_search is None:
         return candidates
-    return _correction_candidates(
-        erased,
+    retry_candidates, _complete, _deadline, _ = _correction_candidates(
+        retry_search,
         hrp,
         None,
         immutable,
@@ -561,7 +588,20 @@ def _suggestions(
         deadline=deadline,
         capture_layers=capture_layers,
         fingerprint_match=fingerprint_match,
-    )[0]
+        seed_candidates=(*seeded, *candidates),
+    )
+    combined = (*candidates, *retry_candidates)
+    if not combined:
+        return ()
+    annotated = []
+    for item in combined:
+        volume, bits = _capture_mass(capture_layers, item.capture_volume)
+        annotated.append(replace(item, cumulative_capture_volume=volume, capture_space_bits=bits))
+    ranked = _best(annotated, fingerprint_match=fingerprint_match)
+    unique: dict[str, CorrectionCandidate] = {}
+    for item in ranked:
+        unique.setdefault(item.artifact.text.lower(), item)
+    return tuple(unique.values())
 
 
 def _validate_operational_artifact(
