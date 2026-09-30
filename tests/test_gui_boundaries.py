@@ -135,3 +135,30 @@ def test_read_only_poll_threads_do_not_keep_the_process_alive() -> None:
 
     assert daemon_argument("run") is False
     assert daemon_argument("poll") is True
+
+
+def test_card_count_presets_do_not_recommend_one_storage_policy() -> None:
+    tree = ast.parse((_package() / "pages.py").read_text())
+    assignment = next(
+        node for node in tree.body if isinstance(node, ast.Assign) and node.targets[0].id == "PRESETS"
+    )
+    presets = ast.literal_eval(assignment.value)
+    assert all("recommend" not in label.lower() for _threshold, _count, label in presets)
+
+
+def test_wallet_encryption_copy_states_the_recovery_boundary() -> None:
+    source = (_package() / "pages.py").read_text()
+    assert "Bitcoin Core cannot recover a forgotten wallet passphrase." in source
+    assert "codex32 recovery cards are the independent recovery path" in source
+
+
+def test_finished_wallet_uses_the_compact_identity_layout() -> None:
+    source = (_package() / "pages.py").read_text()
+    tree = ast.parse(source)
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    calls = [
+        node
+        for node in ast.walk(functions["_finished_page"])
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    ]
+    assert any(call.func.id == "_identity_rows" for call in calls)
