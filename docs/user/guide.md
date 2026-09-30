@@ -122,7 +122,11 @@ Already have a complete codex32 `ms` secret? Run `ms32 create --existing` to
 write and confirm its recovery card and initialize a Bitcoin Core wallet.
 The existing secret is preserved unchanged. To split it into three cards
 requiring any two, use `ms32 create 2 --existing` instead. Enter the secret
-only when prompted. Bitcoin Core also scans for prior transactions.
+only when prompted. Immediately afterward, type the master fingerprint from
+the separate wallet record; a mismatch must be resolved before any new card
+is shown. If you have no record, the explicit recordless-restore choice and
+visual fingerprint check happen at this same point. Bitcoin Core also scans
+for prior transactions.
 
 ### 3. Make a Bitcoin Core wallet
 
