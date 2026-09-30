@@ -307,6 +307,7 @@ class _ImportRPC:
     locked: bool = True
     imported: bool = False
     created: int = 0
+    rescan_success: bool = True
     calls: list[tuple[tuple[str, ...], str | None, str | None]] = field(default_factory=list)
     expansions: list[str] = field(default_factory=list)
 
@@ -330,7 +331,13 @@ class _ImportRPC:
             if not self.imported:
                 return {"wallet_name": "signer", "descriptors": []}
             records = [
-                {"desc": descriptor, "active": True, "internal": bool(position % 2)}
+                {
+                    "desc": f"{descriptor}-xprv" if arguments[1:] == ("true",) else descriptor,
+                    "active": True,
+                    "internal": bool(position % 2),
+                    "range": [0, 999],
+                    "next_index": 0,
+                }
                 for position, descriptor in enumerate(self.expansions)
             ]
             return {"wallet_name": "signer", "descriptors": records}
@@ -348,9 +355,10 @@ class _ImportRPC:
         if command == "getdescriptorinfo":
             assert stdin is not None
             return _descriptor_info(stdin)
-        if command == "rescanblockchain":
-            assert arguments == ("rescanblockchain", "0") and self.created == 4
-            return {"start_height": 0, "stop_height": 100}
+        if command == "importdescriptors":
+            assert arguments == ("importdescriptors",) and wallet == "signer" and self.created == 4
+            assert stdin is not None
+            return [{"success": self.rescan_success}]
         if command == "walletlock":
             self.locked = True
             return None
@@ -390,6 +398,7 @@ def test_encrypted_wallet_uses_core_descriptors_and_relocks(
         args[2] for args, _wallet, _stdin in rpc.calls if args[:2] == ("-named", "createwalletdescriptor")
     ] == ["type=legacy", "type=p2sh-segwit", "type=bech32", "type=bech32m"]
     assert not any(args == ("rescanblockchain", "0") for args, _wallet, _stdin in rpc.calls)
+    assert not any(args == ("importdescriptors",) for args, _wallet, _stdin in rpc.calls)
     assert rpc.locked
     assert delays == [1]
     assert (
@@ -464,7 +473,8 @@ def test_fingerprint_uses_stateless_core_address_derivation(monkeypatch: pytest.
     ]
 
 
-def test_numeric_timestamp_rescans_history(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("timestamp", (0, 123))
+def test_numeric_timestamp_rescans_history(monkeypatch: pytest.MonkeyPatch, timestamp: int) -> None:
     rpc = _ImportRPC(locked=False)
     monkeypatch.setattr(
         BitcoinCore,
@@ -474,8 +484,43 @@ def test_numeric_timestamp_rescans_history(monkeypatch: pytest.MonkeyPatch) -> N
         ),
     )
     client = BitcoinCore("bitcoin-cli", "main", 300000)
-    assert client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None, timestamp=123) == "signer"
-    assert any(args == ("rescanblockchain", "0") for args, _wallet, _stdin in rpc.calls)
+    assert (
+        client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None, timestamp=timestamp)
+        == "signer"
+    )
+    calls = [(args, data) for args, _wallet, data in rpc.calls if args == ("importdescriptors",)]
+    assert len(calls) == 1
+    args, data = calls[0]
+    assert args == ("importdescriptors",)
+    assert data is not None
+    assert json.loads(data) == [
+        {
+            "desc": "legacy-receive-xprv",
+            "timestamp": timestamp,
+            "active": True,
+            "internal": False,
+            "range": [0, 999],
+            "next_index": 0,
+        }
+    ]
+    assert not any(args[0] == "rescanblockchain" for args, _wallet, _data in rpc.calls)
+    assert all("xprv" not in " ".join(args) for args, _wallet, _data in rpc.calls)
+    assert rpc.locked
+
+
+def test_failed_timestamped_rescan_relocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    rpc = _ImportRPC(locked=False, rescan_success=False)
+    monkeypatch.setattr(
+        BitcoinCore,
+        "_rpc",
+        lambda client, *args, wallet=None, stdin=None, timeout=120: rpc(
+            client, *args, wallet=wallet, stdin=stdin, timeout=timeout
+        ),
+    )
+    with pytest.raises(BitcoinCoreError, match="did not complete the timestamped wallet rescan"):
+        BitcoinCore("bitcoin-cli", "main", 300000).initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None, timestamp=123
+        )
     assert rpc.locked
 
 

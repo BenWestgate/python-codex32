@@ -602,10 +602,10 @@ API inputs. The `ms32 wallet` CLI takes `--account 0` and `--timestamp`; the
 selected Bitcoin Core chain is authoritative and there is no wallet
 `--testnet` flag. `ms32 xprv --testnet` remains explicit because it directly
 selects xprv versus tprv serialization. The timestamp defaults to `0` so
-recovery scans from genesis. Any nonnegative Unix time currently performs a
-conservative full rescan; `now` skips historical discovery. Nonzero wallet
-accounts await upstream Core support. There is no account database, descriptor
-parser, policy language, RPC library, or network client.
+recovery scans from genesis. A nonzero Unix time uses Core's timestamped
+rescan with its two-hour safety window; `now` skips historical discovery.
+Nonzero wallet accounts await upstream Core support. There is no account
+database, descriptor parser, policy language, RPC library, or network client.
 
 Bitcoin master-seed creation and restoration use a private CLI adapter. Before
 entropy or recovery input it resolves `bitcoin-cli` from `PATH` and probes the
@@ -627,7 +627,9 @@ and no passphrase interface exists.
 Core v32 accepts the key with `addhdkey` and creates external and internal
 account-0 descriptors for BIP44/49/84/86 with `createwalletdescriptor`. Python
 checks each call's result but trusts Core to derive and store the wallet policy.
-Numeric recovery timestamps run `rescanblockchain` from genesis. The adapter
+Numeric recovery timestamps re-import one existing active private descriptor
+through stdin with its range and next index preserved; Core then rescans the
+whole wallet from the supplied time (or genesis for `0`). The adapter
 relocks wallets Core reports as encrypted. Master-fingerprint display is
 likewise delegated to Core:
 a stateless root P2PKH descriptor is normalized, `deriveaddresses` derives its

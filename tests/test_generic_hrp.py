@@ -160,8 +160,8 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
         "  -h, --help            show this help message and exit\n"
         "  --account ACCOUNT     account number (currently only 0)\n"
         "  --timestamp TIMESTAMP\n"
-        "                        search for transactions since this Unix timestamp; use\n"
-        "                        0 for all history or now for a new wallet\n"
+        "                        rescan from a Unix time at/before first use; use 0 for\n"
+        "                        all history or now for a new wallet\n"
     )
     assert _invoke(main, ["--version"])[1].startswith("codex32 ")
     assert _invoke(ms_main, ["--version"])[1].startswith("ms32 ")
