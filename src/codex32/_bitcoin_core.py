@@ -267,6 +267,59 @@ class BitcoinCore:
             ):
                 raise BitcoinCoreError("Bitcoin Core did not create both wallet descriptors.")
 
+    def _rescan_from_timestamp(self, wallet: str, timestamp: int) -> None:
+        # createwalletdescriptor has no timestamp option. Re-import one of its
+        # existing active descriptors so Core applies its own two-hour time
+        # window and scans the whole wallet, without guessing a block height.
+        listing = self._rpc("listdescriptors", "true", wallet=wallet)
+        records = listing.get("descriptors") if isinstance(listing, dict) else None
+        if not isinstance(records, list):
+            raise BitcoinCoreError("Bitcoin Core did not list the wallet descriptors.")
+        candidates = [
+            record
+            for record in records
+            if isinstance(record, dict) and record.get("active") is True and record.get("internal") is False
+        ]
+        if len(candidates) != len(_OUTPUT_TYPES):
+            raise BitcoinCoreError("Bitcoin Core did not return the expected receiving descriptors.")
+        descriptor = candidates[0]
+        private = descriptor.get("desc")
+        span = descriptor.get("range")
+        next_index = descriptor.get("next_index")
+        if (
+            not isinstance(private, str)
+            or not any(marker in private for marker in _PRIVATE_MARKERS)
+            or not isinstance(span, list)
+            or len(span) != 2
+            or any(type(bound) is not int for bound in span)
+            or type(next_index) is not int
+            or not span[0] <= next_index <= span[1]
+        ):
+            raise BitcoinCoreError("Bitcoin Core returned an unexpected private descriptor.")
+        request = [
+            {
+                "desc": private,
+                "timestamp": timestamp,
+                "active": True,
+                "internal": False,
+                "range": span,
+                "next_index": next_index,
+            }
+        ]
+        result = self._rpc(
+            "importdescriptors",
+            wallet=wallet,
+            stdin=json.dumps(request, separators=(",", ":")) + "\n",
+            timeout=86400,
+        )
+        if (
+            not isinstance(result, list)
+            or len(result) != 1
+            or not isinstance(result[0], dict)
+            or result[0].get("success") is not True
+        ):
+            raise BitcoinCoreError("Bitcoin Core did not complete the timestamped wallet rescan.")
+
     def _select(
         self,
         ask: Callable[[str], str],
@@ -370,7 +423,7 @@ class BitcoinCore:
                     continue
                 self._create_account_zero(secret, name)
                 if timestamp != "now":
-                    self._rpc("rescanblockchain", "0", wallet=name, timeout=86400)
+                    self._rescan_from_timestamp(name, timestamp)
             finally:
                 warning = "Confirm immediately in Bitcoin Core that the wallet is locked."
                 while relock:

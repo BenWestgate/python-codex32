@@ -74,7 +74,7 @@ def _wallet_options(parser: argparse.ArgumentParser) -> None:
         "--timestamp",
         type=_timestamp,
         default=0,
-        help="search for transactions since this Unix timestamp; use 0 for all history or now for a new wallet",
+        help="rescan from a Unix time at/before first use; use 0 for all history or now for a new wallet",
     )
 
 

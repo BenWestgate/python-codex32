@@ -223,6 +223,9 @@ its public wallet data with the separate wallet record.
    ms32 wallet --timestamp 0
    ```
 
+   If you know when the wallet was first used, an earlier Unix timestamp can
+   shorten the rescan; `0` remains the safest choice when unsure.
+
 5. Select and confirm that wallet. If it is locked, follow the displayed
    Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
    It gives Core the master private key, asks Core to create the standard
