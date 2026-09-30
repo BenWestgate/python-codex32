@@ -187,33 +187,6 @@ def main() -> None:
             if rpc("gettransaction", spend, wallet="restore")["confirmations"] < 1:
                 raise RuntimeError("recovered wallet did not sign and broadcast")
 
-            rpc(
-                "-named",
-                "createwallet",
-                "wallet_name=account7",
-                "disable_private_keys=false",
-                "blank=true",
-                "descriptors=true",
-            )
-            account_answers = iter(("yes",))
-            if (
-                client.initialize(
-                    secret,
-                    lambda _prompt: next(account_answers),
-                    lambda _message: None,
-                    account=7,
-                    timestamp="now",
-                )
-                != "account7"
-            ):
-                raise RuntimeError("account-7 initialization selected the wrong wallet")
-            account_active = [
-                item for item in rpc("listdescriptors", wallet="account7")["descriptors"] if item["active"]
-            ]
-            for purpose in (44, 49, 84, 86):
-                if sum(f"/{purpose}h/1h/7h]" in item["desc"] for item in account_active) != 2:
-                    raise RuntimeError(f"Core did not create the expected BIP{purpose} account-7 origins")
-
             main_private = core_descriptors(secret, private=True, timestamp=0)
             test_private = core_descriptors(secret, testnet=True, private=True, timestamp=0)
             if "xprv" not in json.dumps(main_private) or "tprv" not in json.dumps(test_private):

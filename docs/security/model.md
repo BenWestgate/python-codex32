@@ -70,8 +70,8 @@ The operator must:
 - Creation feedback identifies correct groups but does not prove the recovery card was corrected.
 - A fresh unshared master seed exposes a public 20-bit BIP32 fingerprint in its
   default identifier; fingerprints are metadata, not secrets.
-- Private Bitcoin Core descriptors contain the root xprv and temporarily exist
-  in Python objects, serialized JSON, and the child process's standard input.
+- The master xprv temporarily exists in Python objects and the child process's
+  standard input during wallet initialization.
 - Wallet encryption belongs to Bitcoin Core. codex32 accepts an eligible
   unencrypted or unlocked encrypted wallet and never evaluates or handles a
   passphrase.
@@ -230,9 +230,9 @@ signing setup belong to Bitcoin Core's maintained v32 workflow.
 | Preflight | Before entropy or recovery input, explicit chain arguments probe the five standard local networks for Bitcoin Core 32 or newer. One response is selected automatically; multiple responses require operator selection. |
 | Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, wallet database, or wallet-creation operation. Every call uses loopback and the selected chain. |
 | Destination | Only an empty descriptor wallet with private keys enabled, no external signer, transactions, descriptors, keypool entries, or active scan is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
-| Seed source | The original ceremony result or validated recovered master seed supplies root-xprv private descriptors for Core's reported chain. After import, Core v32's wallet HD-key RPCs derive the requested BIP44, BIP49, BIP84, and BIP86 account xpubs. |
-| Secret channel | Private descriptor JSON is sent only through the child's standard input. It is absent from arguments, ordinary output, and diagnostics. codex32 has no passphrase channel and suppresses raw Core errors. |
-| Revalidation | Every destination property is checked again immediately before import. Every private import must succeed before public verification begins. `gethdkeys` must expose one private wallet root; `derivehdkey` must return the requested hardened account paths with one consistent fingerprint and the correct network xpub/tpub version. `getdescriptorinfo` then validates and expands the fixed public templates, and the exact eight active descriptors must match Core's accepted set. |
+| Seed source | The original ceremony result or validated recovered master seed supplies a root xprv for Core's reported chain. Core v32 creates BIP44, BIP49, BIP84, and BIP86 account-0 descriptors from that key. |
+| Secret channel | The master xprv is sent only through the child's standard input. It is absent from arguments, ordinary output, and diagnostics. codex32 has no passphrase channel and suppresses raw Core errors. |
+| Revalidation | Every destination property is checked again immediately before adding the key. `addhdkey` must accept it and `createwalletdescriptor` must return two public descriptors for each requested address type. Numeric recovery timestamps trigger a full Core rescan. Core is trusted to derive and store the wallet policy. |
 | Relocking | Once Core reports an encrypted private-key wallet unlocked, a `finally`-protected obligation requests `walletlock` and verifies the locked state after success, failure, state change, or interruption. |
 
 The unlock command is entered in Bitcoin-Qt. Its

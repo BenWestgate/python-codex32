@@ -306,6 +306,7 @@ class _ImportRPC:
     encrypted: bool = True
     locked: bool = True
     imported: bool = False
+    created: int = 0
     calls: list[tuple[tuple[str, ...], str | None, str | None]] = field(default_factory=list)
     expansions: list[str] = field(default_factory=list)
 
@@ -315,7 +316,9 @@ class _ImportRPC:
         *arguments: str,
         wallet: str | None = None,
         stdin: str | None = None,
+        timeout: int = 120,
     ) -> object:
+        del timeout
         self.calls.append((arguments, wallet, stdin))
         command = arguments[0]
         if command == "listwallets":
@@ -331,44 +334,39 @@ class _ImportRPC:
                 for position, descriptor in enumerate(self.expansions)
             ]
             return {"wallet_name": "signer", "descriptors": records}
-        if command == "gethdkeys":
-            assert wallet == "signer" and self.imported
-            return [{"xpub": _ROOT_XPUB, "has_private": True, "descriptors": []}]
-        if arguments[:2] == ("-named", "derivehdkey"):
-            assert wallet == "signer"
-            path = next(value.removeprefix("path=m") for value in arguments[2:] if value.startswith("path="))
-            hdkey = next(
-                value.removeprefix("hdkey=") for value in arguments[2:] if value.startswith("hdkey=")
-            )
-            assert hdkey == _ROOT_XPUB
-            purpose = int(path.split("h/", 1)[0].removeprefix("/"))
-            return {"origin": f"[3f3521a6{path}]", "xpub": _ACCOUNT_XPUBS[purpose]}
+        if command == "addhdkey":
+            assert wallet == "signer" and stdin is not None and stdin.startswith("xprv")
+            return {"xpub": _ROOT_XPUB}
+        if arguments[:2] == ("-named", "createwalletdescriptor"):
+            assert wallet == "signer" and stdin is None
+            assert json.loads(arguments[3].removeprefix("options=")) == {"hdkey": _ROOT_XPUB}
+            output_type = arguments[2].removeprefix("type=")
+            self.created += 1
+            self.imported = True
+            self.expansions.extend((f"{output_type}-receive", f"{output_type}-change"))
+            return {"descs": self.expansions[-2:]}
         if command == "getdescriptorinfo":
             assert stdin is not None
             return _descriptor_info(stdin)
-        if command == "importdescriptors":
-            assert stdin is not None
-            records = json.loads(stdin)
-            self.expansions = []
-            for record in records:
-                result = _descriptor_info(record["desc"])
-                self.expansions.extend(result["multipath_expansion"])
-            self.imported = True
-            return [{"success": True} for _ in range(4)]
+        if command == "rescanblockchain":
+            assert arguments == ("rescanblockchain", "0") and self.created == 4
+            return {"start_height": 0, "stop_height": 100}
         if command == "walletlock":
             self.locked = True
             return None
         raise AssertionError(command)
 
 
-def test_encrypted_import_retries_without_a_passphrase_verifies_and_relocks(
+def test_encrypted_wallet_uses_core_descriptors_and_relocks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rpc = _ImportRPC()
     monkeypatch.setattr(
         BitcoinCore,
         "_rpc",
-        lambda client, *args, wallet=None, stdin=None: rpc(client, *args, wallet=wallet, stdin=stdin),
+        lambda client, *args, wallet=None, stdin=None, timeout=120: rpc(
+            client, *args, wallet=wallet, stdin=stdin, timeout=timeout
+        ),
     )
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     messages: list[str] = []
@@ -384,13 +382,14 @@ def test_encrypted_import_retries_without_a_passphrase_verifies_and_relocks(
     private_calls = [call for call in rpc.calls if "xprv" in (call[2] or "")]
     assert len(private_calls) == 1
     arguments, wallet, private_stdin = private_calls[0]
-    assert arguments == ("importdescriptors",) and wallet == "signer"
+    assert arguments == ("addhdkey",) and wallet == "signer"
     assert private_stdin is not None and private_stdin.endswith("\n")
-    records = json.loads(private_stdin)
-    assert len(records) == 4 and all(record["timestamp"] == "now" for record in records)
-    assert all("xprv" in record["desc"] for record in records)
+    assert private_stdin.startswith("xprv")
     assert all("xprv" not in " ".join((*args, selected or "")) for args, selected, _data in rpc.calls)
-    assert sum(args[:2] == ("-named", "derivehdkey") for args, _wallet, _stdin in rpc.calls) == 4
+    assert [
+        args[2] for args, _wallet, _stdin in rpc.calls if args[:2] == ("-named", "createwalletdescriptor")
+    ] == ["type=legacy", "type=p2sh-segwit", "type=bech32", "type=bech32m"]
+    assert not any(args == ("rescanblockchain", "0") for args, _wallet, _stdin in rpc.calls)
     assert rpc.locked
     assert delays == [1]
     assert (
@@ -403,7 +402,18 @@ def test_encrypted_import_retries_without_a_passphrase_verifies_and_relocks(
     assert messages[-1] == ""
 
 
-def test_failed_import_is_generic_and_relocks_encrypted_wallet(
+@pytest.mark.parametrize("account", (1, 7, True))
+def test_nonzero_or_noninteger_account_is_rejected_before_wallet_selection(
+    account: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(BitcoinCore, "_select", lambda *_args: pytest.fail("selected a wallet"))
+    with pytest.raises(ValueError, match="only account 0"):
+        BitcoinCore("bitcoin-cli", "main", 320000).initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None, account=account
+        )
+
+
+def test_failed_descriptor_creation_relocks_encrypted_wallet(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rpc = _ImportRPC(locked=False)
@@ -412,14 +422,14 @@ def test_failed_import_is_generic_and_relocks_encrypted_wallet(
     def fail(
         client: BitcoinCore, *arguments: str, wallet: str | None = None, stdin: str | None = None
     ) -> object:
-        if arguments == ("importdescriptors",):
+        if arguments[:3] == ("-named", "createwalletdescriptor", "type=bech32"):
             rpc.calls.append((arguments, wallet, stdin))
-            return [{"success": True}, {"success": False}, {"success": True}, {"success": True}]
+            return {"descs": []}
         return original(client, *arguments, wallet=wallet, stdin=stdin)
 
     monkeypatch.setattr(BitcoinCore, "_rpc", fail)
     client = BitcoinCore("bitcoin-cli", "main", 300000)
-    with pytest.raises(BitcoinCoreError, match="did not import every private descriptor"):
+    with pytest.raises(BitcoinCoreError, match="did not create both wallet descriptors"):
         client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None)
     assert rpc.locked
     assert any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
@@ -454,36 +464,23 @@ def test_fingerprint_uses_stateless_core_address_derivation(monkeypatch: pytest.
     ]
 
 
-@pytest.mark.parametrize("change", ("missing", "extra"))
-def test_exact_public_descriptor_verification_rejects_missing_or_extra_records(
-    change: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_numeric_timestamp_rescans_history(monkeypatch: pytest.MonkeyPatch) -> None:
     rpc = _ImportRPC(locked=False)
-    original = rpc.__call__
-
-    def alter(
-        client: BitcoinCore, *arguments: str, wallet: str | None = None, stdin: str | None = None
-    ) -> object:
-        result = original(client, *arguments, wallet=wallet, stdin=stdin)
-        if arguments == ("listdescriptors",) and rpc.imported and isinstance(result, dict):
-            descriptors = result["descriptors"]
-            assert isinstance(descriptors, list)
-            if change == "missing":
-                descriptors.pop(0)
-            else:
-                descriptors.append({"desc": "unexpected", "active": True, "internal": False})
-        return result
-
-    monkeypatch.setattr(BitcoinCore, "_rpc", alter)
+    monkeypatch.setattr(
+        BitcoinCore,
+        "_rpc",
+        lambda client, *args, wallet=None, stdin=None, timeout=120: rpc(
+            client, *args, wallet=wallet, stdin=stdin, timeout=timeout
+        ),
+    )
     client = BitcoinCore("bitcoin-cli", "main", 300000)
-    with pytest.raises(BitcoinCoreError, match="accepted public descriptors did not match"):
-        client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None)
+    assert client.initialize(_SEED, lambda _prompt: "yes", lambda _message: None, timestamp=123) == "signer"
+    assert any(args == ("rescanblockchain", "0") for args, _wallet, _stdin in rpc.calls)
     assert rpc.locked
 
 
-@pytest.mark.parametrize("command", ("getdescriptorinfo", "listdescriptors"))
-def test_public_preparation_and_verification_failures_relock(
+@pytest.mark.parametrize("command", ("addhdkey", "createwalletdescriptor"))
+def test_core_creation_failures_relock(
     command: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -493,7 +490,9 @@ def test_public_preparation_and_verification_failures_relock(
     def fail(
         client: BitcoinCore, *arguments: str, wallet: str | None = None, stdin: str | None = None
     ) -> object:
-        if arguments == (command,) and (command == "getdescriptorinfo" or rpc.imported):
+        if arguments[0] == command or (
+            command == "createwalletdescriptor" and arguments[:2] == ("-named", command)
+        ):
             raise BitcoinCoreError("suppressed failure")
         return original(client, *arguments, wallet=wallet, stdin=stdin)
 
@@ -512,7 +511,7 @@ def test_interruption_after_unlock_relocks(monkeypatch: pytest.MonkeyPatch) -> N
     def interrupt(
         client: BitcoinCore, *arguments: str, wallet: str | None = None, stdin: str | None = None
     ) -> object:
-        if arguments == ("getdescriptorinfo",):
+        if arguments == ("addhdkey",):
             raise KeyboardInterrupt
         return original(client, *arguments, wallet=wallet, stdin=stdin)
 
@@ -603,8 +602,11 @@ def test_wallet_relocking_before_import_repeats_wait_without_preparation(
         == "signer"
     )
     assert delays == [1]
-    assert sum(arguments == ("getdescriptorinfo",) for arguments, _wallet, _stdin in rpc.calls) == 8
-    assert sum(arguments == ("importdescriptors",) for arguments, _wallet, _stdin in rpc.calls) == 1
+    assert (
+        sum(arguments[:2] == ("-named", "createwalletdescriptor") for arguments, _wallet, _stdin in rpc.calls)
+        == 4
+    )
+    assert sum(arguments == ("addhdkey",) for arguments, _wallet, _stdin in rpc.calls) == 1
 
 
 def test_interruption_during_walletlock_retries_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -633,7 +635,9 @@ def test_unencrypted_wallet_imports_without_a_lock_call(monkeypatch: pytest.Monk
     monkeypatch.setattr(
         BitcoinCore,
         "_rpc",
-        lambda client, *args, wallet=None, stdin=None: rpc(client, *args, wallet=wallet, stdin=stdin),
+        lambda client, *args, wallet=None, stdin=None, timeout=120: rpc(
+            client, *args, wallet=wallet, stdin=stdin, timeout=timeout
+        ),
     )
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     messages: list[str] = []
@@ -664,7 +668,7 @@ def test_immediate_revalidation_stops_before_private_import_and_relocks(
     with pytest.raises(BitcoinCoreError, match="changed before import"):
         client.initialize(_SEED, lambda _prompt: "", lambda _message: None)
     assert rpc.locked
-    assert not any(arguments == ("importdescriptors",) for arguments, _wallet, _stdin in rpc.calls)
+    assert not any(arguments == ("addhdkey",) for arguments, _wallet, _stdin in rpc.calls)
 
 
 def test_subprocess_adapter_uses_loopback_and_never_repeats_raw_core_errors(
@@ -675,7 +679,7 @@ def test_subprocess_adapter_uses_loopback_and_never_repeats_raw_core_errors(
     def run(command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
         assert marker not in command
         assert command[1:3] == ["-chain=main", "-rpcconnect=127.0.0.1"]
-        assert command[-2:] == ["-stdin", "importdescriptors"]
+        assert command[-2:] == ["-stdin", "addhdkey"]
         assert options["input"] == marker + "\n"
         return subprocess.CompletedProcess(command, 1, marker, marker)
 
@@ -683,5 +687,5 @@ def test_subprocess_adapter_uses_loopback_and_never_repeats_raw_core_errors(
     client = BitcoinCore("/reviewed/bitcoin-cli", "main", 300000)
 
     with pytest.raises(BitcoinCoreError) as failure:
-        client._rpc("importdescriptors", wallet="wallet", stdin=marker + "\n")
+        client._rpc("addhdkey", wallet="wallet", stdin=marker + "\n")
     assert marker not in str(failure.value)

@@ -1876,7 +1876,7 @@ def test_wallet_commands_initialize_selected_master_seed_destinations() -> None:
     assert private.stdout == ""
     assert private_core.imported == parse_codex32(VECTOR_1["secret_s"])
     assert private_core.private is True
-    assert "Warning: This imports private descriptors that can spend funds." in private.stderr
+    assert "Warning: This gives Bitcoin Core the master private key, which can spend funds." in private.stderr
     assert "Use only the intended encrypted wallet" not in private.stderr
     assert "\x1b[" not in private.stderr + private.stdout
     assert "spending wallet initialized" in private.stderr
@@ -1890,6 +1890,12 @@ def test_bitcoin_core_cli_accepts_now_timestamp() -> None:
 
     assert result.exit_code == 0
     assert core.timestamp == "now"
+
+
+def test_bitcoin_core_cli_rejects_other_accounts() -> None:
+    result = _invoke(["wallet", "--account", "7"])
+    assert result.exit_code == 2
+    assert "account" in result.stderr
 
 
 def test_bitcoin_core_cli_derives_test_network_from_connected_core() -> None:
@@ -1944,7 +1950,10 @@ def test_wallet_private_warning_precedes_recovery_input(
     cli_module = importlib.import_module("codex32.cli")
 
     def stop_before_input(_fingerprint=None) -> MasterSeed:
-        assert "Warning: This imports private descriptors that can spend funds." in capsys.readouterr().err
+        assert (
+            "Warning: This gives Bitcoin Core the master private key, which can spend funds."
+            in capsys.readouterr().err
+        )
         raise cli_module._UsageError("stopped")
 
     monkeypatch.setattr(cli_module, "_master_seed", stop_before_input)
