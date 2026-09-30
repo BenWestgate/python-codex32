@@ -394,12 +394,16 @@ def _initialize_wallet(
     fresh: bool = True,
     restore: bool = False,
     confirmed: bool = True,
+    identity_checked: bool = False,
+    expected_fingerprint: bytes | None = None,
 ) -> int:
     assert isinstance(secret, MasterSeed)
     try:
         if confirmed:
             _print("Master-seed backup confirmed.\n", err=True)
-        expected = _recorded_fingerprint(core, secret) if restore else None
+        expected = expected_fingerprint
+        if restore and not identity_checked:
+            expected = _recorded_fingerprint(core, secret)
         if not restore:
             _show_fingerprint(core, secret, "Write it on the wallet record")
         name = core.initialize(
@@ -489,37 +493,39 @@ def _create(
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
     try:
-        if threshold == 0:
-            if isinstance(source, MasterSeed):
-                if identifier is not None and identifier != source.header.identifier:
-                    raise _UsageError(
-                        "To change the existing secret's identifier, choose a sharing threshold from 2 through 9."
-                    )
-                secret = source
-            else:
-                secret = _generated_secret(source, byte_length, identifier, core.fingerprint_seed)
-            _emit(secret, False, fingerprint=None if existing else core.fingerprint)
-            if sys.stdin.isatty():
-                _confirm_card(secret)
-            return (
-                _initialize_wallet(
-                    core, secret, timestamp=0 if existing else "now", fresh=not existing, restore=existing
-                )
-                if core is not None
-                else 0
-            )
         if isinstance(source, MasterSeed):
-            ceremony = CreationCeremony.from_secret(
-                source,
-                threshold=threshold,
-                identifier=identifier,
-                share_count=shares,
-                indices=indices,
-            )
+            if threshold == 0 and identifier is not None and identifier != source.header.identifier:
+                raise _UsageError(
+                    "To change the existing secret's identifier, choose a sharing threshold from 2 through 9."
+                )
+            existing_secret = source
         elif source is not None:
-            source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
+            existing_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
+        else:
+            existing_secret = None
+        expected = _recorded_fingerprint(core, existing_secret) if existing_secret is not None else None
+
+        def finish_wallet(seed: MasterSeed) -> int:
+            return _initialize_wallet(
+                core,
+                seed,
+                timestamp=0 if existing else "now",
+                fresh=not existing,
+                restore=existing,
+                identity_checked=existing,
+                expected_fingerprint=expected,
+            )
+
+        if threshold == 0:
+            secret = existing_secret or _generated_secret(
+                None, byte_length, identifier, core.fingerprint_seed
+            )
+            _emit(secret, False, fingerprint=None if existing else core.fingerprint)
+            _confirm_card(secret)
+            return finish_wallet(secret)
+        if existing_secret is not None:
             ceremony = CreationCeremony.from_secret(
-                source_secret,
+                existing_secret,
                 threshold=threshold,
                 identifier=identifier,
                 share_count=shares,
@@ -545,12 +551,7 @@ def _create(
         _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
     finished = ceremony.finish()
     assert isinstance(finished, MasterSeed)
-    if core is not None:
-        return _initialize_wallet(
-            core, finished, timestamp=0 if existing else "now", fresh=not existing, restore=existing
-        )
-    _print("\nEvery recovery card was confirmed from its re-entered text.", err=True)
-    return 0
+    return finish_wallet(finished)
 
 
 def _correct(
