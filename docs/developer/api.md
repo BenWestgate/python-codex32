@@ -639,7 +639,7 @@ the BIP32 fingerprint.
 The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
 `getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `deriveaddresses`,
 `validateaddress`, `gethdkeys`, `derivehdkey`, `addhdkey`,
-`createwalletdescriptor`, `rescanblockchain`, and `walletlock`.
+`createwalletdescriptor`, `importdescriptors`, and `walletlock`.
 Bitcoin Core alone creates wallets, selects encryption, handles
 passphrases, stores keys, and provides normal wallet behavior.
 
