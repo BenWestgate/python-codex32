@@ -33,7 +33,6 @@ class Application(Adw.Application):
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Open the window. Arguments are refused so that no secret can be passed in one."""
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments == ["--version"]:
         print(__version__)
