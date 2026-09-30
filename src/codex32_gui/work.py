@@ -46,7 +46,7 @@ def run[Result](
     blocks in daemon threads while the interpreter is shutting down, so closing
     the window during an import would otherwise leave that wallet open.
     """
-    _start(view, page, work, done, claimed=False)
+    _start(view, page, work, done, claimed=False, daemon=False)
 
 
 def poll[Result](
@@ -58,7 +58,7 @@ def poll[Result](
     """Start one low-priority poll, or skip it while another job owns the gate."""
     if not _gate.acquire(blocking=False):
         return False
-    _start(view, page, work, done, claimed=True)
+    _start(view, page, work, done, claimed=True, daemon=True)
     return True
 
 
@@ -69,6 +69,7 @@ def _start[Result](
     done: Callable[[Result | Exception], None],
     *,
     claimed: bool,
+    daemon: bool,
 ) -> None:
 
     def worker() -> None:
@@ -88,4 +89,4 @@ def _start[Result](
             done(outcome)
         return False
 
-    threading.Thread(target=worker).start()
+    threading.Thread(target=worker, daemon=daemon).start()
