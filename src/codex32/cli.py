@@ -506,7 +506,10 @@ def _create(
             existing_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
         else:
             existing_secret = None
-        expected = _recorded_fingerprint(core, existing_secret) if existing_secret is not None else None
+        try:
+            expected = _recorded_fingerprint(core, existing_secret) if existing_secret is not None else None
+        except (EOFError, KeyboardInterrupt) as error:
+            raise _WalletSetupInterrupted from error
 
         def finish_wallet(seed: MasterSeed) -> int:
             return _initialize_wallet(

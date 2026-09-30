@@ -3194,6 +3194,37 @@ def test_create_existing_rejects_wrong_record_before_sharing(
     assert core.imported is None
 
 
+def test_create_existing_record_gate_interruption_keeps_existing_backup_valid(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = importlib.import_module("codex32.cli")
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    core = _FakeBitcoinCore()
+
+    def interrupt_record(*_args: object) -> bytes | None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput())
+    monkeypatch.setattr(cli, "_creation_source", lambda _profile: secret)
+    monkeypatch.setattr(cli, "_recorded_fingerprint", interrupt_record)
+    monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
+    with (
+        patch("codex32.cli.CreationCeremony.from_secret") as split,
+        patch("codex32.cli._emit") as emit,
+    ):
+        assert ms_main(["create", "2", "--indices", "ac", "--existing"]) == 130
+
+    split.assert_not_called()
+    emit.assert_not_called()
+    message = capsys.readouterr().err
+    assert "recovery cards are valid" in message
+    assert "Mark every card" not in message
+    assert core.imported is None
+
+
 def test_create_existing_recordless_choice_precedes_sharing(monkeypatch: pytest.MonkeyPatch) -> None:
     cli = importlib.import_module("codex32.cli")
     secret = parse_codex32(VECTOR_1["secret_s"])
