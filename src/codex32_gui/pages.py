@@ -41,7 +41,7 @@ DONE_ICON = "object-select-symbolic"
 _ICON_STYLE = {DONE_ICON: "success", "dialog-error-symbolic": "error"}
 SEED_SIZES = ((16, "128-bit seed, 48 characters"), (32, "256-bit seed, 74 characters"))
 PRESETS = (
-    (2, 3, "Three cards, any two recover (recommended)"),
+    (2, 3, "Three cards, any two recover"),
     (3, 5, "Five cards, any three recover"),
     (0, 1, "One card"),
 )
@@ -79,7 +79,7 @@ _RESTORED = (
 )
 CARDS_SAFE = (
     "Your cards are unharmed and still recover this wallet. Nothing was written onto them and "
-    "nothing about them changed. When Bitcoin Core is ready, choose \u201cRestore my wallet\u201d "
+    "nothing about them changed. When Bitcoin Core is ready, choose “Restore my wallet” "
     "and enter them. Do not set up a new wallet: that would make a different backup."
 )
 
@@ -185,12 +185,18 @@ def _card(
     *,
     highlight_class: str = "guessed",
 ) -> Gtk.FlowBox:
-    """Show one card the way wallets.md asks: uppercase, in four-character windows."""
+    """Show uppercase four-character groups in reading order, wrapping only as needed."""
     text = text.upper()
-    flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, column_spacing=8, row_spacing=8)
-    flow.set_homogeneous(True)
-    flow.set_min_children_per_line(4)
-    flow.set_max_children_per_line(4)
+    groups = max(1, (len(text) + reading.GROUP - 1) // reading.GROUP)
+    flow = Gtk.FlowBox(
+        selection_mode=Gtk.SelectionMode.NONE,
+        column_spacing=8,
+        row_spacing=8,
+        halign=Gtk.Align.START,
+    )
+    flow.set_homogeneous(False)
+    flow.set_min_children_per_line(1)
+    flow.set_max_children_per_line(groups)
     flow.set_hexpand(True)
     for start in range(0, len(text), reading.GROUP):
         label = Gtk.Label(label=text[start : start + reading.GROUP], halign=Gtk.Align.CENTER)
@@ -218,6 +224,24 @@ def _rows(title: str, values: Sequence[tuple[str, str]]) -> Adw.PreferencesGroup
     for label, value in values:
         group.add(Adw.ActionRow(title=label, subtitle=value, subtitle_selectable=True, use_markup=False))
     return group
+
+
+def _identity_rows(title: str, values: Sequence[tuple[str, str]]) -> Gtk.Box:
+    """Show a complete wallet record compactly enough to copy without scrolling."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    heading = Gtk.Label(label=title, xalign=0.0)
+    heading.add_css_class("heading")
+    box.append(heading)
+    grid = Gtk.Grid(column_spacing=18, row_spacing=4, hexpand=True)
+    for row, (label, value) in enumerate(values):
+        name = Gtk.Label(label=label, xalign=0.0)
+        name.add_css_class("dim-label")
+        shown = Gtk.Label(label=value, xalign=1.0, selectable=True, wrap=True)
+        shown.set_hexpand(True)
+        grid.attach(name, 0, row, 1, 1)
+        grid.attach(shown, 1, row, 1, 1)
+    box.append(grid)
+    return box
 
 
 def _forget_when_gone(view: Adw.NavigationView, page: Adw.NavigationPage, clear: Callable[[], None]) -> None:
@@ -894,7 +918,10 @@ def _new_wallet_page(
             return
         dialog = Adw.AlertDialog(
             heading="Create it without a passphrase?",
-            body="Anyone who can use this computer could then spend from this wallet.",
+            body=(
+                "Without a passphrase, this Bitcoin Core wallet file is not encrypted. Anyone who can "
+                "use or copy it may be able to spend the wallet."
+            ),
         )
         dialog.add_response("back", "Go back")
         dialog.add_response("plain", "Create without one")
@@ -904,17 +931,18 @@ def _new_wallet_page(
         dialog.present(view)
 
     content = _column(
-        _title("Create a wallet for these keys", "Bitcoin Core makes it; codex32 fills it in."),
+        _title("Create a wallet for these keys", "Choose whether this Bitcoin Core wallet should be encrypted."),
         group,
         status,
         _note(
-            "Your passphrase goes straight to Bitcoin Core on standard input and nowhere else. It is "
-            "never saved, never written to a file, and never shown in the list of running programs."
+            "A wallet passphrase encrypts the Bitcoin Core wallet file. It helps if someone gets a copy "
+            "of that file, but it does not protect an unlocked wallet or a compromised computer."
         ),
         _note(
-            "Forgetting this passphrase does not lose your bitcoin: your cards still recover the seed. "
-            "It protects the wallet on this computer.",
-            "success",
+            "Bitcoin Core cannot recover a forgotten wallet passphrase. Your codex32 recovery cards are "
+            "the independent recovery path: they can recreate the wallet's master seed in a new wallet. "
+            "Keep the cards separate and safe.",
+            "warning",
         ),
     )
     page = _page("New wallet", content, actions=_actions(_button("Create", go, style="suggested-action")))
@@ -970,7 +998,7 @@ def _unlock_page(
 
     content = _column(
         _title(
-            f"The wallet \u201c{wallet.name}\u201d is locked",
+            f"The wallet “{wallet.name}” is locked",
             "Bitcoin Core needs its passphrase before your keys can be written into it.",
         ),
         group,
@@ -1035,7 +1063,7 @@ def _finished_page(view: Adw.NavigationView, record: Record, restoring: bool = F
     dated = () if restoring else (("Approximate creation date", time.strftime("%Y-%m-%d")),)
     content = _column(
         _title(heading, asked, DONE_ICON),
-        _rows(
+        _identity_rows(
             "Wallet identity",
             (
                 ("Backup identifier", record.identifier),
