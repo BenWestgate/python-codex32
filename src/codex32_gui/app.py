@@ -1,5 +1,3 @@
-"""The window: one navigation view, one stylesheet, and no command arguments."""
-
 from __future__ import annotations
 
 import sys
@@ -25,17 +23,11 @@ class Application(Adw.Application):
         if display is not None:
             provider = Gtk.CssProvider()
             provider.load_from_string(CSS)
-            Gtk.StyleContext.add_provider_for_display(
-                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
+            Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         view = Adw.NavigationView()
         view.push(pages.home(view))
         window = Adw.ApplicationWindow(
-            application=self,
-            title="codex32",
-            default_width=880,
-            default_height=620,
-            content=view,
+            application=self, title="codex32", default_width=880, default_height=620, content=view
         )
         window.present()
 
