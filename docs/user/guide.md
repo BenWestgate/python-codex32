@@ -36,8 +36,9 @@ The `correct` exit status distinguishes outcomes for scripts: `0` means the
 input is already valid, `1` means a suggestion was emitted, `2` means the
 command or input syntax was invalid, and `3` means no usable suggestion was
 emitted. Status `3` includes incomplete searches with no usable suggestion,
-ambiguous searches, declined disclosure, and an unavailable dependency needed
-to present a suggestion.
+ambiguous searches, declined disclosure, and Bitcoin Core being unavailable
+when `ms32 correct` needs it to rank or fingerprint a master-seed suggestion.
+The generic `codex32 correct` command does not need Core.
 
 Choose the setup that fits you:
 
