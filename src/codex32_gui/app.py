@@ -13,8 +13,6 @@ APP_ID = "io.github.benwestgate.codex32"
 
 
 class Application(Adw.Application):
-    """One non-unique window with a stable desktop identity and no recent list or files."""
-
     def __init__(self) -> None:
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
 
@@ -23,7 +21,9 @@ class Application(Adw.Application):
         if display is not None:
             provider = Gtk.CssProvider()
             provider.load_from_string(CSS)
-            Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            Gtk.StyleContext.add_provider_for_display(
+                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
         view = Adw.NavigationView()
         view.push(pages.home(view))
         window = Adw.ApplicationWindow(
