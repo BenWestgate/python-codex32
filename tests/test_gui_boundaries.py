@@ -58,7 +58,7 @@ def _imports(tree: ast.AST) -> set[str]:
 
 @pytest.mark.parametrize("path", _modules(), ids=lambda path: path.name)
 def test_the_gui_draws_no_entropy_opens_no_socket_and_touches_no_file(path: Path) -> None:
-    imported = _imports(ast.parse(path.read_text()))
+    imported = _imports(ast.parse(path.read_text(encoding="utf-8")))
     assert not {name.split(".")[0] for name in imported} & FORBIDDEN, sorted(imported)
 
 
@@ -66,7 +66,7 @@ def test_the_gui_draws_no_entropy_opens_no_socket_and_touches_no_file(path: Path
 def test_nothing_reads_or_writes_a_file(path: Path) -> None:
     called = {
         node.func.id
-        for node in ast.walk(ast.parse(path.read_text()))
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
     assert "open" not in called and "eval" not in called and "exec" not in called
@@ -74,13 +74,13 @@ def test_nothing_reads_or_writes_a_file(path: Path) -> None:
 
 @pytest.mark.parametrize("path", _modules(), ids=lambda path: path.name)
 def test_only_one_module_speaks_to_bitcoin_core(path: Path) -> None:
-    imported = _imports(ast.parse(path.read_text()))
+    imported = _imports(ast.parse(path.read_text(encoding="utf-8")))
     assert (CORE_ADAPTER in imported) == (path.name == "wallet_setup.py"), sorted(imported)
 
 
 def test_the_accessibility_bus_is_turned_off_before_gtk_starts() -> None:
     """GTK otherwise publishes every label and entry, seed and passphrase included."""
-    source = (_package() / "__init__.py").read_text()
+    source = (_package() / "__init__.py").read_text(encoding="utf-8")
     assert 'GLib.setenv("GTK_A11Y", "none", False)' in source
     tree = ast.parse(source)
     settings = [node for node in ast.walk(tree) if isinstance(node, ast.Import | ast.ImportFrom)]
@@ -90,26 +90,27 @@ def test_the_accessibility_bus_is_turned_off_before_gtk_starts() -> None:
 @pytest.mark.parametrize("path", _modules(), ids=lambda path: path.name)
 def test_nothing_but_the_version_pin_may_import_a_module_by_name(path: Path) -> None:
     """`importlib` would reach any of the forbidden modules without naming one."""
-    imported = {name.split(".")[0] for name in _imports(ast.parse(path.read_text()))}
+    imported = {name.split(".")[0] for name in _imports(ast.parse(path.read_text(encoding="utf-8")))}
     assert "importlib" not in imported or path.name == "__init__.py", sorted(imported)
 
 
 def test_the_parts_that_decide_something_need_no_toolkit() -> None:
     for name in ("reading.py", "wallet_setup.py", "style.py"):
-        imported = _imports(ast.parse((_package() / name).read_text()))
+        imported = _imports(ast.parse((_package() / name).read_text(encoding="utf-8")))
         assert not any(item == "gi" or item.startswith("gi.") for item in imported), name
 
 
 def test_the_library_does_not_depend_on_the_gui() -> None:
     library = Path(importlib.import_module("codex32").__file__ or "").parent
     for path in library.rglob("*.py"):
-        assert "codex32_gui" not in path.read_text(), path
+        assert "codex32_gui" not in path.read_text(encoding="utf-8"), path
 
 
 def test_the_gui_keeps_its_own_size_budget() -> None:
     counts = {
         path.name: sum(
-            bool(line.strip()) and not line.lstrip().startswith("#") for line in path.read_text().splitlines()
+            bool(line.strip()) and not line.lstrip().startswith("#")
+            for line in path.read_text(encoding="utf-8").splitlines()
         )
         for path in _modules()
     }
@@ -117,7 +118,7 @@ def test_the_gui_keeps_its_own_size_budget() -> None:
 
 
 def test_read_only_poll_threads_do_not_keep_the_process_alive() -> None:
-    source = (_package() / "work.py").read_text()
+    source = (_package() / "work.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
 
