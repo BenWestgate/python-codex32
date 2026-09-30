@@ -12,7 +12,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from codex32 import (
     ConfirmationResult,
@@ -46,6 +46,7 @@ PRESETS = (
     (0, 1, "One card"),
 )
 CREATE_WALLET = "Create a new wallet"
+WALLET_REFRESH_MS = 1000
 NO_CAMERA = (
     "Do not photograph this and do not type it into any website, chat or password manager. "
     "Paper and pen only."
@@ -751,32 +752,72 @@ def _wallet_page(
     restoring: bool,
 ) -> Adw.NavigationPage:
     """Name the wallet that will hold the keys. The library confirms that name again."""
-    group = Adw.PreferencesGroup(title="Empty wallets Bitcoin Core has ready")
-    rows = [(item.name, "Empty, encrypted" if item.encrypted else "Empty, not encrypted") for item in found]
-    rows.append((CREATE_WALLET, "codex32 asks Bitcoin Core for a blank wallet, with a passphrase you choose"))
-    buttons = _radio_group(group, rows)
+    holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    current = found
+    buttons: list[Gtk.CheckButton] = []
 
     def go() -> None:
         # By position, so that a wallet named like the create row is still reachable.
-        index = _selected(buttons)
-        if index == len(found):
+        index = next((i for i, choice in enumerate(buttons) if choice.get_active()), -1)
+        if index < 0:
+            return
+        if index == len(current):
             view.push(_new_wallet_page(view, core, secret, timestamp, restoring))
             return
-        chosen = found[index]
+        chosen = current[index]
         if chosen.locked:
             view.push(_unlock_page(view, core, secret, chosen, timestamp, restoring))
             return
         _import(view, core, secret, chosen.name, "", timestamp, restoring)
+
+    continue_button = _button("Continue", go, style="suggested-action")
+
+    def render(updated: tuple[wallet_setup.Wallet, ...]) -> None:
+        nonlocal buttons, current
+        preserve = bool(buttons)
+        selected = next((i for i, choice in enumerate(buttons) if choice.get_active()), -1)
+        chosen = current[selected].name if 0 <= selected < len(current) else None
+        creating = preserve and selected == len(current)
+        if (old := holder.get_first_child()) is not None:
+            holder.remove(old)
+        current = updated
+        group = Adw.PreferencesGroup(title="Empty wallets Bitcoin Core has ready")
+        rows = [
+            (item.name, "Empty, encrypted" if item.encrypted else "Empty, not encrypted") for item in current
+        ]
+        rows.append(
+            (CREATE_WALLET, "codex32 asks Bitcoin Core for a blank wallet, with a passphrase you choose")
+        )
+        buttons = _radio_group(group, rows)
+        for choice in buttons:
+            choice.connect(
+                "toggled",
+                lambda _choice: continue_button.set_sensitive(any(item.get_active() for item in buttons)),
+            )
+        holder.append(group)
+        if preserve:
+            target = (
+                len(current)
+                if creating
+                else next((i for i, item in enumerate(current) if item.name == chosen), None)
+            )
+            if target is None:
+                buttons[0].set_active(False)
+            else:
+                buttons[target].set_active(True)
+        continue_button.set_sensitive(any(choice.get_active() for choice in buttons))
+
+    render(found)
 
     content = _column(
         _title(
             "Which wallet should hold your keys?",
             f"Bitcoin Core {wallet_setup.version_text(core)} is running on {wallet_setup.network(core)}.",
         ),
-        group,
+        holder,
         _note(
             "Only empty wallets are listed, so no wallet you already use can be overwritten. You may also "
-            "create one in Bitcoin Core yourself and check again."
+            "create one in Bitcoin Core yourself; it will appear here automatically."
         ),
         *(
             (
@@ -790,14 +831,25 @@ def _wallet_page(
             else ()
         ),
     )
-    return _page(
+    page = _page(
         "Wallet",
         content,
-        actions=_actions(
-            _button("Check again", lambda: _wallets(view, core, secret, timestamp)),
-            _button("Continue", go, style="suggested-action"),
-        ),
+        actions=_actions(continue_button),
     )
+
+    def refreshed(outcome: tuple[wallet_setup.Wallet, ...] | Exception) -> None:
+        if view.get_visible_page() is page and not isinstance(outcome, Exception) and outcome != current:
+            render(outcome)
+
+    def refresh() -> bool:
+        if not work.showing(view, page):
+            return False
+        if view.get_visible_page() is page:
+            work.poll(view, page, lambda: wallet_setup.eligible(core), refreshed)
+        return True
+
+    GLib.timeout_add(WALLET_REFRESH_MS, refresh)
+    return page
 
 
 def _new_wallet_page(

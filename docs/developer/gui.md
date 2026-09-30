@@ -19,7 +19,7 @@ cryptography, entropy source, socket, or file storage.
 
 Review `reading.py`, `wallet_setup.py`, and `work.py` first. Their behavior is
 covered without a display. `tools/gui_walkthrough.py` exercises the real GTK
-screens under Xvfb. `tests/test_gui_boundaries.py` enforces a separate 2,000
+screens under Xvfb. `tests/test_gui_boundaries.py` enforces a separate 2,050
 logical-line GUI budget.
 
 ## Security boundaries
@@ -35,8 +35,8 @@ logical-line GUI budget.
    `codex32._bitcoin_core`.
 5. **Page secrets are cleared.** `_forget_when_gone` clears card or entry text
    when an `AdwNavigationView` page leaves the stack.
-6. **One worker at a time.** `work.run` serializes background jobs, returns on the
-   GTK thread, and drops callbacks for pages that are gone.
+6. **One worker at a time.** `work.run` and the low-priority wallet poll share one
+   gate, return on the GTK thread, and drop callbacks for pages that are gone.
 7. **Accessibility is opt-in.** `__init__.py` defaults `GTK_A11Y` to `none`
    before GTK loads; an operator can override it.
 8. **Labels never select wallets.** Choice rows use position and disable markup;
@@ -110,7 +110,6 @@ wallet. `_Answer.tell` also rejects terminal-only “press Ctrl-C” waits.
 ## Known limits
 
 - Long cards scroll horizontally because entry uses one `Gtk.Entry`.
-- Empty-wallet lists refresh on request, not continuously.
 - Widget construction is covered by `tools/gui_walkthrough.py`, not pytest.
 - On X11, selecting entry text briefly exposes it through the primary selection.
 - Enabling GTK accessibility exposes GUI text to other processes on that bus.

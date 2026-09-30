@@ -33,7 +33,7 @@ FORBIDDEN = frozenset(
     }
 )
 CORE_ADAPTER = "codex32._bitcoin_core"
-BUDGET = 2000
+BUDGET = 2050
 
 
 def _package() -> Path:
@@ -114,3 +114,24 @@ def test_the_gui_keeps_its_own_size_budget() -> None:
         for path in _modules()
     }
     assert sum(counts.values()) < BUDGET, counts
+
+
+def test_read_only_poll_threads_do_not_keep_the_process_alive() -> None:
+    source = (_package() / "work.py").read_text()
+    tree = ast.parse(source)
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+
+    def daemon_argument(name: str) -> bool:
+        calls = [
+            node
+            for node in ast.walk(functions[name])
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_start"
+        ]
+        assert len(calls) == 1
+        values = {keyword.arg: keyword.value for keyword in calls[0].keywords}
+        value = values["daemon"]
+        assert isinstance(value, ast.Constant) and isinstance(value.value, bool)
+        return value.value
+
+    assert daemon_argument("run") is False
+    assert daemon_argument("poll") is True
