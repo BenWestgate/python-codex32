@@ -377,7 +377,7 @@ def test_tty_check_prefills_rejected_entry_without_history(
     assert prompts == ["Enter a codex32 string:\n> "] * 2
     assert rejected not in captured.out
     assert (
-        "Rejected: A codex32 string is all uppercase or all lowercase; either case recovers the same wallet.\n\n"
+        "Rejected: A codex32 string is all uppercase or all lowercase; both cases decode to the same data.\n\n"
     ) in captured.err
     assert captured.err.endswith("\n\n")
 

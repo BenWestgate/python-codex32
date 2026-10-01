@@ -689,7 +689,7 @@ def _redirected(
 
 
 _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
-    InvalidCase: "A codex32 string is all uppercase or all lowercase; either case recovers the same wallet.",
+    InvalidCase: "A codex32 string is all uppercase or all lowercase; both cases decode to the same data.",
     InvalidChecksum: "The checksum does not match.",
     MismatchedProfile: "These strings are for different applications.",
     MismatchedThreshold: "These strings require different numbers of shares.",
