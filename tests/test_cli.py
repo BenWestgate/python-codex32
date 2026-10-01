@@ -376,8 +376,9 @@ def test_tty_check_prefills_rejected_entry_without_history(
     assert sys.stdout is not sys.stderr
     assert prompts == ["Enter a codex32 string:\n> "] * 2
     assert rejected not in captured.out
-    assert "Rejected: Use either all uppercase or all lowercase letters." in captured.err
-    assert "Rejected: Use either all uppercase or all lowercase letters.\n\n" in captured.err
+    assert (
+        "Rejected: A codex32 string is all uppercase or all lowercase; either case recovers the same wallet.\n\n"
+    ) in captured.err
     assert captured.err.endswith("\n\n")
 
 
@@ -1760,6 +1761,33 @@ def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> 
     assert "No valid correction found" in result.stderr
 
 
+_UPPER_SECRET = VECTOR_1["secret_s"].upper()
+
+
+@pytest.mark.parametrize(
+    ("damaged", "reason"),
+    (
+        (_UPPER_SECRET[:-1] + "w", "A codex32 string is all uppercase or all lowercase;"),
+        (
+            _UPPER_SECRET[:3] + "A" + _UPPER_SECRET[4:],
+            "The threshold must be 0 or a number from 2 through 9;",
+        ),
+        (
+            _UPPER_SECRET[:8] + "A" + _UPPER_SECRET[9:],
+            "An unshared secret (threshold 0) must use S as its index.",
+        ),
+        (_UPPER_SECRET[:12] + "B" + _UPPER_SECRET[13:], "The character 'b' is not allowed"),
+        (_UPPER_SECRET[:20] + "Q" + _UPPER_SECRET[20:], "This input has 49 characters."),
+    ),
+)
+def test_correct_says_why_the_input_was_invalid(damaged: str, reason: str) -> None:
+    result = _invoke(["correct"], damaged)
+
+    assert result.exit_code == 1
+    assert result.stderr.startswith(f"Invalid: {reason}")
+    assert result.stderr.endswith(f"{_UPPER_SECRET}\n")
+
+
 def test_correct_rejects_malformed_immutable_hrp_as_usage() -> None:
     damaged = "é" + VECTOR_1["secret_s"][1:]
 
@@ -2537,8 +2565,11 @@ def test_operational_candidate_whole_card_confirmation(monkeypatch, capsys, resp
     monkeypatch.setattr(module, "_editable_input", lambda prompt: prompts.append(prompt) or response)
     monkeypatch.setattr(module.sys.stderr, "isatty", lambda: True)
     candidate = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=65)
-    assert module._confirm_correction(candidate, [], False, _FakeBitcoinCore().fingerprint) is accepted
+    reason = "The checksum does not match."
+    fingerprint = _FakeBitcoinCore().fingerprint
+    assert module._confirm_correction(candidate, [], False, reason, fingerprint) is accepted
     output = capsys.readouterr().err
+    assert output.startswith(f"Invalid: {reason}\nPossible correction:\n\n")
     assert "Master fingerprint: 3F3521A6\n\n" in output
     assert module._card_text(artifact.text) in output
     assert "> " not in output
@@ -2556,12 +2587,12 @@ def test_final_share_preview_is_isolated_and_basis_has_no_preview(monkeypatch, c
     accepted = [first]
     monkeypatch.setattr(module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", lambda prompt: "n")
-    assert not module._confirm_correction(candidate, accepted, False, _FakeBitcoinCore().fingerprint)
+    assert not module._confirm_correction(candidate, accepted, False, "", _FakeBitcoinCore().fingerprint)
     assert accepted == [first]
     assert "Master fingerprint: FAB6868A\n\n" in capsys.readouterr().err
-    assert not module._confirm_correction(candidate, accepted, True, _FakeBitcoinCore().fingerprint)
+    assert not module._confirm_correction(candidate, accepted, True, "", _FakeBitcoinCore().fingerprint)
     assert "Master fingerprint" not in capsys.readouterr().err
-    assert not module._confirm_correction(candidate, [], False, _FakeBitcoinCore().fingerprint)
+    assert not module._confirm_correction(candidate, [], False, "", _FakeBitcoinCore().fingerprint)
     assert "Master fingerprint" not in capsys.readouterr().err
 
 
@@ -2576,7 +2607,7 @@ def test_failed_fingerprint_never_offers_confirmation(monkeypatch, capsys):
     candidate = CorrectionCandidate(
         parse_codex32(VECTOR_1["secret_s"]), (), 1, 0, 0, None, capture_space_bits=65
     )
-    assert not module._confirm_correction(candidate, [], False, fail)
+    assert not module._confirm_correction(candidate, [], False, "", fail)
     assert "Could not recover a valid Bitcoin master seed using this correction." in capsys.readouterr().err
 
 
