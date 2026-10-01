@@ -3164,13 +3164,16 @@ def test_create_existing_record_gate_interruption_keeps_existing_backup_valid(
     assert core.imported is None
 
 
-def test_create_existing_recordless_choice_precedes_sharing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_existing_recordless_choice_precedes_sharing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     cli = importlib.import_module("codex32.cli")
     secret = parse_codex32(VECTOR_1["secret_s"])
     assert isinstance(secret, MasterSeed)
     core = _FakeBitcoinCore()
     answers = iter((secret.seed_bytes.hex(), "", "y"))
     events: list[str] = []
+    emitted: list[Share | Secret] = []
 
     def confirm_card(artifact: Share | Secret, confirm=None) -> None:
         if confirm is not None:
@@ -3180,15 +3183,23 @@ def test_create_existing_recordless_choice_precedes_sharing(monkeypatch: pytest.
         assert events == []
         return next(answers)
 
+    def emit(artifact: Share | Secret, *_args: object, **_kwargs: object) -> None:
+        events.append("card")
+        emitted.append(artifact)
+
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(sys, "stdout", _TTYOutput())
     monkeypatch.setattr(cli, "_text", answer)
     monkeypatch.setattr(cli, "_recorded_fingerprint", _RECORDED_FINGERPRINT)
-    monkeypatch.setattr(cli, "_emit", lambda *_args, **_kwargs: events.append("card"))
+    monkeypatch.setattr(cli, "_emit", emit)
     monkeypatch.setattr(cli, "_confirm_card", confirm_card)
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
 
     assert ms_main(["create", "2", "--indices", "ac", "--existing"]) == 0
     assert events == ["card", "card"]
+    identifier = emitted[0].header.identifier
+    assert all(artifact.header.identifier == identifier for artifact in emitted)
     assert core.expected is None
     assert core.imported is not None and core.imported.seed_bytes == secret.seed_bytes
+    assert core.imported.header.identifier == identifier
+    assert capsys.readouterr().err.count(f"Backup identifier: {identifier.upper()}") >= 2

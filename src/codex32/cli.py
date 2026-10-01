@@ -501,6 +501,8 @@ def _create(
             existing_secret = source
         elif source is not None:
             existing_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
+            if threshold and identifier is None:
+                identifier = existing_secret.header.identifier
         try:
             expected = _recorded_fingerprint(core, existing_secret) if existing_secret is not None else None
         except (EOFError, KeyboardInterrupt) as error:
