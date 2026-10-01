@@ -530,16 +530,20 @@ def _scheduled_candidates(
     )
     if retry is None:
         return candidates, complete
-    retry_candidates, complete, _deadline = search(
+    retry_candidates, retry_complete, _deadline = search(
         retry, deadline=deadline, capture_layers=capture_layers, seed_candidates=(*seeded, *candidates)
     )
+    complete = complete and retry_complete
     annotated = []
     for item in (*candidates, *retry_candidates):
         volume, bits = _capture_mass(capture_layers, item.capture_volume)
         annotated.append(replace(item, cumulative_capture_volume=volume, capture_space_bits=bits))
     unique: dict[str, CorrectionCandidate] = {}
     for item in _best(annotated, prefer_common=byte_length == "?", fingerprint_match=fingerprint_match):
-        unique.setdefault(item.artifact.text.lower(), item)
+        # A copy from a completed earlier pass must not hide later truncation.
+        unique.setdefault(
+            item.artifact.text.lower(), item if complete else replace(item, search_complete=False)
+        )
     return tuple(unique.values()), complete
 
 
