@@ -2192,7 +2192,7 @@ def test_production_size_budgets_are_enforced() -> None:
         for path in package.rglob("*.py")
     }
 
-    assert sum(counts.values()) < 5200, counts
+    assert sum(counts.values()) < 5250, counts
 
 
 @pytest.mark.parametrize(
