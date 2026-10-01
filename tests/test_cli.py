@@ -1155,6 +1155,7 @@ def test_tty_recovery_accepts_secret_after_compatible_shares(
     assert "Rejected:" not in captured.err
     assert "Share 1 of 3 accepted." in captured.err
     assert "Share 2 of 3 accepted." in captured.err
+    assert "Complete secret supplied; using it instead of the accepted shares." in captured.err
     first_prompt = (
         "Enter a codex32 string:\n> " if command[0] == "secret" else "Enter a codex32 string:\n> MS1"
     )
