@@ -91,7 +91,6 @@ class _FakeBitcoinCore:
     chain: str = "main"
     version: int = 320000
     imported: MasterSeed | None = None
-    private: bool | None = None
     account: int | None = None
     timestamp: int | str | None = None
 
@@ -112,7 +111,7 @@ class _FakeBitcoinCore:
         timestamp: int | str = "now",
     ) -> str:
         self.imported = secret
-        self.private, self.account, self.timestamp = private, account, timestamp
+        self.account, self.timestamp = account, timestamp
         return "test-wallet"
 
 
@@ -1785,7 +1784,7 @@ def test_correction_bytes_rejects_an_unsupported_ms_size() -> None:
 def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:19] + original[20:]
-    with patch("codex32._cli_input._correction_candidates", return_value=((), False, 0.0, False)):
+    with patch("codex32._cli_input._correction_candidates", return_value=((), False, 0.0)):
         result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 3
@@ -1924,7 +1923,7 @@ def test_correct_searches_mixed_case_erasures_before_normalized_alignment(monkey
 
     def stop_after_first(value, *_args, **_kwargs):
         searched.append(value)
-        return (), False, None, False
+        return (), False, None
 
     monkeypatch.setattr("codex32._cli_input._correction_candidates", stop_after_first)
 
@@ -1983,12 +1982,12 @@ def test_correct_accounts_retry_frontier_after_incomplete_first_search(monkeypat
 
     def incomplete_first(value, *_args, **kwargs):
         if kwargs.get("required_only"):
-            return (), True, 0.0, False
+            return (), True, 0.0
         full_searches.append(value)
         kwargs["capture_layers"].append((1, 5))
         if len(full_searches) == 1:
-            return (candidate,), False, 0.0, False
-        return (), False, 0.0, False
+            return (candidate,), False, 0.0
+        return (), False, 0.0
 
     monkeypatch.setattr("codex32._cli_input._correction_candidates", incomplete_first)
 
@@ -2022,7 +2021,6 @@ def test_wallet_commands_initialize_selected_master_seed_destinations() -> None:
     assert xprv.stderr.endswith("Keep it secret.\n\n")
     assert private.stdout == ""
     assert private_core.imported == parse_codex32(VECTOR_1["secret_s"])
-    assert private_core.private is True
     assert "Warning: This gives Bitcoin Core the master private key, which can spend funds." in private.stderr
     assert "Use only the intended encrypted wallet" not in private.stderr
     assert "\x1b[" not in private.stderr + private.stdout
@@ -2900,7 +2898,7 @@ def test_incomplete_candidate_has_no_search_warning_and_is_never_accepted_automa
     candidate = _correct_fixed(source, suspected_profile=Profile.MS)
     assert candidate is not None
     candidate = replace(candidate, search_complete=False)
-    with patch("codex32._cli_input._correction_candidates", return_value=((candidate,), False, 0.0, False)):
+    with patch("codex32._cli_input._correction_candidates", return_value=((candidate,), False, 0.0)):
         result = _invoke(["correct"], source[:-1] + "?")
     assert result.exit_code == 1 and result.stdout == ""
     assert "Search incomplete" not in result.stderr

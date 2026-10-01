@@ -48,7 +48,6 @@ dev = [
   "twine>=5,<7",
 ]
 
-
 [tool.setuptools.packages.find]
 where = ["src"]
 
