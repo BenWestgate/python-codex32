@@ -896,8 +896,11 @@ def _correct_complete(
     deadline = monotonic() + 10 if deadline is None else deadline
     base = f"{context.hrp}1"
     locked = context.immutable_prefix or base
-    immutable_length = len(locked) if damaged_text.lower().startswith(locked.lower()) else len(base)
-    interpretation = interpret_mixed_case(damaged_text, immutable_length)
+    # The search strips grouping spaces, so locate the immutable boundary in
+    # that same coordinate system before classifying minority-case symbols.
+    compacted = damaged_text.replace(" ", "")
+    immutable_length = len(locked) if compacted.lower().startswith(locked.lower()) else len(base)
+    interpretation = interpret_mixed_case(compacted, immutable_length)
     inputs: tuple[tuple[CorrectionContext, str], ...]
     if interpretation is None:
         inputs = ((context, damaged_text),)

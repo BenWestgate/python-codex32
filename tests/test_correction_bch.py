@@ -278,6 +278,23 @@ def test_public_correction_interprets_mixed_case_by_majority(uppercase: bool) ->
     assert result[0].artifact.text == source
 
 
+def test_grouped_mixed_case_keeps_the_recorded_header_immutable() -> None:
+    source = VECTOR_1["secret_s"].upper()
+    positions = (10, 16, 22, 28, 34)
+    damaged = "".join(
+        "p" if index in positions else character.lower() if index < 8 else character
+        for index, character in enumerate(source)
+    )
+    grouped = " ".join(damaged[index : index + 4] for index in range(0, len(damaged), 4))
+    context = CorrectionContext(Profile.MS, expected_length=len(source), immutable_prefix=source[:8].lower())
+
+    result = correct(context, grouped)
+
+    assert len(result) == 1
+    assert result[0].artifact.text == source
+    assert {edit.observed for edit in result[0].edits} == {"p"}
+
+
 def test_public_correction_does_not_casefold_non_ascii() -> None:
     source = VECTOR_1["secret_s"].upper()
     damaged = source[:10] + "ß" + source[11:]
