@@ -410,36 +410,24 @@ def _correction_plan(
     byte_length: int | Literal["?"] | None,
     count: int,
     target: int | None,
-) -> tuple[tuple[int, ...], frozenset[int], frozenset[int], bool]:
+) -> tuple[int, ...]:
     if target is not None:
-        return (
-            (target,),
-            frozenset((target,)),
-            frozenset(),
-            True,
-        )
+        return (target,)
     normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
     if normalized_hrp == Profile.CL.value:
-        return (74,), frozenset((74,)), frozenset(), True
+        return (74,)
     if isinstance(byte_length, int):
-        return (
-            ((length := _text_length(byte_length)),),
-            frozenset((length,)),
-            frozenset(),
-            True,
-        )
+        return (_text_length(byte_length),)
     if byte_length == "?":
-        return TEXT_LENGTHS, frozenset(TEXT_LENGTHS), frozenset(), True
+        return TEXT_LENGTHS
     if normalized_hrp == Profile.MS.value:
         nearest = min(_PRIMARY_MS, key=lambda length: abs(count - length))
         targets = (nearest, *(length for length in TEXT_LENGTHS if length != nearest))
-        return targets, frozenset(targets), frozenset(), True
+        return targets
     rules = _optional_profile_rules(normalized_hrp)
     if rules is not None and hasattr(rules, "text_length"):
-        targets = (rules.text_length,)
-        return targets, frozenset(targets), frozenset(), True
-    targets = tuple(sorted({count + delta for delta in (*range(-4, 5), -8, 8)}))
-    return targets, frozenset(targets), frozenset(), True
+        return (rules.text_length,)
+    return tuple(sorted({count + delta for delta in (*range(-4, 5), -8, 8)}))
 
 
 def _correction_candidates(
@@ -458,7 +446,7 @@ def _correction_candidates(
     required_only: bool = False,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
     count = len(value.replace(" ", ""))
-    targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
+    targets = _correction_plan(profile, byte_length, count, target)
     deadline = monotonic() + 10 if deadline is None else deadline
     contexts = tuple(CorrectionContext(profile, length, immutable, excluded) for length in targets)
     from codex32.indel import _search_many
@@ -466,8 +454,7 @@ def _correction_candidates(
     candidates, complete = _search_many(
         contexts,
         value,
-        primary=primary,
-        reduced=reduced,
+        primary=frozenset(targets),
         deadline=deadline,
         competitors=True,
         allowed=allowed,
