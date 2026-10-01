@@ -148,9 +148,10 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
     ) in secret_help
     share_help = _invoke(ms_main, ["share", "--help"])[1]
     assert (
-        "Derive a share at INDEX using exactly the threshold number of codex32 strings\n"
-        "from the same set. Use different input indices; one input may be the secret.\n"
-        "INDEX must differ from S and the input indices."
+        "Derive a share at each of INDICES using the threshold number of codex32\n"
+        "strings from the same set. Use different input indices; one input may be the\n"
+        "secret. An entered or repeated index makes a copy; copies need only the\n"
+        "entered cards. INDICES cannot include S."
     ) in share_help
     wallet_help = _invoke(ms_main, ["wallet", "--help"])[1]
     assert wallet_help == (
