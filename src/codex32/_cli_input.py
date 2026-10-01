@@ -805,6 +805,8 @@ def _interactive(
         if one:
             return [artifact]
         if isinstance(artifact, Secret) and not basis:
+            if accepted:
+                _stderr("Complete secret supplied; using it instead of the accepted shares.")
             return [artifact]
         if not accepted:
             required = artifact.header.threshold
