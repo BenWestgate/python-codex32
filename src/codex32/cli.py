@@ -107,11 +107,13 @@ def _secret(artifacts: list[Artifact]) -> Secret:
         raise _UsageError(str(error)) from error
 
 
-def _master_seed(fingerprint: Callable[[MasterSeed], bytes] | None = None) -> MasterSeed:
-    if isinstance(
-        value := _secret(_artifacts(profiles=(Profile.MS,), initial_prefix="MS1", fingerprint=fingerprint)),
-        MasterSeed,
-    ):
+def _master_seed(
+    fingerprint: Callable[[MasterSeed], bytes] | None = None, record: bytes | None = None
+) -> MasterSeed:
+    artifacts = _artifacts(
+        profiles=(Profile.MS,), initial_prefix="MS1", fingerprint=fingerprint, record=record
+    )
+    if isinstance(value := _secret(artifacts), MasterSeed):
         return value
     raise _UsageError("Wallet commands accept only Bitcoin master-seed secrets.")
 
@@ -231,6 +233,7 @@ def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None
 def _creation_source(
     profile: Profile,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    record: bytes | None = None,
 ) -> bytes | Artifact:
     prefill = ""
     while True:
@@ -258,13 +261,14 @@ def _creation_source(
                 [],
                 allowed=lambda item: isinstance(item.artifact, Secret) and item.artifact.profile is profile,
                 fingerprint=fingerprint,
+                record=record,
             )
             if (
                 len(candidates) == 1
                 and isinstance(candidate := candidates[0].artifact, Secret)
                 and candidate.profile is profile
             ):
-                confirmation = _confirm_correction(candidates[0], [], False, fingerprint)
+                confirmation = _confirm_correction(candidates[0], [], False, fingerprint, record)
                 if confirmation is True:
                     return candidate
                 if confirmation is False:
@@ -363,26 +367,28 @@ def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
     return _text("Restore without a wallet record? [y/N]", optional=True).lower() in ("y", "yes")
 
 
-def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed) -> bytes | None:
-    # Take the master fingerprint from a recovery record until the library accepts it.
-    prompt = "Type the master fingerprint from your wallet record (Enter if none)"
-    while True:
-        text = _text(prompt, optional=True)
-        if not text:
-            if _without_record(core, secret):
-                return None
-            raise _WalletSetupInterrupted
+def _record() -> bytes | None:
+    # Asked before the cards, so corrections can be checked without showing the fingerprint.
+    while text := _text("Type the master fingerprint from your wallet record (Enter if none)", optional=True):
         try:
-            expected = parse_fingerprint(text)
+            return parse_fingerprint(text)
         except ValueError as error:
             _print(str(error), err=True)
-            continue
+    return None
+
+
+def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed, expected: bytes | None) -> bytes | None:
+    # Re-ask for the record until the library accepts it, or the operator has none.
+    while expected is not None:
         try:
             core.verify_identity(secret, expected)
+            return expected
         except FingerprintMismatch as error:
             _print(str(error), err=True)
-            continue
-        return expected
+            expected = _record()
+    if _without_record(core, secret):
+        return None
+    raise _WalletSetupInterrupted
 
 
 def _initialize_wallet(
@@ -402,7 +408,7 @@ def _initialize_wallet(
         if confirmed:
             _print("Master-seed backup confirmed.\n", err=True)
         if restore and not identity_checked:
-            expected_fingerprint = _recorded_fingerprint(core, secret)
+            expected_fingerprint = _recorded_fingerprint(core, secret, expected_fingerprint)
         if not restore:
             _show_fingerprint(core, secret, "Write it on the wallet record")
         name = core.initialize(
@@ -486,7 +492,11 @@ def _create(
         else:
             raise _UsageError("For thresholds 4 through 9, choose --shares or --indices.")
     core = _connected_core()
-    source = _creation_source(profile) if existing else None
+    try:
+        record = _record() if existing else None
+    except KeyboardInterrupt as error:
+        raise _WalletSetupInterrupted from error
+    source = _creation_source(profile, core.fingerprint if record else None, record) if existing else None
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
     try:
@@ -502,7 +512,9 @@ def _create(
             if threshold and identifier is None:
                 identifier = existing_secret.header.identifier
         try:
-            expected = _recorded_fingerprint(core, existing_secret) if existing_secret is not None else None
+            expected = (
+                _recorded_fingerprint(core, existing_secret, record) if existing_secret is not None else None
+            )
         except (EOFError, KeyboardInterrupt) as error:
             raise _WalletSetupInterrupted from error
 
@@ -668,7 +680,8 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
     core = _connected_core()
     # Keep the recovered fingerprint hidden until the operator has supplied
     # independent wallet-record evidence or explicitly chosen recordless restore.
-    secret = _master_seed()
+    record = _record()
+    secret = _master_seed(core.fingerprint if record else None, record)
     return _initialize_wallet(
         core,
         secret,
@@ -677,6 +690,7 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
         fresh=False,
         restore=True,
         confirmed=False,
+        expected_fingerprint=record,
     )
 
 

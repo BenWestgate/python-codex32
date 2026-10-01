@@ -200,28 +200,36 @@ def _card_text(text: str, highlight: bool = True, observed: str = "") -> str:
     return rendered if changed else rendered.replace("\x1b[0m ", " ")
 
 
+def _completed(artifact: Artifact, accepted: Sequence[Artifact]) -> Artifact:
+    # Provisional recovery is exclusively for fingerprint previews and record checks.
+    if (
+        isinstance(artifact, Share)
+        and artifact.profile is Profile.MS
+        and len(accepted) + 1 == artifact.header.threshold
+    ):
+        return recover_secret(cast(list[Share], [*accepted, artifact]))
+    return artifact
+
+
 def _confirm_correction(
     candidate: CorrectionCandidate,
     accepted: list[Artifact],
     basis: bool,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    record: bytes | None = None,
 ) -> bool | None:
     _require_correction_confirmation(candidate.low_checksum_discrimination)
     artifact = candidate.artifact
-    # Provisional recovery is exclusively for this fingerprint preview.
-    preview = artifact
     try:
-        if (
-            isinstance(artifact, Share)
-            and artifact.profile is Profile.MS
-            and not basis
-            and (len(accepted) + 1 == artifact.header.threshold)
-        ):
-            preview = recover_secret(cast(list[Share], [*accepted, artifact]))
+        preview = artifact if basis else _completed(artifact, accepted)
+        # A typed wallet record is checked without showing the recovered value.
         fingerprint_text = (
-            f"Master fingerprint: {fingerprint(preview).hex().upper()}\n\n"
-            if isinstance(preview, MasterSeed) and fingerprint is not None
-            else ""
+            ""
+            if not isinstance(preview, MasterSeed) or fingerprint is None
+            else f"Master fingerprint: {fingerprint(preview).hex().upper()}\n\n"
+            if record is None
+            else f"Master fingerprint {'matches' if fingerprint(preview) == record else 'does not match'} "
+            "your wallet record.\n\n"
         )
     except CodexError:
         _stderr("Rejected: Could not recover a valid Bitcoin master seed using this correction.")
@@ -537,6 +545,8 @@ def _scheduled_candidates(
 
 def _fingerprint_matcher(
     fingerprint: Callable[[MasterSeed], bytes] | None,
+    record: bytes | None = None,
+    accepted: Sequence[Artifact] = (),
 ) -> Callable[[CorrectionCandidate], bool | None] | None:
     if fingerprint is None:
         return None
@@ -544,9 +554,13 @@ def _fingerprint_matcher(
 
     def matches(candidate: CorrectionCandidate) -> bool | None:
         artifact = candidate.artifact
-        if not isinstance(artifact, MasterSeed) or artifact.header.threshold:
-            return None
         try:
+            if record is not None:
+                # Prefer corrections whose secret, or completed share set, matches the record.
+                seed = _completed(artifact, accepted)
+                return fingerprint(seed) == record if isinstance(seed, MasterSeed) else None
+            if not isinstance(artifact, MasterSeed) or artifact.header.threshold:
+                return None
             return _fingerprint_identifier(fingerprint(artifact)) == artifact.header.identifier
         except CodexError:
             return None
@@ -562,8 +576,9 @@ def _suggestions(
     *,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    record: bytes | None = None,
 ) -> tuple[CorrectionCandidate, ...]:
-    fingerprint_match = _fingerprint_matcher(fingerprint)
+    fingerprint_match = _fingerprint_matcher(fingerprint, record, accepted)
     erased = value
     if interpretation := _case_interpretation(value, prefix, profiles, allowed):
         candidate, value, erased, prefix = interpretation
@@ -726,6 +741,7 @@ def _interactive(
     profiles: tuple[Profile, ...] | None,
     initial_prefix: str,
     fingerprint: Callable[[MasterSeed], bytes] | None,
+    record: bytes | None,
 ) -> list[Artifact]:
     accepted: list[Artifact] = []
     prefix = initial_prefix
@@ -770,10 +786,11 @@ def _interactive(
                     accepted,
                     allowed=allowed,
                     fingerprint=fingerprint,
+                    record=record,
                 )
             )
             confirmation = (
-                _confirm_correction(candidates[0], accepted, basis, fingerprint)
+                _confirm_correction(candidates[0], accepted, basis, fingerprint, record)
                 if len(candidates) == 1
                 else None
             )
@@ -824,6 +841,7 @@ def read_artifacts(
     profiles: tuple[Profile, ...] | None = None,
     initial_prefix: str = "",
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    record: bytes | None = None,
 ) -> list[Artifact]:
     if not sys.stdin.isatty():
         return _redirected(
@@ -840,6 +858,7 @@ def read_artifacts(
         profiles=profiles,
         initial_prefix=initial_prefix,
         fingerprint=fingerprint,
+        record=record,
     )
     _stderr("")
     return result

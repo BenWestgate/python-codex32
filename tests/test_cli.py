@@ -129,13 +129,17 @@ def _offline_core(monkeypatch):
 
 
 _RECORDED_FINGERPRINT = importlib.import_module("codex32.cli")._recorded_fingerprint
+_RECORD = importlib.import_module("codex32.cli")._record
 _SHOW_FINGERPRINT = importlib.import_module("codex32.cli")._show_fingerprint
 
 
 @pytest.fixture(autouse=True)
 def _matching_record(monkeypatch):
     """Keep unrelated CLI tests independent of wallet-record interaction."""
-    monkeypatch.setattr("codex32.cli._recorded_fingerprint", lambda core, secret: core.fingerprint(secret))
+    monkeypatch.setattr("codex32.cli._record", lambda: None)
+    monkeypatch.setattr(
+        "codex32.cli._recorded_fingerprint", lambda core, secret, _expected: core.fingerprint(secret)
+    )
     monkeypatch.setattr("codex32.cli._show_fingerprint", lambda _core, _secret, _action: None)
 
 
@@ -2114,7 +2118,7 @@ def test_wallet_private_warning_precedes_recovery_input(
 ) -> None:
     cli_module = importlib.import_module("codex32.cli")
 
-    def stop_before_input(_fingerprint=None) -> MasterSeed:
+    def stop_before_input(_fingerprint=None, _record=None) -> MasterSeed:
         assert (
             "Warning: This gives Bitcoin Core the master private key, which can spend funds."
             in capsys.readouterr().err
@@ -2564,6 +2568,45 @@ def test_final_share_preview_is_isolated_and_basis_has_no_preview(monkeypatch, c
     assert "Master fingerprint" not in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("matches", (True, False))
+def test_record_preview_and_ranking_never_show_the_fingerprint(monkeypatch, capsys, matches):
+    module = importlib.import_module("codex32._cli_input")
+    fingerprint = _FakeBitcoinCore().fingerprint
+    first = parse_codex32(VECTOR_2["share_A"])
+    candidate = CorrectionCandidate(
+        parse_codex32(VECTOR_2["share_C"]), (), 1, 0, 0, None, capture_space_bits=65
+    )
+    right = bytes.fromhex("FAB6868A")
+    record = right if matches else bytes([right[0] ^ 1]) + right[1:]
+    monkeypatch.setattr(module.sys, "stdin", _TTYInput())
+    monkeypatch.setattr(module, "_editable_input", lambda prompt: "n")
+
+    assert not module._confirm_correction(candidate, [first], False, fingerprint, record)
+    shown = capsys.readouterr().err
+    verdict = "matches" if matches else "does not match"
+    assert f"Master fingerprint {verdict} your wallet record.\n\n" in shown
+    assert "FAB6868A" not in shown.upper()
+    matcher = module._fingerprint_matcher(fingerprint, record, [first])
+    assert matcher(candidate) is matches
+    assert module._fingerprint_matcher(fingerprint, record, [])(candidate) is None
+
+
+def test_wallet_checks_a_corrected_final_share_against_the_typed_record(monkeypatch) -> None:
+    cli = importlib.import_module("codex32.cli")
+    monkeypatch.setattr(cli, "_record", _RECORD)
+    monkeypatch.setattr(cli, "_recorded_fingerprint", _RECORDED_FINGERPRINT)
+    share_c = VECTOR_2["share_C"]
+    damaged = share_c[:20] + ("q" if share_c[20] != "q" else "p") + share_c[21:]
+
+    result, core = _invoke_initialized_wallet(["wallet"], "fab6868a", VECTOR_2["share_A"], damaged, "y")
+
+    assert result.exit_code == 0
+    preview = result.stderr.split("Possible correction:", 1)[1].split("Bitcoin Core spending wallet", 1)[0]
+    assert "Master fingerprint matches your wallet record." in preview
+    assert "FAB6868A" not in preview.upper()
+    assert core.expected == bytes.fromhex("FAB6868A")
+
+
 def test_failed_fingerprint_never_offers_confirmation(monkeypatch, capsys):
     module = importlib.import_module("codex32._cli_input")
     from codex32.errors import CodexError
@@ -2945,10 +2988,11 @@ def test_restore_record_prompt_retries_until_the_library_accepts(
     assert isinstance(secret, MasterSeed)
     right = core.fingerprint(secret)
     wrong = bytes([right[0] ^ 1]) + right[1:]
-    prompts = _record_answers(monkeypatch, "not hex", wrong.hex(), right.hex().upper())
+    monkeypatch.setattr(importlib.import_module("codex32.cli"), "_record", _RECORD)
+    prompts = _record_answers(monkeypatch, "not hex", right.hex().upper())
 
-    assert _RECORDED_FINGERPRINT(core, secret) == right
-    assert prompts == ["Type the master fingerprint from your wallet record (Enter if none)"] * 3
+    assert _RECORDED_FINGERPRINT(core, secret, wrong) == right
+    assert prompts == ["Type the master fingerprint from your wallet record (Enter if none)"] * 2
     errors = capsys.readouterr().err
     assert "8 characters" in errors and "does not match" in errors
     assert right.hex() not in errors.lower()
@@ -2961,38 +3005,50 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     assert isinstance(secret, MasterSeed)
     fingerprint = core.fingerprint(secret)
 
-    prompts = _record_answers(monkeypatch, "", "n")
+    prompts = _record_answers(monkeypatch, "n")
     interrupted = importlib.import_module("codex32.cli")._WalletSetupInterrupted
     with pytest.raises(interrupted):
-        _RECORDED_FINGERPRINT(core, secret)
-    assert prompts[1] == "Restore without a wallet record? [y/N]"
+        _RECORDED_FINGERPRINT(core, secret, None)
+    assert prompts == ["Restore without a wallet record? [y/N]"]
     shown = capsys.readouterr().err
     assert shown.count(f"Master fingerprint: {fingerprint.hex().upper()}") == 1
     assert "was not made from this seed" in shown and "nothing can prove" in shown
 
-    prompts = _record_answers(monkeypatch, "", "y")
-    assert _RECORDED_FINGERPRINT(core, secret) is None
-    assert prompts[1] == "Restore without a wallet record? [y/N]"
+    prompts = _record_answers(monkeypatch, "y")
+    assert _RECORDED_FINGERPRINT(core, secret, None) is None
+    assert prompts == ["Restore without a wallet record? [y/N]"]
 
     derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
-    _record_answers(monkeypatch, "", "yes")
-    assert _RECORDED_FINGERPRINT(core, derived) is None
+    _record_answers(monkeypatch, "yes")
+    assert _RECORDED_FINGERPRINT(core, derived, None) is None
     assert "matches this seed (codex32 rule)" in capsys.readouterr().err
 
 
-def test_wallet_restore_hides_fingerprint_until_the_record_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("typed", (False, True))
+def test_wallet_restore_asks_for_the_record_before_the_shares(
+    monkeypatch: pytest.MonkeyPatch, typed: bool
+) -> None:
     cli = importlib.import_module("codex32.cli")
     core, secret = _FakeBitcoinCore(), parse_codex32(VECTOR_1["secret_s"])
     assert isinstance(secret, MasterSeed)
+    record = core.fingerprint(secret) if typed else None
     seen: list[object] = []
+
+    def master_seed(fingerprint=None, recorded=None):
+        seen.append((fingerprint, recorded))
+        return secret
 
     monkeypatch.setattr(cli.sys, "stdin", _TTYInput())
     monkeypatch.setattr(cli, "_connected_core", lambda: core)
-    monkeypatch.setattr(cli, "_master_seed", lambda fingerprint=None: seen.append(fingerprint) or secret)
-    monkeypatch.setattr(cli, "_initialize_wallet", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(cli, "_record", lambda: seen.append("record") or record)
+    monkeypatch.setattr(cli, "_master_seed", master_seed)
+    monkeypatch.setattr(
+        cli, "_initialize_wallet", lambda *_args, **kwargs: seen.append(kwargs["expected_fingerprint"])
+    )
 
-    assert cli._bitcoin_core(0, "now") == 0
-    assert seen == [None]
+    cli._bitcoin_core(0, "now")
+    # Without a record the recovered fingerprint stays hidden until the recordless gate.
+    assert seen == ["record", (core.fingerprint if typed else None, record), record]
 
 
 def test_create_only_requires_acknowledging_that_the_fingerprint_was_recorded(
@@ -3034,11 +3090,11 @@ def test_create_existing_checks_the_record_before_import(monkeypatch: pytest.Mon
     source_fingerprints = []
     emitted_fingerprints = []
 
-    def source(_profile, fingerprint=None):
+    def source(_profile, fingerprint=None, _record=None):
         source_fingerprints.append(fingerprint)
         return secret
 
-    def record(_core, recovered):
+    def record(_core, recovered, _expected):
         assert core.imported is None
         checked.append(recovered.seed_bytes)
         return core.fingerprint(recovered)
@@ -3074,12 +3130,14 @@ def test_create_existing_checks_record_before_card_output(
     assert isinstance(secret, MasterSeed)
     core = _FakeBitcoinCore()
     source = secret.seed_bytes.hex() if encoding == "hex" else secret.text
-    answers = iter((source, core.fingerprint(secret).hex().upper()))
+    answers = iter((core.fingerprint(secret).hex().upper(), source))
     events: list[str] = []
 
-    def check_record(selected: _FakeBitcoinCore, supplied: MasterSeed) -> bytes | None:
+    def check_record(
+        selected: _FakeBitcoinCore, supplied: MasterSeed, expected: bytes | None
+    ) -> bytes | None:
         assert events == []
-        checked = _RECORDED_FINGERPRINT(selected, supplied)
+        checked = _RECORDED_FINGERPRINT(selected, supplied, expected)
         events.append("record")
         return checked
 
@@ -3093,6 +3151,7 @@ def test_create_existing_checks_record_before_card_output(
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(sys, "stdout", _TTYOutput())
     monkeypatch.setattr(cli, "_text", lambda _prompt, **_options: next(answers))
+    monkeypatch.setattr(cli, "_record", _RECORD)
     monkeypatch.setattr(cli, "_recorded_fingerprint", check_record)
     monkeypatch.setattr(cli, "_emit", lambda *_args, **_kwargs: events.append("card"))
     monkeypatch.setattr(cli, "_confirm_card", confirm_card)
@@ -3116,11 +3175,12 @@ def test_create_existing_rejects_wrong_record_before_sharing(
     source = secret.seed_bytes.hex() if encoding == "hex" else secret.text
     right = core.fingerprint(secret)
     wrong = bytes([right[0] ^ 1]) + right[1:]
-    answers = iter((source, wrong.hex(), "", "n"))
+    answers = iter((wrong.hex(), source, "", "n"))
 
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(sys, "stdout", _TTYOutput())
     monkeypatch.setattr(cli, "_text", lambda _prompt, **_options: next(answers))
+    monkeypatch.setattr(cli, "_record", _RECORD)
     monkeypatch.setattr(cli, "_recorded_fingerprint", _RECORDED_FINGERPRINT)
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
     with (
@@ -3147,7 +3207,7 @@ def test_create_existing_record_gate_interruption_keeps_existing_backup_valid(
 
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(sys, "stdout", _TTYOutput())
-    monkeypatch.setattr(cli, "_creation_source", lambda _profile: secret)
+    monkeypatch.setattr(cli, "_creation_source", lambda *_args: secret)
     monkeypatch.setattr(cli, "_recorded_fingerprint", interrupt_record)
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
     with (
@@ -3164,6 +3224,21 @@ def test_create_existing_record_gate_interruption_keeps_existing_backup_valid(
     assert core.imported is None
 
 
+def test_create_existing_interrupt_at_the_record_keeps_existing_backup_valid(monkeypatch, capsys) -> None:
+    cli = importlib.import_module("codex32.cli")
+
+    def interrupt(*_args: object, **_kwargs: object) -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput())
+    monkeypatch.setattr(cli, "_text", interrupt)
+    monkeypatch.setattr(cli, "_record", _RECORD)
+    assert ms_main(["create", "2", "--indices", "ac", "--existing"]) == 130
+    message = capsys.readouterr().err
+    assert "recovery cards are valid" in message and "Mark every card" not in message
+
+
 def test_create_existing_recordless_choice_precedes_sharing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -3171,7 +3246,7 @@ def test_create_existing_recordless_choice_precedes_sharing(
     secret = parse_codex32(VECTOR_1["secret_s"])
     assert isinstance(secret, MasterSeed)
     core = _FakeBitcoinCore()
-    answers = iter((secret.seed_bytes.hex(), "", "y"))
+    answers = iter(("", secret.seed_bytes.hex(), "y"))
     events: list[str] = []
     emitted: list[Share | Secret] = []
 
@@ -3190,6 +3265,7 @@ def test_create_existing_recordless_choice_precedes_sharing(
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(sys, "stdout", _TTYOutput())
     monkeypatch.setattr(cli, "_text", answer)
+    monkeypatch.setattr(cli, "_record", _RECORD)
     monkeypatch.setattr(cli, "_recorded_fingerprint", _RECORDED_FINGERPRINT)
     monkeypatch.setattr(cli, "_emit", emit)
     monkeypatch.setattr(cli, "_confirm_card", confirm_card)
