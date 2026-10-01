@@ -32,7 +32,7 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
-from codex32._bitcoin_core import BitcoinCore
+from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
 from codex32.bech32 import _chars_to_u5, bech32_encode
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
@@ -285,6 +285,39 @@ def test_check_accepts_shared_core_lightning_artifacts(value: str) -> None:
     assert result.exit_code == 0
     assert "Core Lightning HSM" in result.stdout
     assert result.stderr == ""
+
+
+def _missing_core(*_args: object, **_kwargs: object) -> BitcoinCore:
+    raise BitcoinCoreError("bitcoin-cli was not found.")
+
+
+@pytest.mark.parametrize("command", ("secret", "share", "correct"))
+def test_missing_core_names_the_codex32_fallback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    def search(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("searched before connecting to Bitcoin Core")
+
+    monkeypatch.setattr("codex32.cli.BitcoinCore.connect", _missing_core)
+    monkeypatch.setattr("codex32.cli._scheduled_candidates", search)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(VECTOR_1["secret_s"].replace("x", "q", 1) + "\n"))
+
+    assert ms_main([command, "d"] if command == "share" else [command]) == (3 if command == "correct" else 1)
+    assert capsys.readouterr().err == (
+        f"ms32 {command}: bitcoin-cli was not found.\nThis command uses Bitcoin Core to show the master "
+        f"fingerprint and rank corrections. 'codex32 {command}' works without Core but doesn't show the "
+        "fingerprint.\n"
+    )
+
+
+def test_missing_core_for_wallet_setup_offers_no_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli = importlib.import_module("codex32.cli")
+    monkeypatch.setattr("codex32.cli.BitcoinCore.connect", _missing_core)
+
+    with pytest.raises(cli._CommandError) as failure:
+        cli._connected_core()
+
+    assert str(failure.value) == "bitcoin-cli was not found.\nThis command gives Bitcoin Core the master key."
 
 
 def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> None:

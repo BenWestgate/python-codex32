@@ -102,7 +102,10 @@ class BitcoinCore:
     ) -> BitcoinCore:
         executable = shutil.which("bitcoin-cli")
         if executable is None:
-            raise BitcoinCoreError("Install a reviewed bitcoin-cli before creating a backup.")
+            raise BitcoinCoreError(
+                "bitcoin-cli was not found. Install a reviewed Bitcoin Core 32 or newer and run it with RPC "
+                "enabled. An unsynced regtest or signet node is enough for practice."
+            )
         choices: list[BitcoinCore] = []
         for chain, _label in _CHAINS:
             client = cls(executable, chain, 0)
@@ -119,7 +122,7 @@ class BitcoinCore:
                 choices.append(cls(executable, chain, version))
         if not choices:
             raise BitcoinCoreError(
-                "No local Bitcoin Core RPC server found.\nStart Bitcoin Core "
+                "No local Bitcoin Core 32 or newer RPC server found.\nStart Bitcoin Core "
                 "with local RPC enabled.\nFor signet practice: bitcoin-qt -signet -server"
             )
         if len(choices) > 1:
