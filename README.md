@@ -1,3 +1,5 @@
+![python-codex32: Create, repair, and recover bitcoin backups](https://raw.githubusercontent.com/BenWestgate/python-codex32/master/docs/images/python-codex32-banner.jpg)
+
 # python-codex32
 
 [codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki) is a
