@@ -4,6 +4,7 @@ import builtins
 import contextlib
 import importlib
 import io
+import json
 import re
 import subprocess
 import sys
@@ -121,6 +122,9 @@ class _FakeBitcoinCore:
         self.imported = secret
         self.account, self.timestamp = account, timestamp
         return "test-wallet"
+
+
+_REAL_CONNECT = BitcoinCore.connect
 
 
 @pytest.fixture(autouse=True)
@@ -318,6 +322,30 @@ def test_missing_core_for_wallet_setup_offers_no_fallback(monkeypatch: pytest.Mo
         cli._connected_core()
 
     assert str(failure.value) == "bitcoin-cli was not found.\nThis command gives Bitcoin Core the master key."
+
+
+def test_piped_input_never_answers_the_core_network_choice(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def run(command: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
+        chain = command[1].removeprefix("-chain=")
+        if chain not in ("main", "signet"):
+            return subprocess.CompletedProcess(command, 1, "", "")
+        response = {"version": 320000} if command[-1] == "getnetworkinfo" else {"chain": chain}
+        return subprocess.CompletedProcess(command, 0, json.dumps(response), "")
+
+    damaged = VECTOR_1["secret_s"].replace("x", "q", 1)
+    reads = iter((damaged,))  # A second read would be the pipe's EOF answering the network prompt.
+    monkeypatch.setattr("codex32._bitcoin_core.shutil.which", lambda _name: "/reviewed/bitcoin-cli")
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(BitcoinCore, "connect", _REAL_CONNECT)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(damaged))
+    monkeypatch.setattr("codex32._cli_input._stdin", lambda: next(reads))
+
+    assert ms_main(["correct"]) == 3
+    assert capsys.readouterr().err.startswith(
+        "ms32 correct: More than one local Bitcoin Core network is running.\nThis command uses Bitcoin Core"
+    )
 
 
 def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> None:
