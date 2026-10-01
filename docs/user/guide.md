@@ -266,6 +266,30 @@ follow Bitcoin Core v32's maintained
   confirmed.” `--plain` skips card confirmation. Redirected damaged input can
   still require an interactive correction confirmation.
 
+### What `correct` can repair
+
+`correct` repairs one string at a time. Type each unreadable character as `?`.
+It can fix:
+
+- up to 8 unreadable characters, up to 4 wrong ones, or a mix in which each
+  wrong character counts as two unreadable ones;
+- 13 unreadable characters in a row, or 15 in a 127-character string;
+- up to 4 missing characters, up to 4 extra ones, or one of each;
+- one or two swaps of neighboring characters, or one swap of distant ones;
+- one missing, extra or swapped character along with up to 3 wrong ones;
+- one or two whole four-character groups missing, extra or swapped, or one
+  group with every character wrong.
+
+It can't fix 9 or more scattered unreadable characters, 5 or more missing
+characters, more than 13 unreadable characters in a row, or two groups that are
+both wrong. Some repairs take the full ten seconds, and past this list the
+search rarely succeeds. If whole groups are missing from a 74-character string,
+add `--bytes 32`.
+
+Filling exactly 13 unreadable characters always produces a valid string, but if
+any other character was mistyped, that string is wrong. This is why `correct`
+asks you to type `YES` before showing it.
+
 ### Advanced: completing missing trailing characters
 
 The correction command can fill trailing erasures when the final characters
