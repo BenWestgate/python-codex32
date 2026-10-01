@@ -1,3 +1,5 @@
+![python-codex32: Create, repair, and recover bitcoin backups](https://raw.githubusercontent.com/BenWestgate/python-codex32/master/docs/images/python-codex32-banner.jpg)
+
 # python-codex32
 
 Reference implementation of BIP-0093 (codex32): checksummed, SSSS-aware BIP32 seed strings.
