@@ -336,10 +336,11 @@ or 127 characters. Most are 48, which is 12 groups of four; 256-bit seeds are
 enter sets the length for the rest.
 
 **Which share indices do I get, and what is `S`?**
-`ms32 create 2` and the other thresholds write shares at random indices and
-never show `S`, the secret itself. `ms32 create` with no threshold writes one
-unshared secret card, and `ms32 secret` rebuilds the secret from shares. Each
-run without `--existing` makes a new seed and identifier.
+`ms32 create 2` chooses random share indices by default; use `--indices` to
+choose specific ones. Shared creation never shows `S`, the secret itself.
+`ms32 create` with no threshold writes one unshared secret card, and
+`ms32 secret` rebuilds the secret from shares. Each run without `--existing`
+makes a new seed; its identifier is random unless you specify one.
 
 **Does letter case matter?**
 A codex32 string is all uppercase or all lowercase, and mixing them makes it
