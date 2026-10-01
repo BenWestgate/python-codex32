@@ -426,8 +426,6 @@ def _create(
         raise _UsageError("--bytes applies only to a new random seed.")
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise _UsageError("Bitcoin backup creation requires an interactive terminal.")
-    if threshold and not sys.stdin.isatty():
-        raise _UsageError("Shared creation requires an interactive terminal.")
     if threshold and shares is None and indices is None:
         if threshold in (2, 3):
             shares = {2: 3, 3: 5}[threshold]
@@ -572,15 +570,11 @@ def _correct(
         candidate = None
     if candidate is not None:
         candidates: tuple[CorrectionCandidate, ...] = (candidate,)
-        complete, ambiguous = True, False
+        complete = True
     else:
-        candidates, complete, ambiguous = _scheduled_candidates(
-            search_value, erased, hrp, byte_length, immutable
-        )
+        candidates, complete = _scheduled_candidates(search_value, erased, hrp, byte_length, immutable)
     if not complete and not candidates:
         raise _CommandError("The correction search did not complete within ten seconds.")
-    if ambiguous:
-        raise _CommandError("More than one correction is possible; none was selected.")
     if not candidates:
         raise _CommandError("No valid correction found. Check the original backup.")
     if context.master_seed and len(candidates) > 1:

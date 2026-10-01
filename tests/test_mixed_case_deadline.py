@@ -31,13 +31,13 @@ def test_embedded_mixed_case_recovers_either_sole_interpretation_within_deadline
     assert direct is None
     immutable = normalized[: normalized.rfind("1") + 1]
     for value, fixes in ((erased, erasure_fixes), (normalized, normalized_fixes)):
-        alone, alone_complete, _deadline, _ambiguous = _correction_candidates(
+        alone, alone_complete, _deadline = _correction_candidates(
             value, Profile.MS, None, immutable, deadline=monotonic() + 10, required_only=True
         )
         assert alone_complete
         assert [candidate.artifact.text for candidate in alone] == ([SOURCE] if fixes else [])
 
-    candidates, complete, _ambiguous = _scheduled_candidates(
+    candidates, complete = _scheduled_candidates(
         normalized,
         erased,
         Profile.MS,
@@ -58,22 +58,22 @@ def test_scheduled_truncation_survives_a_complete_later_pass(monkeypatch: pytest
     assert interpretation is not None
     _direct, normalized, erased, _prefix = interpretation
     immutable = normalized[: normalized.rfind("1") + 1]
-    found, _complete, _deadline, _ambiguous = _correction_candidates(
+    found, _complete, _deadline = _correction_candidates(
         erased, Profile.MS, None, immutable, deadline=monotonic() + 10, required_only=True
     )
     full_searches: list[str] = []
 
-    def truncated_first(value: str, *_args: object, **kwargs: object) -> tuple[object, bool, float, bool]:
+    def truncated_first(value: str, *_args: object, **kwargs: object) -> tuple[object, bool, float]:
         if kwargs.get("required_only"):
-            return (), True, 0.0, False
+            return (), True, 0.0
         full_searches.append(value)
         if len(full_searches) == 1:
-            return (replace(found[0], search_complete=False),), False, 0.0, False
-        return (), True, 0.0, False
+            return (replace(found[0], search_complete=False),), False, 0.0
+        return (), True, 0.0
 
     monkeypatch.setattr("codex32._cli_input._correction_candidates", truncated_first)
 
-    candidates, complete, _ambiguous = _scheduled_candidates(normalized, erased, Profile.MS, None, immutable)
+    candidates, complete = _scheduled_candidates(normalized, erased, Profile.MS, None, immutable)
 
     assert full_searches == [erased, normalized]
     assert not complete
