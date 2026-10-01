@@ -606,16 +606,13 @@ def _search_many(
     if competitors:
         from codex32._competitors import _search_competitors
 
-        result = (
-            _search_competitors(
-                states,
-                frontier,
-                deadline,
-                allowed,
-                seed_candidates=seed_candidates,
-            )
-            if seed_candidates
-            else _search_competitors(states, frontier, deadline, allowed)
+        result = _search_competitors(
+            states,
+            frontier,
+            deadline,
+            allowed,
+            seed_candidates=seed_candidates,
+            optional_only=optional_only,
         )
         return finish(*result)
     results = {candidate.artifact.text.lower(): candidate for candidate in seed_candidates}

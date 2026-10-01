@@ -456,6 +456,7 @@ def _correction_candidates(
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
     seed_candidates: Sequence[CorrectionCandidate] = (),
     required_only: bool = False,
+    optional_only: bool = False,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
     count = len(value.replace(" ", ""))
     targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
@@ -474,6 +475,7 @@ def _correction_candidates(
         capture_layers=capture_layers,
         seed_candidates=seed_candidates,
         required_only=required_only,
+        optional_only=optional_only,
     )
     if allowed is not None:
         candidates = tuple(candidate for candidate in candidates if allowed(candidate))
@@ -525,13 +527,12 @@ def _scheduled_candidates(
             if not complete:
                 return (), False
     capture_layers: list[tuple[int, int]] = []
-    candidates, complete, deadline = search(
-        first, deadline=deadline, capture_layers=capture_layers, seed_candidates=seeded
-    )
+    full_search = partial(search, capture_layers=capture_layers, optional_only=retry is not None)
+    candidates, complete, deadline = full_search(first, deadline=deadline, seed_candidates=seeded)
     if retry is None:
         return candidates, complete
-    retry_candidates, retry_complete, _deadline = search(
-        retry, deadline=deadline, capture_layers=capture_layers, seed_candidates=(*seeded, *candidates)
+    retry_candidates, retry_complete, _deadline = full_search(
+        retry, deadline=deadline, seed_candidates=(*seeded, *candidates)
     )
     complete = complete and retry_complete
     annotated = []

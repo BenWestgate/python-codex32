@@ -66,6 +66,7 @@ def test_scheduled_truncation_survives_a_complete_later_pass(monkeypatch: pytest
     def truncated_first(value: str, *_args: object, **kwargs: object) -> tuple[object, bool, float]:
         if kwargs.get("required_only"):
             return (), True, 0.0
+        assert kwargs.get("optional_only") is True
         full_searches.append(value)
         if len(full_searches) == 1:
             return (replace(found[0], search_complete=False),), False, 0.0
