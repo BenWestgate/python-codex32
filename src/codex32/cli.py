@@ -442,12 +442,14 @@ def _initialize_wallet(
 
 
 def _connected_core(fallback: str | None = None) -> BitcoinCore:
+    # A pipe can't choose a network, and redirected stderr keeps only the gate's error.
     try:
         core = BitcoinCore.connect(
-            lambda prompt: _text(prompt, optional=True),
-            lambda message: _print(message, err=True),
+            (lambda prompt: _text(prompt, optional=True)) if sys.stdin.isatty() else None,
+            (lambda message: _print(message, err=True)) if sys.stderr.isatty() else None,
         )
-        _print("", err=True)
+        if sys.stderr.isatty():
+            _print("", err=True)
         return core
     except KeyboardInterrupt as error:
         raise _CoreSelectionInterrupted from error
