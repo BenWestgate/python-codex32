@@ -60,7 +60,9 @@ def test_scheduler_annotates_from_admission_even_when_no_work_finished(monkeypat
         (48, indel._StructuralClass(0, 0, adjacent=2), 0, 0): rank + 1,
     }
     monkeypatch.setattr(indel, "_frontier", lambda *args: frontier)
-    monkeypatch.setattr("codex32._competitors._search_competitors", lambda *args: ((candidate,), complete))
+    monkeypatch.setattr(
+        "codex32._competitors._search_competitors", lambda *args, **kwargs: ((candidate,), complete)
+    )
     result, finished = indel._search_many(
         (CorrectionContext("ms", 48),),
         source,
@@ -309,7 +311,9 @@ def test_residue_exactly_five_bits_is_not_gated_even_with_zero_addends(residue):
 def test_previous_case_interpretation_search_is_charged_even_without_a_candidate(monkeypatch):
     candidate = replace(_candidate(), capture_volume=(1 << 60) + 1)
     monkeypatch.setattr(indel, "_frontier", lambda *args: {(48, indel._FIXED, 0, 0): 1})
-    monkeypatch.setattr("codex32._competitors._search_competitors", lambda *args: ((candidate,), True))
+    monkeypatch.setattr(
+        "codex32._competitors._search_competitors", lambda *args, **kwargs: ((candidate,), True)
+    )
     previous = [(1 << 60, 65)]
     result, _ = indel._search_many(
         (CorrectionContext("ms", 48),),
