@@ -487,8 +487,6 @@ def _create(
             raise _UsageError("For thresholds 4 through 9, choose --shares or --indices.")
     core = _connected_core()
     source = _creation_source(profile) if existing else None
-    if not existing and not sys.stdin.isatty() and _text("", optional=True):
-        raise _UsageError("Use --existing when supplying a seed or secret.")
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
     try:
