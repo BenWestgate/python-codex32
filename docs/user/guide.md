@@ -122,12 +122,12 @@ easier.
 Already have a complete codex32 `ms` secret? Run `ms32 create --existing` to
 write and confirm its recovery card and initialize a Bitcoin Core wallet.
 The existing secret is preserved unchanged. To split it into three cards
-requiring any two, use `ms32 create 2 --existing` instead. Enter the secret
-only when prompted. Immediately afterward, type the master fingerprint from
-the separate wallet record; a mismatch must be resolved before any new card
-is shown. If you have no record, the explicit recordless-restore choice and
-visual fingerprint check happen at this same point. Bitcoin Core also scans
-for prior transactions.
+requiring any two, use `ms32 create 2 --existing` instead. First type the
+master fingerprint from the separate wallet record, then enter the secret
+when prompted; a mismatch must be resolved before any new card is shown. If
+you have no record, press Enter; the explicit recordless-restore choice and
+visual fingerprint check happen right after the secret. Bitcoin Core also
+scans for prior transactions.
 
 ### 3. Make a Bitcoin Core wallet
 
@@ -241,10 +241,13 @@ its public wallet data with the separate wallet record.
    If you know when the wallet was first used, an earlier Unix timestamp can
    shorten the rescan; `0` remains the safest choice when unsure.
 
-5. Type the master fingerprint from the wallet record. A mismatch stops before
-   Bitcoin Core is changed. Press Enter with nothing typed only if there is no
-   record; codex32 then shows the recovered fingerprint and what the backup
-   identifier says, and asks before restoring.
+5. Type the master fingerprint from the wallet record, then enter the cards.
+   A suggested correction says whether it matches the record without showing
+   the fingerprint, and the record picks between equally likely corrections.
+   A mismatch stops before Bitcoin Core is changed. Press Enter with nothing
+   typed only if there is no record; after the cards, codex32 then shows the
+   recovered fingerprint and what the backup identifier says, and asks before
+   restoring.
 6. Select and confirm that wallet. If it is locked, follow the displayed
    Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
    It gives Core the master private key, asks Core to create the standard

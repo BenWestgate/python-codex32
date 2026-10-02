@@ -118,6 +118,8 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
     prompts = []
 
     def respond(prompt, prefill=""):
+        if prompt.startswith("Type the master fingerprint"):
+            return ""  # create --existing asks for the wallet record first; there is none here.
         prompts.append(prompt)
         if len(prompts) == 1:
             return source[:-1] + "?"
