@@ -60,6 +60,12 @@ NO_RECORD_WARNING = (
 
 def identifier_note(origin: str | None) -> str:
     # Say what `identifier_origin` found, for an operator restoring without a record.
+    if origin == "Bails check unavailable":
+        return (
+            "The standard Bails identifier could not be checked because RIPEMD-160 is unavailable. "
+            "This does not prove the cards are wrong or mixed up. Compare the fingerprint and any "
+            "other wallet record you have before restoring."
+        )
     if origin is None:
         return (
             "The backup identifier was not made from this seed. That can be normal for codex32 backups "
@@ -77,15 +83,18 @@ def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
     identifier = secret.header.identifier
     if identifier == _fingerprint_identifier(fingerprint):
         return "codex32"
+    ripemd_unavailable = False
     for name, digest in (("Bails", "ripemd160"), ("Bails alpha", "sha256")):
         try:
             hashed = hashlib.new(digest, secret.seed_bytes).digest()
         except ValueError:
+            if name == "Bails":
+                ripemd_unavailable = True
             continue
         derived = convertbits(hashed, 8, 5, pad=True)
         if identifier[:3] == _u5_to_chars(tuple(derived[:3])):
             return name
-    return None
+    return "Bails check unavailable" if ripemd_unavailable else None
 
 
 @dataclass(frozen=True)
