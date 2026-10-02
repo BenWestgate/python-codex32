@@ -488,9 +488,11 @@ def _read_back_page(
     """Read the card back from the paper, with the original off the screen."""
     field = Codex32Entry(length=len(card.text))
     status = _note("")
+    comparison = Adw.Bin()  # Only what was typed is redrawn; the original stays hidden.
     accept = _button("Confirm card", lambda: None, style="suggested-action")
 
     def update(*_arguments: object) -> None:
+        comparison.set_child(None)
         state = field.reading()
         accept.set_sensitive(state.complete)
         # A character a card can never carry is named, never quietly deleted: this
@@ -500,20 +502,22 @@ def _read_back_page(
         _say(status, fault or counted, "error" if fault else "")
 
     def check() -> None:
+        typed = reading.normalize(field.get_text())
         try:
-            result = confirm(reading.normalize(field.get_text()))
+            result = confirm(typed)
         except CodexError as error:
             _failure(view, error, CARDS_SAFE)
             return
         if not result.accepted:
-            groups = result.mismatched_groups
-            where = f"Group {min(groups)}" if groups else "What you typed"
-            _say(status, f"{where} does not match. Check it against your card.", "error")
+            groups = frozenset(group - 1 for group in result.mismatched_groups)
+            comparison.set_child(_card(typed, groups))
+            _say(status, "The highlighted groups do not match. Re-read them from the card.", "error")
             return
         field.clear()
         after()
 
     accept.connect("clicked", lambda _button: check())
+    field.connect("activate", lambda _entry: check() if accept.get_sensitive() else None)
     field.connect("changed", update)
     content = _column(
         _title("Now type it back from the card", _counted(card.header.index.upper(), position, count)),
@@ -523,9 +527,10 @@ def _read_back_page(
         ),
         field,
         status,
+        comparison,
         _note(
-            "Spaces and capitals do not matter, and you may try as many times as you like. Correct only "
-            "the group named above; the rest stays as you typed it."
+            "Spaces and capitals do not matter, and you may try as many times as you like. Correct the "
+            "highlighted groups; the rest stays as you typed it."
         ),
     )
     page = _page(
@@ -533,7 +538,7 @@ def _read_back_page(
         content,
         actions=_actions(_button("Show the card again", view.pop), accept),
     )
-    _forget_when_gone(view, page, field.clear)
+    _forget_when_gone(view, page, field.clear)  # Clearing fires update, which drops the comparison.
     update()
     return page
 
