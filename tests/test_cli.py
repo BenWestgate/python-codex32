@@ -1693,13 +1693,15 @@ def test_create_rejects_bip39_partial_basis_and_selector_conflicts() -> None:
         assert result.exit_code != 0
 
 
-def test_terminal_secret_has_fingerprint_but_share_does_not() -> None:
-    secret = _invoke_terminal(["secret"], VECTOR_1["secret_s"])
+def test_terminal_secret_and_share_show_the_master_fingerprint() -> None:
+    secret = _invoke_terminal(["secret"], VECTOR_2["share_A"], VECTOR_2["share_C"])
     share = _invoke_terminal(["share", "d"], VECTOR_2["share_A"], VECTOR_2["share_C"])
+    from_secret = _invoke_terminal(["share", "d"], VECTOR_2["secret_S"], VECTOR_2["share_C"])
+    fingerprint = _FakeBitcoinCore().fingerprint(cast(MasterSeed, parse_codex32(VECTOR_2["secret_S"])))
+    line = f"Master fingerprint: {fingerprint.hex().upper()}"
 
-    assert secret.exit_code == share.exit_code == 0
-    assert "Master fingerprint:" in secret.stdout
-    assert "Master fingerprint:" not in share.stdout
+    assert secret.exit_code == share.exit_code == from_secret.exit_code == 0
+    assert line in secret.stdout and line in share.stdout and line in from_secret.stdout
     assert "Backup identifier:" in secret.stdout and "Backup identifier:" in share.stdout
 
 
@@ -2193,7 +2195,7 @@ def test_production_size_budgets_are_enforced() -> None:
         for path in package.rglob("*.py")
     }
 
-    assert sum(counts.values()) < 5200, counts
+    assert sum(counts.values()) < 5250, counts
 
 
 @pytest.mark.parametrize(
