@@ -15,9 +15,7 @@ class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         if message.startswith("the following arguments are required: "):
             message = (
-                "Choose an index for the additional share."
-                if message.endswith("INDEX")
-                else "Choose a command."
+                "Choose indices for the new shares." if message.endswith("INDICES") else "Choose a command."
             )
         elif message.startswith("unrecognized arguments: "):
             message = "Remove or correct these arguments: " + message.removeprefix("unrecognized arguments: ")
@@ -113,11 +111,11 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         "derive a share from codex32 strings",
     )
     share.description = (
-        "Derive a share at INDEX using exactly the threshold number of codex32 strings from the same set. "
-        "Use different input indices; one input may be the secret. "
-        "INDEX must differ from S and the input indices."
+        "Derive a share at each of INDICES using the threshold number of codex32 strings from the same set. "
+        "Use different input indices; one input may be the secret. An entered or repeated index makes a copy; "
+        "copies need only the entered cards. INDICES cannot include S."
     )
-    share.add_argument("index", metavar="INDEX", help="index for the derived share")
+    share.add_argument("index", metavar="INDICES", help="indices for the new shares, such as d or cdf")
     share.add_argument("--plain", action="store_true", help="print without formatting or card confirmation")
 
     correct = _command(commands, "correct", "suggest repairs for a damaged codex32 string")
@@ -176,7 +174,9 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         metavar="COUNT",
         help="number of shares to output (defaults: 3 for threshold 2; 5 for threshold 3)",
     )
-    create.add_argument("--indices", metavar="INDICES", help="exact share indices, in output order")
+    create.add_argument(
+        "--indices", metavar="INDICES", help="exact share indices; repeats make copies, output last"
+    )
     create.add_argument(
         "--existing",
         action="store_true",
