@@ -3062,3 +3062,144 @@ def test_create_existing_checks_the_record_before_import(monkeypatch: pytest.Mon
     assert emitted_fingerprints and all(fingerprint is None for fingerprint in emitted_fingerprints)
     assert checked == [secret.seed_bytes]
     assert core.expected == core.fingerprint(secret)
+
+
+@pytest.mark.parametrize("encoding", ("hex", "codex32"))
+@pytest.mark.parametrize("shared", (False, True))
+def test_create_existing_checks_record_before_card_output(
+    monkeypatch: pytest.MonkeyPatch, encoding: str, shared: bool
+) -> None:
+    cli = importlib.import_module("codex32.cli")
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    core = _FakeBitcoinCore()
+    source = secret.seed_bytes.hex() if encoding == "hex" else secret.text
+    answers = iter((source, core.fingerprint(secret).hex().upper()))
+    events: list[str] = []
+
+    def check_record(selected: _FakeBitcoinCore, supplied: MasterSeed) -> bytes | None:
+        assert events == []
+        checked = _RECORDED_FINGERPRINT(selected, supplied)
+        events.append("record")
+        return checked
+
+    def confirm_card(
+        artifact: Share | Secret,
+        confirm: Callable[[str], ConfirmationResult] | None = None,
+    ) -> None:
+        if confirm is not None:
+            assert confirm(artifact.text).accepted
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput())
+    monkeypatch.setattr(cli, "_text", lambda _prompt, **_options: next(answers))
+    monkeypatch.setattr(cli, "_recorded_fingerprint", check_record)
+    monkeypatch.setattr(cli, "_emit", lambda *_args, **_kwargs: events.append("card"))
+    monkeypatch.setattr(cli, "_confirm_card", confirm_card)
+    monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
+
+    args = ["create", "2", "--indices", "ac", "--existing"] if shared else ["create", "--existing"]
+    assert ms_main(args) == 0
+    assert events == (["record", "card", "card"] if shared else ["record", "card"])
+    assert core.expected == core.fingerprint(secret)
+    assert core.imported is not None and core.imported.seed_bytes == secret.seed_bytes
+
+
+@pytest.mark.parametrize("encoding", ("hex", "codex32"))
+def test_create_existing_rejects_wrong_record_before_sharing(
+    monkeypatch: pytest.MonkeyPatch, encoding: str
+) -> None:
+    cli = importlib.import_module("codex32.cli")
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    core = _FakeBitcoinCore()
+    source = secret.seed_bytes.hex() if encoding == "hex" else secret.text
+    right = core.fingerprint(secret)
+    wrong = bytes([right[0] ^ 1]) + right[1:]
+    answers = iter((source, wrong.hex(), "", "n"))
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput())
+    monkeypatch.setattr(cli, "_text", lambda _prompt, **_options: next(answers))
+    monkeypatch.setattr(cli, "_recorded_fingerprint", _RECORDED_FINGERPRINT)
+    monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
+    with (
+        patch("codex32.cli.CreationCeremony.from_secret") as split,
+        patch("codex32.cli._emit") as emit,
+    ):
+        assert ms_main(["create", "2", "--indices", "ac", "--existing"]) == 130
+    split.assert_not_called()
+    emit.assert_not_called()
+    assert core.imported is None
+
+
+def test_create_existing_record_gate_interruption_keeps_existing_backup_valid(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = importlib.import_module("codex32.cli")
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    core = _FakeBitcoinCore()
+
+    def interrupt_record(*_args: object) -> bytes | None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput())
+    monkeypatch.setattr(cli, "_creation_source", lambda _profile: secret)
+    monkeypatch.setattr(cli, "_recorded_fingerprint", interrupt_record)
+    monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
+    with (
+        patch("codex32.cli.CreationCeremony.from_secret") as split,
+        patch("codex32.cli._emit") as emit,
+    ):
+        assert ms_main(["create", "2", "--indices", "ac", "--existing"]) == 130
+
+    split.assert_not_called()
+    emit.assert_not_called()
+    message = capsys.readouterr().err
+    assert "recovery cards are valid" in message
+    assert "Mark every card" not in message
+    assert core.imported is None
+
+
+def test_create_existing_recordless_choice_precedes_sharing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cli = importlib.import_module("codex32.cli")
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    core = _FakeBitcoinCore()
+    answers = iter((secret.seed_bytes.hex(), "", "y"))
+    events: list[str] = []
+    emitted: list[Share | Secret] = []
+
+    def confirm_card(artifact: Share | Secret, confirm=None) -> None:
+        if confirm is not None:
+            assert confirm(artifact.text).accepted
+
+    def answer(_prompt: str, **_options: object) -> str:
+        assert events == []
+        return next(answers)
+
+    def emit(artifact: Share | Secret, *_args: object, **_kwargs: object) -> None:
+        events.append("card")
+        emitted.append(artifact)
+
+    monkeypatch.setattr(sys, "stdin", _TTYInput())
+    monkeypatch.setattr(sys, "stdout", _TTYOutput())
+    monkeypatch.setattr(cli, "_text", answer)
+    monkeypatch.setattr(cli, "_recorded_fingerprint", _RECORDED_FINGERPRINT)
+    monkeypatch.setattr(cli, "_emit", emit)
+    monkeypatch.setattr(cli, "_confirm_card", confirm_card)
+    monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
+
+    assert ms_main(["create", "2", "--indices", "ac", "--existing"]) == 0
+    assert events == ["card", "card"]
+    identifier = emitted[0].header.identifier
+    assert all(artifact.header.identifier == identifier for artifact in emitted)
+    assert core.expected is None
+    assert core.imported is not None and core.imported.seed_bytes == secret.seed_bytes
+    assert core.imported.header.identifier == identifier
+    assert capsys.readouterr().err.count(f"Backup identifier: {identifier.upper()}") >= 2
