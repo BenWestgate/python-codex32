@@ -158,7 +158,7 @@ def test_automatic_secondary_search_recovers_two_group_indels(
     damaged = _group_damage(source, inserted, omitted)
     contexts = tuple(
         CorrectionContext(Profile.MS, target, "ms1")
-        for target in _correction_plan(Profile.MS, None, len(damaged), None)[0]
+        for target in _correction_plan(Profile.MS, None, len(damaged), None)
     )
 
     candidates, complete = _search_many(
@@ -507,7 +507,6 @@ def test_primary_target_runs_first_and_secondary_search_is_proof_driven() -> Non
                 contexts,
                 damaged,
                 primary=frozenset((48, 74, 127)),
-                reduced=frozenset((54, 61, 67)),
             )
         return calls
 
