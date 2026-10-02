@@ -59,6 +59,11 @@ def test_checksum_completion_is_not_public_api() -> None:
     assert not hasattr(codex32, "complete_checksum")
 
 
+def test_bitcoin_core_descriptor_records_are_not_public_api() -> None:
+    assert "core_descriptors" not in codex32.__all__
+    assert not hasattr(codex32, "core_descriptors")
+
+
 def test_share_has_symbols_but_no_byte_or_padding_api() -> None:
     share = parse_codex32(VECTOR_2["share_A"])
     assert isinstance(share, Share)
