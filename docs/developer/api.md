@@ -195,6 +195,8 @@ requires a complete explicit `ms1` string; it never infers or corrects a missing
 HRP or separator. No entropy is drawn for this path; raw hexadecimal seeds retain
 the generation path. Existing imports use timestamp zero to include prior
 history. Changing a supplied secret's identifier requires a sharing threshold.
+Existing-seed creation uses the same recorded-fingerprint or explicit no-record
+confirmation as wallet restoration before import, including after re-sharing.
 Shared creation
 uses an explicit threshold or full backup header. Without an explicit share
 count or indices, thresholds 2 and 3 produce the reviewed 2-of-3 and 3-of-5
@@ -623,6 +625,13 @@ original `CreationCeremony.finish()` result or validated recovered master seed
 supplies the root xprv. Confirmation text is never reparsed into this source.
 The key is sent only through `bitcoin-cli -stdin`; raw Core errors are suppressed,
 and no passphrase interface exists.
+
+For wallet restoration and `ms32 create --existing`, callers make the wallet-record
+decision before initialization. `BitcoinCore.initialize()` calls `verify_identity()`
+before `_select()` or any wallet mutation. A supplied fingerprint must match the
+recovered master seed; `None` is reserved for fresh creation or the operator's
+explicit no-record fallback. A mismatch stops before a destination wallet is
+selected or changed.
 
 Core v32 accepts the key with `addhdkey` and creates external and internal
 account-0 descriptors for BIP44/49/84/86 with `createwalletdescriptor`. Python
