@@ -125,8 +125,9 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
         "    create    create or confirm a backup, or split an existing secret\n"
         "    wallet    restore a Bitcoin Core wallet\n"
         "    xprv      export the root extended private key\n\n"
-        "Never include a secret or share in command arguments.\n"
-        "Enter it when prompted. Some commands also accept piped input.\n"
+        "Never put a secret or share in command arguments or shell command text.\n"
+        "Enter it when prompted; some commands also accept redirected standard input.\n"
+        "Protect redirected files; shells and terminals may keep text.\n"
     )
     for command in ("check", "correct", "secret", "share"):
         assert command in generic_help and command in ms_help
