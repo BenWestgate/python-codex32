@@ -90,7 +90,7 @@ port.
 Use a computer you believe is malware-free and whose other software you trust.
 Only codex32 and Bitcoin Core should perform recovery, derivation, wallet
 initialization, or signing. The QR tools below transport only public
-descriptors or PSBTs.
+descriptors, PSBTs, and signed transactions.
 
 Bitcoin Core wallet encryption is strongly recommended. Bitcoin Core owns the
 passphrase and its prompts; codex32 never asks for, reads, or forwards it.
@@ -200,16 +200,133 @@ worth the extra steps.
 
 ## More protection: watch-only wallet and offline signer
 
-On the offline signer, create an empty encrypted descriptor wallet with private
-keys enabled and run `ms32 wallet`. Keep that computer disconnected from every
-network while recovery text or signing keys are present.
+This setup follows Bitcoin Core v32's
+[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)
+and its two wallets: `offline_wallet` holds the signing keys on a computer that
+never connects to a network, and `watch_only_wallet` runs on an ordinary online
+node. Where the tutorial carries a file between the computers, this guide shows
+the same public data as a QR on one screen and scans it with the other
+computer's camera.
 
-After the signer is restored, follow Bitcoin Core v32's maintained
-[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md).
-That workflow owns the watch-only export/import and PSBT transport steps. In
-Bitcoin Core v32, `exportwatchonlywallet` creates the watch-only wallet file and
-`restorewallet` loads it on the online node. Do not improvise a codex32-specific
-descriptor-transfer procedure in place of that maintained workflow.
+Before disconnecting the offline computer for good, install Bitcoin Core and
+codex32. Both computers also use `python3`, `gzip`, `qr`, and ZBar's
+`zbarcam`, which Tails already includes. Disable Ethernet, internet, Tor, Wi-Fi,
+Bluetooth, cellular, and every other network path on the offline computer.
+
+### 1. Restore the offline signer
+
+On the offline computer, create an empty encrypted descriptor wallet named
+`offline_wallet` with private keys enabled and run `ms32 wallet`. Keep that
+computer disconnected from every network while recovery text or signing keys
+are present.
+
+### 2. Create the online watch-only wallet
+
+The tutorial moves a watch-only wallet file made by `exportwatchonlywallet`.
+That file does not fit in a QR even compressed, so send the public descriptors
+instead, compressed with `gzip`. On the offline computer:
+
+```bash
+bitcoin-cli -rpcwallet=offline_wallet listdescriptors |
+  python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin)["descriptors"]), end="")' |
+  gzip -9 | qr
+```
+
+The compressed descriptors take about 640 bytes; see
+[QR troubleshooting](#qr-troubleshooting) if the QR does not fit. Public
+descriptors cannot spend, but they reveal wallet activity. Do not use a
+website, cloud scanner, chat service, or synced clipboard.
+
+On the online computer, create a blank watch-only wallet, then scan and
+decompress the QR into it:
+
+```bash
+bitcoin-cli -named createwallet wallet_name=watch_only_wallet disable_private_keys=true blank=true
+zbarcam --raw --oneshot -Sdisable -Sqrcode.enable -Sbinary | gunzip |
+  bitcoin-cli -rpcwallet=watch_only_wallet -stdin importdescriptors
+```
+
+Every result must say `"success": true`. Core's descriptor export keeps the
+stored timestamps, so the online node rescans from the same point. Run
+`getnewaddress` in each wallet and compare the two addresses on the two
+screens. Do not receive funds if they differ.
+
+### 3. Receive to a checked address
+
+Get receiving addresses and set labels in `watch_only_wallet`, as the tutorial
+does, so one wallet tracks which addresses are used. Malware on the online
+computer could show an address it controls, so check every address on the
+offline computer before giving it out. On the online computer:
+
+```bash
+bitcoin-cli -rpcwallet=watch_only_wallet getnewaddress "LABEL" | qr
+```
+
+On the offline computer, scan it and look it up in the signing wallet:
+
+```bash
+address=$(zbarcam --raw --oneshot -Sdisable -Sqrcode.enable)
+bitcoin-cli -rpcwallet=offline_wallet getaddressinfo "$address"
+```
+
+Give out the address only if the result shows `"ismine": true`. This works
+while `offline_wallet` is locked. The offline wallet recognizes its first 1,000
+addresses of each type; past that, a real address shows `"ismine": false` until
+you unlock `offline_wallet` and run `keypoolrefill` with a larger number.
+
+When you pay yourself from a phone wallet, or the payer is with you, show the
+checked address as a QR on the offline screen and scan it there; nothing needs
+comparing:
+
+```bash
+printf %s "$address" | qr
+```
+
+For an exchange withdrawal or a payer over the internet, the address must pass
+through a networked computer or phone, where malware could swap it after the
+check. Paste it there, then compare the address on the last screen before you
+submit or send, such as the exchange's confirmation page or your sent message,
+character by character with the `"address"` shown offline.
+
+### 4. Spend with a PSBT
+
+On the online computer, create the unsigned PSBT with your destination and
+amount, and show it as a QR:
+
+```bash
+bitcoin-cli -rpcwallet=watch_only_wallet send '{"DESTINATION_ADDRESS": AMOUNT}' |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["psbt"], end="")' > funded_psbt.txt &&
+  qr < funded_psbt.txt
+```
+
+On the offline computer, scan it, then check every destination, amount, and
+fee before signing:
+
+```bash
+zbarcam --raw --oneshot -Sdisable -Sqrcode.enable > funded_psbt.txt
+bitcoin-cli decodepsbt "$(cat funded_psbt.txt)"
+bitcoin-cli analyzepsbt "$(cat funded_psbt.txt)"
+```
+
+Unlock `offline_wallet` as the tutorial shows, then sign and show the signed
+transaction as a QR:
+
+```bash
+bitcoin-cli -rpcwallet=offline_wallet walletprocesspsbt "$(cat funded_psbt.txt)" |
+  python3 -c 'import json, sys; r = json.load(sys.stdin); print(r["hex"] if r["complete"] else sys.exit("The PSBT is not fully signed."), end="")' > final_psbt.txt &&
+  qr < final_psbt.txt
+```
+
+On the online computer, scan it and broadcast:
+
+```bash
+zbarcam --raw --oneshot -Sdisable -Sqrcode.enable > final_psbt.txt
+bitcoin-cli sendrawtransaction "$(cat final_psbt.txt)"
+```
+
+If a PSBT is too large for a reliable QR, use a dedicated removable drive. The
+drive crosses the security boundary: keep it for this purpose, treat every file
+on it as untrusted, and still verify the transaction on the offline screen.
 
 ## Recover an existing or inherited wallet
 
@@ -304,8 +421,11 @@ arbitrary-HRP format direction is not yet merged into that specification.
 ### QR troubleshooting
 
 Maximize the terminal and reduce its font size if a QR does not fit. Keep `qr`
-connected to the terminal; redirecting its output creates an image file. Only
-public descriptors, xpubs, and PSBTs may cross the offline boundary by QR.
+connected to the terminal; redirecting its output creates an image file.
+Reading the compressed descriptors needs ZBar 0.23.1 or newer for `-Sbinary`;
+without it, ZBar rewrites the bytes as text and `gunzip` fails. Only public
+descriptors, xpubs, PSBTs, and signed transactions may cross the offline
+boundary by QR.
 
 ## Technical references
 
