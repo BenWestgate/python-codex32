@@ -216,24 +216,24 @@ are present.
 ### 2. Create the online watch-only wallet
 
 The tutorial moves a watch-only wallet file made by `exportwatchonlywallet`.
-That file is far too large for a QR, so send the public descriptors instead.
-On the offline computer:
+That file does not fit in a QR even compressed, so send the public descriptors
+instead, compressed with `gzip`. On the offline computer:
 
 ```bash
-bitcoin-cli -rpcwallet=offline_wallet listdescriptors | jq -cj '[.descriptors[] | {desc,timestamp,active,internal,range,next_index}]' | qr
+bitcoin-cli -rpcwallet=offline_wallet listdescriptors | jq -cj '[.descriptors[] | {desc,timestamp,active,internal,range,next_index}]' | gzip -9 | qr
 ```
 
-The QR holds about 2,000 characters; see [QR troubleshooting](#qr-troubleshooting)
-if it does not fit. Public descriptors cannot spend, but they reveal wallet
-activity. Do not use a website, cloud scanner, chat service, or synced
-clipboard.
+The compressed descriptors take about 620 bytes; see
+[QR troubleshooting](#qr-troubleshooting) if the QR does not fit. Public
+descriptors cannot spend, but they reveal wallet activity. Do not use a
+website, cloud scanner, chat service, or synced clipboard.
 
-On the online computer, create a blank watch-only wallet and scan the QR into
-it:
+On the online computer, create a blank watch-only wallet, then scan and
+decompress the QR into it:
 
 ```bash
 bitcoin-cli -named createwallet wallet_name=watch_only_wallet disable_private_keys=true blank=true
-zbarcam --raw --oneshot -Sdisable -Sqrcode.enable |
+zbarcam --raw --oneshot -Sdisable -Sqrcode.enable -Sbinary | gunzip |
   bitcoin-cli -rpcwallet=watch_only_wallet -stdin importdescriptors
 ```
 
@@ -372,7 +372,9 @@ arbitrary-HRP format direction is not yet merged into that specification.
 
 Maximize the terminal and reduce its font size if a QR does not fit. Keep `qr`
 connected to the terminal; redirecting its output creates an image file. If `qr`
-is unavailable, `qrencode -t ANSIUTF8` shows the same QR. Only public
+is unavailable, `qrencode -8 -t ANSIUTF8` shows the same QR. Reading the
+compressed descriptors needs ZBar 0.23.1 or newer for `-Sbinary`; without it,
+ZBar rewrites the bytes as text and `gunzip` fails. Only public
 descriptors, xpubs, PSBTs, and signed transactions may cross the offline
 boundary by QR.
 
