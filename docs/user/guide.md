@@ -261,12 +261,24 @@ address=$(zbarcam --raw --oneshot -Sdisable -Sqrcode.enable)
 bitcoin-cli -rpcwallet=offline_wallet getaddressinfo "$address"
 ```
 
-Give out the address only if the result shows `"ismine": true`, and compare
-the address you send character by character with the `"address"` shown on the
-offline screen. This works while `offline_wallet` is locked. The offline wallet
-recognizes its first 1,000 addresses of each type; past that, a real address
-shows `"ismine": false` until you unlock `offline_wallet` and run
-`keypoolrefill` with a larger number.
+Give out the address only if the result shows `"ismine": true`. This works
+while `offline_wallet` is locked. The offline wallet recognizes its first 1,000
+addresses of each type; past that, a real address shows `"ismine": false` until
+you unlock `offline_wallet` and run `keypoolrefill` with a larger number.
+
+When you pay yourself from a phone wallet, or the payer is with you, show the
+checked address as a QR on the offline screen and scan it there; nothing needs
+comparing:
+
+```bash
+printf %s "$address" | qr
+```
+
+For an exchange withdrawal or a payer over the internet, the address must pass
+through a networked computer or phone, where malware could swap it after the
+check. Paste it there, then compare the address on the last screen before you
+submit or send, such as the exchange's confirmation page or your sent message,
+character by character with the `"address"` shown offline.
 
 ### 4. Spend with a PSBT
 
