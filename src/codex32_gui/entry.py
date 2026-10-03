@@ -93,7 +93,7 @@ class Codex32Entry(Gtk.Entry):
             canonical = canonical[: len(PREFIX) + HEADER_LENGTH]
         kept = min(len(normalize(raw[:position])), len(canonical))
         if self._locked and canonical != normalize(self._shown):
-            canonical, kept = self._within_open_group(normalize(self._shown), canonical)
+            canonical, kept = self._within_open_group(normalize(self._shown), canonical, kept)
         shown = self._shown = grouped(canonical)
         self._dropped = lookalike_fault(raw)
         if shown != raw:
@@ -103,13 +103,16 @@ class Codex32Entry(Gtk.Entry):
             self.set_position(kept + max(kept - 1, 0) // GROUP)
         return False
 
-    def _within_open_group(self, old: str, new: str) -> tuple[str, int]:
+    def _within_open_group(self, old: str, new: str, cursor: int) -> tuple[str, int]:
         # Once groups are locked the card keeps its length and they keep their
         # text: an edit inside one open group is cut or padded with "?" back to
-        # that group's size, and an edit reaching any other group is undone.
+        # that group's size, and an edit reaching any other group is undone. In a
+        # run of repeated symbols the edit is placed where GTK left the cursor.
         same = min(len(old), len(new))
         start = next((i for i in range(same) if old[i] != new[i]), same)
         tail = next((i for i in range(same - start) if old[-1 - i] != new[-1 - i]), same - start)
+        while start and len(new) - tail > cursor and new[-1 - tail] == old[-1 - tail]:
+            start, tail = start - 1, tail + 1
         first, end = start - start % GROUP, min(start - start % GROUP + GROUP, len(old))
         if first // GROUP in self._locked or len(old) - tail > end:
             return old, start

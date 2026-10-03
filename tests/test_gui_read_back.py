@@ -131,3 +131,16 @@ def test_clearing_unlocks_the_card() -> None:
     field.prefill(SHARE[:20])
     _settle()
     assert reading.normalize(field.get_text()) == SHARE[:20].upper()
+
+
+def test_deleting_one_of_a_repeated_pair_leaves_the_cursor_where_it_was_deleted() -> None:
+    _page, field, _typed, _finished = _read_back(ConfirmationResult(False, (12,)))
+    field.prefill(SHARE)
+    field.emit("activate")
+    field.set_text(" ".join(_groups(field.get_text())[:11] + ["QPPZ"]))
+    _settle()
+
+    field.set_position(57)
+    field.delete_text(56, 57)  # the first P of group 12
+    _settle()
+    assert _groups(field.get_text())[11] == "QPZ?" and field.get_position() == 56
