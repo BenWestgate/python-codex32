@@ -63,8 +63,11 @@ You will need:
 - Bitcoin Core 32 or newer, with its local RPC server enabled and
   `bitcoin-cli` available on `PATH`;
 - codex32 installed using the [README instructions](../../README.md#install);
-- one blank [codex32 recovery card](recovery-card.html) per secret or share; and
-- a separately stored [wallet-verification record](wallet-verification-record.html).
+- one blank
+  [codex32 recovery card](../../src/codex32_gui/forms/recovery-card.html)
+  per secret or share; and
+- a separately stored
+  [wallet-verification record](../../src/codex32_gui/forms/wallet-verification-record.html).
 
 Before running `create` for a real wallet, have your blank cards, a pen, and
 wallet record ready, and choose separate trusted places for shared cards.

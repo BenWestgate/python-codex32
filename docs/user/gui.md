@@ -62,15 +62,21 @@ Choose how many cards you want. Three cards where any two recover the wallet is
 the recommended shape: one card can be lost, burned or stolen and your bitcoin is
 still safe, and one card on its own tells a finder nothing.
 
+Next, **Before you start** asks you to have one blank recovery card per card, a
+pen, and one wallet record ready. Its buttons open the printable
+[recovery card](../../src/codex32_gui/forms/recovery-card.html) and
+[wallet record](../../src/codex32_gui/forms/wallet-verification-record.html)
+forms in your browser. Press **I have them ready** to see the first card.
+
 Each card is shown once. Copy it onto paper with a pen, then type it back from
 the paper with the original off the screen. That catches a slip of the pen now
 rather than years from now. If a group does not match, the window says which one;
 correct that group and try again, as many times as you like.
 
 When every card is confirmed, the window shows the master fingerprint. Write it
-on your [wallet record](wallet-verification-record.html), then press **I wrote it
-down**. This is a new wallet ceremony, so there is no pre-existing fingerprint
-or descriptor to authenticate against.
+on your wallet record, then press **I wrote it down**. This is a new wallet
+ceremony, so there is no pre-existing fingerprint or descriptor to authenticate
+against.
 
 Next, choose the Bitcoin Core wallet that will hold the
 keys. Only empty wallets are offered, so no wallet you already use can be
@@ -80,14 +86,18 @@ give it a name and a passphrase, and codex32 fills it in and locks it again.
 Forgetting that passphrase does not lose your bitcoin. Your cards still recover
 the seed. It protects the wallet on this computer.
 
-Finally, copy the wallet details onto your
-[wallet record](wallet-verification-record.html) and keep it apart from every
-card. The window shows exactly the fields that record asks for.
+Finally, copy the wallet details onto your wallet record and keep it apart from
+every card. The window shows exactly the fields that record asks for.
 
 A card never contains **B**, **I**, **O** or **1**: those four are left out of
 the alphabet precisely because handwriting confuses them with 8, J, L and 0. If
 you type one, the window says so and names what the card probably says, rather
 than quietly swallowing it.
+
+Some characters that are left in still look alike in handwriting: 5 and S, 6
+and G, 2 and Z. While you write, the window asks you to mark them: slash every
+0, cross 7 and Z, draw S with a line through it like $, and put a dot inside the
+loop of 6. The recovery card form repeats this key.
 
 ## A card that is damaged
 
