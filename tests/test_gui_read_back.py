@@ -128,6 +128,7 @@ def test_clearing_unlocks_the_card() -> None:
     field.prefill(SHARE)
     field.emit("activate")
     field.clear()
+    assert field._shown == reading.PREFIX  # No copy of the card outlives the clear.
     field.prefill(SHARE[:20])
     _settle()
     assert reading.normalize(field.get_text()) == SHARE[:20].upper()

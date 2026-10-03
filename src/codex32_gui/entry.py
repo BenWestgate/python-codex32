@@ -54,7 +54,7 @@ class Codex32Entry(Gtk.Entry):
 
     def clear(self) -> None:
         """Drop the entered recovery text."""
-        self._dropped, self._locked = "", frozenset()
+        self._dropped, self._locked, self._shown = "", frozenset(), PREFIX
         self.set_text(PREFIX)
 
     def lock(self, open_groups: frozenset[int] | None) -> None:
