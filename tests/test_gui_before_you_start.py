@@ -94,3 +94,22 @@ def test_an_old_gtk_shows_where_the_form_is(monkeypatch: pytest.MonkeyPatch) -> 
 
     _button(page, "Open the wallet record form").emit("clicked")
     assert str(FORMS.joinpath("wallet-verification-record.html")) in _texts(page)
+
+
+def test_a_launcher_can_point_the_buttons_at_a_readable_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[str] = []
+
+    class Launcher:
+        def __init__(self, file: Any) -> None:
+            opened.append(file.get_path())
+
+        def launch(self, _parent: object, _cancellable: object, _callback: object) -> None:
+            pass
+
+    monkeypatch.setattr(pages.Gtk, "FileLauncher", Launcher)
+    monkeypatch.setenv("CODEX32_FORMS_DIR", "/home/amnesia/Tor Browser/codex32 forms")
+    view = Adw.NavigationView()
+    page = pages._ready_page(view, object(), 2, 3, 16)  # type: ignore[arg-type]
+
+    _button(page, "Open the recovery card form").emit("clicked")
+    assert opened == ["/home/amnesia/Tor Browser/codex32 forms/recovery-card.html"]

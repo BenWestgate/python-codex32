@@ -281,8 +281,9 @@ writes no file: no settings, no recent list, no log, and no clipboard write of
 recovery text. One button pair is the exception to "no process": **Before you
 start** can ask the desktop, through GTK's `FileLauncher`, to open one of the two
 blank printable forms shipped in `codex32_gui/forms/`. The desktop chooses and
-starts the viewer. Only those fixed paths are passed, never recovery text, and
-this happens before any seed is drawn. Entered recovery text is cleared when its screen is left, subject
+starts the viewer. Only those forms are passed, never recovery text, and this
+happens before any seed is drawn. A launcher may set `CODEX32_FORMS_DIR` to a
+copy of the forms that a confined browser can read; Bails does this on Tails. Entered recovery text is cleared when its screen is left, subject
 to the zeroization limitation above.
 
 Two disclosure channels belong to the toolkit rather than to this program, and

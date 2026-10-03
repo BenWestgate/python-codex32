@@ -637,7 +637,10 @@ def _ready_page(
     status = _note("Each form opens in your browser, where you can print it.")
 
     def show(name: str) -> None:
-        path = str(FORMS.joinpath(name))
+        # A confined browser (Tor Browser on Tails) may not read the package, so a
+        # launcher can copy the forms somewhere it can and name that folder here.
+        folder = GLib.getenv("CODEX32_FORMS_DIR")
+        path = f"{folder}/{name}" if folder else str(FORMS.joinpath(name))
 
         def opened(launcher: Gtk.FileLauncher, result: Gio.AsyncResult) -> None:
             try:
