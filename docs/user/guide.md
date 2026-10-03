@@ -200,11 +200,10 @@ node. Where the tutorial carries a file between the computers, this guide shows
 the same public data as a QR on one screen and scans it with the other
 computer's camera.
 
-Before disconnecting the offline computer for good, install Bitcoin Core,
-codex32, `jq`, `qr`, and ZBar's `zbarcam`. Tails and Debian ship `qr`. The
-online computer needs `jq`, `qr`, and `zbarcam` too. Disable Ethernet,
-internet, Tor, Wi-Fi, Bluetooth, cellular, and every other network path on the
-offline computer.
+Before disconnecting the offline computer for good, install Bitcoin Core and
+codex32. Both computers also use `python3`, `gzip`, `qr`, and ZBar's
+`zbarcam`, which Tails already includes. Disable Ethernet, internet, Tor, Wi-Fi,
+Bluetooth, cellular, and every other network path on the offline computer.
 
 ### 1. Restore the offline signer
 
@@ -220,10 +219,12 @@ That file does not fit in a QR even compressed, so send the public descriptors
 instead, compressed with `gzip`. On the offline computer:
 
 ```bash
-bitcoin-cli -rpcwallet=offline_wallet listdescriptors | jq -cj '[.descriptors[] | {desc,timestamp,active,internal,range,next_index}]' | gzip -9 | qr
+bitcoin-cli -rpcwallet=offline_wallet listdescriptors |
+  python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin)["descriptors"]), end="")' |
+  gzip -9 | qr
 ```
 
-The compressed descriptors take about 620 bytes; see
+The compressed descriptors take about 640 bytes; see
 [QR troubleshooting](#qr-troubleshooting) if the QR does not fit. Public
 descriptors cannot spend, but they reveal wallet activity. Do not use a
 website, cloud scanner, chat service, or synced clipboard.
@@ -273,7 +274,9 @@ On the online computer, create the unsigned PSBT with your destination and
 amount, and show it as a QR:
 
 ```bash
-bitcoin-cli -rpcwallet=watch_only_wallet send '{"DESTINATION_ADDRESS": AMOUNT}' | jq -rje .psbt > funded_psbt.txt && qr < funded_psbt.txt
+bitcoin-cli -rpcwallet=watch_only_wallet send '{"DESTINATION_ADDRESS": AMOUNT}' |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["psbt"], end="")' > funded_psbt.txt &&
+  qr < funded_psbt.txt
 ```
 
 On the offline computer, scan it, then check every destination, amount, and
@@ -289,7 +292,9 @@ Unlock `offline_wallet` as the tutorial shows, then sign and show the signed
 transaction as a QR:
 
 ```bash
-bitcoin-cli -rpcwallet=offline_wallet walletprocesspsbt "$(cat funded_psbt.txt)" | jq -rje 'if .complete then .hex else error("The PSBT is not fully signed.") end' > final_psbt.txt && qr < final_psbt.txt
+bitcoin-cli -rpcwallet=offline_wallet walletprocesspsbt "$(cat funded_psbt.txt)" |
+  python3 -c 'import json, sys; r = json.load(sys.stdin); print(r["hex"] if r["complete"] else sys.exit("The PSBT is not fully signed."), end="")' > final_psbt.txt &&
+  qr < final_psbt.txt
 ```
 
 On the online computer, scan it and broadcast:
@@ -396,10 +401,9 @@ arbitrary-HRP format direction is not yet merged into that specification.
 ### QR troubleshooting
 
 Maximize the terminal and reduce its font size if a QR does not fit. Keep `qr`
-connected to the terminal; redirecting its output creates an image file. If `qr`
-is unavailable, `qrencode -8 -t ANSIUTF8` shows the same QR. Reading the
-compressed descriptors needs ZBar 0.23.1 or newer for `-Sbinary`; without it,
-ZBar rewrites the bytes as text and `gunzip` fails. Only public
+connected to the terminal; redirecting its output creates an image file.
+Reading the compressed descriptors needs ZBar 0.23.1 or newer for `-Sbinary`;
+without it, ZBar rewrites the bytes as text and `gunzip` fails. Only public
 descriptors, xpubs, PSBTs, and signed transactions may cross the offline
 boundary by QR.
 
