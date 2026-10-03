@@ -46,6 +46,10 @@ PRESETS = (
     (0, 1, "One card"),
 )
 CREATE_WALLET = "Create a new wallet"
+HANDWRITING = (
+    "Mark the look-alikes as you write: slash every 0, cross 7 and Z, draw S with a line through it "
+    "like $, and put a dot inside the loop of 6. Then 5 and S, 6 and G, and 2 and Z stay apart."
+)
 NO_CAMERA = (
     "Do not photograph this and do not type it into any website, chat or password manager. "
     "Paper and pen only."
@@ -456,6 +460,7 @@ def _write_page(
     content = _column(
         _title("Write it down", where),
         _note("Use pen on a card you can keep dry. Copy each shaded group exactly, left to right."),
+        _note(HANDWRITING),
         shown,
         _note(f"Label this card {letter}. The letter after {name} is the card's name."),
         _note(NO_CAMERA, "warning"),

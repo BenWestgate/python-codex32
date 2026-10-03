@@ -94,6 +94,11 @@ the alphabet precisely because handwriting confuses them with 8, J, L and 0. If
 you type one, the window says so and names what the card probably says, rather
 than quietly swallowing it.
 
+Some characters that are left in still look alike in handwriting: 5 and S, 6
+and G, 2 and Z. While you write, the window asks you to mark them: slash every
+0, cross 7 and Z, draw S with a line through it like $, and put a dot inside the
+loop of 6. The recovery card form repeats this key.
+
 ## A card that is damaged
 
 Type what you can still read, and `?` for each character you cannot make out.
