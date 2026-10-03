@@ -113,7 +113,7 @@ documentation and enforcement update.
 installed as `codex32[gui]` and started by `codex32-gui`. It is a client of the
 surface above and of the private Core adapter; nothing in `src/codex32/` imports
 it, and the base install keeps its property of having no third-party runtime
-dependency. It carries its own budget of 1,800 logical review lines, separate
+dependency. It carries its own budget of 2,050 logical review lines, separate
 from the 5,000 above. Its own boundaries are documented in
 [`gui.md`](gui.md) and enforced by `tests/test_gui_boundaries.py`.
 
