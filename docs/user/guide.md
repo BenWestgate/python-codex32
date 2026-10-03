@@ -242,7 +242,32 @@ stored timestamps, so the online node rescans from the same point. Run
 `getnewaddress` in each wallet and compare the two addresses on the two
 screens. Do not receive funds if they differ.
 
-### 3. Spend with a PSBT
+### 3. Receive to a checked address
+
+Get receiving addresses and set labels in `watch_only_wallet`, as the tutorial
+does, so one wallet tracks which addresses are used. Malware on the online
+computer could show an address it controls, so check every address on the
+offline computer before giving it out. On the online computer:
+
+```bash
+bitcoin-cli -rpcwallet=watch_only_wallet getnewaddress "LABEL" | qr
+```
+
+On the offline computer, scan it and look it up in the signing wallet:
+
+```bash
+address=$(zbarcam --raw --oneshot -Sdisable -Sqrcode.enable)
+bitcoin-cli -rpcwallet=offline_wallet getaddressinfo "$address"
+```
+
+Give out the address only if the result shows `"ismine": true`, and compare
+the address you send character by character with the `"address"` shown on the
+offline screen. This works while `offline_wallet` is locked. The offline wallet
+recognizes its first 1,000 addresses of each type; past that, a real address
+shows `"ismine": false` until you unlock `offline_wallet` and run
+`keypoolrefill` with a larger number.
+
+### 4. Spend with a PSBT
 
 On the online computer, create the unsigned PSBT with your destination and
 amount, and show it as a QR:
