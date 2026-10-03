@@ -153,3 +153,17 @@ def test_restore_verifies_identity_before_creating_a_destination_wallet() -> Non
     create = job.body[1]
     assert isinstance(create, ast.Expr) and isinstance(create.value, ast.Call)
     assert isinstance(create.value.func, ast.Attribute) and create.value.func.attr == "create"
+
+
+def test_only_the_checklist_hands_a_file_to_the_desktop() -> None:
+    """The one external launch opens a bundled blank form, before any seed exists."""
+    tree = ast.parse((_package() / "pages.py").read_text())
+    launching = {
+        function.name
+        for function in tree.body
+        if isinstance(function, ast.FunctionDef)
+        and any(
+            isinstance(node, ast.Attribute) and node.attr == "FileLauncher" for node in ast.walk(function)
+        )
+    }
+    assert launching == {"_ready_page"}

@@ -43,7 +43,9 @@ about 250 lines, and the rest of the difference is user-facing wording in
    `hashlib`, or `hmac`. Entropy belongs to `CreationCeremony`.
 2. **No network.** Nothing imports `socket`, `ssl`, `urllib`, or `http`, and no
    module imports `subprocess`. The only child process is the `bitcoin-cli` the
-   library already starts.
+   library already starts. Separately, `_ready_page` may ask the desktop to open
+   a bundled blank form with `Gtk.FileLauncher`; it is the only caller, and it
+   passes only paths under `codex32_gui/forms/`.
 3. **Nothing reaches disk.** Nothing imports `os`, `pathlib`, `io`, `tempfile`,
    `shutil`, `pickle`, `sqlite3`, or `logging`, and nothing calls `open`. There
    is no settings file, no recent list, no log, and no clipboard write.

@@ -85,3 +85,12 @@ def test_each_button_opens_its_shipped_form(monkeypatch: pytest.MonkeyPatch, lab
     _button(page, label).emit("clicked")
     assert opened == [str(FORMS.joinpath(name))]
     assert FORMS.joinpath(name).is_file()
+
+
+def test_an_old_gtk_shows_where_the_form_is(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pages.Gtk, "check_version", lambda *_version: "GTK is older than 4.10")
+    view = Adw.NavigationView()
+    page = pages._ready_page(view, object(), 2, 3, 16)  # type: ignore[arg-type]
+
+    _button(page, "Open the wallet record form").emit("clicked")
+    assert str(FORMS.joinpath("wallet-verification-record.html")) in _texts(page)

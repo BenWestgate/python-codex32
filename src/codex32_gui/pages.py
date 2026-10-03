@@ -637,14 +637,18 @@ def _ready_page(
     status = _note("Each form opens in your browser, where you can print it.")
 
     def show(name: str) -> None:
+        path = str(FORMS.joinpath(name))
+
         def opened(launcher: Gtk.FileLauncher, result: Gio.AsyncResult) -> None:
             try:
                 launcher.launch_finish(result)
             except GLib.Error:
-                _say(status, f"That form did not open. It is at {FORMS.joinpath(name)}", "warning")
+                _say(status, f"That form did not open. It is at {path}", "warning")
 
-        launcher = Gtk.FileLauncher(file=Gio.File.new_for_path(str(FORMS.joinpath(name))))
-        launcher.launch(view.get_root(), None, opened)
+        if Gtk.check_version(4, 10, 0) is not None:  # FileLauncher arrived in GTK 4.10.
+            _say(status, f"Open this form in a browser to print it: {path}", "warning")
+            return
+        Gtk.FileLauncher(file=Gio.File.new_for_path(path)).launch(view.get_root(), None, opened)
 
     content = _column(
         _title("Before you start", f"Have {cards}, a pen, and one wallet record ready."),
