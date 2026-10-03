@@ -11,7 +11,7 @@ try:
     gi.require_version("Gtk", "4.0")
     gi.require_version("Adw", "1")
     gi.require_version("Gdk", "4.0")
-    from gi.repository import Adw, Gdk, Gtk
+    from gi.repository import Adw, Gdk, GLib, Gtk
 except (ImportError, ValueError):
     pytest.skip("GTK 4 and libadwaita are unavailable", allow_module_level=True)
 if not Gtk.init_check() or Gdk.Display.get_default() is None:
@@ -22,7 +22,7 @@ from data.bip93_vectors import VECTOR_2
 
 from codex32 import parse_codex32
 from codex32.generation import ConfirmationResult
-from codex32_gui import pages
+from codex32_gui import pages, reading
 
 SHARE = VECTOR_2["share_A"]
 
@@ -77,3 +77,57 @@ def test_a_mismatch_highlights_every_wrong_group_of_the_typed_text() -> None:
 
     field.clear()
     assert list(_widgets(page, Gtk.FlowBox)) == []
+
+
+def _settle() -> None:
+    while GLib.MainContext.default().iteration(False):
+        pass
+
+
+def _groups(text: str) -> list[str]:
+    return text.split(" ")
+
+
+def test_a_mismatch_locks_every_group_that_matched() -> None:
+    _page, field, _typed, _finished = _read_back(ConfirmationResult(False, (2, 12)))
+    field.prefill(SHARE)
+    field.emit("activate")
+    before = _groups(field.get_text())
+
+    edited = before.copy()
+    edited[0], edited[2] = "XXXX", "YYYY"
+    field.set_text(" ".join(edited))
+    _settle()
+    assert field.get_text() == " ".join(before)
+
+    edited = before.copy()
+    edited[1] = "QQQQ"
+    field.set_text(" ".join(edited))
+    _settle()
+    assert field.get_text() == " ".join(edited)
+
+
+def test_an_open_group_keeps_its_size_and_the_card_its_length() -> None:
+    _page, field, _typed, _finished = _read_back(ConfirmationResult(False, (12,)))
+    field.prefill(SHARE)
+    field.emit("activate")
+    before = _groups(field.get_text())
+
+    field.delete_text(56, 57)  # the second character of group 12
+    _settle()
+    after = _groups(field.get_text())
+    assert after[:11] == before[:11] and after[11] == before[11][0] + before[11][2:] + "?"
+
+    field.insert_text("WXYZ", 55)
+    _settle()
+    assert _groups(field.get_text())[11] == "WXYZ" and len(field.get_text()) == len(" ".join(before))
+
+
+def test_clearing_unlocks_the_card() -> None:
+    _page, field, _typed, _finished = _read_back(ConfirmationResult(False, (2,)))
+    field.prefill(SHARE)
+    field.emit("activate")
+    field.clear()
+    field.prefill(SHARE[:20])
+    _settle()
+    assert reading.normalize(field.get_text()) == SHARE[:20].upper()

@@ -492,7 +492,8 @@ def _read_back_page(
     accept = _button("Confirm card", lambda: None, style="suggested-action")
 
     def update(*_arguments: object) -> None:
-        comparison.set_child(None)
+        if field.get_text() == reading.PREFIX:  # Cleared: the redrawn copy goes too.
+            comparison.set_child(None)
         state = field.reading()
         accept.set_sensitive(state.complete)
         # A character a card can never carry is named, never quietly deleted: this
@@ -511,6 +512,7 @@ def _read_back_page(
         if not result.accepted:
             groups = frozenset(group - 1 for group in result.mismatched_groups)
             comparison.set_child(_card(typed, groups))
+            field.lock(groups or None)  # Only the highlighted groups can still be edited.
             _say(status, "The highlighted groups do not match. Re-read them from the card.", "error")
             return
         field.clear()
@@ -529,8 +531,8 @@ def _read_back_page(
         status,
         comparison,
         _note(
-            "Spaces and capitals do not matter, and you may try as many times as you like. Correct the "
-            "highlighted groups; the rest stays as you typed it."
+            "Spaces and capitals do not matter, and you may try as many times as you like. Only the "
+            "highlighted groups can be changed; the rest is locked as you typed it."
         ),
     )
     page = _page(

@@ -31,6 +31,7 @@ class Codex32Entry(Gtk.Entry):
         self._accepted, self._length, self._pending = accepted, length, 0
         self._limit = (length or TEXT_LENGTHS[-1]) + SLACK
         self._dropped, self._rewriting, self._unpublishing = "", False, 0
+        self._locked, self._shown = frozenset[int](), PREFIX
         self.set_hexpand(True)
         self.add_css_class("card-entry")
         self.set_input_hints(Gtk.InputHints.NO_SPELLCHECK | Gtk.InputHints.NO_EMOJI)
@@ -53,8 +54,13 @@ class Codex32Entry(Gtk.Entry):
 
     def clear(self) -> None:
         """Drop the entered recovery text."""
-        self._dropped = ""
+        self._dropped, self._locked = "", frozenset()
         self.set_text(PREFIX)
+
+    def lock(self, open_groups: frozenset[int] | None) -> None:
+        """Freeze every four-character group except `open_groups`, which stay editable in place."""
+        self._shown, every = self.get_text(), range(-(-len(normalize(self.get_text())) // GROUP))
+        self._locked = frozenset(every) - open_groups if open_groups else frozenset()
 
     def _unpublish(self, *_arguments: object) -> None:
         # Selecting text in a Gtk.Entry hands it to the primary selection, where a
@@ -85,12 +91,28 @@ class Codex32Entry(Gtk.Entry):
         canonical = normalize(raw)[: self._limit]
         if header_fault(canonical, self._accepted):
             canonical = canonical[: len(PREFIX) + HEADER_LENGTH]
-        shown = grouped(canonical)
+        kept = min(len(normalize(raw[:position])), len(canonical))
+        if self._locked and canonical != normalize(self._shown):
+            canonical, kept = self._within_open_group(normalize(self._shown), canonical)
+        shown = self._shown = grouped(canonical)
         self._dropped = lookalike_fault(raw)
         if shown != raw:
-            kept = min(len(normalize(raw[:position])), len(canonical))
             self._rewriting = True
             self.set_text(shown)
             self._rewriting = False
             self.set_position(kept + max(kept - 1, 0) // GROUP)
         return False
+
+    def _within_open_group(self, old: str, new: str) -> tuple[str, int]:
+        # Once groups are locked the card keeps its length and they keep their
+        # text: an edit inside one open group is cut or padded with "?" back to
+        # that group's size, and an edit reaching any other group is undone.
+        same = min(len(old), len(new))
+        start = next((i for i in range(same) if old[i] != new[i]), same)
+        tail = next((i for i in range(same - start) if old[-1 - i] != new[-1 - i]), same - start)
+        first, end = start - start % GROUP, min(start - start % GROUP + GROUP, len(old))
+        if first // GROUP in self._locked or len(old) - tail > end:
+            return old, start
+        typed = new[start : len(new) - tail]
+        edited = (old[first:start] + typed + old[len(old) - tail : end] + "?" * GROUP)[: end - first]
+        return old[:first] + edited + old[end:], min(start + len(typed), end)
