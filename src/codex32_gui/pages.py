@@ -12,7 +12,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from codex32 import (
     ConfirmationResult,
@@ -28,7 +28,7 @@ from codex32 import (
 )
 from codex32.errors import CodexError
 from codex32.generation import ORDINARY_INDICES
-from codex32_gui import ARTWORK, reading, wallet_setup, work
+from codex32_gui import ARTWORK, FORMS, reading, wallet_setup, work
 from codex32_gui.entry import Codex32Entry
 from codex32_gui.wallet_setup import BitcoinCore
 
@@ -603,13 +603,13 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
         chosen = list(details)[_selected(buttons)]
         if chosen != "Something else":
             threshold, count = next((t, c) for t, c, label in PRESETS if label == chosen)
-            _begin_cards(view, core, threshold, count, SEED_SIZES[0][0])
+            view.push(_ready_page(view, core, threshold, count, SEED_SIZES[0][0]))
             return
         threshold, count = int(needed.get_value()), int(total.get_value())
         if count < threshold:
             _failure(view, "A backup cannot need more cards than it has.")
             return
-        _begin_cards(view, core, threshold, count, SEED_SIZES[size.get_selected()][0])
+        view.push(_ready_page(view, core, threshold, count, SEED_SIZES[size.get_selected()][0]))
 
     content = _column(
         _title(
@@ -623,6 +623,46 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
     return _page(
         "New wallet", content, actions=_actions(_button("Continue", begin, style="suggested-action"))
     )
+
+
+def _ready_page(
+    view: Adw.NavigationView, core: BitcoinCore, threshold: int, count: int, byte_length: int
+) -> Adw.NavigationPage:
+    """Ask for the cards and the wallet record before any card is shown.
+
+    The last page asks for the wallet record, so it is asked for here, while
+    there is still time to fetch or print one.
+    """
+    cards = "one blank recovery card" if count == 1 else f"{count} blank recovery cards"
+    status = _note("Each form opens in your browser, where you can print it.")
+
+    def show(name: str) -> None:
+        def opened(launcher: Gtk.FileLauncher, result: Gio.AsyncResult) -> None:
+            try:
+                launcher.launch_finish(result)
+            except GLib.Error:
+                _say(status, f"That form did not open. It is at {FORMS.joinpath(name)}", "warning")
+
+        launcher = Gtk.FileLauncher(file=Gio.File.new_for_path(str(FORMS.joinpath(name))))
+        launcher.launch(view.get_root(), None, opened)
+
+    content = _column(
+        _title("Before you start", f"Have {cards}, a pen, and one wallet record ready."),
+        _note(
+            "The wallet record is a separate sheet for the master fingerprint and the other wallet "
+            "details shown at the end. It cannot spend your bitcoin, but it proves later that cards "
+            "you restore are this wallet. Keep it apart from every card."
+        ),
+        _button("Open the recovery card form", lambda: show("recovery-card.html")),
+        _button("Open the wallet record form", lambda: show("wallet-verification-record.html")),
+        status,
+    )
+    begin = _button(
+        "I have them ready",
+        lambda: _begin_cards(view, core, threshold, count, byte_length),
+        style="suggested-action",
+    )
+    return _page("New wallet", content, actions=_actions(begin))
 
 
 def _begin_cards(
