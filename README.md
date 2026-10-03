@@ -13,7 +13,7 @@ Shamir secret sharing scheme (SSSS) interpolation helpers and helpers to build c
 - Regular checksum (13 chars) and long checksum (15 chars) support.
 - Construct codex32 strings from raw seed bytes via `from_seed`.
 - CRC-based default padding scheme for `from_seed`.
-- Default `from_seed` identifier is the bech32-encoded BIP32 fingerprint.
+- `from_seed` requires an explicit four-character identifier in its prefix.
 - Interpolate/recover shares via `interpolate_at`.
 - Parse codex32 strings and access parts via properties.
 - Mutate codex32 strings by reassigning `is_upper`, `hrp`, `k`, `ident`, `share_idx`, `data`, and `pad_val`.
@@ -21,9 +21,11 @@ Shamir secret sharing scheme (SSSS) interpolation helpers and helpers to build c
 
 ## Security
 Caution: This is reference code. Verify carefully before using with real funds.
+For wallet backups, obtain the identifier from a trusted wallet record;
+`from_seed` does not derive or verify a BIP32 fingerprint.
 
 ## Installation
-**Compatibility:** Python 3.10–3.14
+**Compatibility:** Python 3.10–3.15
 
 **Recommended:** use a virtual environment
 ### Linux / macOS
@@ -47,7 +49,7 @@ from codex32 import Codex32String
 # Create from seed bytes
 s = Codex32String.from_seed(
     bytes.fromhex('ffeeddccbbaa99887766554433221100'),
-    "ms13cashs",        # prefix string, (HRP + '1' + header)
+    "ms13cashs",        # prefix string with explicit identifier (HRP + '1' + header)
     0                   # padding value (default "CRC", otherwise integer)
 )
 print(s.s)              # codex32 string
