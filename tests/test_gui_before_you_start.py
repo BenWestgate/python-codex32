@@ -78,7 +78,8 @@ def test_each_button_opens_its_shipped_form(monkeypatch: pytest.MonkeyPatch, lab
         def launch(self, _parent: object, _cancellable: object, _callback: object) -> None:
             opened.append(self.path)
 
-    monkeypatch.setattr(pages.Gtk, "FileLauncher", Launcher)
+    monkeypatch.setattr(pages.Gtk, "FileLauncher", Launcher, raising=False)
+    monkeypatch.setattr(pages.Gtk, "check_version", lambda *_version: None)
     view = Adw.NavigationView()
     page = pages._ready_page(view, object(), 2, 3, 16)  # type: ignore[arg-type]
 
@@ -106,7 +107,8 @@ def test_a_launcher_can_point_the_buttons_at_a_readable_copy(monkeypatch: pytest
         def launch(self, _parent: object, _cancellable: object, _callback: object) -> None:
             pass
 
-    monkeypatch.setattr(pages.Gtk, "FileLauncher", Launcher)
+    monkeypatch.setattr(pages.Gtk, "FileLauncher", Launcher, raising=False)
+    monkeypatch.setattr(pages.Gtk, "check_version", lambda *_version: None)
     monkeypatch.setenv("CODEX32_FORMS_DIR", "/home/amnesia/Tor Browser/codex32 forms")
     view = Adw.NavigationView()
     page = pages._ready_page(view, object(), 2, 3, 16)  # type: ignore[arg-type]
