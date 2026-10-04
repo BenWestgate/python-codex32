@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
+import string
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,12 +12,18 @@ from time import sleep
 from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
+from codex32.bech32 import _u5_to_chars, convertbits
+from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
-from codex32.wallet import _descriptor_records, core_descriptors
+from codex32.wallet import _descriptor_records
 
 
 class BitcoinCoreError(Exception):
     pass
+
+
+class FingerprintMismatch(BitcoinCoreError):
+    """The recovered seed is not the wallet the operator's record describes."""
 
 
 _CHAINS = (
@@ -29,6 +37,64 @@ _CHAINS = (
 _ORIGIN = re.compile(r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]")
 _PRIVATE_MARKERS = ("xprv", "tprv")
 _PURPOSES = (44, 49, 84, 86)
+_OUTPUT_TYPES = ("legacy", "p2sh-segwit", "bech32", "bech32m")
+
+
+def parse_fingerprint(text: str) -> bytes:
+    """Read a master fingerprint as written on a wallet record: 8 hex digits, any case or spacing."""
+    compact = "".join(text.split())
+    if len(compact) != 8 or not all(character in string.hexdigits for character in compact):
+        raise ValueError("A master fingerprint is 8 characters, each 0-9 or A-F.")
+    return bytes.fromhex(compact)
+
+
+NO_RECORD_WARNING = (
+    "Without the wallet record, nothing can prove these cards are the wallet you expect. Compare the "
+    "fingerprint with any other copy, such as another wallet app, a hardware wallet or a descriptor backup. "
+    "After restoring, let Bitcoin Core finish scanning and check that the balance, past payments and "
+    "addresses are ones you recognise before sending money here. Replaced cards can come with a history "
+    "too: if you do not know what this wallet should hold, have someone you trust check it. Once you are "
+    "sure, write the fingerprint on a new wallet record."
+)
+
+
+def identifier_note(origin: str | None) -> str:
+    # Say what `identifier_origin` found, for an operator restoring without a record.
+    if origin == "Bails check unavailable":
+        return (
+            "The standard Bails identifier could not be checked because RIPEMD-160 is unavailable. "
+            "This does not prove the cards are wrong or mixed up. Compare the fingerprint and any "
+            "other wallet record you have before restoring."
+        )
+    if origin is None:
+        return (
+            "The backup identifier was not made from this seed. That can be normal for codex32 backups "
+            "made from split shares, supplied seed bytes or an explicit identifier. Bails made every "
+            "identifier from its seed, so for a Bails backup these are the wrong or mixed-up cards."
+        )
+    return (
+        f"The backup identifier matches this seed ({origin} rule). That rules out most mixed-up cards, "
+        "but not cards replaced on purpose."
+    )
+
+
+def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
+    """Check codex32's fingerprint or Bails' three-character seed-digest identifier."""
+    identifier = secret.header.identifier
+    if identifier == _fingerprint_identifier(fingerprint):
+        return "codex32"
+    ripemd_unavailable = False
+    for name, digest in (("Bails", "ripemd160"), ("Bails alpha", "sha256")):
+        try:
+            hashed = hashlib.new(digest, secret.seed_bytes).digest()
+        except ValueError:
+            if name == "Bails":
+                ripemd_unavailable = True
+            continue
+        derived = convertbits(hashed, 8, 5, pad=True)
+        if identifier[:3] == _u5_to_chars(tuple(derived[:3])):
+            return name
+    return "Bails check unavailable" if ripemd_unavailable else None
 
 
 @dataclass(frozen=True)
@@ -153,6 +219,14 @@ class BitcoinCore:
             raise TypeError("wallet operations accept only MasterSeed")
         return self.fingerprint_seed(secret.seed_bytes)
 
+    def verify_identity(self, secret: MasterSeed, expected_fingerprint: bytes | None) -> None:
+        """Refuse a recovered seed that is not the recorded wallet before any wallet is touched."""
+        if expected_fingerprint is not None and self.fingerprint(secret) != expected_fingerprint:
+            raise FingerprintMismatch(
+                "The recovered master fingerprint does not match the one from the wallet record. "
+                "Bitcoin Core was not changed."
+            )
+
     def _root_xpub(self, wallet: str) -> str:
         result = self._rpc("gethdkeys", wallet=wallet)
         if not isinstance(result, list) or len(result) != 1 or not isinstance(result[0], dict):
@@ -230,19 +304,102 @@ class BitcoinCore:
         listing, info = self._rpc("listdescriptors", wallet=name), self._rpc("getwalletinfo", wallet=name)
         if not isinstance(info, dict) or not isinstance(listing, dict):
             raise BitcoinCoreError("Unexpected Bitcoin Core wallet information.")
+        txcount = info.get("txcount")
+        keypoolsize = info.get("keypoolsize")
+        internal_keypool = info.get("keypoolsize_hd_internal", 0)
+        has_unlock_state = "unlocked_until" in info
+        unlocked = info.get("unlocked_until")
         eligible = (
             info.get("descriptors") is True
             and info.get("private_keys_enabled") is True
             and info.get("external_signer", False) is False
-            and info.get("txcount") == 0
-            and info.get("keypoolsize") == 0
-            and info.get("keypoolsize_hd_internal", 0) == 0
+            and type(txcount) is int
+            and txcount == 0
+            and type(keypoolsize) is int
+            and keypoolsize == 0
+            and type(internal_keypool) is int
+            and internal_keypool == 0
             and info.get("scanning") is False
             and listing.get("descriptors") == []
             and name.isprintable()
+            and (not has_unlock_state or type(unlocked) is int and unlocked >= 0)
         )
-        unlocked = info.get("unlocked_until")
-        return (unlocked is not None, unlocked == 0) if eligible else None
+        return (has_unlock_state, unlocked == 0) if eligible else None
+
+    def _create_account_zero(self, secret: MasterSeed, wallet: str) -> None:
+        root = _master_xprv_from_seed(secret.seed_bytes, testnet=self.chain != "main")
+        added = self._rpc("addhdkey", wallet=wallet, stdin=root + "\n")
+        xpub = added.get("xpub") if isinstance(added, dict) else None
+        if not isinstance(xpub, str) or not xpub.startswith("xpub" if self.chain == "main" else "tpub"):
+            raise BitcoinCoreError("Bitcoin Core did not accept the master HD key.")
+        options = json.dumps({"hdkey": xpub}, separators=(",", ":"))
+        for output_type in _OUTPUT_TYPES:
+            created = self._rpc(
+                "-named", "createwalletdescriptor", f"type={output_type}", f"options={options}", wallet=wallet
+            )
+            descriptors = created.get("descs") if isinstance(created, dict) else None
+            if (
+                not isinstance(descriptors, list)
+                or len(descriptors) != 2
+                or not all(
+                    isinstance(desc, str) and not any(key in desc for key in _PRIVATE_MARKERS)
+                    for desc in descriptors
+                )
+            ):
+                raise BitcoinCoreError("Bitcoin Core did not create both wallet descriptors.")
+
+    def _rescan_from_timestamp(self, wallet: str, timestamp: int) -> None:
+        # createwalletdescriptor has no timestamp option. Re-import one of its
+        # existing active descriptors so Core applies its own two-hour time
+        # window and scans the whole wallet, without guessing a block height.
+        listing = self._rpc("listdescriptors", "true", wallet=wallet)
+        records = listing.get("descriptors") if isinstance(listing, dict) else None
+        if not isinstance(records, list):
+            raise BitcoinCoreError("Bitcoin Core did not list the wallet descriptors.")
+        candidates = [
+            record
+            for record in records
+            if isinstance(record, dict) and record.get("active") is True and record.get("internal") is False
+        ]
+        if len(candidates) != len(_OUTPUT_TYPES):
+            raise BitcoinCoreError("Bitcoin Core did not return the expected receiving descriptors.")
+        descriptor = candidates[0]
+        private = descriptor.get("desc")
+        span = descriptor.get("range")
+        next_index = descriptor.get("next_index")
+        if (
+            not isinstance(private, str)
+            or not any(marker in private for marker in _PRIVATE_MARKERS)
+            or not isinstance(span, list)
+            or len(span) != 2
+            or any(type(bound) is not int for bound in span)
+            or type(next_index) is not int
+            or not span[0] <= next_index <= span[1]
+        ):
+            raise BitcoinCoreError("Bitcoin Core returned an unexpected private descriptor.")
+        request = [
+            {
+                "desc": private,
+                "timestamp": timestamp,
+                "active": True,
+                "internal": False,
+                "range": span,
+                "next_index": next_index,
+            }
+        ]
+        result = self._rpc(
+            "importdescriptors",
+            wallet=wallet,
+            stdin=json.dumps(request, separators=(",", ":")) + "\n",
+            timeout=86400,
+        )
+        if (
+            not isinstance(result, list)
+            or len(result) != 1
+            or not isinstance(result[0], dict)
+            or result[0].get("success") is not True
+        ):
+            raise BitcoinCoreError("Bitcoin Core did not complete the timestamped wallet rescan.")
 
     def _select(
         self,
@@ -299,9 +456,18 @@ class BitcoinCore:
         ask: Callable[[str], str],
         tell: Callable[[str], None],
         *,
+        expected_fingerprint: bytes | None,
         account: int = 0,
         timestamp: int | Literal["now"] = "now",
     ) -> str:
+        """Validate input and identity before selecting or changing a wallet."""
+        if not isinstance(secret, MasterSeed):
+            raise TypeError("wallet operations accept only MasterSeed")
+        if type(account) is not int or account != 0:
+            raise ValueError("Bitcoin Core wallet initialization currently supports only account 0")
+        if timestamp != "now" and (type(timestamp) is not int or timestamp < 0):
+            raise ValueError("timestamp must be a nonnegative integer or 'now'")
+        self.verify_identity(secret, expected_fingerprint)
         while True:
             name = self._select(ask, tell)
             state = self._target(name)
@@ -339,60 +505,9 @@ class BitcoinCore:
                 if state is None:
                     tell("That wallet is no longer eligible. Choose again.")
                     continue
-                records = core_descriptors(
-                    secret,
-                    account=account,
-                    testnet=self.chain != "main",
-                    private=True,
-                    timestamp=timestamp,
-                )
-                imported = self._rpc(
-                    "importdescriptors",
-                    wallet=name,
-                    stdin=json.dumps(records, separators=(",", ":")) + "\n",
-                )
-                del records
-                valid = (
-                    isinstance(imported, list)
-                    and len(imported) == 4
-                    and all(isinstance(item, dict) and item.get("success") is True for item in imported)
-                )
-                if not valid:
-                    raise BitcoinCoreError("Bitcoin Core did not import every private descriptor.")
-                public = self.public_descriptors(
-                    secret,
-                    wallet=name,
-                    account=account,
-                    timestamp=timestamp,
-                )
-                expected: list[tuple[str, bool, bool]] = []
-                for record in public:
-                    detail = self._rpc("getdescriptorinfo", stdin=str(record["desc"]) + "\n")
-                    expansion = detail.get("multipath_expansion") if isinstance(detail, dict) else None
-                    if (
-                        not isinstance(expansion, list)
-                        or len(expansion) != 2
-                        or not all(isinstance(descriptor, str) for descriptor in expansion)
-                    ):
-                        raise BitcoinCoreError("Bitcoin Core did not expand the expected public descriptors.")
-                    expected.extend(
-                        (descriptor, True, bool(position)) for position, descriptor in enumerate(expansion)
-                    )
-                listed = self._rpc("listdescriptors", wallet=name)
-                values = listed.get("descriptors") if isinstance(listed, dict) else None
-                if not isinstance(values, list) or not all(isinstance(item, dict) for item in values):
-                    raise BitcoinCoreError("Bitcoin Core did not return the imported public descriptors.")
-                actual = [
-                    (
-                        str(item.get("desc")),
-                        item.get("active") is True,
-                        item.get("internal") is True,
-                    )
-                    for item in values
-                    if item.get("active") is True
-                ]
-                if sorted(actual) != sorted(expected):
-                    raise BitcoinCoreError("Bitcoin Core's accepted public descriptors did not match.")
+                self._create_account_zero(secret, name)
+                if timestamp != "now":
+                    self._rescan_from_timestamp(name, timestamp)
             finally:
                 warning = "Confirm immediately in Bitcoin Core that the wallet is locked."
                 while relock:
@@ -403,7 +518,8 @@ class BitcoinCore:
                         continue
                     except BitcoinCoreError as error:
                         raise BitcoinCoreError(warning) from error
-                    if not isinstance(info, dict) or info.get("unlocked_until") != 0:
+                    unlocked_until = info.get("unlocked_until") if isinstance(info, dict) else None
+                    if type(unlocked_until) is not int or unlocked_until != 0:
                         raise BitcoinCoreError(warning)
                     relock = False
             if waited:

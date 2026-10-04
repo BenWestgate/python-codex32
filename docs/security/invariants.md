@@ -11,6 +11,13 @@ and evidence.
 3. Shared creation uses a separate OS-CSPRNG call for each random initial share,
    gated by confirmation. Input cannot replace entropy or the original secret.
 4. Wallet setup uses the original ceremony result or a validated recovered seed.
+   Restore authenticates the recovered seed before any wallet is listed,
+   unlocked, or imported into: normally with the master fingerprint typed from
+   the wallet record, or by an explicit no-record choice made after seeing the
+   recovered fingerprint and whether the backup identifier matched a
+   seed-derived rule or its standard Bails check was unavailable. Fresh
+   `ms32 create` ceremonies do not authenticate against a pre-existing wallet;
+   they require the operator to record the new fingerprint.
 5. Correction shares one mass bound and deadline across target lengths. The
    public API fails closed on incomplete required work; CLI searches may return
    one primary-best-so-far eligible candidate at the deadline. Incomplete
@@ -25,11 +32,11 @@ and evidence.
    admitted classes ranked equal to or better than the candidate, independently
    of execution order.
 6. Secrets stay out of arguments, logs, ordinary output, and public transfers.
-   Private descriptors exist only in Python memory and child stdin.
+   During wallet setup, codex32 transfers the master xprv only through child stdin.
 7. Bitcoin Core chains are discovered before entropy or recovery input. The
    operator confirms an eligible descriptor wallet by exact name.
-8. Wallet state is revalidated before import. Every import must succeed and the
-   exact accepted public descriptor set must match.
+8. Wallet state is revalidated before handing Core the master key. Core must
+   accept that key and create every requested account-0 wallet descriptor.
 9. The installed library and both command-line programs have no passphrase
    channel. The graphical program declares one exception, confined to
    `codex32_gui/wallet_setup.py`, which is also the only module there that

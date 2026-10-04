@@ -173,18 +173,25 @@ def _search_competitors(
     frontier: dict[_Layer, int],
     deadline: float,
     allowed: Callable[[CorrectionCandidate], bool] | None,
+    *,
+    seed_candidates: Sequence[CorrectionCandidate] = (),
+    optional_only: bool = False,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
-    results: dict[str, CorrectionCandidate] = {}
+    results = {candidate.artifact.text.lower(): candidate for candidate in seed_candidates}
     fixed: dict[int, CorrectionCandidate | None] = {}
     completed: set[_Layer] = set()
     try:
         for state in states:
-            if _FIXED in state.counts:
+            if not optional_only and _FIXED in state.counts:
                 _check_deadline(deadline)
                 fixed[state.target] = _search_fixed(state, frontier, results, allowed)
         targets = {state.target: state for state in states}
         layers = sorted(
-            (key for key in frontier if key[1] != _FIXED),
+            (
+                key
+                for key in frontier
+                if key[1] != _FIXED and (not optional_only or key[1].unit != 4 and key[1].distance > 2)
+            ),
             key=lambda key: (_tier(key[1]), frontier[key]),
         )
         for key in layers:

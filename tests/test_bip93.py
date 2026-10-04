@@ -32,6 +32,10 @@ from codex32 import (
 from codex32.errors import CodexError, InvalidChecksum
 
 
+def test_profile_string_matches_its_value() -> None:
+    assert str(Profile.MS) == "ms"
+
+
 def test_vector_1_parts_and_seed() -> None:
     secret = parse_codex32(VECTOR_1["secret_s"])
     assert isinstance(secret, MasterSeed)

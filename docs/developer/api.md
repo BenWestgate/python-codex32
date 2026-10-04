@@ -77,8 +77,9 @@ generic parse-length failure.
 - `_cli_input.py` retains at most nine artifacts and delegates partial-set
   compatibility to `bip93.py`. Card confirmation clears the terminal and saved
   scrollback where supported, then displays only entered text after a mismatch.
-  Canonical text removes whitespace for comparison; presentation state retains
-  entered spacing and case. Grouped alignment preserves entered ownership;
+  Canonical text removes whitespace and folds ASCII case for comparison;
+  non-ASCII lookalikes remain mismatches. Presentation state retains entered
+  spacing and case. Grouped alignment preserves entered ownership;
   unspaced alignment minimizes character edits before disturbed groups.
   Codex32 entry uses a separate `> ` line; correction candidates use ordinary card formatting without a prompt marker;
   fixed prefixes follow that marker. The `xprv` and wallet recovery paths begin
@@ -100,7 +101,7 @@ generic parse-length failure.
   hidden state.
 
 Private Python names are convention rather than access control. The supported
-surface is the 25-name package `__all__`; direct use of private helpers is
+surface is the 23-name package `__all__`; direct use of private helpers is
 unsupported but remains in the review scope.
 
 ### Size budget
@@ -205,6 +206,8 @@ requires a complete explicit `ms1` string; it never infers or corrects a missing
 HRP or separator. No entropy is drawn for this path; raw hexadecimal seeds retain
 the generation path. Existing imports use timestamp zero to include prior
 history. Changing a supplied secret's identifier requires a sharing threshold.
+Existing-seed creation uses the same recorded-fingerprint or explicit no-record
+confirmation as wallet restoration before import, including after re-sharing.
 Shared creation
 uses an explicit threshold or full backup header. Without an explicit share
 count or indices, thresholds 2 and 3 produce the reviewed 2-of-3 and 3-of-5
@@ -588,35 +591,31 @@ Public wallet operations accept only a validated `MasterSeed`. `wallet.py` is
 stateless and never accepts shares, Core Lightning secrets, BIP39 migration
 artifacts, or raw bytes.
 
-The public adapter has two functions:
-
-- `master_xprv(secret, testnet=False)` returns the BIP32 root extended private
-  key.
-- `core_descriptors(...)` returns fixed BIP44, BIP49, BIP84, and BIP86 Bitcoin
-  Core `importdescriptors` records. Private records use stdlib-only root xprv
-  serialization; public records require an explicit wallet integration and the
-  Core wallet whose imported root key will perform hardened derivation.
+The supported package surface exposes one wallet primitive:
+`master_xprv(secret, testnet=False)`, which returns the BIP32 root extended
+private key. Bitcoin Core descriptor-record construction is an internal
+test/reference detail rather than a supported package API.
 
 No installed Python dependency performs secp256k1 operations. The private
-Bitcoin Core adapter implements the wallet integration by sending root-xprv
-descriptor material to `bitcoin-cli` over stdin and treating Core's returned
-fingerprints, account xpubs, and normalized descriptors as untrusted external
-data.
+Bitcoin Core adapter gives Core the root xprv over stdin and asks Core to
+create the four standard account-0 descriptor types. Descriptor normalization
+and public derivation stay behind that private Core boundary.
 
 Public descriptors contain account xpubs. Private descriptors intentionally
 follow Bitcoin Core's root-key form: they contain the root xprv followed by the
 complete derivation path. They therefore grant authority over the entire root,
 not only the selected account. The CLI warns before printing them.
 
-Account, private/public mode, network serialization, and timestamp are explicit
-API inputs. The `ms32 wallet` CLI takes only `--account` and `--timestamp`; the
+Account and timestamp remain explicit at the Core boundary, while network
+serialization is explicit for `master_xprv`. The `ms32 wallet` CLI takes
+`--account 0` and `--timestamp`; the
 selected Bitcoin Core chain is authoritative and there is no wallet
 `--testnet` flag. `ms32 xprv --testnet` remains explicit because it directly
 selects xprv versus tprv serialization. The timestamp defaults to `0` so
-recovery scans from genesis. A nonnegative Unix time or the literal `now` may
-be supplied; `now` intentionally skips historical discovery. There is no
-account database, descriptor parser, policy language, RPC library, or network
-client.
+recovery scans from genesis. A nonzero Unix time uses Core's timestamped
+rescan with its two-hour safety window; `now` skips historical discovery.
+Nonzero wallet accounts await upstream Core support. There is no account
+database, descriptor parser, policy language, RPC library, or network client.
 
 Bitcoin master-seed creation and restoration use a private CLI adapter. Before
 entropy or recovery input it resolves `bitcoin-cli` from `PATH` and probes the
@@ -629,29 +628,36 @@ descriptors, transactions, keypool, or active scan. The operator selects by
 number and confirms the escaped exact name; the adapter never infers a wallet
 from list order or Bitcoin-Qt state.
 
-Immediately before import, every target property is checked again. The original
-`CreationCeremony.finish()` result or validated recovered master seed supplies
-the four private multipath records. Confirmation text is never reparsed into
-this source. Private descriptor material is sent only through
-`bitcoin-cli -stdin`, raw Core errors are suppressed, and no passphrase
-interface exists.
+Immediately before adding the key, every target property is checked again. The
+original `CreationCeremony.finish()` result or validated recovered master seed
+supplies the root xprv. Confirmation text is never reparsed into this source.
+The key is sent only through `bitcoin-cli -stdin`; raw Core errors are suppressed,
+and no passphrase interface exists.
 
-After all four private records import successfully, Core v32 exposes the one
-wallet HD root with `gethdkeys`; `derivehdkey` performs the hardened
-BIP44/49/84/86 account derivations. Python validates the returned origin paths,
-fingerprint consistency, and network xpub/tpub versions, constructs only the
-fixed descriptor templates, and asks `getdescriptorinfo` to validate and expand
-their external/internal branches. The adapter then compares the exact eight
-active public descriptors against `listdescriptors`. It relocks wallets Core
-reports as encrypted. Master-fingerprint display is likewise delegated to Core:
+For wallet restoration and `ms32 create --existing`, callers make the wallet-record
+decision before initialization. `BitcoinCore.initialize()` calls `verify_identity()`
+before `_select()` or any wallet mutation. A supplied fingerprint must match the
+recovered master seed; `None` is reserved for fresh creation or the operator's
+explicit no-record fallback. A mismatch stops before a destination wallet is
+selected or changed.
+
+Core v32 accepts the key with `addhdkey` and creates external and internal
+account-0 descriptors for BIP44/49/84/86 with `createwalletdescriptor`. Python
+checks each call's result but trusts Core to derive and store the wallet policy.
+Numeric recovery timestamps re-import one existing active private descriptor
+through stdin with its range and next index preserved; Core then rescans the
+whole wallet from the supplied time (or genesis for `0`). The adapter
+relocks wallets Core reports as encrypted. Master-fingerprint display is
+likewise delegated to Core:
 a stateless root P2PKH descriptor is normalized, `deriveaddresses` derives its
 address, and `validateaddress` returns the script hash whose first four bytes are
 the BIP32 fingerprint.
 
 The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
 `getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `deriveaddresses`,
-`validateaddress`, `importdescriptors`, `gethdkeys`, `derivehdkey`, and
-`walletlock`. Bitcoin Core alone creates wallets, selects encryption, handles
+`validateaddress`, `gethdkeys`, `derivehdkey`, `addhdkey`,
+`createwalletdescriptor`, `importdescriptors`, and `walletlock`.
+Bitcoin Core alone creates wallets, selects encryption, handles
 passphrases, stores keys, and provides normal wallet behavior.
 
 The wallet CLI is one leaf command:
@@ -661,9 +667,9 @@ ms32 wallet --account 0 --timestamp 0
 ```
 
 It preflights Core before recovery input, recovers one validated master seed,
-selects and revalidates an empty private-key-enabled destination, imports
-through `bitcoin-cli -stdin`, verifies the exact accepted public descriptor
-set, and relocks an encrypted destination after success, failure, or
+selects and revalidates an empty private-key-enabled destination, sends the root
+xprv through `bitcoin-cli -stdin`, asks Core to create account-0 descriptors,
+and relocks an encrypted destination after success, failure, or
 interruption. It never handles a passphrase.
 
 For offline signing/watch-only and multisig workflows, use Bitcoin Core v32's
@@ -674,11 +680,11 @@ The direct `ms32 xprv` primitive remains top-level and carries an explicit
 secret-root warning.
 
 `tools/bitcoin_core_regtest.py` is the repeatable integration check. It requires
-Bitcoin Core 32 or newer and exercises direct wallet restoration, account and
-timestamp handling, Core-normalized public descriptors, balance discovery,
+Bitcoin Core 32 or newer and exercises direct wallet restoration, account-0
+and timestamp handling, Core-created public descriptors, balance discovery,
 sign/broadcast behavior on regtest, relocking, and mainnet/test-network root
 serialization. `tools/bitcoin_core_main_smoke.py` repeats the descriptor,
-account, timestamp, and relocking checks against an isolated main-chain Core
+account-0, timestamp, and relocking checks against an isolated main-chain Core
 instance without connecting to peers.
 
 ## Deliberate divergences and non-goals

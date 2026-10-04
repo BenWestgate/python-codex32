@@ -115,12 +115,14 @@ def main() -> None:
             if not isinstance(secret, MasterSeed):
                 raise TypeError("synthetic fixture was not a master seed")
             client = BitcoinCore.connect()
+            expected_fingerprint = client.fingerprint(secret)
             answers = iter(("yes",))
             if (
                 client.initialize(
                     secret,
                     lambda _prompt: next(answers),
                     lambda _message: None,
+                    expected_fingerprint=expected_fingerprint,
                     account=0,
                     timestamp=0,
                 )
@@ -131,34 +133,12 @@ def main() -> None:
                 raise RuntimeError("automatic initialization did not relock the wallet")
             _verify_origins(rpc("listdescriptors", wallet="signer"), account=0)
 
-            rpc(
-                "-named",
-                "createwallet",
-                "wallet_name=account7",
-                "disable_private_keys=false",
-                "blank=true",
-                "descriptors=true",
-            )
-            account_answers = iter(("yes",))
-            if (
-                client.initialize(
-                    secret,
-                    lambda _prompt: next(account_answers),
-                    lambda _message: None,
-                    account=7,
-                    timestamp="now",
-                )
-                != "account7"
-            ):
-                raise RuntimeError("account-7 initialization selected the wrong wallet")
-            _verify_origins(rpc("listdescriptors", wallet="account7"), account=7)
-
             print(
                 json.dumps(
                     {
                         "bitcoin_core": network["subversion"],
                         "chain": blockchain["chain"],
-                        "account": 7,
+                        "account": 0,
                         "status": "pass",
                     }
                 )

@@ -8,17 +8,27 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import Literal, NamedTuple, cast
 
-from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import (
+    NO_RECORD_WARNING,
+    BitcoinCore,
+    BitcoinCoreError,
+    FingerprintMismatch,
+    identifier_note,
+    identifier_origin,
+    parse_fingerprint,
+)
 from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
+    _ascii_lower,
     _card_text,
+    _case_interpretation,
     _confirm_correction,
-    _correction_candidates,
     _entered_groups,
     _fingerprint_matcher,
     _render_groups,
     _require_correction_confirmation,
+    _scheduled_candidates,
     _suggestions,
 )
 from codex32._cli_input import InputError as _UsageError
@@ -35,7 +45,12 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import _best, _residue_low_discrimination, correct_worksheet_residue
+from codex32.correction import (
+    CorrectionCandidate,
+    _best,
+    _residue_low_discrimination,
+    correct_worksheet_residue,
+)
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 from codex32.generation import (
     ConfirmationResult,
@@ -88,7 +103,7 @@ def _secret(artifacts: list[Artifact]) -> Secret:
     if not all(isinstance(artifact, Share) for artifact in artifacts):
         raise _UsageError("Recovery accepts ordinary shares or one complete secret.")
     try:
-        return recover_secret([artifact for artifact in artifacts if isinstance(artifact, Share)])
+        return recover_secret(cast(list[Share], artifacts))
     except CodexError as error:
         raise _UsageError(str(error)) from error
 
@@ -189,6 +204,8 @@ def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinC
 def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None]:
     if value is None:
         return Profile.MS, None, None
+    if not value.isascii():
+        raise _UsageError("The set header must contain only ASCII characters.")
     lowered = value.lower()
     if lowered != value and value.upper() != value:
         raise _UsageError("The set header must use either uppercase or lowercase.")
@@ -296,10 +313,10 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
             prefill=prefill,
         )
         compact = "".join(replacement.split())
-        if compact.lower() == expected.lower():
+        if _ascii_lower(compact) == expected.lower():
             groups = [replacement]
             break
-        if len(compact) > len(expected[start * 4 : end * 4]) and compact.lower().startswith(
+        if len(compact) > len(expected[start * 4 : end * 4]) and _ascii_lower(compact).startswith(
             (expected.split("1", 1)[0] + "1").lower()
         ):
             _print(
@@ -313,7 +330,7 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
         changed.difference_update(range(start, end))
         changed.update(start + i for i in remaining)
     entered = "".join(groups)
-    if "".join(entered.split()).lower() != expected.lower():
+    if _ascii_lower("".join(entered.split())) != expected.lower():
         raise RuntimeError("Confirmation mismatch.")
     if confirm is not None and not confirm(entered).accepted:
         raise RuntimeError("Confirmation rejected.")
@@ -333,6 +350,44 @@ def _generated_secret(
     )
 
 
+def _show_fingerprint(core: BitcoinCore, secret: MasterSeed, action: str) -> None:
+    _print(f"\nMaster fingerprint: {core.fingerprint(secret).hex().upper()}", err=True)
+    _text(f"{action}, then press Enter", optional=True, prompt_end=". ")
+    if sys.stderr.isatty():
+        _print("\x1b[3J\x1b[2J\x1b[H", err=True)
+
+
+def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
+    fingerprint = core.fingerprint(secret)
+    _print(f"\nMaster fingerprint: {fingerprint.hex().upper()}", err=True)
+    _print(f"Backup identifier: {secret.header.identifier.upper()}", err=True)
+    _print(identifier_note(identifier_origin(secret, fingerprint)), err=True)
+    _print(NO_RECORD_WARNING, err=True)
+    return _text("Restore without a wallet record? [y/N]", optional=True).lower() in ("y", "yes")
+
+
+def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed) -> bytes | None:
+    # Take the master fingerprint from a recovery record until the library accepts it.
+    prompt = "Type the master fingerprint from your wallet record (Enter if none)"
+    while True:
+        text = _text(prompt, optional=True)
+        if not text:
+            if _without_record(core, secret):
+                return None
+            raise _WalletSetupInterrupted
+        try:
+            expected = parse_fingerprint(text)
+        except ValueError as error:
+            _print(str(error), err=True)
+            continue
+        try:
+            core.verify_identity(secret, expected)
+        except FingerprintMismatch as error:
+            _print(str(error), err=True)
+            continue
+        return expected
+
+
 def _initialize_wallet(
     core: BitcoinCore,
     secret: MasterSeed,
@@ -340,16 +395,24 @@ def _initialize_wallet(
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
     fresh: bool = True,
+    restore: bool = False,
     confirmed: bool = True,
+    identity_checked: bool = False,
+    expected_fingerprint: bytes | None = None,
 ) -> int:
     assert isinstance(secret, MasterSeed)
     try:
         if confirmed:
             _print("Master-seed backup confirmed.\n", err=True)
+        if restore and not identity_checked:
+            expected_fingerprint = _recorded_fingerprint(core, secret)
+        if not restore:
+            _show_fingerprint(core, secret, "Write it on the wallet record")
         name = core.initialize(
             secret,
             lambda prompt: _text(prompt, optional=True),
             lambda message: _print(message, err=True),
+            expected_fingerprint=expected_fingerprint,
             account=account,
             timestamp=timestamp,
         )
@@ -420,49 +483,53 @@ def _create(
         raise _UsageError("--bytes applies only to a new random seed.")
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise _UsageError("Bitcoin backup creation requires an interactive terminal.")
-    if threshold and not sys.stdin.isatty():
-        raise _UsageError("Shared creation requires an interactive terminal.")
     if threshold and shares is None and indices is None:
         if threshold in (2, 3):
             shares = {2: 3, 3: 5}[threshold]
         else:
             raise _UsageError("For thresholds 4 through 9, choose --shares or --indices.")
     core = _connected_core()
-    source = _creation_source(profile, core.fingerprint) if existing else None
-    if not existing and not sys.stdin.isatty() and _text("", optional=True):
-        raise _UsageError("Use --existing when supplying a seed or secret.")
+    source = _creation_source(profile) if existing else None
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
     try:
-        if threshold == 0:
-            if isinstance(source, MasterSeed):
-                if identifier is not None and identifier != source.header.identifier:
-                    raise _UsageError(
-                        "To change the existing secret's identifier, choose a sharing threshold from 2 through 9."
-                    )
-                secret = source
-            else:
-                secret = _generated_secret(source, byte_length, identifier, core.fingerprint_seed)
-            _emit(secret, False, fingerprint=core.fingerprint)
-            if sys.stdin.isatty():
-                _confirm_card(secret)
-            return (
-                _initialize_wallet(core, secret, timestamp=0 if existing else "now", fresh=not existing)
-                if core is not None
-                else 0
-            )
+        existing_secret: MasterSeed | None = None
         if isinstance(source, MasterSeed):
-            ceremony = CreationCeremony.from_secret(
-                source,
-                threshold=threshold,
-                identifier=identifier,
-                share_count=shares,
-                indices=indices,
-            )
+            if threshold == 0 and identifier is not None and identifier != source.header.identifier:
+                raise _UsageError(
+                    "To change the existing secret's identifier, choose a sharing threshold from 2 through 9."
+                )
+            existing_secret = source
         elif source is not None:
-            source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
+            existing_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
+            if threshold and identifier is None:
+                identifier = existing_secret.header.identifier
+        try:
+            expected = _recorded_fingerprint(core, existing_secret) if existing_secret is not None else None
+        except (EOFError, KeyboardInterrupt) as error:
+            raise _WalletSetupInterrupted from error
+
+        def finish_wallet(seed: MasterSeed) -> int:
+            return _initialize_wallet(
+                core,
+                seed,
+                timestamp=0 if existing else "now",
+                fresh=not existing,
+                restore=existing,
+                identity_checked=existing,
+                expected_fingerprint=expected,
+            )
+
+        if threshold == 0:
+            secret = existing_secret or _generated_secret(
+                None, byte_length, identifier, core.fingerprint_seed
+            )
+            _emit(secret, False, fingerprint=None if existing else core.fingerprint)
+            _confirm_card(secret)
+            return finish_wallet(secret)
+        if existing_secret is not None:
             ceremony = CreationCeremony.from_secret(
-                source_secret,
+                existing_secret,
                 threshold=threshold,
                 identifier=identifier,
                 share_count=shares,
@@ -488,10 +555,7 @@ def _create(
         _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
     finished = ceremony.finish()
     assert isinstance(finished, MasterSeed)
-    if core is not None:
-        return _initialize_wallet(core, finished, timestamp=0 if existing else "now", fresh=not existing)
-    _print("\nEvery recovery card was confirmed from its re-entered text.", err=True)
-    return 0
+    return finish_wallet(finished)
 
 
 def _correct(
@@ -531,14 +595,16 @@ def _correct(
                 f"Add {correction.addend} at position "
                 f"{correction.reverse_index + 1}, counting backward from the end."
             )
-        return 0
+        return 1 if result else 0
     if erasures:
         raise _UsageError("--erasure can be used only with --residue.")
     normalized = "".join(value.split())
     separator = normalized.lower().rfind("1")
     if separator <= 0:
         raise _UsageError("Enter a complete application prefix followed by the separator 1.")
-    hrp = normalized[:separator].lower()
+    if len(raw_hrp := normalized[:separator]) > 83 or not all("!" <= c <= "~" for c in raw_hrp):
+        raise _UsageError("The application prefix must be at most 83 printable ASCII characters.")
+    hrp = raw_hrp.lower()
     if context.master_seed and hrp != Profile.MS.value:
         raise _UsageError("This command accepts only Bitcoin master-seed input beginning with ms1.")
     try:
@@ -550,16 +616,25 @@ def _correct(
             raise _UsageError("--bytes does not match the valid master-seed backup length.")
         _print("The codex32 string is already valid.")
         return 0
-    candidates, complete, _deadline, ambiguous = _correction_candidates(
-        value,
-        hrp,
-        byte_length,
-        value[: separator + 1],
-    )
+    search_value, erased, immutable = normalized, normalized, normalized[: separator + 1]
+    interpreted = _case_interpretation(normalized, immutable, context.profiles, None)
+    if interpreted is not None:
+        candidate, search_value, erased, immutable = interpreted
+        if (
+            candidate is not None
+            and isinstance(byte_length, int)
+            and len(candidate.artifact.text) != _ms_text_length(byte_length)
+        ):
+            raise _UsageError("--bytes does not match the corrected master-seed backup length.")
+    else:
+        candidate = None
+    if candidate is not None:
+        candidates: tuple[CorrectionCandidate, ...] = (candidate,)
+        complete = True
+    else:
+        candidates, complete = _scheduled_candidates(search_value, erased, hrp, byte_length, immutable)
     if not complete and not candidates:
         raise _CommandError("The correction search did not complete within ten seconds.")
-    if ambiguous:
-        raise _CommandError("More than one correction is possible; none was selected.")
     if not candidates:
         raise _CommandError("No valid correction found. Check the original backup.")
     if context.master_seed and len(candidates) > 1:
@@ -588,15 +663,22 @@ def _correct(
 def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
     if not sys.stdin.isatty():
         raise _UsageError("Bitcoin Core wallet initialization requires an interactive terminal.")
-    _print("Warning: This imports private descriptors that can spend funds.", err=True, danger=True)
+    _print(
+        "Warning: This gives Bitcoin Core the master private key, which can spend funds.",
+        err=True,
+        danger=True,
+    )
     core = _connected_core()
-    secret = _master_seed(core.fingerprint)
+    # Keep the recovered fingerprint hidden until the operator has supplied
+    # independent wallet-record evidence or explicitly chosen recordless restore.
+    secret = _master_seed()
     return _initialize_wallet(
         core,
         secret,
         account=account,
         timestamp=timestamp,
         fresh=False,
+        restore=True,
         confirmed=False,
     )
 
@@ -675,22 +757,20 @@ def _main(context: _CliContext, argv: Sequence[str] | None = None) -> int:
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else 1
     scope = f"{context.prog} {arguments.command}"
+    correction_failed = 3 if arguments.command == "correct" else 1
     try:
         return _dispatch(arguments, context)
     except CorrectionDeclined:
-        return 1
+        return correction_failed
     except InteractiveConfirmationRequired:
         _print(f"{context.prog}: interactive confirmation required", err=True)
-        return 1
+        return correction_failed
     except _UsageError as error:
         _print(f"{scope}: {error}", err=True)
         return 2
-    except (_CommandError, CodexError) as error:
+    except (_CommandError, CodexError, BitcoinCoreError) as error:
         _print(f"{scope}: {error}", err=True)
-        return 1
-    except BitcoinCoreError as error:
-        _print(f"{scope}: {error}", err=True)
-        return 1
+        return correction_failed
     except EOFError:
         _print(f"{scope}: Input ended before recovery completed.", err=True)
         return 2

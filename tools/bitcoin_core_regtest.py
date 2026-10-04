@@ -9,13 +9,16 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
+
+from _wallet_test_vectors import CORE_FINGERPRINTS
 
 from codex32._bitcoin_core import BitcoinCore
 from codex32.bip93 import parse_codex32
 from codex32.profiles.ms32 import MasterSeed
-from codex32.wallet import core_descriptors
+from codex32.wallet import _core_descriptors
 
 # Frozen public BIP93 vector material; it has never controlled a funded wallet.
 _SEED = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
@@ -84,6 +87,9 @@ def main() -> None:
             if not isinstance(network, dict) or network.get("version", 0) < 320000:
                 raise RuntimeError("Bitcoin Core 32 or newer is required")
 
+            current_time = int(time.time())
+            rpc("setmocktime", str(current_time - 6 * 3600))
+
             rpc(
                 "-named",
                 "createwallet",
@@ -123,12 +129,17 @@ def main() -> None:
             if not isinstance(secret, MasterSeed):
                 raise TypeError("synthetic fixture was not a master seed")
             client = BitcoinCore.connect()
+            for seed, expected_fingerprint in CORE_FINGERPRINTS.items():
+                if client.fingerprint_seed(seed) != expected_fingerprint:
+                    raise RuntimeError("Bitcoin Core fingerprint fixture mismatch")
+            expected_fingerprint = CORE_FINGERPRINTS[secret.seed_bytes]
             answers = iter(("yes",))
             if (
                 client.initialize(
                     secret,
                     lambda _prompt: next(answers),
                     lambda _message: None,
+                    expected_fingerprint=expected_fingerprint,
                     account=0,
                     timestamp=0,
                 )
@@ -150,6 +161,9 @@ def main() -> None:
             signer_address = rpc("getnewaddress", wallet="signer")
             rpc("sendtoaddress", signer_address, "1", wallet="miner")
             rpc("generatetoaddress", "1", miner_address)
+            rpc("setmocktime", str(current_time))
+            rpc("sendtoaddress", signer_address, "0.5", wallet="miner")
+            rpc("generatetoaddress", "1", miner_address)
 
             rpc(
                 "-named",
@@ -165,6 +179,7 @@ def main() -> None:
                     secret,
                     lambda _prompt: next(restore_answers),
                     lambda _message: None,
+                    expected_fingerprint=expected_fingerprint,
                     account=0,
                     timestamp=0,
                 )
@@ -174,43 +189,44 @@ def main() -> None:
             recovered_address = rpc("getaddressinfo", signer_address, wallet="restore")
             if not isinstance(recovered_address, dict) or recovered_address.get("ismine") is not True:
                 raise RuntimeError("recovered wallet did not recognize the funded signer address")
-            if rpc("getbalance", wallet="restore") != 1:
+            if rpc("getbalance", wallet="restore") != 1.5:
                 raise RuntimeError("recovery rescan did not find the funded output")
+
+            rpc(
+                "-named",
+                "createwallet",
+                "wallet_name=restore_recent",
+                "disable_private_keys=false",
+                "blank=true",
+                "descriptors=true",
+            )
+            recent_timestamp = current_time - 1800
+            if (
+                client.initialize(
+                    secret,
+                    lambda _prompt: "yes",
+                    lambda _message: None,
+                    account=0,
+                    expected_fingerprint=expected_fingerprint,
+                    timestamp=recent_timestamp,
+                )
+                != "restore_recent"
+            ):
+                raise RuntimeError("timestamped initialization selected the wrong wallet")
+            if rpc("getbalance", wallet="restore_recent") != 0.5:
+                raise RuntimeError("timestamped recovery missed a recent output or scanned older history")
+            recent_records = rpc("listdescriptors", wallet="restore_recent")["descriptors"]
+            if sum(record["timestamp"] == recent_timestamp for record in recent_records) != 1:
+                raise RuntimeError("Core did not retain the timestamped descriptor")
+            rpc("getnewaddress", "", "legacy", wallet="restore_recent")
 
             spend = rpc("sendtoaddress", miner_address, "0.5", wallet="restore")
             rpc("generatetoaddress", "1", miner_address)
             if rpc("gettransaction", spend, wallet="restore")["confirmations"] < 1:
                 raise RuntimeError("recovered wallet did not sign and broadcast")
 
-            rpc(
-                "-named",
-                "createwallet",
-                "wallet_name=account7",
-                "disable_private_keys=false",
-                "blank=true",
-                "descriptors=true",
-            )
-            account_answers = iter(("yes",))
-            if (
-                client.initialize(
-                    secret,
-                    lambda _prompt: next(account_answers),
-                    lambda _message: None,
-                    account=7,
-                    timestamp="now",
-                )
-                != "account7"
-            ):
-                raise RuntimeError("account-7 initialization selected the wrong wallet")
-            account_active = [
-                item for item in rpc("listdescriptors", wallet="account7")["descriptors"] if item["active"]
-            ]
-            for purpose in (44, 49, 84, 86):
-                if sum(f"/{purpose}h/1h/7h]" in item["desc"] for item in account_active) != 2:
-                    raise RuntimeError(f"Core did not create the expected BIP{purpose} account-7 origins")
-
-            main_private = core_descriptors(secret, private=True, timestamp=0)
-            test_private = core_descriptors(secret, testnet=True, private=True, timestamp=0)
+            main_private = _core_descriptors(secret, timestamp=0)
+            test_private = _core_descriptors(secret, testnet=True, timestamp=0)
             if "xprv" not in json.dumps(main_private) or "tprv" not in json.dumps(test_private):
                 raise RuntimeError("mainnet/test-network root serialization was not separated")
 

@@ -45,8 +45,9 @@ The operator must:
   balances or history;
 - protect recovery cards and store shared cards in different trusted places;
 - confirm every newly recorded secret or share;
-- keep wallet records separate from shares and compare recovered fingerprints,
-  addresses, account, policy, and history with those records;
+- keep wallet records separate from shares, type the master fingerprint from
+  the record before a restore import, and compare addresses, account, policy,
+  and history with those records;
 - compare every correction suggestion with the original codex32 string and stop
   when recovered information and wallet records disagree; and
 - never put recovery text in command arguments or transfer a master seed,
@@ -70,8 +71,8 @@ The operator must:
 - Creation feedback identifies correct groups but does not prove the recovery card was corrected.
 - A fresh unshared master seed exposes a public 20-bit BIP32 fingerprint in its
   default identifier; fingerprints are metadata, not secrets.
-- Private Bitcoin Core descriptors contain the root xprv and temporarily exist
-  in Python objects, serialized JSON, and the child process's standard input.
+- The master xprv temporarily exists in Python objects and the child process's
+  standard input during wallet initialization.
 - Wallet encryption belongs to Bitcoin Core. The library and both command-line
   programs accept an eligible unencrypted or unlocked encrypted wallet and never
   evaluate or handle a passphrase. The graphical program does handle one; see
@@ -128,7 +129,7 @@ available through `codex32`.
 
 Creation retries show only entered text in contiguous regions: bold red means review the card, with reverse video added for the active region. Original card formatting is display-only; editable prefills retain entered case and spacing.
 Complete matching canonical groups freeze; local alignment preserves entered group ownership before edit minimization and proceeds without crossing frozen boundaries (see the API alignment rules).
-Empty retries fail; retries are unlimited. Correct full-string retries confirm; incorrect recognizable full-string retries preserve progress and clarify the active region. Only complete case/whitespace-normalized equality confirms, with no expected characters, error classifications, prescribed edits, or repairs.
+Empty retries fail; retries are unlimited. Correct full-string retries confirm; incorrect recognizable full-string retries preserve progress and clarify the active region. Only complete ASCII-case/whitespace-normalized equality confirms; non-ASCII lookalikes remain mismatches and must be re-entered. No expected characters, error classifications, prescribed edits, or repairs are supplied.
 Progressive group-level correctness feedback is explicitly accepted and does not change the confirmation boundary.
 
 Confirmation shows that the operator can produce the correct recovery string during setup. It cannot prove that the physical backup was corrected rather than reconstructed using confirmation feedback.
@@ -202,10 +203,12 @@ before printing any candidate text, metadata, fingerprint, or residue addends.
 It then prints a conspicuous warning covering both deliberate completion of
 newly transcribed data and recovery with many missing characters. Literal
 uppercase `YES` is required before disclosure; other case variants, blank input,
-or EOF terminate the command with status 1. Redirected damaged data may still
-reach this gate, but disclosure requires an interactive terminal channel. If no
-such channel is available, the sole message is `codex32: interactive confirmation
-required` (or `ms32:`). Output formatting and `--plain` cannot bypass the gate.
+or EOF terminate standalone `correct` with status 3 and correction embedded in
+another workflow with status 1. Redirected damaged data may still reach this
+gate, but disclosure requires an interactive terminal channel. If no such
+channel is available, the sole message is `codex32: interactive confirmation
+required` (or `ms32:`), with the same command-specific status. Output formatting
+and `--plain` cannot bypass the gate.
 Existing whole-card `[y/N]` acceptance remains required after disclosure when a
 workflow will consume the corrected artifact. `correct` only displays the
 suggestion, so it has no second acceptance prompt. The gate does not verify the
@@ -231,14 +234,15 @@ signing setup belong to Bitcoin Core's maintained v32 workflow.
 | Control | Required behavior |
 |---|---|
 | Preflight | Before entropy or recovery input, explicit chain arguments probe the five standard local networks for Bitcoin Core 32 or newer. One response is selected automatically; multiple responses require operator selection. |
+| Recovery identity | `ms32 wallet` and `ms32 create --existing` authenticate a recovered seed before any wallet is listed. For `create --existing`, the wallet-record decision also precedes generation or display of any new card. Core derives the recovered fingerprint statelessly, and a mismatch raises `FingerprintMismatch` before any wallet RPC. The restore prompt does not show the recovered value, so the operator compares by typing the fingerprint from the wallet record. Without a record, the operator is shown the recovered fingerprint, whether the backup identifier was derived from the seed (the codex32 fingerprint rule, Bails' RIPEMD-160 rule, or its mid-2023 alpha's SHA-256 rule), and a warning, and then chooses. If RIPEMD-160 is unavailable, the standard Bails identifier check is reported as inconclusive rather than a mismatch; the Bails-alpha SHA-256 rule remains checkable. Fresh `ms32 create` has no pre-existing wallet to authenticate: it shows the newly created seed's fingerprint and requires the operator to acknowledge recording it. These checks catch mistakes such as wrong or mixed cards; anyone able to replace a threshold of cards could already read them. |
 | Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, wallet database, or wallet-creation operation. Every call uses loopback and the selected chain. |
 | Destination | Only an empty descriptor wallet with private keys enabled, no external signer, transactions, descriptors, keypool entries, or active scan is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
-| Seed source | The original ceremony result or validated recovered master seed supplies root-xprv private descriptors for Core's reported chain. After import, Core v32's wallet HD-key RPCs derive the requested BIP44, BIP49, BIP84, and BIP86 account xpubs. |
-| Secret channel | Private descriptor JSON is sent only through the child's standard input. It is absent from arguments, ordinary output, and diagnostics. The library and the command-line programs have no passphrase channel, and raw Core errors are suppressed. |
-| Revalidation | Every destination property is checked again immediately before import. Every private import must succeed before public verification begins. `gethdkeys` must expose one private wallet root; `derivehdkey` must return the requested hardened account paths with one consistent fingerprint and the correct network xpub/tpub version. `getdescriptorinfo` then validates and expands the fixed public templates, and the exact eight active descriptors must match Core's accepted set. |
+| Seed source | The original ceremony result or validated recovered master seed supplies a root xprv for Core's reported chain. Core v32 creates BIP44, BIP49, BIP84, and BIP86 account-0 descriptors from that key. |
+| Secret channel | The master xprv is sent only through the child's standard input. A timestamped rescan obtains one private descriptor from Core's captured stdout and returns it through stdin; neither value is printed or passed in arguments or diagnostics. The library and command-line programs have no passphrase channel and suppress raw Core errors. |
+| Revalidation | Every destination property is checked again immediately before adding the key. `addhdkey` must accept it and `createwalletdescriptor` must return two public descriptors for each requested address type. Numeric recovery timestamps trigger Core's time-based rescan (genesis for `0`), with no guessed block height. Core is trusted to derive and store the wallet policy. |
 | Relocking | Once Core reports an encrypted private-key wallet unlocked, a `finally`-protected obligation requests `walletlock` and verifies the locked state after success, failure, state change, or interruption. |
 
-The unlock command is entered in Bitcoin-Qt. Its
+For the command-line program, the unlock command is entered in Bitcoin-Qt. Its
 [console](https://github.com/bitcoin/bitcoin/blob/master/src/qt/rpcconsole.cpp)
 filters `walletpassphrase` arguments from the command displayed after submission
 and from retained history; codex32 only polls wallet state.
@@ -301,5 +305,5 @@ are named here because a static import check cannot see either.
 | Parsing and profiles | [`test_bech32.py`](../../tests/test_bech32.py), [`test_bip93.py`](../../tests/test_bip93.py), and [`test_profiles.py`](../../tests/test_profiles.py) |
 | Creation, sharing, and recovery | [`test_generation.py`](../../tests/test_generation.py), [`test_sharing.py`](../../tests/test_sharing.py), and the BIP93 vectors under `tests/data/` |
 | Correction | [`test_correction_bch.py`](../../tests/test_correction_bch.py), [`test_correction_indel.py`](../../tests/test_correction_indel.py), [`correction_capture.py`](../../tools/correction_capture.py), and [`differential_correction.py --verify`](../../tools/differential_correction.py) |
-| Bitcoin Core and wallets | [`test_bitcoin_core.py`](../../tests/test_bitcoin_core.py), [`test_wallet.py`](../../tests/test_wallet.py), [`bitcoin_core_regtest.py`](../../tools/bitcoin_core_regtest.py), and [`differential_wallet.py`](../../tools/differential_wallet.py) |
+| Bitcoin Core and wallets | [`test_bitcoin_core.py`](../../tests/test_bitcoin_core.py), [`test_wallet.py`](../../tests/test_wallet.py), [`bitcoin_core_regtest.py`](../../tools/bitcoin_core_regtest.py), and [`bitcoin_core_main_smoke.py`](../../tools/bitcoin_core_main_smoke.py) |
 | CLI channels and input | [`test_cli.py`](../../tests/test_cli.py) |

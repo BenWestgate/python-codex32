@@ -27,7 +27,7 @@ obtain an independent review before relying on it with funds. See
 
 ## Install
 
-Python 3.12 or 3.13 is required. The installed package has no third-party
+Python 3.10 through 3.15 is supported. The installed package has no third-party
 runtime dependencies. To install it with the pinned build backend, run these
 commands from the project folder:
 

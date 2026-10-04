@@ -6,7 +6,7 @@ from itertools import combinations
 
 import pytest
 from _codex32_oracle import oracle_encode
-from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_6
+from data.bip93_vectors import VECTOR_2, VECTOR_4, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -34,7 +34,7 @@ from codex32.errors import (
 )
 from codex32.generation import ORDINARY_INDICES, _fingerprint_identifier
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding
-from tools._wallet_reference import fingerprint_seed
+from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint, stub_fingerprint
 
 
 def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed | CoreLightningSecret, tuple[Share, ...]]:
@@ -60,11 +60,20 @@ def _seed(byte_length: int) -> bytes:
 
 def test_fresh_unshared_ms_supports_every_bip93_size() -> None:
     for byte_length in SEED_BYTE_LENGTHS:
-        secret = generate_master_seed(byte_length=byte_length, fingerprint=fingerprint_seed)
+        secret = generate_master_seed(byte_length=byte_length, fingerprint=stub_fingerprint)
         assert len(secret.seed_bytes) == byte_length
         assert secret.header.threshold == 0
-        assert secret.header.identifier == _fingerprint_identifier(fingerprint_seed(secret.seed_bytes))
+        assert secret.header.identifier == _fingerprint_identifier(stub_fingerprint(secret.seed_bytes))
         assert _has_generation_padding(secret)
+
+
+@pytest.mark.parametrize(
+    ("byte_length", "expected"),
+    ((16, "3mga"), (20, "ex5l"), (24, "fhrx"), (28, "5hu7"), (32, "jef7"), (64, "48dx")),
+)
+def test_unshared_identifier_from_core_fingerprint(byte_length: int, expected: str) -> None:
+    seed = FIXTURE_SEED[byte_length]
+    assert _fingerprint_identifier(core_fingerprint(seed)) == expected
 
 
 def test_fresh_shared_ms_supports_every_bip93_size() -> None:
@@ -138,6 +147,20 @@ def test_raw_bytes_accept_random_or_explicit_identifiers() -> None:
     secret = generate_master_seed(raw, identifier="TEST")
     assert len(random_secret.header.identifier) == 4
     assert secret.header.identifier == "test"
+    with pytest.raises(InvalidIdentifier):
+        generate_master_seed(raw, identifier="tesK")
+
+
+def test_confirmation_rejects_unicode_that_lowercases_to_bech32(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    value = bytes([generation_module.CHARSET.index("k")]) * 26
+    monkeypatch.setattr(generation_module.secrets, "token_bytes", lambda _length: value)
+    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    pending = ceremony.next_share()
+    invalid = pending.text.replace("k", "K", 1)
+    assert invalid != pending.text
+    assert not ceremony.confirm(invalid).accepted
 
 
 def test_supplied_seed_must_form_a_valid_bip32_root(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -169,6 +192,7 @@ def test_explicit_and_random_output_order_contracts() -> None:
         {"threshold": 2, "share_count": 32},
         {"threshold": 2, "indices": "a"},
         {"threshold": 2, "indices": "aa"},
+        {"threshold": 2, "indices": "aK"},
         {"threshold": 2, "indices": "sa"},
         {"threshold": 2, "indices": "ia"},
     ),
@@ -402,11 +426,3 @@ def test_from_secret_rejects_non_secret_artifacts() -> None:
                 indices="ac",
                 identifier="test",  # type: ignore[arg-type]
             )
-
-
-@pytest.mark.parametrize(
-    ("vector", "expected"),
-    ((VECTOR_1, "8u6j"), (VECTOR_2, "l2mg"), (VECTOR_3, "regv")),
-)
-def test_unshared_fingerprint_identifier_vectors(vector: dict[str, str], expected: str) -> None:
-    assert _fingerprint_identifier(fingerprint_seed(bytes.fromhex(vector["secret_hex"]))) == expected

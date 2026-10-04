@@ -60,7 +60,9 @@ def test_scheduler_annotates_from_admission_even_when_no_work_finished(monkeypat
         (48, indel._StructuralClass(0, 0, adjacent=2), 0, 0): rank + 1,
     }
     monkeypatch.setattr(indel, "_frontier", lambda *args: frontier)
-    monkeypatch.setattr("codex32._competitors._search_competitors", lambda *args: ((candidate,), complete))
+    monkeypatch.setattr(
+        "codex32._competitors._search_competitors", lambda *args, **kwargs: ((candidate,), complete)
+    )
     result, finished = indel._search_many(
         (CorrectionContext("ms", 48),),
         source,
@@ -100,11 +102,11 @@ def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
         patch.object(sys, "stdin", io.StringIO(VECTOR_1["secret_s"][:-1] + "?")),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
-        patch.object(cli, "_correction_candidates", return_value=((_candidate(),), True, None, False)),
+        patch.object(_cli_input, "_correction_candidates", return_value=((_candidate(),), True, None)),
     ):
         status = entrypoint(["correct", *(["--plain"] if plain else [])])
     prog = "codex32" if entrypoint is cli.main else "ms32"
-    assert status == 1 and stdout.getvalue() == ""
+    assert status == 3 and stdout.getvalue() == ""
     assert stderr.getvalue() == f"{prog}: interactive confirmation required\n"
 
 
@@ -128,7 +130,7 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
     monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: (candidate,))
     monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
     )
     core = _FakeBitcoinCore()
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
@@ -140,7 +142,8 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
         contextlib.redirect_stderr(stderr),
     ):
         status = (cli.ms_main if command == "create" else cli.main)(args)
-    assert status == 1 and stdout.getvalue() == ""
+    expected_status = 3 if command == "correct" else 1
+    assert status == expected_status and stdout.getvalue() == ""
     assert len(prompts) == 2 and core.imported is None
     warning = stderr.getvalue()
     assert "\x1b[1;31mWarning:\x1b[0m If you are generating new data" in warning
@@ -163,7 +166,7 @@ def test_yes_reveals_candidate_after_gate_with_plain_output(monkeypatch):
 
     monkeypatch.setattr(_cli_input, "_editable_input", respond)
     monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
     )
     with (
         patch.object(sys, "stdin", _TTYInput()),
@@ -181,7 +184,7 @@ def test_redirected_stderr_blocks_low_discrimination_disclosure(monkeypatch):
     responses = iter((source[:-1] + "?",))
     monkeypatch.setattr(_cli_input, "_editable_input", lambda *args, **kwargs: next(responses))
     monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
     )
     stdout, stderr = io.StringIO(), io.StringIO()
     with (
@@ -189,7 +192,7 @@ def test_redirected_stderr_blocks_low_discrimination_disclosure(monkeypatch):
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        assert cli.main(["correct", "--plain"]) == 1
+        assert cli.main(["correct", "--plain"]) == 3
     assert stdout.getvalue() == ""
     assert stderr.getvalue().strip() == "codex32: interactive confirmation required"
 
@@ -218,7 +221,7 @@ def test_redirected_correct_uses_terminal_gate_without_second_confirmation(monke
 
     monkeypatch.setattr(_cli_input, "_confirmation_input", confirm)
     monkeypatch.setattr(
-        cli, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None, False)
+        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
     )
     stdout, stderr = io.StringIO(), _TTYOutput()
     with (
@@ -292,7 +295,7 @@ def test_residue_completion_is_gated_but_ordinary_repair_is_not(degree):
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        assert cli.main(args) == 1
+        assert cli.main(args) == 3
     assert stdout.getvalue() == ""
     assert stderr.getvalue() == "codex32: interactive confirmation required\n"
 
@@ -308,7 +311,9 @@ def test_residue_exactly_five_bits_is_not_gated_even_with_zero_addends(residue):
 def test_previous_case_interpretation_search_is_charged_even_without_a_candidate(monkeypatch):
     candidate = replace(_candidate(), capture_volume=(1 << 60) + 1)
     monkeypatch.setattr(indel, "_frontier", lambda *args: {(48, indel._FIXED, 0, 0): 1})
-    monkeypatch.setattr("codex32._competitors._search_competitors", lambda *args: ((candidate,), True))
+    monkeypatch.setattr(
+        "codex32._competitors._search_competitors", lambda *args, **kwargs: ((candidate,), True)
+    )
     previous = [(1 << 60, 65)]
     result, _ = indel._search_many(
         (CorrectionContext("ms", 48),),
@@ -319,6 +324,21 @@ def test_previous_case_interpretation_search_is_charged_even_without_a_candidate
     )
     assert result[0].cumulative_capture_volume == (1 << 60) + 1
     assert result[0].low_checksum_discrimination
+
+
+def test_seed_candidate_is_reannotated_after_later_search_admission(monkeypatch):
+    candidate = replace(_candidate(), capture_volume=10)
+    monkeypatch.setattr(indel, "_frontier", lambda *args: {(48, indel._FIXED, 0, 0): 10})
+    monkeypatch.setattr(indel, "_search_target", lambda *args: True)
+    result, complete = indel._search_many(
+        (CorrectionContext("ms", 48),),
+        VECTOR_1["secret_s"],
+        primary=frozenset((48,)),
+        capture_layers=[(5, 65)],
+        seed_candidates=(candidate,),
+    )
+    assert complete and result[0].cumulative_capture_volume == 15
+    assert result[0].capture_space_bits == 65
 
 
 @pytest.mark.parametrize("profile", ("bip39_12w", "bip39_24w"))

@@ -32,6 +32,14 @@ disclosure, workflows that consume the repaired artifact ask the usual `[y/N]`
 whole-card confirmation. `correct` only reports a suggestion, so it does not ask
 that second question. A checksum cannot make weak input secure.
 
+The `correct` exit status distinguishes outcomes for scripts: `0` means the
+input is already valid, `1` means a suggestion was emitted, `2` means the
+command or input syntax was invalid, and `3` means no usable suggestion was
+emitted. Status `3` includes incomplete searches with no usable suggestion,
+ambiguous searches, declined disclosure, and Bitcoin Core being unavailable
+when `ms32 correct` needs it to rank or fingerprint a master-seed suggestion.
+The generic `codex32 correct` command does not need Core.
+
 Choose the setup that fits you:
 
 - **Recommended: dedicated online spending wallet — easiest.** A normally
@@ -119,7 +127,11 @@ Already have a complete codex32 `ms` secret? Run `ms32 create --existing` to
 write and confirm its recovery card and initialize a Bitcoin Core wallet.
 The existing secret is preserved unchanged. To split it into three cards
 requiring any two, use `ms32 create 2 --existing` instead. Enter the secret
-only when prompted. Bitcoin Core also scans for prior transactions.
+only when prompted. Immediately afterward, type the master fingerprint from
+the separate wallet record; a mismatch must be resolved before any new card
+is shown. If you have no record, the explicit recordless-restore choice and
+visual fingerprint check happen at this same point. Bitcoin Core also scans
+for prior transactions.
 
 ### 3. Make a Bitcoin Core wallet
 
@@ -167,9 +179,12 @@ wallet should be trusted until initialization completes.
 
 ### 4. Complete the record and store the cards
 
-Copy the displayed backup identifier, wallet name, Bitcoin Core version,
-master fingerprint, derivation standards, and account number to the wallet
-record. Add the approximate
+Before a freshly created wallet is filled, write the displayed master fingerprint on the
+wallet record and confirm that you wrote it down. Fresh creation has no pre-existing
+fingerprint or descriptor to authenticate; `ms32 create --existing` instead uses the
+restore identity gate. Then copy the displayed
+backup identifier, wallet name, Bitcoin Core version, derivation standards, and
+account number to the wallet record. Add the approximate
 creation / earliest-use date. Do not put a descriptor timestamp on a recovery
 card; Core's public descriptor export preserves its stored timestamps.
 
@@ -227,16 +242,23 @@ its public wallet data with the separate wallet record.
    ms32 wallet --timestamp 0
    ```
 
-5. Select and confirm that wallet. If it is locked, follow the displayed
+   If you know when the wallet was first used, an earlier Unix timestamp can
+   shorten the rescan; `0` remains the safest choice when unsure.
+
+5. Type the master fingerprint from the wallet record. A mismatch stops before
+   Bitcoin Core is changed. Press Enter with nothing typed only if there is no
+   record; codex32 then shows the recovered fingerprint and what the backup
+   identifier says, and asks before restoring.
+6. Select and confirm that wallet. If it is locked, follow the displayed
    Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
-   It imports the private descriptors, verifies the public set, and relocks an
-   encrypted wallet.
-6. If you need an online watch-only counterpart, keep the restored signer
+   It gives Core the master private key, asks Core to create the standard
+   account-0 descriptors, scans history, and relocks an encrypted wallet.
+7. If you need an online watch-only counterpart, keep the restored signer
    offline and follow Bitcoin Core v32's
    [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)
    to export and restore the watch-only wallet. Let the online node synchronize,
-   then compare the recovered fingerprint, account, policy, addresses, balance,
-   and transaction history with the wallet record.
+   then compare the account, policy, addresses, balance, and transaction
+   history with the wallet record.
 
 A timestamp of zero safely scans all history and may take time; it belongs in
 the recovery command, not on a paper card. During an emergency recovery, move

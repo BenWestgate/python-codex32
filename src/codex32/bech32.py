@@ -53,6 +53,22 @@ def _validate_single_case_ascii(value: str) -> bool:
     return value.isupper()
 
 
+def interpret_mixed_case(value: str, immutable_length: int) -> tuple[str, str, bool] | None:
+    # Return majority-cased and minority-erased interpretations of mixed-case text.
+    if not value.isascii() or value.upper() == value or value.lower() == value:
+        return None
+    letters = [character for character in value[immutable_length:] if character.isalpha()]
+    uppercase = sum(character.isupper() for character in letters) > len(letters) / 2
+    normalized = value.upper() if uppercase else value.lower()
+    erased = "".join(
+        normalized[index]
+        if index < immutable_length or not character.isalpha() or character.isupper() == uppercase
+        else "?"
+        for index, character in enumerate(value)
+    )
+    return normalized, erased, uppercase
+
+
 def bech32_encode(hrp: str, data: list[int], spec: _Checksum) -> str:
     """Compute a Bech32 string given HRP and data values."""
     checksum = spec.create(bech32_hrp_expand(hrp) + list(data))
@@ -72,6 +88,8 @@ def bech32_decode(value: str, spec: _Checksum | None = None) -> tuple[str, list[
         raise MissingSeparator("No separator (1) was found.")
     if separator == 0:
         raise MissingSeparator("The application prefix before 1 is missing.")
+    if separator > 83:
+        raise InvalidLength(f"human-readable part exceeds 83 characters ({separator})")
     lowered = value.lower()
     hrp = lowered[:separator]
     data = _chars_to_u5(lowered[separator + 1 :], separator + 2)

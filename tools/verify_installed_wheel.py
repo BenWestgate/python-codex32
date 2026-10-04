@@ -5,12 +5,12 @@ from __future__ import annotations
 import importlib.util
 import sys
 
+import codex32
 from codex32 import (
     CorrectionContext,
     CreationCeremony,
     MasterSeed,
     Profile,
-    core_descriptors,
     correct,
     derive_share,
     master_xprv,
@@ -45,9 +45,8 @@ def main() -> None:
     secret = parse_codex32(_SECRET)
     assert isinstance(secret, MasterSeed)
     assert master_xprv(secret) == _XPRV
-    private = core_descriptors(secret, private=True)
-    assert len(private) == 4
-    assert all("xprv" in record["desc"] for record in private)
+    assert "core_descriptors" not in codex32.__all__
+    assert not hasattr(codex32, "core_descriptors")
     assert "bip32" not in sys.modules
     assert "coincurve" not in sys.modules
 
