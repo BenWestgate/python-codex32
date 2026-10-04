@@ -2,6 +2,13 @@
 
 Measured 2026-09-10 with one shared **inclusive capture-mass ceiling `<=1`**.
 
+This is historical evidence for source commit `6802d86`, not a measurement or
+test report for the current branch. The linked CSV and JSON are raw results
+from the host and execution conditions below; they are not portable timing
+guarantees. Re-run the commands below on the candidate being reviewed and use
+the current [API guide](api.md#size-budget) and CI results for its size budget
+and test count.
+
 Host: **AMD Ryzen 7 7735U with Radeon Graphics**, Python **3.13.12**, `Linux-7.0.10+deb14-amd64-x86_64-with-glibc2.42`.
 
 ## Execution conditions and limits
@@ -77,7 +84,13 @@ Commands emit JSON Lines with a host header. Capped portions of these recorded r
 
 ## Validation
 
-After failure cleanup, normal and optimized full pytest runs each pass **714 tests**. Both runs used a 25% single-core CPU quota, 1 GiB memory limit, cooling pauses, and the 75°C temperature gate. The CLI tests now observe prefills at the editable-input boundary and expect the current diagnostic text. The approved package size budget is **4,500** nonblank/noncomment lines, retaining recursive counting; the formatted package measures **4,088**.
+At commit `6802d86`, after failure cleanup, normal and optimized full pytest
+runs each passed **714 tests**. Both runs used a 25% single-core CPU quota, 1 GiB
+memory limit, cooling pauses, and the 75°C temperature gate. The CLI tests at
+that commit observed prefills at the editable-input boundary and expected its
+diagnostic text. Its approved package size budget was **4,500**
+nonblank/noncomment lines, retaining recursive counting; its formatted package
+measured **4,088**. These counts are not current-branch acceptance criteria.
 
 Ruff lint and formatting, mypy (19 source files), all 57 frozen PR #70 correction cases, all 768 wallet differential records, and staged whitespace checks pass. No public timing cutoff is promoted by this validation.
 
