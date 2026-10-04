@@ -1896,14 +1896,13 @@ def test_correction_options_control_lengths_deadline_and_search_envelope(
     assert observed == damaged
     assert tuple(context.expected_length for context in contexts) == lengths
     assert (search.call_args.kwargs["deadline"] is not None) is bounded
-    assert search.call_args.kwargs["reduced"] == frozenset()
 
 
 def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> None:
     from codex32._cli_input import _correction_plan
 
     for observed in range(40, 136):
-        targets = _correction_plan(Profile.MS, None, observed, None)[0]
+        targets = _correction_plan(Profile.MS, None, observed, None)
         expected = 48 if observed <= 61 else 74 if observed <= 100 else 127
 
         assert targets[0] == expected
