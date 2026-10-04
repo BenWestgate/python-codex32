@@ -229,11 +229,7 @@ class CreationCeremony:
         else:
             reheadered = _from_parts(profile, Header(threshold, identifier, "s"), secret.payload_symbols)
             assert isinstance(reheadered, (MasterSeed, CoreLightningSecret))
-            self._secret, self._basis, self._direct_count = (
-                reheadered,
-                [reheadered],
-                threshold - 1,
-            )
+            self._secret, self._basis, self._direct_count = reheadered, [reheadered], threshold - 1
         return self
 
     @classmethod
