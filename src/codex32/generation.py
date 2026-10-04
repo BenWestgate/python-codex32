@@ -245,7 +245,7 @@ class CreationCeremony:
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
     ) -> CreationCeremony:
-        """Start a ceremony for a fresh shared Bitcoin master seed."""
+        """Start a ceremony for a fresh shared Bitcoin master seed; repeated indices are later copies."""
         threshold = _threshold(threshold, allow_zero=False)
         _supplied, byte_length = _seed_input(None, byte_length)
         identifier = _random_identifier() if identifier is None else _identifier(identifier)
@@ -268,7 +268,7 @@ class CreationCeremony:
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
     ) -> CreationCeremony:
-        """Start a ceremony for a fresh shared Core Lightning secret."""
+        """Start a ceremony for a fresh shared Core Lightning secret; repeated indices are later copies."""
         threshold = _threshold(threshold, allow_zero=False)
         identifier = _random_identifier() if identifier is None else _identifier(identifier)
         return cls._start(
@@ -291,7 +291,7 @@ class CreationCeremony:
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
     ) -> CreationCeremony:
-        """Start a ceremony that shares an existing validated secret."""
+        """Start a ceremony that shares an existing validated secret; repeated indices are later copies."""
         if not isinstance(secret, (MasterSeed, CoreLightningSecret)):
             raise TypeError("from_secret accepts only MasterSeed or CoreLightningSecret")
         threshold = _threshold(threshold, allow_zero=False)
