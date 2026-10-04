@@ -169,6 +169,23 @@ def test_supplied_seed_must_form_a_valid_bip32_root(monkeypatch: pytest.MonkeyPa
         generate_master_seed(bytes(16), identifier="test")
 
 
+def test_existing_bitcoin_secret_requires_a_valid_root_before_any_entropy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = MasterSeed.from_seed(bytes(range(16)), identifier="test")
+    lightning = generate_core_lightning_secret(bytes(range(32)), identifier="test")
+    monkeypatch.setattr(generation_module, "_valid_root", lambda _seed: False)
+
+    def no_entropy(_length: int) -> bytes:
+        pytest.fail("invalid Bitcoin root reached entropy selection")
+
+    monkeypatch.setattr(generation_module.secrets, "token_bytes", no_entropy)
+    with pytest.raises(CodexError, match="master seed does not form a valid BIP32 root"):
+        CreationCeremony.from_secret(source, threshold=2, indices="ac")
+    # BIP32 root validity does not apply to Core Lightning's HSM secret.
+    CreationCeremony.from_secret(lightning, threshold=2, indices="ac", identifier="name")
+
+
 def test_explicit_and_random_output_order_contracts() -> None:
     source = generate_master_seed(bytes(range(16)), identifier="test")
     _secret, shares = _complete(
