@@ -66,7 +66,9 @@ Next, **Before you start** asks you to have one blank recovery card per card, a
 pen, and one wallet record ready. Its buttons open the printable
 [recovery card](../../src/codex32_gui/forms/recovery-card.html) and
 [wallet record](../../src/codex32_gui/forms/wallet-verification-record.html)
-forms in your browser. Press **I have them ready** to see the first card.
+forms in your browser. Print them blank and fill them in by hand, ideally in
+archival ink. Never print a filled-in card: printers and print queues can keep
+a copy of what they printed. Press **I have them ready** to see the first card.
 
 Each card is shown once. Copy it onto paper with a pen, then type it back from
 the paper with the original off the screen. That catches a slip of the pen now

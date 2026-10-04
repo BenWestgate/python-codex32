@@ -639,7 +639,10 @@ def _ready_page(
     there is still time to fetch or print one.
     """
     cards = "one blank recovery card" if count == 1 else f"{count} blank recovery cards"
-    status = _note("Each form opens in your browser, where you can print it.")
+    status = _note(
+        "Each form opens in your browser. Print it blank, then fill it in by hand in archival ink. "
+        "Never print a filled-in card: a printer can keep a copy."
+    )
 
     def show(name: str) -> None:
         # A confined browser (Tor Browser on Tails) may not read the package, so a
