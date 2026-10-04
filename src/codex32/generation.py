@@ -295,13 +295,12 @@ class CreationCeremony:
         """Start a ceremony that shares an existing validated secret."""
         if not isinstance(secret, (MasterSeed, CoreLightningSecret)):
             raise TypeError("from_secret accepts only MasterSeed or CoreLightningSecret")
+        if isinstance(secret, MasterSeed) and not _valid_root(secret.seed_bytes):
+            raise CodexError("master seed does not form a valid BIP32 root")
         threshold = _threshold(threshold, allow_zero=False)
         random_identifier = identifier is None
         identifier = _random_identifier() if random_identifier else _identifier(identifier)
-        while (threshold, identifier) == (
-            secret.header.threshold,
-            secret.header.identifier,
-        ):
+        while (threshold, identifier) == (secret.header.threshold, secret.header.identifier):
             if not random_identifier:
                 raise HeaderCollision("new share set must use a different set header")
             identifier = _random_identifier()

@@ -237,6 +237,10 @@ requires interactive input and output, preflights local Bitcoin Core before
 entropy or recovery input, and initializes a user-selected wallet after every
 share is confirmed. CLI creation does not accept Core Lightning profiles; CL
 generation and sharing remain API-only.
+Supplied Bitcoin seed bytes and existing Bitcoin secrets must form a valid
+BIP32 root before a creation ceremony selects entropy or emits recovery cards.
+Parsing a codex32 string remains a format check; Core Lightning has no BIP32
+root requirement.
 Without `--existing`, omitting the Bitcoin header creates an unshared master
 seed. With `--existing` and no sharing threshold, a supplied codex32 secret is
 emitted and confirmed unchanged, and the original validated artifact initializes
