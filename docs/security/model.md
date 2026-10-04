@@ -156,7 +156,12 @@ multiplication. The original ceremony result, not re-entered text, remains the
 source for automatic wallet setup.
 
 Sharing an existing secret generates and confirms *k−1* random initial shares
-before deriving the remaining shares. Recovery requires exactly the declared
+before deriving the remaining shares. Supplied Bitcoin seed bytes and existing
+Bitcoin secrets must form a valid BIP32 root. `CreationCeremony.from_secret`
+checks this before selecting an identifier or drawing entropy; a parsed
+`MasterSeed` alone establishes format validity, not this creation precondition.
+Core Lightning secrets have no BIP32-root requirement.
+Recovery requires exactly the declared
 threshold of compatible shares with distinct indices. Derivation requires a
 new share index not used by its inputs. Every output is reparsed before release.
 
