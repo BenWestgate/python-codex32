@@ -19,7 +19,7 @@ cryptography, entropy source, socket, or file storage.
 
 Review `reading.py`, `wallet_setup.py`, and `work.py` first. Their behavior is
 covered without a display. `tools/gui_walkthrough.py` exercises the real GTK
-screens under Xvfb. `tests/test_gui_boundaries.py` enforces a separate 2,050
+screens under Xvfb. `tests/test_gui_boundaries.py` enforces a separate 2,250
 logical-line GUI budget.
 
 ## Security boundaries

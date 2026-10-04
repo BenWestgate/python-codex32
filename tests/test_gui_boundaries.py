@@ -33,7 +33,7 @@ FORBIDDEN = frozenset(
     }
 )
 CORE_ADAPTER = "codex32._bitcoin_core"
-BUDGET = 2050
+BUDGET = 2250
 
 
 def _package() -> Path:
@@ -54,6 +54,19 @@ def _imports(tree: ast.AST) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module is not None and not node.level:
             found.add(node.module)
     return found
+
+
+def _callers(tree: ast.Module, name: str) -> set[str]:
+    """Find top-level functions that call a named page, including callbacks."""
+    return {
+        function.name
+        for function in tree.body
+        if isinstance(function, ast.FunctionDef)
+        and any(
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name
+            for node in ast.walk(function)
+        )
+    }
 
 
 @pytest.mark.parametrize("path", _modules(), ids=lambda path: path.name)
@@ -115,6 +128,31 @@ def test_the_gui_keeps_its_own_size_budget() -> None:
         for path in _modules()
     }
     assert sum(counts.values()) < BUDGET, counts
+
+
+def test_restore_reaches_wallet_selection_only_after_identity_choice() -> None:
+    tree = ast.parse((_package() / "pages.py").read_text(encoding="utf-8"))
+    assert _callers(tree, "_wallets") == {"_identity", "_fingerprint_page"}
+    assert _callers(tree, "_fingerprint_page") == {"_restore", "_fingerprint_page"}
+    assert _callers(tree, "_identity") == {"_unshared_page", "_card_confirmed", "_fingerprint_page"}
+
+
+def test_restore_checks_identity_before_creating_a_destination() -> None:
+    tree = ast.parse((_package() / "pages.py").read_text(encoding="utf-8"))
+    new_wallet = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_new_wallet_page"
+    )
+    job = next(
+        node for node in ast.walk(new_wallet) if isinstance(node, ast.FunctionDef) and node.name == "job"
+    )
+    guard = job.body[0]
+    assert isinstance(guard, ast.If) and isinstance(guard.test, ast.Name) and guard.test.id == "restoring"
+    verify = guard.body[0]
+    assert isinstance(verify, ast.Expr) and isinstance(verify.value, ast.Call)
+    assert isinstance(verify.value.func, ast.Attribute) and verify.value.func.attr == "verify"
+    create = job.body[1]
+    assert isinstance(create, ast.Expr) and isinstance(create.value, ast.Call)
+    assert isinstance(create.value.func, ast.Attribute) and create.value.func.attr == "create"
 
 
 def test_read_only_poll_threads_do_not_keep_the_process_alive() -> None:

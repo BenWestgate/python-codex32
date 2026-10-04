@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from typing import TypeVar
 
 from gi.repository import Adw, GLib
 
@@ -15,6 +16,7 @@ _UNFINISHED = (
     "Core, check there what state the wallet is in before trying again."
 )
 _gate = threading.Lock()
+Result = TypeVar("Result")
 
 
 def showing(view: Adw.NavigationView, page: Adw.NavigationPage) -> bool:
@@ -28,7 +30,7 @@ def showing(view: Adw.NavigationView, page: Adw.NavigationPage) -> bool:
     return any(stack.get_item(position) is page for position in range(stack.get_n_items()))
 
 
-def run[Result](
+def run(
     view: Adw.NavigationView,
     page: Adw.NavigationPage,
     work: Callable[[], Result],
@@ -49,7 +51,7 @@ def run[Result](
     _start(view, page, work, done, claimed=False, daemon=False)
 
 
-def poll[Result](
+def poll(
     view: Adw.NavigationView,
     page: Adw.NavigationPage,
     work: Callable[[], Result],
@@ -62,7 +64,7 @@ def poll[Result](
     return True
 
 
-def _start[Result](
+def _start(
     view: Adw.NavigationView,
     page: Adw.NavigationPage,
     work: Callable[[], Result],
