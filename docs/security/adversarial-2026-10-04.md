@@ -90,14 +90,29 @@ patch exists but still needs human integration. Duplicate IDs share one row.
 
 ## Verification and remaining release work
 
-On 2026-10-04, GitHub reported successful checks and a Codex review tied to the
-current commit for #12/#13/#33, #52/#53/#57/#59/#64, #80/#81/#93/#95/#97/#99/#105,
-#115/#116/#117/#126, and the focused GUI #66/#77/#78/#118/#119 changes. These include
-clearly disclosed Codex-generated reviews posted through the maintainer's
-account; they are not human approvals or proof of an independent Claude review.
-The PR #65 parent has a real open refresh-mode finding fixed by stacked #66;
-review and integrate them together. GitHub's “blocked” status can also reflect
-signature/authorship or branch rules even when checks pass.
+On 2026-10-05, GitHub reported successful exact-head checks and current-head
+Codex or disclosed AI-assisted reviews for #12/#13/#33,
+#52/#53/#57/#59/#64, #93/#97/#99/#105/#115/#116/#117/#126, and the focused GUI
+#66/#77/#78/#118/#119 changes. These are not human approvals or proof of an
+independent Claude review. The PR #65 parent has a real open refresh-mode
+finding fixed by stacked #66; review and integrate them together. GitHub's
+“blocked” status can also reflect signature/authorship or branch rules even when
+checks pass.
+
+The restore/Core line is now mechanically refreshed in release order as
+#57 → #105 → #99 → #80 (`3a35463`) → #81 (`b2aafde`) → #95 (`5e44dcb`). The
+#80/#81/#95 focused behavior was replayed without design changes. GitHub's
+current-head matrices are green for all three, the #80 Core fixture is green,
+and Codex reported no major issue on each exact refreshed head. A disposable
+Python 3.14 environment installed `.[dev]` at the refreshed #95 tip with no
+Python `bip32` dependency; all 941 tests passed normally and all 941 passed under
+`python -O`. Ruff check/format, strict mypy, correction-constant verification,
+and `git diff --check` also pass on that composed tip.
+
+#115 head `2e947b12` corrects the final shell-specific Windows activation nit;
+its exact-head GitHub checks are green and Codex found no further content issue.
+Its remaining unresolved review item is the repository's responsible-human
+authorship requirement, which automation cannot satisfy.
 
 Focused local checks at #103 commit `2924f5f` passed for default rendering,
 record mismatch before wallet calls, hidden fingerprint, recordless decline and
@@ -124,3 +139,5 @@ must then receive the pinned reviewer handoff, artifact qualification, Tails
 rendering/manual GUI-to-Core checks, and a fresh adversarial pass covering the
 library, CLI, GUI, and recovery documentation. Until those succeed, “all
 material validated findings resolved in the release candidate” is unproven.
+The final exact-head CI/review evidence for this ledger-only update belongs in
+PR #127 so recording it does not require another self-referential ledger edit.
