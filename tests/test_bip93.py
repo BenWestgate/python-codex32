@@ -1,5 +1,7 @@
 # tests/test_bip93.py
 """Tests for BIP-93 codex32 implementation."""
+import inspect
+
 import pytest
 from data.bip93_vectors import (
     VECTOR_1,
@@ -24,6 +26,7 @@ from data.bip93_vectors import (
 )
 from codex32.bip93 import (
     Codex32String,
+    IdNotLength4,
     InvalidSeedLength,
     MismatchedHrp,
     MismatchedLength,
@@ -57,6 +60,15 @@ def test_parts():
     assert s.payload == VECTOR_1["payload"]
     assert s.checksum == VECTOR_1["checksum"]
     assert s.data.hex() == VECTOR_1["secret_hex"]
+
+
+def test_from_seed_requires_explicit_identifier():
+    """Seed encoding must not infer an identifier or import BIP32."""
+    seed = bytes.fromhex(VECTOR_3["secret_hex"])
+    prefix = inspect.signature(Codex32String.from_seed).parameters["prefix"]
+    assert prefix.default is inspect.Parameter.empty
+    with pytest.raises(IdNotLength4, match="four-character identifier"):
+        Codex32String.from_seed(seed, "ms10")
 
 
 def test_derive_and_recover():

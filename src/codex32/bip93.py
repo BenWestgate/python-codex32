@@ -27,8 +27,6 @@
 """Reference implementation for codex32/Long codex32 and codex32-encoded master seeds."""
 
 
-from bip32 import BIP32
-
 from codex32.bech32 import (
     CHARSET,
     chars_to_u5,
@@ -263,16 +261,14 @@ class Codex32String:
 
     @classmethod
     def from_seed(
-        cls, data: bytes, prefix: str = "ms10", pad_val: int | str = "CRC"
+        cls, data: bytes, prefix: str, pad_val: int | str = "CRC"
     ) -> "Codex32String":
-        """Create Codex32String given prefix and bare seed data."""
+        """Create Codex32String from seed bytes and a prefix with an identifier."""
         hrp, data_part = u5_parse(prefix)
         header = u5_to_chars(data_part)
         k = "0" if not header else header[:1]
-        if not (ident := header[1 : max(5, len(header) - 1)]):
-            bip32_fingerprint = BIP32.from_seed(data).get_fingerprint()
-            ident = u5_to_chars(convertbits(bip32_fingerprint, 8, 5)[:4])
-        elif len(ident) != 4:
-            raise IdNotLength4(f"identifier had wrong length {len(ident)}")
+        ident = header[1 : max(5, len(header) - 1)]
+        if len(ident) != 4:
+            raise IdNotLength4(f"prefix must contain a four-character identifier, got {len(ident)}")
         share_idx = "s" if not header[5:] else header[5:6]
         return cls(encode(hrp, k + ident + share_idx, data, pad_val))
