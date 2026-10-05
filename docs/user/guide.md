@@ -3,6 +3,10 @@
 `codex32` checks, corrects, recovers, and derives shares across application
 prefixes. `ms32` provides Bitcoin master-seed workflows, including secure
 creation. Use `ms32 create` for new Bitcoin backups.
+`ms32 secret` and `ms32 share` require local Bitcoin Core for fingerprint-aware
+output; `ms32 correct` requires it when repairing Bitcoin recovery material.
+`ms32 check` is Core-independent. For recovery, share derivation, or correction
+without Core, use the corresponding generic `codex32` command.
 BIP39 worksheet profiles are
 [not recommended for creation](https://secretcodex32.com/docs/index.html),
 but existing backups can be recovered and corrected.
