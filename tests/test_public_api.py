@@ -11,7 +11,16 @@ import pytest
 from data.bip93_vectors import VECTOR_2
 
 import codex32
-from codex32 import CorrectionCandidate, Header, MasterSeed, Share, parse_codex32
+from codex32 import (
+    CorrectionCandidate,
+    CorrectionContext,
+    Header,
+    MasterSeed,
+    Profile,
+    Share,
+    correct,
+    parse_codex32,
+)
 from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshold
 
 
@@ -93,6 +102,16 @@ def test_artifact_default_rendering_does_not_disclose_recovery_text() -> None:
     assert share.text not in repr(candidate)
     assert str(share) == "<Share: redacted>"
     assert repr(share) == "Share(<redacted>)"
+
+
+def test_correction_edits_do_not_render_recovery_characters() -> None:
+    text = VECTOR_2["share_A"]
+    candidate = correct(CorrectionContext(Profile.MS), text[:9] + "?" * 8 + text[17:])[0]
+    rendered = repr(candidate)
+
+    assert len(candidate.edits) == 8
+    assert all(f"'{edit.replacement}'" not in rendered for edit in candidate.edits)
+    assert "observed" not in rendered and "replacement" not in rendered
 
 
 def test_master_seed_default_rendering_does_not_disclose_seed_material() -> None:
