@@ -52,7 +52,7 @@ patch exists but still needs human integration. Duplicate IDs share one row.
 |---|---|---|
 | BL1 | D-B1, G-1, K-F4 | Confirmed developer-install defect; #3/#6 and merged #7 remove the test-only `bip32`/secp256k1 dependency. #115 corrects contributor setup. |
 | BL2 | D-B2 | Confirmed missing BSD notice; merged #15 includes `LICENSES` in wheel and sdist. |
-| H1 | K-F2 | Confirmed default-rendering leak; #22 and merged #25 redact `str()` and `repr()`, including nested correction candidates. |
+| H1 | K-F2 | Confirmed artifact default-rendering leak; #22 and merged #25 redact artifact `str()` and `repr()`, closing K-F2's complete-secret disclosure. A later, narrower correction-edit rendering issue is tracked separately below. |
 | H2 | K-F3 | Accepted accident-safety gate; #26/#30, CLI #57/#80/#81, GUI #118. #81 verifies existing seeds before replacement cards; #80 distinguishes an unavailable Bails check. #55 is a separate planning issue, not a missing v1 PR. |
 | H3 | K-F1 | Confirmed HRP-boundary defect; #32/#33 enforce 83 characters in parsing and correction contexts. Generalized-HRP draft vectors at `BenWestgate/bips` PR #2, commit `01374bf`, explicitly allow 83 and reject 84; 1023 is the expanded-codeword bound. |
 | M1 | G-2 | Confirmed standalone mixed-case regression; #37 and merged #42, including the required-preflight seed preservation follow-up. Interactive recovery already interpreted case. |
@@ -75,7 +75,7 @@ patch exists but still needs human integration. Duplicate IDs share one row.
 
 | Finding | Sources | Disposition |
 |---|---|---|
-| Package export count says 25 instead of 24 | D-D2 | #64 removes obsolete `core_descriptors`; #53 documents the resulting 23-name package surface and supported module-level vector helpers. The public API regression rejects the removed export. |
+| Package export count says 25 instead of 24 | D-D2 | #130 supersedes #64's API cleanup by removing obsolete `core_descriptors` plus two unused CL-generation exports; if integrated, package-level `__all__` contains 22 names. #53's supported reference-vector helpers remain module-level rather than package exports. |
 | Test fake accepts obsolete `private=` | D-C4 | One-line #117 makes `_FakeBitcoinCore.initialize` match the production call shape. |
 | Stale `MANIFEST.in` provenance exclusion | D notes, K-F9 | Already removed on the current branch (`d6a9f99`); keep `MANIFEST.in` because it still selects license, test, tool, and documentation files for the sdist. |
 | Ignored provenance/plans | D notes | Intentional local-only unfinished work stays under the ignored `docs/planning/` path. This finished security audit ledger lives in `docs/security/`; #23 records the earlier audit verdict. #38 links the local cleanup checklist for agents. |
@@ -88,16 +88,42 @@ patch exists but still needs human integration. Duplicate IDs share one row.
 | Stale/overlapping branch names | D notes | Use PR numbers and commit IDs as provenance. Pruning branches is housekeeping and does not establish or invalidate a fix. |
 | Dependency-install ordering | G-1 secondary note, C rejected claims | Not reproduced under ordinary pip build isolation; no new issue. |
 
+## Post-audit follow-ups
+
+These were found after the four supplied reports and are not retroactively
+attributed to those reviewers. They remain release-gate work because they touch
+the same reviewed security/API surface:
+
+- #128 / focused #130: the unused public `core_descriptors(..., private=False)`
+  path derived descriptors from the named Core wallet rather than authenticating
+  them to the supplied seed. Removing the unused pre-1.0 API also supersedes the
+  narrower #64 cleanup.
+- #129 / focused #132: `CorrectionEdit`'s generated dataclass representation
+  disclosed observed/replacement characters when a correction candidate was
+  logged. This is narrower than K-F2's complete-artifact disclosure, but it
+  violates the same accidental-rendering boundary. #132 excludes only those two
+  fields from default rendering while preserving explicit field access and
+  correction behavior.
+
 ## Verification and remaining release work
 
 On 2026-10-05, GitHub reported successful exact-head checks and current-head
 Codex or disclosed AI-assisted reviews for #12/#13/#33,
-#52/#53/#57/#59/#64, #93/#97/#99/#105/#115/#116/#117/#126, and the focused GUI
+#52/#53/#57/#59, #93/#97/#99/#105/#115/#116/#117/#126, and the focused GUI
 #66/#77/#78/#118/#119 changes. These are not human approvals or proof of an
 independent Claude review. The PR #65 parent has a real open refresh-mode
 finding fixed by stacked #66; review and integrate them together. GitHub's
 “blocked” status can also reflect signature/authorship or branch rules even when
 checks pass.
+
+The post-audit fixes are also mechanically ready for human review. #130 head
+`2cbd2793ae` has a green Python matrix and Bitcoin Core fixture; its one Codex
+documentation finding was corrected and resolved, and Codex then reported no
+major issue on that exact head. #132 head `f64da6f9d9` has a green Python matrix
+and an exact-head Codex no-major-issue review. Its focused local verification
+also passed 903 tests normally and under `python -O`, Ruff check/format, strict
+mypy, correction-constant re-derivation, and all 57 frozen differential cases.
+These reviews do not replace responsible-human authorship or integration.
 
 The restore/Core line is now mechanically refreshed in release order as
 #57 → #105 → #99 → #80 (`3a35463`) → #81 (`b2aafde`) → #95 (`5e44dcb`). The
