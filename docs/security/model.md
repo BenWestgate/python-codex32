@@ -259,6 +259,16 @@ initialization.
 `codex32_gui/wallet_setup.py`, the only module in that package that imports the
 Core adapter.
 
+Before listing wallets on restore, the GUI asks for the master fingerprint from
+the separate wallet record without showing the recovered value. A mismatch
+stops the attempt. The explicit no-record route reveals the recovered
+fingerprint and backup-identifier assessment, then requires **Restore anyway**;
+after that disclosure, this attempt cannot return to the record-entry route.
+The chosen expected fingerprint is checked again before unlocking or creating
+a destination and at the shared library import boundary. Fresh creation instead
+shows its new fingerprint for the operator to record; there is no earlier
+wallet identity to compare.
+
 | Departure | Required behavior |
 |---|---|
 | Passphrase | The operator may supply a Bitcoin Core wallet passphrase. It reaches `bitcoin-cli` through `-stdinwalletpassphrase`, never through an argument, so it is absent from `/proc` and process listings. It is not stored, not logged, and not written to disk, and a passphrase containing a line break is refused rather than truncated. A passphrase this computer's locale would encode as something other than what Bitcoin-Qt sends is refused, so no half-encoded secret reaches a screen or a traceback. The screen keeps the command line's behavior as an alternative: the operator may unlock in Bitcoin-Qt instead, and the program then only rechecks wallet state. |

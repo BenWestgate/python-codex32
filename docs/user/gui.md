@@ -66,9 +66,11 @@ Copy each card to paper, hide the on-screen original, then type the paper copy
 back. Read-back starts completely empty, including `MS1`. A mismatch highlights
 only the groups you typed differently; the expected text stays hidden.
 
-After all cards are confirmed, choose an empty Bitcoin Core wallet or create a
-new blank one. A passphrase protects the wallet on this computer; the recovery
-cards still recover the seed if that passphrase is lost.
+After all cards are confirmed, write the displayed master fingerprint on your
+wallet record, then re-enter it in the GUI. Wallet selection stays unavailable
+until the re-entered fingerprint matches. Then choose an empty Bitcoin Core
+wallet or create a new blank one. A passphrase protects the wallet on this
+computer; the recovery cards still recover the seed if that passphrase is lost.
 
 Copy the final wallet details to the
 [wallet record](wallet-verification-record.html) and store it separately from the
@@ -103,8 +105,13 @@ exist. The GUI can say “any 2 cards recover the wallet”; it cannot infer “
 3”. `ms32 share` can add another card at any time.
 
 A valid checksum shows that a card is internally consistent. It does not prove
-that the card belongs to your wallet. Restore and compare the master fingerprint
-with your wallet record.
+that the card belongs to your wallet. Before restoring into Bitcoin Core, type
+the master fingerprint from your separate wallet record; a mismatch stops before
+any wallet is opened or created. If you have no record, the GUI instead shows the
+recovered fingerprint and what the backup identifier says about the seed, then
+requires a separate **Restore anyway** choice. This fallback detects some
+mistakes but does not authenticate the intended wallet; check its history and
+addresses before sending funds.
 
 ## Secret handling
 

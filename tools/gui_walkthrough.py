@@ -150,6 +150,8 @@ class Walkthrough(app.Application):
             self.wallet_poll_retries,
             self.wallet_poll_disappears,
             self.wallet_poll_stops,
+            self.restore_record_gate,
+            self.restore_no_record,
             self.letters,
             self.basis,
             self.second_card,
@@ -512,7 +514,7 @@ class Walkthrough(app.Application):
         wallet_setup.eligible = eligible  # type: ignore[assignment]
         wallet_setup.version_text = lambda _core: "32.0.0"  # type: ignore[assignment]
         wallet_setup.network = lambda _core: "signet"  # type: ignore[assignment]
-        page = pages._wallet_page(self.view, _Stub(), seed, (self.wallet_zeta,), 0, False)
+        page = pages._wallet_page(self.view, _Stub(), seed, (self.wallet_zeta,), 0, None, False)
         self.view.replace([pages.home(self.view), page])
         return True
 
@@ -573,6 +575,30 @@ class Walkthrough(app.Application):
         if GLib.get_monotonic_time() - self.wallet_poll_left < 1_300_000:
             return False
         check("wallet polling stops after leaving the page", self.wallet_polls == self.wallet_poll_count)
+        return True
+
+    def restore_record_gate(self) -> bool:
+        seed = parse_codex32(SECRET_S)
+        if not isinstance(seed, MasterSeed):
+            return True
+        self.restore_poll_count = self.wallet_polls
+        wallet_setup.identity = lambda _core, _secret: ("00112233", "identifier note")  # type: ignore[assignment]
+        pages._restore(self.view, _Stub(), seed)
+        page = self.page()
+        check("restore asks for an unseen record fingerprint", page.get_title() == "Wallet record")
+        check("the recovered fingerprint stays hidden", "00112233" not in " ".join(labels(page)))
+        press(page, "I have no wallet record")
+        return True
+
+    def restore_no_record(self) -> bool:
+        page = self.page()
+        if page.get_title() != "No wallet record":
+            return False
+        check("no-record path reveals the recovered fingerprint", "00112233" in " ".join(labels(page)))
+        check("no-record path requires explicit confirmation", button(page, "Restore anyway") is not None)
+        check("revealed fingerprint cannot be typed back in this attempt", button(page, "Go back") is None)
+        press(page, "Stop")
+        check("stopping did not list a wallet", self.wallet_polls == self.restore_poll_count)
         return True
 
     def letters(self) -> bool:

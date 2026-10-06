@@ -24,12 +24,23 @@ from dataclasses import dataclass
 from typing import Literal
 
 from codex32 import MasterSeed
-from codex32._bitcoin_core import _CHAINS, BitcoinCore, BitcoinCoreError
+from codex32._bitcoin_core import (
+    _CHAINS,
+    NO_RECORD_WARNING,
+    BitcoinCore,
+    BitcoinCoreError,
+    FingerprintMismatch,
+    identifier_note,
+    identifier_origin,
+    parse_fingerprint,
+)
 
 __all__ = [
+    "NO_RECORD_WARNING",
     "UNLOCK_SECONDS",
     "BitcoinCore",
     "BitcoinCoreError",
+    "FingerprintMismatch",
     "Offer",
     "Wallet",
     "connect",
@@ -38,11 +49,14 @@ __all__ = [
     "fill",
     "fingerprint",
     "fingerprint_provider",
+    "identity",
     "initialize",
     "network",
+    "parse_fingerprint",
     "relock",
     "require_unlocked",
     "unlock",
+    "verify",
     "version_text",
 ]
 
@@ -140,6 +154,17 @@ def fingerprint(core: BitcoinCore, secret: MasterSeed) -> str:
     return core.fingerprint(secret).hex()
 
 
+def identity(core: BitcoinCore, secret: MasterSeed) -> tuple[str, str]:
+    """Return the recovered fingerprint and the backup identifier's origin."""
+    derived = core.fingerprint(secret)
+    return derived.hex(), identifier_note(identifier_origin(secret, derived))
+
+
+def verify(core: BitcoinCore, secret: MasterSeed, expected: bytes | None) -> None:
+    """Refuse a wrong recovered seed before listing or mutating any wallet."""
+    core.verify_identity(secret, expected)
+
+
 def fingerprint_provider(core: BitcoinCore) -> Callable[[bytes], bytes]:
     """Hand the library the same out-of-process derivation for a raw seed."""
     return core.fingerprint_seed
@@ -167,7 +192,7 @@ def _transferable(text: str, subject: str) -> None:
     Bitcoin-Qt sends UTF-8. Where those differ, a passphrase set or checked here
     would not be the one Bitcoin Core's own window sets or checks.
     """
-    if not text.isascii() and codecs.lookup(locale.getencoding()).name != "utf-8":
+    if not text.isascii() and codecs.lookup(locale.getpreferredencoding(False)).name != "utf-8":
         raise BitcoinCoreError(
             f"This computer's text is not stored as UTF-8, so Bitcoin Core would receive a different "
             f"{subject} than the one you typed. Use unaccented letters, digits and punctuation."
@@ -265,12 +290,15 @@ def initialize(
     secret: MasterSeed,
     name: str,
     *,
+    expected: bytes | None,
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
 ) -> str:
     """Hand the library the wallet the operator named, and let it do the import."""
     answer = _Answer(name, quoted=True)
-    return core.initialize(secret, answer.ask, answer.tell, account=account, timestamp=timestamp)
+    return core.initialize(
+        secret, answer.ask, answer.tell, expected_fingerprint=expected, account=account, timestamp=timestamp
+    )
 
 
 def fill(
@@ -279,6 +307,7 @@ def fill(
     name: str,
     passphrase: str,
     *,
+    expected: bytes | None,
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
 ) -> str:
@@ -290,9 +319,10 @@ def fill(
     covers the whole sequence; locking an already locked wallet is harmless.
     """
     if not passphrase:
-        return initialize(core, secret, name, account=account, timestamp=timestamp)
+        return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)
+    verify(core, secret, expected)
     unlock(core, name, passphrase)
     try:
-        return initialize(core, secret, name, account=account, timestamp=timestamp)
+        return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)
     finally:
         relock(core, name)
