@@ -452,12 +452,13 @@ def _connected_core(fallback: str | None = None) -> BitcoinCore:
     except KeyboardInterrupt as error:
         raise _CoreSelectionInterrupted from error
     except BitcoinCoreError as error:
-        suggestion = (
-            f" Run 'codex32 {fallback}' instead for a Core-independent operation."
+        use = (
+            "uses Bitcoin Core to show the master fingerprint and rank corrections. "
+            f"'codex32 {fallback}' works without Core but doesn't show the fingerprint."
             if fallback is not None
-            else ""
+            else "gives Bitcoin Core the master key."
         )
-        raise _CommandError(str(error) + suggestion) from error
+        raise _CommandError(f"{error}\nThis command {use}") from error
 
 
 def _create(
@@ -611,6 +612,8 @@ def _correct(
             raise _UsageError("--bytes does not match the valid master-seed backup length.")
         _print("The codex32 string is already valid.")
         return 0
+    if context.master_seed:
+        core = core or _connected_core("correct")
     search_value, erased, immutable = normalized, normalized, normalized[: separator + 1]
     interpreted = _case_interpretation(normalized, immutable, context.profiles, None)
     if interpreted is not None:
@@ -632,15 +635,12 @@ def _correct(
         raise _CommandError("The correction search did not complete within ten seconds.")
     if not candidates:
         raise _CommandError("No valid correction found. Check the original backup.")
-    if context.master_seed and len(candidates) > 1:
-        core = core or _connected_core("correct")
+    if core is not None and len(candidates) > 1:
         candidates = _best(candidates, fingerprint_match=_fingerprint_matcher(core.fingerprint))
     if len(candidates) != 1:
         raise _CommandError("Several corrections are possible. Check the original backup.")
     fixed = candidates[0]
     _require_correction_confirmation(fixed.low_checksum_discrimination)
-    if context.master_seed:
-        core = core or _connected_core("correct")
     warning = (
         "Warning: This is only a correction suggestion. Compare it with the original backup before using it."
     )

@@ -176,7 +176,7 @@ def test_preflight_rejection_is_helpful_without_echoing_core_output(
 
     message = str(failure.value)
     assert message == (
-        "No local Bitcoin Core RPC server found.\n"
+        "No local Bitcoin Core 32 or newer RPC server found.\n"
         "Start Bitcoin Core with local RPC enabled.\n"
         "For signet practice: bitcoin-qt -signet -server"
     )
@@ -199,7 +199,14 @@ def test_preflight_rejects_old_and_mismatched_core_responses(
     monkeypatch.setattr("codex32._bitcoin_core.shutil.which", lambda _name: "/reviewed/bitcoin-cli")
     monkeypatch.setattr(subprocess, "run", run)
 
-    with pytest.raises(BitcoinCoreError, match="No local Bitcoin Core RPC server"):
+    with pytest.raises(BitcoinCoreError, match="No local Bitcoin Core 32 or newer RPC server"):
+        BitcoinCore.connect()
+
+
+def test_missing_bitcoin_cli_names_the_core_requirement(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("codex32._bitcoin_core.shutil.which", lambda _name: None)
+
+    with pytest.raises(BitcoinCoreError, match="Bitcoin Core 32 or newer and run it with RPC enabled"):
         BitcoinCore.connect()
 
 
