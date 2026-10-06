@@ -280,7 +280,7 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     if threshold not in range(2, 10):
         raise MismatchedThreshold("linear sharing requires threshold 2 through 9")
     if len(copied) > threshold or (require_exact and len(copied) != threshold):
-        raise WrongShareCount(f"threshold is {threshold}, but {len(copied)} artifacts were supplied")
+        raise WrongShareCount(f"threshold is {threshold}, but {len(copied)} string(s) were supplied")
     first_tail, checksum_length, encoded_length = _artifact_tail(first)
     tails = [first_tail]
     indices = [first.header.index]

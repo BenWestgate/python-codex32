@@ -259,11 +259,13 @@ The already confirmed `k-1` masks remain fixed. Neither padding rule is BIP93
 validity: parsed S strings may use any application-valid discarded bits, which
 re-sharing preserves exactly. CRC never applies to shares.
 
-Explicit output indices preserve caller order. A share count uses
+Explicit output indices preserve first-occurrence order. Repeated indices mean
+physical copies and are moved into later rounds, so every first occurrence is
+produced before its copies (`aacd` therefore runs as `acda`). A share count uses
 `SystemRandom.sample` over the 31 ordinary indices and preserves sample order.
-There is no entropy injection, sorting, caller-supplied partial-basis
-completion, or BIP39 generation. Ceremonies reject copying and serialization;
-the CLI does not resume an interrupted ceremony.
+There is no entropy injection, caller-supplied partial-basis completion, or
+BIP39 generation. Ceremonies reject object copying and serialization; the CLI
+does not resume an interrupted ceremony.
 
 ## Recovery and additional-share derivation
 

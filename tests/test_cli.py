@@ -1194,7 +1194,7 @@ def test_share_supports_ms_cl_and_bip39() -> None:
     assert bip39.stdout.strip() == SHARING_VECTORS["bip39_12w"]["D"]
 
 
-@pytest.mark.parametrize("index", ("b", "i", "1", "s", "aa"))
+@pytest.mark.parametrize("index", ("b", "i", "1", "s", "ds", ""))
 def test_share_rejects_invalid_target_before_prompting(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1210,7 +1210,7 @@ def test_share_rejects_invalid_target_before_prompting(
 
     assert main(["share", index]) == 2
     assert capsys.readouterr().err == (
-        "codex32 share: Choose one share index from ACDEFGHJKLMNPQRTUVWXYZ023456789.\n"
+        "codex32 share: Choose share indices from ACDEFGHJKLMNPQRTUVWXYZ023456789.\n"
     )
 
 
@@ -1219,17 +1219,16 @@ def test_share_argument_errors_are_actionable() -> None:
 
     assert missing.exit_code == 2
     assert missing.stderr == (
-        "usage: codex32 share [-h] [--plain] INDEX\n"
-        "codex32 share: Choose an index for the additional share.\n"
+        "usage: codex32 share [-h] [--plain] INDICES\ncodex32 share: Choose indices for the new shares.\n"
     )
 
 
-def test_tty_share_rejects_target_index_as_soon_as_entered(
+def test_tty_share_copies_an_entered_card_without_the_threshold(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
 
-    answers = iter((VECTOR_2["derived_D"], VECTOR_2["share_A"], VECTOR_2["share_C"]))
+    answers = iter((VECTOR_2["derived_D"],))
     editor = _FakeLineEditor()
 
     def answer(_prompt: str) -> str:
@@ -1240,11 +1239,26 @@ def test_tty_share_rejects_target_index_as_soon_as_entered(
     monkeypatch.setattr(input_module, "_line_editor", editor)
     monkeypatch.setattr(builtins, "input", answer)
 
-    assert main(["share", "d"]) == 0
+    assert main(["share", "dd"]) == 0
     captured = capsys.readouterr()
-    assert captured.out.strip() == VECTOR_2["derived_D"]
-    assert "Rejected: That index was requested for the additional share." in captured.err
+    assert captured.out.split() == [VECTOR_2["derived_D"]] * 2
+    assert "Rejected" not in captured.err
     assert editor.inserted == []
+
+
+def test_share_derives_several_indices_and_copies_entered_ones() -> None:
+    result = _invoke(["share", "dc"], VECTOR_2["share_A"], VECTOR_2["share_C"])
+
+    assert result.exit_code == 0
+    assert result.stdout.split() == [VECTOR_2["derived_D"], VECTOR_2["share_C"]]
+
+
+def test_share_prints_nothing_when_any_requested_card_fails() -> None:
+    result = _invoke(["share", "ac"], VECTOR_2["share_A"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr == "codex32 share: threshold is 2, but 1 string(s) were supplied\n"
 
 
 def test_create_defaults_to_an_unshared_128_bit_master_seed() -> None:

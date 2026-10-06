@@ -91,9 +91,12 @@ def _indices(values: Sequence[str] | str) -> tuple[str, ...]:
         raise InvalidShareSelection("at most 31 shares may be requested")
     copied: tuple[object, ...] = tuple(values[position] for position in range(len(values)))
     normalized = tuple(_index(value) for value in copied)
-    if len(set(normalized)) != len(normalized):
-        raise InvalidShareSelection("output indices must be distinct")
-    return normalized
+    # Repeats are copies, output in rounds after every original: aacd runs a, c, d, a.
+    rounds = sorted(
+        enumerate(normalized),
+        key=lambda item: (normalized[: item[0]].count(item[1]), normalized.index(item[1])),
+    )
+    return tuple(index for _position, index in rounds)
 
 
 def _selection(threshold: int, share_count: object, indices: Sequence[str] | str | None) -> tuple[str, ...]:
@@ -107,8 +110,8 @@ def _selection(threshold: int, share_count: object, indices: Sequence[str] | str
         return tuple(secrets.SystemRandom().sample(ORDINARY_INDICES, share_count))
     assert indices is not None
     selected = _indices(indices)
-    if len(selected) < threshold:
-        raise InvalidShareSelection(f"at least {threshold} indices are required")
+    if len(set(selected)) < threshold:
+        raise InvalidShareSelection(f"at least {threshold} distinct indices are required")
     return selected
 
 
@@ -242,7 +245,7 @@ class CreationCeremony:
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
     ) -> CreationCeremony:
-        """Start a ceremony for a fresh shared Bitcoin master seed."""
+        """Start a ceremony for a fresh shared Bitcoin master seed; repeated indices are later copies."""
         threshold = _threshold(threshold, allow_zero=False)
         _supplied, byte_length = _seed_input(None, byte_length)
         identifier = _random_identifier() if identifier is None else _identifier(identifier)
@@ -265,7 +268,7 @@ class CreationCeremony:
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
     ) -> CreationCeremony:
-        """Start a ceremony for a fresh shared Core Lightning secret."""
+        """Start a ceremony for a fresh shared Core Lightning secret; repeated indices are later copies."""
         threshold = _threshold(threshold, allow_zero=False)
         identifier = _random_identifier() if identifier is None else _identifier(identifier)
         return cls._start(
@@ -288,7 +291,7 @@ class CreationCeremony:
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
     ) -> CreationCeremony:
-        """Start a ceremony that shares an existing validated secret."""
+        """Start a ceremony that shares an existing validated secret; repeated indices are later copies."""
         if not isinstance(secret, (MasterSeed, CoreLightningSecret)):
             raise TypeError("from_secret accepts only MasterSeed or CoreLightningSecret")
         threshold = _threshold(threshold, allow_zero=False)
@@ -343,7 +346,8 @@ class CreationCeremony:
                     self._secret = candidate
                     break
         else:
-            pending = derive_share(tuple(self._basis), index)
+            copies = [share for share in self._basis if share.header.index == index]
+            pending = cast(Share, copies[0]) if copies else derive_share(tuple(self._basis), index)
         self._pending = pending
         return pending
 

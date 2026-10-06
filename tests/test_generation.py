@@ -187,6 +187,27 @@ def test_invalid_share_selections(arguments: dict[str, object]) -> None:
         CreationCeremony.master_seed(identifier="test", **arguments)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("indices", "order", "copies"),
+    (("aacd", "acda", ((0, 3),)), ("acdd", "acdd", ((2, 3),)), ("caac", "caca", ((0, 2), (1, 3)))),
+)
+def test_repeated_indices_are_copies_after_every_original(
+    indices: str, order: str, copies: tuple[tuple[int, int], ...]
+) -> None:
+    source = generate_master_seed(bytes(range(16)), identifier="test")
+    for ceremony in (
+        CreationCeremony.master_seed(threshold=2, indices=indices, identifier="test"),
+        CreationCeremony.from_secret(source, threshold=2, indices=indices, identifier="name"),
+    ):
+        shares = []
+        for _ in indices:
+            shares.append(ceremony.next_share())
+            assert ceremony.confirm(shares[-1].text).accepted
+        assert "".join(share.header.index for share in shares) == order
+        assert all(shares[first].text == shares[copy].text for first, copy in copies)
+        ceremony.finish()
+
+
 def test_oversized_index_strings_are_bounded_before_normalization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
