@@ -1060,7 +1060,11 @@ def _identity(
                     _say(status, str(error), "error")
                     return
                 if written != expected:
-                    _say(status, "That fingerprint does not match. Check the wallet record and type it again.", "error")
+                    _say(
+                        status,
+                        "That fingerprint does not match. Check the wallet record and type it again.",
+                        "error",
+                    )
                     return
                 _wallets(view, core, secret, "now", None)
 
