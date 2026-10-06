@@ -97,11 +97,12 @@ def test_public_api_full_checksum_erasure_completion_carries_risk(source, degree
 @pytest.mark.parametrize("entrypoint", (cli.main, cli.ms_main))
 @pytest.mark.parametrize("plain", (False, True))
 def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
-    stdout, stderr, connected = io.StringIO(), io.StringIO(), []
+    stdout, stderr = io.StringIO(), io.StringIO()
 
-    def connect(*args):
-        connected.append(_FakeBitcoinCore())
-        return connected[-1]
+    def connect(ask=None, tell=None):
+        if tell is not None:
+            tell("Using Bitcoin Core on signet.")
+        return _FakeBitcoinCore()
 
     with (
         patch.object(sys, "stdin", io.StringIO(VECTOR_1["secret_s"][:-1] + "?")),
@@ -113,8 +114,7 @@ def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
         status = entrypoint(["correct", *(["--plain"] if plain else [])])
     prog = "codex32" if entrypoint is cli.main else "ms32"
     assert status == 3 and stdout.getvalue() == ""
-    # ms32 connects to Core before searching; that prints only a blank line.
-    assert stderr.getvalue() == "\n" * len(connected) + f"{prog}: interactive confirmation required\n"
+    assert stderr.getvalue() == f"{prog}: interactive confirmation required\n"
 
 
 @pytest.mark.parametrize("answer", ("y", "Y", "yes", "Yes", "n", "", "other", None))
