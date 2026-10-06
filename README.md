@@ -24,6 +24,11 @@ Caution: This is reference code. Verify carefully before using with real funds.
 For wallet backups, obtain the identifier from a trusted wallet record;
 `from_seed` does not derive or verify a BIP32 fingerprint.
 
+The [security audit status](docs/security/audit-status-2026-10-05.md) records
+the remaining human-integration and release-qualification gates. It is a
+point-in-time status report, not a claim that the release candidate has passed
+its final adversarial review.
+
 ## Installation
 **Compatibility:** Python 3.10–3.15
 
