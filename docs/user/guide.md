@@ -225,8 +225,8 @@ its public wallet data with the separate wallet record.
 3. Before entering recovery text, ensure the offline signer already has the
    Bitcoin Core chain history needed for the requested rescan. Then disable
    Ethernet, internet, Tor, Wi-Fi, Bluetooth, cellular, and every other network
-   path. Load a blank encrypted descriptor wallet with private keys enabled in
-   Bitcoin Core, and run:
+   path. On the trusted offline signer, load a blank encrypted descriptor wallet
+   with private keys enabled in Bitcoin Core, and run:
 
    ```bash
    ms32 wallet --timestamp 0

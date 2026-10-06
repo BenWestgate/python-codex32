@@ -50,7 +50,7 @@ def parse_fingerprint(text: str) -> bytes:
 
 NO_RECORD_WARNING = (
     "Without the wallet record, nothing can prove these cards are the wallet you expect. Compare the "
-    "fingerprint with any other copy, such as another wallet app, a hardware wallet or a descriptor backup. "
+    "fingerprint with any other copy, such as a watch-only wallet or a descriptor backup. "
     "After restoring, let Bitcoin Core finish scanning and check that the balance, past payments and "
     "addresses are ones you recognise before sending money here. Replaced cards can come with a history "
     "too: if you do not know what this wallet should hold, have someone you trust check it. Once you are "
