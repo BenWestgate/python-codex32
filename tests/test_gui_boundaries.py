@@ -137,6 +137,42 @@ def test_restore_reaches_wallet_selection_only_after_identity_choice() -> None:
     assert _callers(tree, "_identity") == {"_unshared_page", "_card_confirmed", "_fingerprint_page"}
 
 
+def test_fresh_creation_requires_fingerprint_reentry_before_wallet_selection() -> None:
+    tree = ast.parse((_package() / "pages.py").read_text(encoding="utf-8"))
+    identity = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_identity"
+    )
+    follow = next(
+        node for node in ast.walk(identity) if isinstance(node, ast.FunctionDef) and node.name == "follow"
+    )
+    fresh = next(
+        node
+        for node in ast.walk(follow)
+        if isinstance(node, ast.If)
+        and isinstance(node.test, ast.UnaryOp)
+        and isinstance(node.test.op, ast.Not)
+        and isinstance(node.test.operand, ast.Name)
+        and node.test.operand.id == "restoring"
+    )
+    confirm = next(
+        node for node in ast.walk(fresh) if isinstance(node, ast.FunctionDef) and node.name == "confirm"
+    )
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "parse_fingerprint"
+        for node in ast.walk(confirm)
+    )
+    assert any(
+        isinstance(node, ast.Compare) and any(isinstance(operator, ast.NotEq) for operator in node.ops)
+        for node in ast.walk(confirm)
+    )
+    assert any(
+        isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_wallets"
+        for node in ast.walk(confirm)
+    )
+
+
 def test_restore_checks_identity_before_creating_a_destination() -> None:
     tree = ast.parse((_package() / "pages.py").read_text(encoding="utf-8"))
     new_wallet = next(

@@ -67,10 +67,10 @@ back. Read-back starts completely empty, including `MS1`. A mismatch highlights
 only the groups you typed differently; the expected text stays hidden.
 
 After all cards are confirmed, write the displayed master fingerprint on your
-wallet record and acknowledge that you have recorded it. Then choose an empty
-Bitcoin Core wallet or create a new blank one. A passphrase protects the wallet
-on this computer; the recovery cards still recover the seed if that passphrase
-is lost.
+wallet record, then re-enter it in the GUI. Wallet selection stays unavailable
+until the re-entered fingerprint matches. Then choose an empty Bitcoin Core
+wallet or create a new blank one. A passphrase protects the wallet on this
+computer; the recovery cards still recover the seed if that passphrase is lost.
 
 Copy the final wallet details to the
 [wallet record](wallet-verification-record.html) and store it separately from the

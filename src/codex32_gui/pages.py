@@ -1047,19 +1047,32 @@ def _identity(
         fingerprint, note = identity
         shown = (("Backup identifier", secret.header.identifier.upper()), ("Master fingerprint", fingerprint))
         if not restoring:
+            entered = Adw.EntryRow(title="Re-enter the master fingerprint")
+            group = Adw.PreferencesGroup()
+            group.add(entered)
+            status = _note("", "")
+            expected = wallet_setup.parse_fingerprint(fingerprint)
+
+            def confirm() -> None:
+                try:
+                    written = wallet_setup.parse_fingerprint(entered.get_text())
+                except ValueError as error:
+                    _say(status, str(error), "error")
+                    return
+                if written != expected:
+                    _say(status, "That fingerprint does not match. Check the wallet record and type it again.", "error")
+                    return
+                _wallets(view, core, secret, "now", None)
+
             return _page(
                 "Wallet record",
                 _column(
                     _title("Write this on your wallet record", "Keep the record apart from your cards."),
                     _rows("Identity", shown),
+                    group,
+                    status,
                 ),
-                actions=_actions(
-                    _button(
-                        "I wrote it down",
-                        lambda: _wallets(view, core, secret, "now", None),
-                        style="suggested-action",
-                    )
-                ),
+                actions=_actions(_button("Confirm and continue", confirm, style="suggested-action")),
                 can_pop=False,
             )
         content = _column(
