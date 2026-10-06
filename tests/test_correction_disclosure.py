@@ -98,11 +98,18 @@ def test_public_api_full_checksum_erasure_completion_carries_risk(source, degree
 @pytest.mark.parametrize("plain", (False, True))
 def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
     stdout, stderr = io.StringIO(), io.StringIO()
+
+    def connect(ask=None, tell=None):
+        if tell is not None:
+            tell("Using Bitcoin Core on signet.")
+        return _FakeBitcoinCore()
+
     with (
         patch.object(sys, "stdin", io.StringIO(VECTOR_1["secret_s"][:-1] + "?")),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
         patch.object(_cli_input, "_correction_candidates", return_value=((_candidate(),), True, None)),
+        patch.object(cli.BitcoinCore, "connect", connect),
     ):
         status = entrypoint(["correct", *(["--plain"] if plain else [])])
     prog = "codex32" if entrypoint is cli.main else "ms32"
