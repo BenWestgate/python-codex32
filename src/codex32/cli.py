@@ -25,6 +25,7 @@ from codex32._cli_input import (
     _confirm_correction,
     _entered_groups,
     _fingerprint_matcher,
+    _parse,
     _render_groups,
     _require_correction_confirmation,
     _scheduled_candidates,
@@ -264,7 +265,7 @@ def _creation_source(
                 and isinstance(candidate := candidates[0].artifact, Secret)
                 and candidate.profile is profile
             ):
-                confirmation = _confirm_correction(candidates[0], [], False, fingerprint)
+                confirmation = _confirm_correction(candidates[0], [], False, str(error), fingerprint)
                 if confirmation is True:
                     return candidate
                 if confirmation is False:
@@ -603,9 +604,9 @@ def _correct(
     if context.master_seed and hrp != Profile.MS.value:
         raise _UsageError("This command accepts only Bitcoin master-seed input beginning with ms1.")
     try:
-        parse_codex32(normalized)
-    except CodexError:
-        pass
+        _parse(normalized, None)
+    except _UsageError as error:
+        reason = str(error)
     else:
         if isinstance(byte_length, int) and len(normalized) != _ms_text_length(byte_length):
             raise _UsageError("--bytes does not match the valid master-seed backup length.")
@@ -639,6 +640,7 @@ def _correct(
         raise _CommandError("Several corrections are possible. Check the original backup.")
     fixed = candidates[0]
     _require_correction_confirmation(fixed.low_checksum_discrimination)
+    _print(f"Invalid: {reason}", err=True)
     if context.master_seed:
         core = core or _connected_core("correct")
     warning = (

@@ -203,7 +203,7 @@ def test_yes_still_requires_independent_whole_card_acceptance(monkeypatch):
     answers = iter(("YES", "n"))
     monkeypatch.setattr(_cli_input, "_editable_input", lambda prompt: prompts.append(prompt) or next(answers))
     with patch.object(sys, "stdin", _TTYInput()), contextlib.redirect_stderr(_TTYOutput()):
-        assert _cli_input._confirm_correction(candidate, [], False) is False
+        assert _cli_input._confirm_correction(candidate, [], False, "") is False
     assert prompts == [
         "If you understand this, type YES to attempt to correct the data: ",
         "Does this entire string exactly match your recovery card? [y/N]: ",
