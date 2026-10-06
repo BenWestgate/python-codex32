@@ -171,9 +171,11 @@ wallet should be trusted until initialization completes.
 
 ### 4. Complete the record and store the cards
 
-Copy the displayed backup identifier, wallet name, Bitcoin Core version,
-master fingerprint, derivation standards, and account number to the wallet
-record. Add the approximate
+Before filling a newly created wallet, write the displayed master fingerprint on the
+wallet record and confirm it. Fresh creation has no pre-existing fingerprint or descriptor
+to authenticate; `ms32 create --existing` instead uses the restore identity gate. Then copy the displayed
+backup identifier, wallet name, Bitcoin Core version, derivation standards, and
+account number to the wallet record. Add the approximate
 creation / earliest-use date. Do not put a descriptor timestamp on a recovery
 card; Core's public descriptor export preserves its stored timestamps.
 
@@ -205,7 +207,7 @@ keys enabled and run `ms32 wallet`. Keep that computer disconnected from every
 network while recovery text or signing keys are present.
 
 After the signer is restored, follow Bitcoin Core v32's maintained
-[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md).
+[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md).
 That workflow owns the watch-only export/import and PSBT transport steps. In
 Bitcoin Core v32, `exportwatchonlywallet` creates the watch-only wallet file and
 `restorewallet` loads it on the online node. Do not improvise a codex32-specific
@@ -220,12 +222,11 @@ its public wallet data with the separate wallet record.
 1. Collect the required cards with matching identifiers and text lengths.
 2. Find the separately stored wallet record and the original wallet
    instructions.
-3. On Tails or another reviewed offline computer, check each card with
-   `ms32 check`. If validation fails, recheck what you typed before assuming
-   the paper is wrong.
-4. Disable Ethernet, internet, Tor, Wi-Fi, Bluetooth, cellular, and every other
-   network path. Load a blank encrypted descriptor wallet with private keys
-   enabled in Bitcoin Core, and run:
+3. Before entering recovery text, ensure the offline signer already has the
+   Bitcoin Core chain history needed for the requested rescan. Then disable
+   Ethernet, internet, Tor, Wi-Fi, Bluetooth, cellular, and every other network
+   path. On the trusted offline signer, load a blank encrypted descriptor wallet
+   with private keys enabled in Bitcoin Core, and run:
 
    ```bash
    ms32 wallet --timestamp 0
@@ -234,16 +235,20 @@ its public wallet data with the separate wallet record.
    If you know when the wallet was first used, an earlier Unix timestamp can
    shorten the rescan; `0` remains the safest choice when unsure.
 
+4. Type the master fingerprint from the wallet record. A mismatch stops before
+   Bitcoin Core is changed. Press Enter with nothing typed only if there is no
+   record; codex32 then shows the recovered fingerprint and what the backup
+   identifier says, and asks before restoring.
 5. Select and confirm that wallet. If it is locked, follow the displayed
    Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
    It gives Core the master private key, asks Core to create the standard
    account-0 descriptors, scans history, and relocks an encrypted wallet.
 6. If you need an online watch-only counterpart, keep the restored signer
    offline and follow Bitcoin Core v32's
-   [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)
+   [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md)
    to export and restore the watch-only wallet. Let the online node synchronize,
-   then compare the recovered fingerprint, account, policy, addresses, balance,
-   and transaction history with the wallet record.
+   then compare the account, policy, addresses, balance, and transaction
+   history with the wallet record.
 
 A timestamp of zero safely scans all history and may take time; it belongs in
 the recovery command, not on a paper card. During an emergency recovery, move
