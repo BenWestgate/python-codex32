@@ -102,7 +102,7 @@ def _secret(artifacts: list[Artifact]) -> Secret:
     if not all(isinstance(artifact, Share) for artifact in artifacts):
         raise _UsageError("Recovery accepts ordinary shares or one complete secret.")
     try:
-        return recover_secret([artifact for artifact in artifacts if isinstance(artifact, Share)])
+        return recover_secret(cast(list[Share], artifacts))
     except CodexError as error:
         raise _UsageError(str(error)) from error
 
