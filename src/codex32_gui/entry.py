@@ -1,4 +1,4 @@
-"""The one field that interprets codex32 keystrokes."""
+"""The fields that interpret codex32 keystrokes."""
 
 from __future__ import annotations
 
@@ -109,3 +109,38 @@ class Codex32Entry(PrivateEntry):
             self._rewriting = False
             self.set_position(kept + max(kept - 1, 0) // GROUP)
         return False
+
+
+class GroupEntry(PrivateEntry):
+    """One group of a card being corrected in place, shown in capitals."""
+
+    __gtype_name__ = "GroupEntry"
+
+    def __init__(self, text: str) -> None:
+        super().__init__(
+            text=text, width_chars=GROUP + 1, max_width_chars=GROUP + 1, max_length=GROUP + SLACK
+        )
+        self.add_css_class("card-entry")
+        self.set_input_hints(Gtk.InputHints.NO_SPELLCHECK | Gtk.InputHints.NO_EMOJI)
+        refuse_paste(self)
+        self.connect("changed", lambda _entry: GLib.idle_add(self._capitals))
+
+    def _capitals(self) -> bool:
+        position, text = self.get_position(), self.get_text()
+        if text != text.upper():
+            self.set_text(text.upper())
+            self.set_position(position)
+        return False
+
+
+def refuse_paste(entry: Gtk.Entry) -> None:
+    """Take only keystrokes, so a card is read back from the paper and not pasted from elsewhere."""
+    text = entry.get_delegate()
+    text.connect("paste-clipboard", lambda text: text.stop_emission_by_name("paste-clipboard"))
+    middle = Gtk.GestureClick(button=2, propagation_phase=Gtk.PropagationPhase.CAPTURE)  # Primary paste
+    middle.connect("pressed", lambda gesture, *_: gesture.set_state(Gtk.EventSequenceState.CLAIMED))
+    entry.add_controller(middle)
+    controllers = text.observe_controllers()
+    for controller in [controllers.get_item(i) for i in range(controllers.get_n_items())]:
+        if isinstance(controller, Gtk.DropTarget):  # Dragged-in text
+            text.remove_controller(controller)

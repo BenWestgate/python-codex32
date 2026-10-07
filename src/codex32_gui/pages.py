@@ -29,7 +29,7 @@ from codex32 import (
 from codex32.errors import CodexError
 from codex32.generation import ORDINARY_INDICES
 from codex32_gui import ARTWORK, reading, wallet_setup, work
-from codex32_gui.entry import Codex32Entry
+from codex32_gui.entry import Codex32Entry, GroupEntry, refuse_paste
 from codex32_gui.wallet_setup import BitcoinCore
 
 Artifact = Share | Secret
@@ -476,45 +476,81 @@ def _read_back_page(
 ) -> Adw.NavigationPage:
     """Read the card back from the paper, with the original off the screen."""
     field = Codex32Entry(length=len(card.text))
+    refuse_paste(field)
+    boxes: list[Gtk.Label | GroupEntry] = []  # After a mismatch: one fixed box per group.
     status = _note("")
+    comparison = Adw.Bin()  # Only what was typed is redrawn; the original stays hidden.
     accept = _button("Confirm card", lambda: None, style="suggested-action")
 
+    def typed() -> str:
+        return "".join(box.get_text() for box in boxes) if boxes else field.get_text()
+
     def update(*_arguments: object) -> None:
-        state = field.reading()
-        accept.set_sensitive(state.complete)
+        if field.get_text() == reading.PREFIX:  # Cleared: the redrawn copy goes too.
+            comparison.set_child(None)
+            boxes.clear()
+            field.set_visible(True)
+        state = reading.read(reading.normalize(typed()), length=len(card.text)) if boxes else field.reading()
         # A character a card can never carry is named, never quietly deleted: this
-        # is the step whose whole purpose is to catch a misread glyph.
-        fault = state.message if state.level == "error" else ""
+        # is the step whose whole purpose is to catch a misread glyph. The field has
+        # already dropped it, so its reading names it while the length is short.
+        short = state.level == "error" and len(state.text) != state.expected
+        lookalike = reading.lookalike_fault(typed()) or (state.message if short else "")
+        fault = lookalike or (state.message if state.level == "error" else "")
+        # Any other missing or extra character may be submitted: its group is then the one highlighted.
+        accept.set_sensitive(not lookalike and abs(len(state.text) - state.expected) <= reading.SLACK)
         counted = f"{len(state.text)} of {state.expected} characters"
         _say(status, fault or counted, "error" if fault else "")
 
+    def correct(pieces: tuple[tuple[str, bool], ...]) -> None:
+        # Each group gets a fixed box, so no character moves between groups. Only
+        # the wrong ones can be typed in, and Tab passes over the locked ones.
+        grid = Gtk.Grid(column_spacing=8, row_spacing=8, halign=Gtk.Align.CENTER)
+        boxes[:] = [GroupEntry(piece) if not right else Gtk.Label(label=piece) for piece, right in pieces]
+        for number, box in enumerate(boxes):
+            box.add_css_class("card-group")
+            if isinstance(box, GroupEntry):
+                box.add_css_class("guessed")
+                box.connect("changed", update)
+                box.connect("activate", lambda _box: check() if accept.get_sensitive() else None)
+            grid.attach(box, number % 6, number // 6, 1, 1)
+        comparison.set_child(grid)
+        field.set_visible(False)
+        next((box for box in boxes if isinstance(box, GroupEntry)), field).grab_focus()
+
     def check() -> None:
+        entered = reading.normalize(typed())
         try:
-            result = confirm(reading.normalize(field.get_text()))
+            result = confirm(entered)
         except CodexError as error:
             _failure(view, error, CARDS_SAFE)
             return
-        if not result.accepted:
-            groups = result.mismatched_groups
-            where = f"Group {min(groups)}" if groups else "What you typed"
-            _say(status, f"{where} does not match. Check it against your card.", "error")
+        if not result.accepted:  # A retry keeps every box where it is and only rechecks the open ones.
+            groups = reading.grouped(card.text.upper()).split()
+            kept = ["".join(box.get_text().upper().split()) for box in boxes]  # As confirm() reads them
+            retried = tuple((text, text == want) for text, want in zip(kept, groups))
+            correct(retried or reading.aligned(card.text.upper(), entered))
+            update()
+            _say(status, "The highlighted groups do not match. Re-read them from the card.", "error")
             return
         field.clear()
         after()
 
     accept.connect("clicked", lambda _button: check())
+    field.connect("activate", lambda _entry: check() if accept.get_sensitive() else None)
     field.connect("changed", update)
     content = _column(
         _title("Now type it back from the card", _counted(card.header.index.upper(), position, count)),
         _note(
             "The original is no longer on screen. Read from the card you just wrote, so a slip of the "
-            "pen is caught now rather than years from now."
+            "pen is caught now rather than years from now. Pasting is turned off."
         ),
         field,
         status,
+        comparison,
         _note(
-            "Spaces and capitals do not matter, and you may try as many times as you like. Correct only "
-            "the group named above; the rest stays as you typed it."
+            "Spaces and capitals do not matter, and you may try as many times as you like. After a "
+            "mismatch only the highlighted groups can be changed; Tab moves between them."
         ),
     )
     page = _page(
@@ -522,7 +558,7 @@ def _read_back_page(
         content,
         actions=_actions(_button("Show the card again", view.pop), accept),
     )
-    _forget_when_gone(view, page, field.clear)
+    _forget_when_gone(view, page, field.clear)  # Clearing fires update, which drops the comparison.
     update()
     return page
 

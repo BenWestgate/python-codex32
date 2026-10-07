@@ -5,6 +5,7 @@ from data.bip93_vectors import VECTOR_2, VECTOR_3
 
 from codex32_gui.reading import (
     PREFIX,
+    aligned,
     expected_length,
     grouped,
     header_fault,
@@ -159,3 +160,18 @@ def test_several_confusable_characters_are_all_named() -> None:
     assert "B or O" in fault
     assert "B is probably 8" in fault
     assert "O is probably 0" in fault
+
+
+def test_a_slip_at_a_group_boundary_keeps_the_left_group_right() -> None:
+    assert aligned("ABCDEFGH", "ABCDXEFGH") == (("ABCD", True), ("XEFGH", False))
+    assert aligned("ABCDDEFG", "ABCDEFG") == (("ABCD", True), ("EFG", False))
+
+
+def test_the_fewest_groups_are_marked_wrong() -> None:
+    card = "ABCDEFGHJKLMNPQR"
+    assert aligned(card, "ABCDFGHJKLMNXPQR") == (
+        ("ABCD", True),
+        ("FGH", False),
+        ("JKLM", True),
+        ("NXPQR", False),
+    )
