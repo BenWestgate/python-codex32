@@ -98,11 +98,7 @@ class Record:
 
 
 def _page(
-    title: str,
-    content: Gtk.Widget,
-    *,
-    actions: Gtk.Widget | None = None,
-    can_pop: bool = True,
+    title: str, content: Gtk.Widget, *, actions: Gtk.Widget | None = None, can_pop: bool = True
 ) -> Adw.NavigationPage:
     scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
     scroller.set_child(Adw.Clamp(maximum_size=700, child=content, margin_start=18, margin_end=18))
@@ -389,9 +385,7 @@ def home(view: Adw.NavigationView) -> Adw.NavigationPage:
 
 
 def _connect(
-    view: Adw.NavigationView,
-    chain: str | None,
-    then: Callable[[BitcoinCore], Adw.NavigationPage],
+    view: Adw.NavigationView, chain: str | None, then: Callable[[BitcoinCore], Adw.NavigationPage]
 ) -> None:
     """Discover Bitcoin Core before any entropy is drawn or any card is read."""
     page = _working(view, "Bitcoin Core", "Looking for Bitcoin Core on this computer…")
@@ -412,20 +406,15 @@ def _connect(
 
 
 def _network_page(
-    view: Adw.NavigationView,
-    options: Sequence[str],
-    then: Callable[[BitcoinCore], Adw.NavigationPage],
+    view: Adw.NavigationView, options: Sequence[str], then: Callable[[BitcoinCore], Adw.NavigationPage]
 ) -> Adw.NavigationPage:
     group = Adw.PreferencesGroup(title="Bitcoin Core is running on more than one network")
     buttons = _radio_group(group, [(label, "") for label in options])
     content = _column(
-        _title("Which network?", "Practise on signet. Use mainnet only for coins you cannot replace."),
-        group,
+        _title("Which network?", "Practise on signet. Use mainnet only for coins you cannot replace."), group
     )
     action = _button(
-        "Continue",
-        lambda: _connect(view, options[_selected(buttons)], then),
-        style="suggested-action",
+        "Continue", lambda: _connect(view, options[_selected(buttons)], then), style="suggested-action"
     )
     return _page("Network", content, actions=_actions(action))
 
@@ -548,8 +537,7 @@ def _abandon(view: Adw.NavigationView, page: Adw.NavigationPage) -> None:
     dialog.set_response_appearance("stop", Adw.ResponseAppearance.DESTRUCTIVE)
     dialog.set_default_response("keep")
     dialog.connect(
-        "response",
-        lambda _dialog, response: view.replace([home(view)]) if response == "stop" else None,
+        "response", lambda _dialog, response: view.replace([home(view)]) if response == "stop" else None
     )
     dialog.present(page)
 
@@ -579,21 +567,15 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
         adjustment=Gtk.Adjustment(lower=2, upper=9, step_increment=1, value=2),
     )
     total = Adw.SpinRow(
-        title="Cards in total",
-        adjustment=Gtk.Adjustment(lower=2, upper=31, step_increment=1, value=3),
+        title="Cards in total", adjustment=Gtk.Adjustment(lower=2, upper=31, step_increment=1, value=3)
     )
-    size = Adw.ComboRow(
-        title="Seed size",
-        model=Gtk.StringList.new([label for _length, label in SEED_SIZES]),
-    )
+    size = Adw.ComboRow(title="Seed size", model=Gtk.StringList.new([label for _length, label in SEED_SIZES]))
     # Neither number may leave the other impossible.
     needed.connect(
-        "notify::value",
-        lambda row, _spec: total.set_value(max(total.get_value(), row.get_value())),
+        "notify::value", lambda row, _spec: total.set_value(max(total.get_value(), row.get_value()))
     )
     total.connect(
-        "notify::value",
-        lambda row, _spec: needed.set_value(min(needed.get_value(), row.get_value())),
+        "notify::value", lambda row, _spec: needed.set_value(min(needed.get_value(), row.get_value()))
     )
     for row in (needed, total, size):
         custom.add(row)
@@ -662,11 +644,7 @@ def _unshared_page(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSe
 
 
 def _next_card(
-    view: Adw.NavigationView,
-    core: BitcoinCore,
-    ceremony: CreationCeremony,
-    position: int,
-    count: int,
+    view: Adw.NavigationView, core: BitcoinCore, ceremony: CreationCeremony, position: int, count: int
 ) -> None:
     page = _working(view, f"Card {position + 1} of {count}", "Drawing this card from the operating system…")
 
@@ -685,11 +663,7 @@ def _next_card(
 
 
 def _card_confirmed(
-    view: Adw.NavigationView,
-    core: BitcoinCore,
-    ceremony: CreationCeremony,
-    position: int,
-    count: int,
+    view: Adw.NavigationView, core: BitcoinCore, ceremony: CreationCeremony, position: int, count: int
 ) -> None:
     if position + 1 < count:
         _next_card(view, core, ceremony, position + 1, count)
@@ -929,8 +903,7 @@ def _unlock_page(
         "Unlock",
         content,
         actions=_actions(
-            _button("I unlocked it myself", check),
-            _button("Unlock and finish", go, style="suggested-action"),
+            _button("I unlocked it myself", check), _button("Unlock and finish", go, style="suggested-action")
         ),
     )
     _forget_when_gone(view, page, lambda: _empty(field))

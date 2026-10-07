@@ -75,9 +75,7 @@ def run[Result](
 
 
 def _busy[Result](
-    view: Adw.NavigationView,
-    page: Adw.NavigationPage,
-    done: Callable[[Result | Exception], None],
+    view: Adw.NavigationView, page: Adw.NavigationPage, done: Callable[[Result | Exception], None]
 ) -> bool:
     if showing(view, page):
         done(RuntimeError(_BUSY))
