@@ -850,7 +850,13 @@ def test_identifier_origin_names_the_rule_that_made_it(identifier: str, origin: 
     assert ("matches this seed" in identifier_note(origin)) is (origin is not None)
 
 
-def test_identifier_origin_still_checks_alpha_without_ripemd160(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("identifier", "expected"),
+    (("hezu", "Bails alpha"), ("d9k8", "Bails check unavailable")),
+)
+def test_identifier_origin_without_ripemd160(
+    monkeypatch: pytest.MonkeyPatch, identifier: str, expected: str
+) -> None:
     original_new = hashlib.new
 
     def without_ripemd160(name: str, data: bytes = b"") -> object:
@@ -859,8 +865,11 @@ def test_identifier_origin_still_checks_alpha_without_ripemd160(monkeypatch: pyt
         return original_new(name, data)
 
     monkeypatch.setattr(hashlib, "new", without_ripemd160)
-    secret = MasterSeed.from_seed(_BAILS_SEED, identifier="hezu")
-    assert identifier_origin(secret, _FINGERPRINT) == "Bails alpha"
+    secret = MasterSeed.from_seed(_BAILS_SEED, identifier=identifier)
+    assert identifier_origin(secret, _FINGERPRINT) == expected
+    if expected == "Bails check unavailable":
+        assert "could not be checked" in identifier_note(expected)
+        assert "does not prove" in identifier_note(expected)
 
 
 def test_identifier_note_allows_supported_nonderived_codex32_identifiers() -> None:
