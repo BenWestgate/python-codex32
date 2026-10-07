@@ -60,8 +60,8 @@ NOT_PROOF = (
 )
 GUESSWORK = (
     "This was worked out from what you could still read. It was not read off the card, and codex32 "
-    "cannot tell you it is right. Copy it onto a fresh card, then prove it by restoring your wallet "
-    "and checking the master fingerprint against your wallet record."
+    "cannot tell you it is right. Copy it onto a fresh card, then check it by restoring your wallet "
+    "and comparing the master fingerprint with your wallet record."
 )
 _CREATED = (
     "Your wallet is ready",
@@ -1139,8 +1139,8 @@ def _finished_page(view: Adw.NavigationView, record: Record, restoring: bool = F
     """Show the wallet-identity fields.
 
     A new wallet's are copied onto the wallet record. A restored wallet's are the
-    only proof the cards just entered belong to that wallet, so they are checked
-    against the record instead, and no creation date is offered: the one this
+    final accident-safety checks that the cards just entered match the recorded
+    wallet, so they are checked against the record instead, and no creation date is offered: the one this
     wallet was born with is on the record already, and today's would replace it.
     """
     heading, asked, closing = _RESTORED if restoring else _CREATED
