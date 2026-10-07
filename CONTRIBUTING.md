@@ -11,7 +11,7 @@ Getting Started
 New contributors are very welcome and needed.
 
 If you use AI tools while contributing, please read and follow the [AI
-policy](/doc/AI_POLICY.md).
+policy](docs/developer/AI_POLICY.md).
 
 In-depth reviewing and testing are the bottleneck of the project, and are the
 most effective way anyone can start to contribute. It will teach you much more
@@ -19,9 +19,42 @@ about the code and process than opening pull requests, and may help you uncover
 related issues and follow-ups to contribute code for. Please refer to the [peer
 review](#peer-review) section below.
 
-Before you start contributing, familiarize yourself with the build system and
-tests. Refer to the documentation in the repository on how to build the project
-and how to run the unit tests, functional tests, and fuzz tests.
+Before you start contributing, familiarize yourself with the [developer API
+guide](docs/developer/api.md), [security model](docs/security/model.md), and
+[user guide](docs/user/guide.md).
+
+The supported development setup uses Python 3.10 through 3.15. From the
+repository root:
+
+    python -m venv .venv
+    source .venv/bin/activate
+    python -m pip install --upgrade pip
+    python -m pip install -e ".[dev]"
+    python -m pip check
+    python -m pytest -q
+
+On Windows, activate with `.\.venv\Scripts\Activate.ps1` in PowerShell or
+`.venv\Scripts\activate.bat` in Command Prompt. The `.[dev]` extra installs the
+test and development tools. If the suite cannot collect after these steps,
+include the Python version and full error in the report.
+
+CI also runs these checks on selected jobs:
+
+    python -O -m pytest -q
+    python tools/verify_correction_constants.py
+    python -m mypy src/codex32
+    python -m ruff check .
+    python -m ruff format --check .
+    python tools/differential_correction.py --verify
+
+For packaging or release changes, also build and check the distributions:
+
+    python -m build
+    python -m twine check dist/*
+
+For changes to Bitcoin Core wallet behavior, run the focused Core fixture
+workflow as well; see `.github/workflows/bitcoin-core-fixtures.yml` for the
+pinned binary and invocation. Do not use funded wallets for testing.
 
 Communication Channels
 ----------------------
@@ -49,10 +82,17 @@ To contribute a patch, the workflow is as follows:
   1. Create topic branch
   1. Commit patches
 
-The master branch for all monotree repositories is identical.
+The supported API and review boundaries in the [developer API
+guide](docs/developer/api.md) must be followed. Security-sensitive changes must
+also follow [SECURITY.md](SECURITY.md), including its private-reporting and
+synthetic-test-material requirements, and the [security
+invariants](docs/security/invariants.md).
 
-The project coding conventions in the [developer notes](doc/developer-notes.md)
-must be followed.
+For v1, the installed library must remain below 5,200 logical review lines. GUI
+work uses a separate 2,250-line budget once it is part of the candidate.
+Changing either budget requires explicit maintainer review and authorization,
+together with matching documentation and enforcement. Do not take unrelated
+refactors solely to create line-count headroom.
 
 ### Committing Patches
 
@@ -62,13 +102,11 @@ fixes or code moves with actual code changes.
 
 Make sure each individual commit is hygienic: that it builds successfully on its
 own without warnings, errors, regressions, or test failures.
-See the [developer notes](doc/developer-notes.md#commit-structure-for-tests)
-for guidance on where test coverage belongs in a commit stack.
 
 Commit messages should be verbose by default consisting of a short subject line
 (50 chars max), a blank line and detailed explanatory text as separate
-paragraph(s), unless the title alone is self-explanatory (like "Correct typo
-in init.cpp") in which case a single title line is sufficient. Commit messages should be
+paragraph(s), unless the title alone is self-explanatory (like "Correct typo")
+in which case a single title line is sufficient. Commit messages should be
 helpful to people reading your code in the future, so explain the reasoning for
 your decisions. Further explanation [here](https://cbea.ms/git-commit/).
 
@@ -100,11 +138,16 @@ any users mentioned in the description will be annoyingly notified each time a
 fork copies the merge. Instead, make any username mentions in a subsequent
 comment to the PR.
 
+State which automated checks and manual tests you ran. Where a bug is fixed,
+include a regression test when practical. Update the affected user or developer
+documentation when a contract changes.
+
 ### Work in Progress Changes and Requests for Comments
 
 If a pull request is not to be considered for merging (yet), please
 prefix the title with [WIP] or use [Tasks Lists](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#task-lists)
-in the body of the pull request to indicate tasks are pending.
+in the body of the pull request to indicate tasks are pending. A draft pull
+request is also appropriate for changes that are not ready for review.
 
 ### Address Feedback
 
@@ -116,6 +159,10 @@ You are expected to reply to any review comments before your pull request is
 merged. You may update the code or reject the feedback if you do not agree with
 it, but you should express so in a reply. If there is outstanding feedback and
 you are not actively working on it, your pull request may be closed.
+
+If you change a reviewed commit, say what changed and rerun the relevant checks.
+Do not repeatedly request automated reviews when a quota limit or a non-blocking
+stylistic disagreement is the only remaining issue.
 
 Please refer to the [peer review](#peer-review) section below for more details.
 
@@ -131,7 +178,8 @@ before it will be reviewed. The basic squashing workflow is shown below.
     # Set commits (except the one in the first line) from 'pick' to 'squash', save and quit.
     # On the next screen, edit/refine commit messages.
     # Save and quit.
-    git push -f # (force push to GitHub)
+    git push --force-with-lease # (force push to GitHub, refusing to clobber
+                                # commits you have not fetched)
 
 Please update the resulting commit message, if needed. It should read as a
 coherent message. In most cases, this means not just listing the interim
@@ -153,18 +201,24 @@ pull request to pull request.
 
 When a pull request conflicts with the target branch, you may be asked to rebase it on top of the current target branch.
 
-    git fetch  # Fetch the latest upstream commit
-    git rebase FETCH_HEAD  # Rebuild commits on top of the new base
+If you cloned your fork normally, configure the project repository once:
 
-This project aims to have a clean git history, where code changes are only made in non-merge commits. This simplifies
-auditability because merge commits can be assumed to not contain arbitrary code changes. Merge commits should be signed,
-and the resulting git tree hash must be deterministic and reproducible. The script in
-[/contrib/verify-commits](/contrib/verify-commits) checks that.
+    git remote add upstream https://github.com/BenWestgate/python-codex32.git
 
-After a rebase, reviewers are encouraged to sign off on the force push. This should be relatively straightforward with
-the `git range-diff` tool explained in the [productivity
-notes](/doc/productivity.md#diff-the-diffs-with-git-range-diff). To avoid needless review churn, maintainers will
-generally merge pull requests that received the most review attention first.
+Then fetch and rebase onto the current target branch:
+
+    git fetch upstream <target-branch>
+    git rebase FETCH_HEAD
+    git push --force-with-lease
+
+This project aims to have a clean git history, where code changes are only made
+in non-merge commits. This simplifies auditability because merge commits can be
+assumed not to contain arbitrary code changes.
+
+After a rebase, reviewers are encouraged to sign off on the force push. This
+should be relatively straightforward with `git range-diff`. To avoid needless
+review churn, maintainers will generally merge pull requests that received the
+most review attention first.
 
 Pull Request Philosophy
 -----------------------
@@ -174,7 +228,6 @@ feature, fix a bug, or refactor code; but not a mixture. Please also avoid super
 pull requests which attempt to do too much, are overly large, or overly complex
 as this makes review difficult.
 
-
 ### Features
 
 When adding a new feature, thought must be given to the long term technical debt
@@ -182,7 +235,6 @@ and maintenance that feature may require after inclusion. Before proposing a new
 feature that will require maintenance, please consider if you are willing to
 maintain it (including bug fixing). If features get orphaned with no maintainer
 in the future, they may be removed by the Repository Maintainer.
-
 
 ### Refactoring
 
@@ -206,12 +258,10 @@ Trivial pull requests or pull requests that refactor the code with no clear
 benefits may be immediately closed by the maintainers to reduce unnecessary
 workload on reviewing.
 
-
 "Decision Making" Process
 -------------------------
 
-The following applies to code changes to the project (and related
-projects).
+The following applies to code changes to the project (and related projects).
 
 Whether a pull request is merged rests with the project merge maintainers.
 
@@ -224,11 +274,11 @@ In general, all pull requests must:
   - Have a clear use case, fix a demonstrable bug or serve the greater good of
     the project (for example refactoring for modularisation);
   - Be well peer-reviewed;
-  - Have unit tests, functional tests, and fuzz tests, where appropriate;
-  - Follow code style guidelines (doc/developer-notes.md, [functional tests](test/functional/README.md));
+  - Have tests appropriate to the affected surface;
+  - Follow the project style and supported API/security guidance;
   - Not break the existing test suite;
-  - Where bugs are fixed, where possible, there should be unit tests
-    demonstrating the bug and also proving the fix. This helps prevent regression.
+  - Where bugs are fixed, where possible, have tests demonstrating the bug and
+    proving the fix. This helps prevent regression;
   - Change relevant comments and documentation when behaviour of code changes.
 
 ### Peer Review
@@ -271,8 +321,8 @@ branch, followed by a description of how the reviewer did the review. The
 following language is used within pull request comments:
 
   - "I have tested the code", involving change-specific manual testing in
-    addition to running the unit, functional, or fuzz tests, and in case it is
-    not obvious how the manual testing was done, it should be described;
+    addition to running the relevant automated tests, and in case it is not
+    obvious how the manual testing was done, it should be described;
   - "I have not tested the code, but I have reviewed it and it looks
     OK, I agree it can be merged";
   - A "nit" refers to a trivial, often non-blocking issue.
@@ -299,39 +349,25 @@ about:
     contribution, thundering silence is a good sign of widespread (mild) dislike of a given change
     (because people don't assume *others* won't actually like the proposal). Don't take
     that personally, though! Instead, take another critical look at what you are suggesting
-    and see if it: changes too much, is too broad, doesn't adhere to the
-    [developer notes](doc/developer-notes.md), is dangerous or insecure, is messily written, etc.
-    Identify and address any of the issues you find. Then ask if someone could give
-    their opinion on the concept itself.
+    and see if it: changes too much, is too broad, doesn't adhere to the surrounding style,
+    is dangerous or insecure, is messily written, etc. Identify and address any of the
+    issues you find. Then ask if someone could give their opinion on the concept itself.
   - Remember that the best thing you can do while waiting is give review to others!
-
-
-Backporting
------------
-
-Security and bug fixes can be backported from `master` to release
-branches.
-Maintainers will do backports in batches and
-use the proper `Needs backport (...)` labels
-when needed (the original author does not need to worry about it).
-
-A backport should contain the following metadata in the commit body:
-
-```
-Github-Pull: #<PR number>
-Rebased-From: <commit hash of the original commit>
-```
-
-Have a look at [an example backport PR](
-https://github.com/bitcoin/bitcoin/pull/16189).
-
-Also see the [backport.py script](
-https://github.com/bitcoin-core/bitcoin-maintainer-tools#backport).
 
 Copyright
 ---------
 
 By contributing to this repository, you agree to license your work under the
-MIT license unless specified otherwise in `contrib/debian/copyright` or at
-the top of the file itself. Any work contributed where you are not the original
-author must contain its license header with the original author(s) and source.
+MIT license unless specified otherwise at the top of the file itself. Any work
+contributed where you are not the original author must contain its license
+header with the original author(s) and source.
+
+Third-party notices shipped with this project are in [LICENSES](LICENSES/).
+
+Attribution
+-----------
+
+This document is adapted from [Bitcoin Core's CONTRIBUTING.md](
+https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTING.md), Copyright (c)
+2009-present The Bitcoin Core developers, distributed under the MIT software
+license. See [https://opensource.org/licenses/MIT](https://opensource.org/licenses/MIT).
