@@ -22,7 +22,7 @@
 """Fixed BCH correction derived from PR #70, with reverse-indexed coordinates."""
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import cache, lru_cache
 from math import comb
 from time import monotonic
@@ -85,8 +85,8 @@ class CorrectionContext:
 class CorrectionEdit:
     kind: Literal["substitution", "erasure", "insertion", "deletion", "transposition"]
     reverse_index: int
-    observed: str
-    replacement: str
+    observed: str = field(repr=False)
+    replacement: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
