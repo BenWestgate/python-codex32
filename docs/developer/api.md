@@ -169,8 +169,13 @@ boundary; there is no legacy decoder.
 The one-shot function creates only unshared secrets:
 
 ```python
-generate_master_seed(seed_bytes=None, *, byte_length=None, identifier=None)
+generate_master_seed(seed_bytes=None, *, byte_length=None, identifier=None, fingerprint=None)
 ```
+
+A fresh seed with no `identifier` needs `fingerprint`: a callable that takes
+the seed bytes and returns their four-byte BIP32 master fingerprint. This
+package has no secp256k1 arithmetic, so the CLI asks Bitcoin Core. Without
+either argument, fresh generation raises `ValueError`.
 
 Shared creation uses `CreationCeremony.master_seed(...)` or
 `CreationCeremony.from_secret(...)`. Exactly one of `share_count` and `indices`
