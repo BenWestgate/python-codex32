@@ -79,6 +79,32 @@ def grouped(text: str) -> str:
     return " ".join(text[start : start + GROUP] for start in range(0, len(text), GROUP))
 
 
+def aligned(expected: str, typed: str) -> tuple[tuple[str, bool], ...]:
+    """Split what was typed into the card's groups, each with whether it matches.
+
+    A missing or extra character marks only the group it falls in, not every
+    group after it. The fewest wrong groups win; among those the leftmost groups
+    stay right, and a wrong group keeps as close to its own size as it can.
+    """
+    wanted = [expected[start : start + GROUP] for start in range(0, len(expected), GROUP)]
+    one = 1 << len(wanted) + 10  # Outweighs every choice of which groups are wrong, which outweighs sizes.
+    best = {(len(wanted), len(typed)): (0, -len(typed))}  # On a tie, the earlier group takes more.
+    for group, want in reversed(list(enumerate(wanted))):
+        miss, size = one + (one >> group + 1), len(want)
+        for at in range(len(typed) + 1):
+            options = [
+                (best[group + 1, end][0] + (typed[at:end] != want) * (miss + abs(end - at - size)), -end)
+                for end in range(at, min(at + GROUP + SLACK, len(typed)) + 1)
+                if (group + 1, end) in best
+            ]
+            if options:
+                best[group, at] = min(options)
+    ends = [0]
+    for group in range(len(wanted)):
+        ends.append(-best[group, ends[-1]][1])
+    return tuple((typed[at:end], typed[at:end] == want) for at, end, want in zip(ends, ends[1:], wanted))
+
+
 def header_fault(text: str, accepted: tuple[str, ...] = ()) -> str:
     """Report a header that cannot belong to any card, before more is typed."""
     body = text[len(PREFIX) :]

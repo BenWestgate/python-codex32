@@ -29,7 +29,7 @@ from codex32 import (
 from codex32.errors import CodexError
 from codex32.generation import ORDINARY_INDICES
 from codex32_gui import ARTWORK, reading, wallet_setup, work
-from codex32_gui.entry import Codex32Entry
+from codex32_gui.entry import Codex32Entry, GroupEntry, refuse_paste
 from codex32_gui.wallet_setup import BitcoinCore
 
 Artifact = Share | Secret
@@ -98,11 +98,7 @@ class Record:
 
 
 def _page(
-    title: str,
-    content: Gtk.Widget,
-    *,
-    actions: Gtk.Widget | None = None,
-    can_pop: bool = True,
+    title: str, content: Gtk.Widget, *, actions: Gtk.Widget | None = None, can_pop: bool = True
 ) -> Adw.NavigationPage:
     scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
     scroller.set_child(Adw.Clamp(maximum_size=700, child=content, margin_start=18, margin_end=18))
@@ -389,9 +385,7 @@ def home(view: Adw.NavigationView) -> Adw.NavigationPage:
 
 
 def _connect(
-    view: Adw.NavigationView,
-    chain: str | None,
-    then: Callable[[BitcoinCore], Adw.NavigationPage],
+    view: Adw.NavigationView, chain: str | None, then: Callable[[BitcoinCore], Adw.NavigationPage]
 ) -> None:
     """Discover Bitcoin Core before any entropy is drawn or any card is read."""
     page = _working(view, "Bitcoin Core", "Looking for Bitcoin Core on this computer…")
@@ -412,20 +406,15 @@ def _connect(
 
 
 def _network_page(
-    view: Adw.NavigationView,
-    options: Sequence[str],
-    then: Callable[[BitcoinCore], Adw.NavigationPage],
+    view: Adw.NavigationView, options: Sequence[str], then: Callable[[BitcoinCore], Adw.NavigationPage]
 ) -> Adw.NavigationPage:
     group = Adw.PreferencesGroup(title="Bitcoin Core is running on more than one network")
     buttons = _radio_group(group, [(label, "") for label in options])
     content = _column(
-        _title("Which network?", "Practise on signet. Use mainnet only for coins you cannot replace."),
-        group,
+        _title("Which network?", "Practise on signet. Use mainnet only for coins you cannot replace."), group
     )
     action = _button(
-        "Continue",
-        lambda: _connect(view, options[_selected(buttons)], then),
-        style="suggested-action",
+        "Continue", lambda: _connect(view, options[_selected(buttons)], then), style="suggested-action"
     )
     return _page("Network", content, actions=_actions(action))
 
@@ -487,45 +476,81 @@ def _read_back_page(
 ) -> Adw.NavigationPage:
     """Read the card back from the paper, with the original off the screen."""
     field = Codex32Entry(length=len(card.text))
+    refuse_paste(field)
+    boxes: list[Gtk.Label | GroupEntry] = []  # After a mismatch: one fixed box per group.
     status = _note("")
+    comparison = Adw.Bin()  # Only what was typed is redrawn; the original stays hidden.
     accept = _button("Confirm card", lambda: None, style="suggested-action")
 
+    def typed() -> str:
+        return "".join(box.get_text() for box in boxes) if boxes else field.get_text()
+
     def update(*_arguments: object) -> None:
-        state = field.reading()
-        accept.set_sensitive(state.complete)
+        if field.get_text() == reading.PREFIX:  # Cleared: the redrawn copy goes too.
+            comparison.set_child(None)
+            boxes.clear()
+            field.set_visible(True)
+        state = reading.read(reading.normalize(typed()), length=len(card.text)) if boxes else field.reading()
         # A character a card can never carry is named, never quietly deleted: this
-        # is the step whose whole purpose is to catch a misread glyph.
-        fault = state.message if state.level == "error" else ""
+        # is the step whose whole purpose is to catch a misread glyph. The field has
+        # already dropped it, so its reading names it while the length is short.
+        short = state.level == "error" and len(state.text) != state.expected
+        lookalike = reading.lookalike_fault(typed()) or (state.message if short else "")
+        fault = lookalike or (state.message if state.level == "error" else "")
+        # Any other missing or extra character may be submitted: its group is then the one highlighted.
+        accept.set_sensitive(not lookalike and abs(len(state.text) - state.expected) <= reading.SLACK)
         counted = f"{len(state.text)} of {state.expected} characters"
         _say(status, fault or counted, "error" if fault else "")
 
+    def correct(pieces: tuple[tuple[str, bool], ...]) -> None:
+        # Each group gets a fixed box, so no character moves between groups. Only
+        # the wrong ones can be typed in, and Tab passes over the locked ones.
+        grid = Gtk.Grid(column_spacing=8, row_spacing=8, halign=Gtk.Align.CENTER)
+        boxes[:] = [GroupEntry(piece) if not right else Gtk.Label(label=piece) for piece, right in pieces]
+        for number, box in enumerate(boxes):
+            box.add_css_class("card-group")
+            if isinstance(box, GroupEntry):
+                box.add_css_class("guessed")
+                box.connect("changed", update)
+                box.connect("activate", lambda _box: check() if accept.get_sensitive() else None)
+            grid.attach(box, number % 6, number // 6, 1, 1)
+        comparison.set_child(grid)
+        field.set_visible(False)
+        next((box for box in boxes if isinstance(box, GroupEntry)), field).grab_focus()
+
     def check() -> None:
+        entered = reading.normalize(typed())
         try:
-            result = confirm(reading.normalize(field.get_text()))
+            result = confirm(entered)
         except CodexError as error:
             _failure(view, error, CARDS_SAFE)
             return
-        if not result.accepted:
-            groups = result.mismatched_groups
-            where = f"Group {min(groups)}" if groups else "What you typed"
-            _say(status, f"{where} does not match. Check it against your card.", "error")
+        if not result.accepted:  # A retry keeps every box where it is and only rechecks the open ones.
+            groups = reading.grouped(card.text.upper()).split()
+            kept = ["".join(box.get_text().upper().split()) for box in boxes]  # As confirm() reads them
+            retried = tuple((text, text == want) for text, want in zip(kept, groups))
+            correct(retried or reading.aligned(card.text.upper(), entered))
+            update()
+            _say(status, "The highlighted groups do not match. Re-read them from the card.", "error")
             return
         field.clear()
         after()
 
     accept.connect("clicked", lambda _button: check())
+    field.connect("activate", lambda _entry: check() if accept.get_sensitive() else None)
     field.connect("changed", update)
     content = _column(
         _title("Now type it back from the card", _counted(card.header.index.upper(), position, count)),
         _note(
             "The original is no longer on screen. Read from the card you just wrote, so a slip of the "
-            "pen is caught now rather than years from now."
+            "pen is caught now rather than years from now. Pasting is turned off."
         ),
         field,
         status,
+        comparison,
         _note(
-            "Spaces and capitals do not matter, and you may try as many times as you like. Correct only "
-            "the group named above; the rest stays as you typed it."
+            "Spaces and capitals do not matter, and you may try as many times as you like. After a "
+            "mismatch only the highlighted groups can be changed; Tab moves between them."
         ),
     )
     page = _page(
@@ -533,7 +558,7 @@ def _read_back_page(
         content,
         actions=_actions(_button("Show the card again", view.pop), accept),
     )
-    _forget_when_gone(view, page, field.clear)
+    _forget_when_gone(view, page, field.clear)  # Clearing fires update, which drops the comparison.
     update()
     return page
 
@@ -548,8 +573,7 @@ def _abandon(view: Adw.NavigationView, page: Adw.NavigationPage) -> None:
     dialog.set_response_appearance("stop", Adw.ResponseAppearance.DESTRUCTIVE)
     dialog.set_default_response("keep")
     dialog.connect(
-        "response",
-        lambda _dialog, response: view.replace([home(view)]) if response == "stop" else None,
+        "response", lambda _dialog, response: view.replace([home(view)]) if response == "stop" else None
     )
     dialog.present(page)
 
@@ -579,21 +603,15 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
         adjustment=Gtk.Adjustment(lower=2, upper=9, step_increment=1, value=2),
     )
     total = Adw.SpinRow(
-        title="Cards in total",
-        adjustment=Gtk.Adjustment(lower=2, upper=31, step_increment=1, value=3),
+        title="Cards in total", adjustment=Gtk.Adjustment(lower=2, upper=31, step_increment=1, value=3)
     )
-    size = Adw.ComboRow(
-        title="Seed size",
-        model=Gtk.StringList.new([label for _length, label in SEED_SIZES]),
-    )
+    size = Adw.ComboRow(title="Seed size", model=Gtk.StringList.new([label for _length, label in SEED_SIZES]))
     # Neither number may leave the other impossible.
     needed.connect(
-        "notify::value",
-        lambda row, _spec: total.set_value(max(total.get_value(), row.get_value())),
+        "notify::value", lambda row, _spec: total.set_value(max(total.get_value(), row.get_value()))
     )
     total.connect(
-        "notify::value",
-        lambda row, _spec: needed.set_value(min(needed.get_value(), row.get_value())),
+        "notify::value", lambda row, _spec: needed.set_value(min(needed.get_value(), row.get_value()))
     )
     for row in (needed, total, size):
         custom.add(row)
@@ -662,11 +680,7 @@ def _unshared_page(view: Adw.NavigationView, core: BitcoinCore, secret: MasterSe
 
 
 def _next_card(
-    view: Adw.NavigationView,
-    core: BitcoinCore,
-    ceremony: CreationCeremony,
-    position: int,
-    count: int,
+    view: Adw.NavigationView, core: BitcoinCore, ceremony: CreationCeremony, position: int, count: int
 ) -> None:
     page = _working(view, f"Card {position + 1} of {count}", "Drawing this card from the operating system…")
 
@@ -685,11 +699,7 @@ def _next_card(
 
 
 def _card_confirmed(
-    view: Adw.NavigationView,
-    core: BitcoinCore,
-    ceremony: CreationCeremony,
-    position: int,
-    count: int,
+    view: Adw.NavigationView, core: BitcoinCore, ceremony: CreationCeremony, position: int, count: int
 ) -> None:
     if position + 1 < count:
         _next_card(view, core, ceremony, position + 1, count)
@@ -929,8 +939,7 @@ def _unlock_page(
         "Unlock",
         content,
         actions=_actions(
-            _button("I unlocked it myself", check),
-            _button("Unlock and finish", go, style="suggested-action"),
+            _button("I unlocked it myself", check), _button("Unlock and finish", go, style="suggested-action")
         ),
     )
     _forget_when_gone(view, page, lambda: _empty(field))

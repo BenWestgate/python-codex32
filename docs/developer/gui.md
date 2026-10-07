@@ -12,28 +12,34 @@ Design and screen mock-ups: `docs/planning/gui-plan.md` and
 
 | File | Logical lines | What it holds |
 |---|---:|---|
-| `reading.py` | 131 | What a field of codex32 text means, and the repair policy. No toolkit. |
-| `wallet_setup.py` | 243 | Every Bitcoin Core call, including the passphrase and the relock. No toolkit. |
-| `work.py` | 67 | One background operation at a time. |
-| `entry.py` | 73 | The `Gtk.Entry` subclass that applies `reading.py`. |
-| `pages.py` | 1225 | One function per screen: widgets and wording, no decisions. |
-| `app.py` | 43 | The window. |
+| `reading.py` | 154 | What a field of codex32 text means, and the repair policy. No toolkit. |
+| `wallet_setup.py` | 263 | Every Bitcoin Core call, including the passphrase and the relock. No toolkit. |
+| `work.py` | 65 | One background operation at a time. |
+| `entry.py` | 111 | The `Gtk.Entry` subclasses that apply `reading.py`, keep a selection off the primary clipboard, and refuse pasted text. |
+| `pages.py` | 1344 | One function per screen: widgets and wording, no decisions. |
+| `app.py` | 40 | The window. |
 | `style.py` | 40 | The stylesheet, as a string. |
-| `__init__.py`, `__main__.py` | 26 | Version pinning, the accessibility setting, and the entry point. |
+| `__init__.py`, `__main__.py` | 28 | Version pinning, the accessibility setting, and the entry point. |
 
-The first three are where review effort belongs: they are the only modules that
-decide anything, they total 441 lines, and none of them imports a toolkit, so
-`tests/test_gui_reading.py` and `tests/test_gui_wallet_setup.py` cover them
-without a display and run in ordinary CI. `tools/gui_walkthrough.py` drives the
-real widgets through every task under a throwaway X server and is the cheapest
-way to see the screens without a desktop.
+The first three are where review effort belongs: they decide what text means,
+what Bitcoin Core is told, and when work runs. They total 482 lines, and none of
+them imports a toolkit, so `tests/test_gui_reading.py` and
+`tests/test_gui_wallet_setup.py` cover them without a display and run in
+ordinary CI. `entry.py` comes next: its primary-clipboard guard keeps a
+selected card off the clipboard, and its paste refusal makes the read-back come
+from the paper. `tests/test_gui_entry.py` and `tests/test_gui_read_back.py`
+check both under a display. `tools/gui_walkthrough.py` drives the real widgets through every task
+under a throwaway X server and is the cheapest way to see the screens without a
+desktop.
 
-The package carries its own budget of 2,000 logical lines, separate from the
+The package carries its own budget of 2,050 logical lines, separate from the
 5,000 the installed library keeps, and `tests/test_gui_boundaries.py` enforces
 it. The plan proposed 1,000 before the screens were written and the budget was
 1,800 before the security review of 2026-09-19; that review's remediations are
 about 250 lines, and the rest of the difference is user-facing wording in
-`pages.py`, which is the first priority this program was built for.
+`pages.py`, which is the first priority this program was built for. It was
+2,000 until the card read-back rework of 2026-10-07, which added fixed
+correction boxes, group alignment and paste refusal.
 
 ## Claims, and how to check each one
 

@@ -253,13 +253,7 @@ def unlock(core: BitcoinCore, name: str, passphrase: str) -> None:
     """
     line = _passphrase(passphrase) + "\n"
     try:
-        core._rpc(
-            "-stdinwalletpassphrase",
-            "walletpassphrase",
-            str(UNLOCK_SECONDS),
-            wallet=name,
-            stdin=line,
-        )
+        core._rpc("-stdinwalletpassphrase", "walletpassphrase", str(UNLOCK_SECONDS), wallet=name, stdin=line)
     except UnicodeEncodeError:
         raise BitcoinCoreError(_UNSENDABLE) from None
     except BitcoinCoreError as error:
