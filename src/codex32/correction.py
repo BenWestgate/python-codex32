@@ -55,7 +55,8 @@ from codex32.profiles.ms32 import MasterSeed, _has_generation_padding
 @dataclass(frozen=True, slots=True)
 class WorksheetCorrection:
     reverse_index: int
-    addend: str
+    # An addend for a q-filled erasure is the recovered character itself.
+    addend: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True, init=False)

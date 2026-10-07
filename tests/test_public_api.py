@@ -19,6 +19,7 @@ from codex32 import (
     Profile,
     Share,
     correct,
+    correct_worksheet_residue,
     parse_codex32,
 )
 from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshold
@@ -110,8 +111,11 @@ def test_correction_edits_do_not_render_recovery_characters() -> None:
     rendered = repr(candidate)
 
     assert len(candidate.edits) == 8
+    assert text[9:17].lower() not in rendered.lower()
     assert all(f"'{edit.replacement}'" not in rendered for edit in candidate.edits)
-    assert "observed" not in rendered and "replacement" not in rendered
+    first = candidate.edits[0]
+    assert repr(first) == f"CorrectionEdit(kind='erasure', reverse_index={first.reverse_index})"
+    assert repr(correct_worksheet_residue("2ppjkw73qdjvc")) == "(WorksheetCorrection(reverse_index=37),)"
 
 
 def test_master_seed_default_rendering_does_not_disclose_seed_material() -> None:
