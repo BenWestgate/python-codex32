@@ -21,8 +21,6 @@ Shamir secret sharing scheme (SSSS) interpolation helpers and helpers to build c
 
 ## Security
 Caution: This is reference code. Verify carefully before using with real funds.
-For wallet backups, obtain the identifier from a trusted wallet record;
-`from_seed` does not derive or verify a BIP32 fingerprint.
 
 ## Installation
 **Compatibility:** Python 3.10–3.15
