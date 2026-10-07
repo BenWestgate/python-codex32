@@ -665,8 +665,8 @@ def _ready_page(
         _title("Before you start", f"Have {cards}, a pen, and one wallet record ready."),
         _note(
             "The wallet record is a separate sheet for the master fingerprint and the other wallet "
-            "details shown at the end. It cannot spend your bitcoin, but it proves later that cards "
-            "you restore are this wallet. Keep it apart from every card."
+            "details shown at the end. It cannot spend your bitcoin, but it helps confirm later that "
+            "restored cards match your recorded wallet before import. Keep it apart from every card."
         ),
         _button("Open the recovery card form", lambda: show("recovery-card.html")),
         _button("Open the wallet record form", lambda: show("wallet-verification-record.html")),
