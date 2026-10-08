@@ -1,7 +1,7 @@
 """Structural-family, immutable-prefix, ranking, and completion evidence."""
 
 from dataclasses import replace
-from itertools import combinations
+from itertools import combinations, count
 from math import comb
 from unittest.mock import patch
 
@@ -26,6 +26,8 @@ from codex32.indel import (
     _required_header_substitutions,
     _search_many,
     _search_target,
+    _StructuralClass,
+    _views,
 )
 from codex32.profiles.ms32 import TEXT_LENGTHS
 from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint
@@ -555,6 +557,30 @@ def test_structural_input_and_deadline_are_bounded() -> None:
         )
 
     assert candidates == () and not complete
+
+
+@pytest.mark.parametrize(
+    "shape", [_StructuralClass(3, 0, adjacent=1), _StructuralClass(4, 0), _StructuralClass(0, 0, distant=1)]
+)
+def test_structural_views_poll_the_deadline_between_yields(shape: _StructuralClass) -> None:
+    # Edits within one repeated-symbol run are skipped as duplicates, so these
+    # traversals can run long without yielding; one clock tick per poll.
+    text = "ms10tests" + "q" * 117
+    clock = count()
+    with patch("codex32.indel.monotonic", side_effect=lambda: next(clock)):
+        assert len(tuple(_views(text, len(text) - shape.delta, shape, 9, 3, deadline=100))) <= 1
+    assert 100 < next(clock) < 200
+
+
+def test_expired_final_traversal_reports_an_incomplete_search() -> None:
+    text = "ms10tests" + "q" * 122
+    state = _prepare(CorrectionContext(Profile.MS, 127), text, _CLASSES, None)
+    assert state is not None
+    shape = _StructuralClass(4, 0)
+    key = next(key for key in _frontier((state,), frozenset((127,))) if key[1] == shape)
+    clock = count()
+    with patch("codex32.indel.monotonic", side_effect=lambda: next(clock)):
+        assert not _search_target(replace(state, counts={shape: state.counts[shape]}), {key: 1}, {}, 5)
 
 
 def test_full_checksum_burst_is_admitted_at_the_shared_mass_ceiling():
