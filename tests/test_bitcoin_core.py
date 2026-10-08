@@ -21,7 +21,6 @@ from codex32._bitcoin_core import (
 from codex32.bip93 import parse_codex32
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
-from codex32.wallet import _with_checksum
 
 _parsed = parse_codex32("ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw")
 assert isinstance(_parsed, MasterSeed)
@@ -76,11 +75,9 @@ def _descriptor_info(descriptor: str) -> dict[str, object]:
         else:
             normalized = f"tr({key})"
     return {
-        "descriptor": _with_checksum(normalized),
+        "descriptor": f"{normalized}#00000000",
         "hasprivatekeys": False,
-        "multipath_expansion": [
-            _with_checksum(normalized.replace("<0;1>", str(branch))) for branch in (0, 1)
-        ],
+        "multipath_expansion": [f"{normalized.replace('<0;1>', str(branch))}#00000000" for branch in (0, 1)],
     }
 
 

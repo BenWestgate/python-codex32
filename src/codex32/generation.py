@@ -29,14 +29,7 @@ from codex32.errors import (
     InvalidThreshold,
 )
 from codex32.profiles import Profile
-from codex32.profiles.cl32 import PAYLOAD_LENGTH as CL_PAYLOAD_LENGTH
-from codex32.profiles.cl32 import (
-    CoreLightningSecret,
-    _secret_from_bytes,
-)
-from codex32.profiles.cl32 import (
-    _has_generation_padding as _cl_padding,
-)
+from codex32.profiles.cl32 import CoreLightningSecret
 from codex32.profiles.ms32 import (
     DEFAULT_SEED_BYTES,
     SEED_BYTE_LENGTHS,
@@ -175,14 +168,6 @@ def generate_master_seed(
         return MasterSeed.from_seed(fresh, identifier=_fingerprint_identifier(fingerprint(fresh)))
 
 
-def generate_core_lightning_secret(
-    secret_bytes: bytes | None = None, *, identifier: str | None = None
-) -> CoreLightningSecret:
-    """Generate or encode one unshared Core Lightning HSM secret."""
-    identifier = _random_identifier() if identifier is None else _identifier(identifier)
-    return _secret_from_bytes(secrets.token_bytes(32) if secret_bytes is None else secret_bytes, identifier)
-
-
 class CreationCeremony:
     """Generate and confirm one shared-backup card at a time."""
 
@@ -257,28 +242,6 @@ class CreationCeremony:
         )
 
     @classmethod
-    def core_lightning(
-        cls,
-        *,
-        threshold: int,
-        share_count: int | None = None,
-        indices: Sequence[str] | str | None = None,
-        identifier: str | None = None,
-    ) -> CreationCeremony:
-        """Start a ceremony for a fresh shared Core Lightning secret."""
-        threshold = _threshold(threshold, allow_zero=False)
-        identifier = _random_identifier() if identifier is None else _identifier(identifier)
-        return cls._start(
-            Profile.CL,
-            CL_PAYLOAD_LENGTH,
-            threshold,
-            share_count,
-            indices,
-            identifier,
-            None,
-        )
-
-    @classmethod
     def from_secret(
         cls,
         secret: MasterSeed | CoreLightningSecret,
@@ -312,9 +275,7 @@ class CreationCeremony:
             secret,
         )
 
-    def _candidate_is_accepted(self, secret: MasterSeed | CoreLightningSecret) -> bool:
-        if isinstance(secret, CoreLightningSecret):
-            return _cl_padding(secret)
+    def _candidate_is_accepted(self, secret: MasterSeed) -> bool:
         return _valid_root(secret.seed_bytes) and _ms_padding(secret)
 
     def next_share(self) -> Share:
@@ -338,7 +299,7 @@ class CreationCeremony:
                 if self._position + 1 < self._direct_count or self._secret is not None:
                     break
                 candidate = recover_secret((*cast(list[Share], self._basis), pending))
-                assert isinstance(candidate, (MasterSeed, CoreLightningSecret))
+                assert isinstance(candidate, MasterSeed)
                 if self._candidate_is_accepted(candidate):
                     self._secret = candidate
                     break

@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 from codex32.bech32 import convertbits
-from codex32.bip93 import Header, Secret, _from_parts
+from codex32.bip93 import Secret
 from codex32.errors import InvalidLength
 from codex32.profiles import Profile
 
-SECRET_BYTES, PAYLOAD_LENGTH, TEXT_LENGTH = 32, 52, 74
-
-
-def _has_generation_padding(secret: CoreLightningSecret) -> bool:
-    return secret.payload_symbols[-1] & 15 == 0
+PAYLOAD_LENGTH, TEXT_LENGTH = 52, 74
 
 
 class CoreLightningSecret(Secret):
@@ -23,21 +19,6 @@ class CoreLightningSecret(Secret):
     def secret_bytes(self) -> bytes:
         """Return the 32-byte Core Lightning HSM secret represented by S."""
         return bytes(convertbits(self.payload_symbols, 5, 8, pad=False, accept_any_padding=True))
-
-
-def _secret_from_bytes(
-    secret_bytes: bytes,
-    identifier: str,
-    threshold: int = 0,
-) -> CoreLightningSecret:
-    if not isinstance(secret_bytes, bytes):
-        raise TypeError("secret_bytes must be bytes")
-    if len(secret_bytes) != SECRET_BYTES:
-        raise InvalidLength("Core Lightning secrets must contain exactly 32 bytes")
-    payload = tuple(convertbits(secret_bytes, 8, 5, pad=True, pad_value=0))
-    artifact = _from_parts(Profile.CL, Header(threshold, identifier, "s"), payload)
-    assert isinstance(artifact, CoreLightningSecret)
-    return artifact
 
 
 class _Cl32Rules:

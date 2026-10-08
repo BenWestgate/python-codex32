@@ -17,7 +17,6 @@ from codex32 import (
     CreationCeremony,
     MasterSeed,
     Share,
-    generate_core_lightning_secret,
     generate_master_seed,
     parse_codex32,
     recover_secret,
@@ -27,7 +26,6 @@ from codex32.errors import (
     CeremonyStateError,
     CodexError,
     HeaderCollision,
-    InvalidIdentifier,
     InvalidLength,
     InvalidShareSelection,
     InvalidThreshold,
@@ -100,7 +98,11 @@ def test_generated_subsets_recover_across_profiles_and_threshold_boundaries(
     threshold: int, kind: int | str
 ) -> None:
     ceremony = (
-        CreationCeremony.core_lightning(threshold=threshold, share_count=threshold + 2)
+        CreationCeremony.from_secret(
+            parse_codex32(VECTOR_6["codex32_peev"]),  # type: ignore[arg-type]
+            threshold=threshold,
+            share_count=threshold + 2,
+        )
         if kind == "cl"
         else CreationCeremony.master_seed(
             byte_length=kind,
@@ -197,7 +199,6 @@ def test_oversized_index_strings_are_bounded_before_normalization(
     source = generate_master_seed(bytes(range(16)), identifier="test")
     operations = (
         lambda: CreationCeremony.master_seed(threshold=2, indices="a" * 32, identifier="test"),
-        lambda: CreationCeremony.core_lightning(threshold=2, indices="a" * 32, identifier="test"),
         lambda: CreationCeremony.from_secret(source, threshold=2, indices="a" * 32, identifier="name"),
     )
     for operation in operations:
@@ -353,26 +354,6 @@ def test_resharing_preserves_padding_and_requires_a_new_header() -> None:
     assert randomized.next_share().header.identifier != secret.header.identifier
 
 
-@pytest.mark.parametrize("threshold", range(2, 10))
-def test_core_lightning_generation_and_splitting_target_zero_padding(threshold: int) -> None:
-    fresh, shares = _complete(
-        CreationCeremony.core_lightning(
-            identifier="peev", threshold=threshold, indices=ORDINARY_INDICES[:threshold]
-        )
-    )
-    assert isinstance(fresh, CoreLightningSecret)
-    assert fresh.payload_symbols[-1] & 15 == 0
-    assert recover_secret(shares) == fresh
-
-    if threshold == 2:
-        raw = generate_core_lightning_secret(bytes(range(32)), identifier="name")
-        split, split_shares = _complete(
-            CreationCeremony.from_secret(raw, threshold=2, indices="ac", identifier="test")
-        )
-        assert split.payload_symbols == raw.payload_symbols
-        assert recover_secret(split_shares).secret_bytes == bytes(range(32))
-
-
 def test_resharing_preserves_nonzero_core_lightning_padding() -> None:
     source = parse_codex32(VECTOR_6["codex32_peev"])
     assert isinstance(source, CoreLightningSecret)
@@ -384,17 +365,6 @@ def test_resharing_preserves_nonzero_core_lightning_padding() -> None:
     )
     assert secret.payload_symbols == nonzero.payload_symbols
     assert recover_secret(shares).payload_symbols == nonzero.payload_symbols
-
-
-def test_core_lightning_generation_validates_size_and_identifier() -> None:
-    for value in (b"x" * 31, b"x" * 33):
-        with pytest.raises(InvalidLength):
-            generate_core_lightning_secret(value, identifier="test")
-    with pytest.raises(TypeError):
-        generate_core_lightning_secret("x" * 32, identifier="test")  # type: ignore[arg-type]
-    assert len(generate_core_lightning_secret().header.identifier) == 4
-    with pytest.raises(InvalidIdentifier):
-        generate_core_lightning_secret(identifier="bad")
 
 
 def test_from_secret_rejects_non_secret_artifacts() -> None:
