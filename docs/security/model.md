@@ -120,9 +120,9 @@ full-payload OS-CSPRNG request. The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
 text is never reparsed as the source secret and contributes no entropy. Existing
 complete Bitcoin master seeds are confirmed unchanged and initialize the wallet
-without new entropy. The `ms32` façade rejects CL; CL generation remains
-Python-API-only. Generic sharing, recovery, inspection, and correction are
-available through `codex32`.
+without new entropy. The `ms32` façade rejects CL. Existing CL secrets may still
+be parsed, recovered, inspected, corrected, derived, and re-shared through the
+generic API; fresh CL generation is not supported.
 
 Creation retries show only entered text in contiguous regions: bold red means review the card, with reverse video added for the active region. Original card formatting is display-only; editable prefills retain entered case and spacing.
 Complete matching canonical groups freeze; local alignment preserves entered group ownership before edit minimization and proceeds without crossing frozen boundaries (see the API alignment rules).

@@ -1,4 +1,4 @@
-"""Electronic generation for ``ms`` and Core Lightning share sets."""
+"""Electronic master-seed generation and sharing of supported secrets."""
 
 from __future__ import annotations
 
