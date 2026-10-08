@@ -3,7 +3,7 @@
 import hashlib
 from dataclasses import dataclass
 
-from codex32.bip93 import Secret
+from codex32.bip93 import Header, Secret
 from codex32.errors import (
     InvalidBip39Checksum,
     InvalidLength,
@@ -46,8 +46,8 @@ class _Bip39Rules:
                 f"{self.text_length}-character codex32 string."
             )
 
-    def validate_payload(self, symbols: tuple[int, ...], index: str) -> None:
-        if index != "s":
+    def validate_payload(self, symbols: tuple[int, ...], header: Header) -> None:
+        if header.index != "s":
             return
         value = 0
         for symbol in symbols:

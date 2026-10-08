@@ -21,7 +21,6 @@ from test_bip39 import BIP39_12W_ZERO
 
 from codex32 import (
     ConfirmationResult,
-    CoreLightningSecret,
     CorrectionCandidate,
     CorrectionContext,
     MasterSeed,
@@ -275,16 +274,12 @@ def test_check_supports_every_registered_application() -> None:
         assert forbidden not in result.stdout
 
 
-@pytest.mark.parametrize(
-    "value",
-    (SHARING_VECTORS["cl"]["A"], SHARING_VECTORS["cl"]["S"]),
-)
-def test_check_accepts_shared_core_lightning_artifacts(value: str) -> None:
-    result = _invoke(["check"], value)
+@pytest.mark.parametrize("index", ("a", "s"))
+def test_check_rejects_shared_core_lightning_artifacts(index: str) -> None:
+    result = _invoke(["check"], bech32_encode("cl", _chars_to_u5(f"2test{index}" + "q" * 52), _CODEX32))
 
-    assert result.exit_code == 0
-    assert "Core Lightning HSM" in result.stdout
-    assert result.stderr == ""
+    assert result.exit_code == 2
+    assert "A Core Lightning HSM secret backup must be unshared, with threshold 0." in result.stderr
 
 
 def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1174,13 +1169,8 @@ def test_tty_interrupts_have_stable_statuses(
     assert editor.hook is None
 
 
-def test_share_supports_ms_cl_and_bip39() -> None:
+def test_share_supports_ms_and_bip39() -> None:
     ms = _invoke(["share", "d"], VECTOR_2["share_A"], VECTOR_2["share_C"])
-    cl = _invoke(
-        ["share", "d"],
-        SHARING_VECTORS["cl"]["A"],
-        SHARING_VECTORS["cl"]["C"],
-    )
     bip39 = _invoke(
         ["share", "d"],
         SHARING_VECTORS["bip39_12w"]["A"],
@@ -1189,8 +1179,7 @@ def test_share_supports_ms_cl_and_bip39() -> None:
 
     assert ms.exit_code == 0
     assert ms.stdout.strip() == VECTOR_2["derived_D"]
-    assert cl.exit_code == bip39.exit_code == 0
-    assert cl.stdout.strip() == SHARING_VECTORS["cl"]["D"]
+    assert bip39.exit_code == 0
     assert bip39.stdout.strip() == SHARING_VECTORS["bip39_12w"]["D"]
 
 
@@ -1860,14 +1849,6 @@ def test_fixed_correction_repairs_legacy_cl_header_and_residue_reverse_positions
     assert "Add x at position 38, counting backward from the end." in residue.stdout
 
 
-def test_correct_accepts_valid_shared_core_lightning_artifacts() -> None:
-    for value in (SHARING_VECTORS["cl"]["A"], SHARING_VECTORS["cl"]["S"]):
-        result = _invoke(["correct"], value)
-
-        assert result.exit_code == 0
-        assert "already valid" in result.stdout
-
-
 def test_correct_accepts_a_valid_legacy_core_lightning_secret() -> None:
     result = _invoke(["correct"], VECTOR_6["codex32_cln2"])
 
@@ -2135,9 +2116,9 @@ def test_wallet_cli_rejects_non_ms_profiles() -> None:
         ("wallet",),
     ):
         result = (
-            _invoke_initialized_wallet(list(command), SHARING_VECTORS["cl"]["S"])[0]
+            _invoke_initialized_wallet(list(command), VECTOR_6["codex32_peev"])[0]
             if command[0] == "wallet"
-            else _invoke(list(command), SHARING_VECTORS["cl"]["S"])
+            else _invoke(list(command), VECTOR_6["codex32_peev"])
         )
         assert result.exit_code != 0
         assert "only Bitcoin master seed input" in result.stderr
@@ -2309,13 +2290,13 @@ def test_creation_region_retry_keeps_original_ceremony_wallet_source(
     cli_module = importlib.import_module("codex32.cli")
     core = _FakeBitcoinCore()
     stdout, stderr = _TTYOutput(), _TTYOutput()
-    finished: list[MasterSeed | CoreLightningSecret] = []
+    finished: list[MasterSeed] = []
     finish = cli_module.CreationCeremony.finish
 
-    def remember(ceremony: object) -> MasterSeed | CoreLightningSecret:
+    def remember(ceremony: object) -> MasterSeed:
         result = finish(ceremony)
         finished.append(result)
-        return cast(MasterSeed | CoreLightningSecret, result)
+        return cast(MasterSeed, result)
 
     def answer(prompt: str, **options: object) -> str:
         if prompt.startswith("Write this share"):
@@ -2781,7 +2762,7 @@ def test_creation_source_unusable_candidates_retry(monkeypatch, capsys, kind):
     if kind == "share":
         artifact = parse_codex32(VECTOR_2["share_A"])
     elif kind == "wrong_profile":
-        artifact = parse_codex32(SHARING_VECTORS["cl"]["S"])
+        artifact = parse_codex32(VECTOR_6["codex32_peev"])
     candidate = SimpleNamespace(artifact=artifact, search_complete=True, low_checksum_discrimination=False)
     candidates = () if kind == "none" else (candidate, candidate) if kind == "ambiguous" else (candidate,)
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: candidates)

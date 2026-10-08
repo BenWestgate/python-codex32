@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from codex32.bech32 import convertbits
-from codex32.bip93 import Secret
-from codex32.errors import InvalidLength
+from codex32.bip93 import Header, Secret
+from codex32.errors import InvalidLength, InvalidThreshold
 from codex32.profiles import Profile
 
 PAYLOAD_LENGTH, TEXT_LENGTH = 52, 74
@@ -41,8 +41,10 @@ class _Cl32Rules:
                 f"expected a {TEXT_LENGTH}-character codex32 string."
             )
 
-    def validate_payload(self, _payload: tuple[int, ...], _index: str) -> None:
-        pass
+    def validate_payload(self, _payload: tuple[int, ...], header: Header) -> None:
+        # Core Lightning rejects shares and shared S strings, so neither is a CL backup.
+        if header.threshold != 0:
+            raise InvalidThreshold("A Core Lightning HSM secret backup must be unshared, with threshold 0.")
 
 
 RULES = _Cl32Rules()

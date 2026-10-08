@@ -10,7 +10,6 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from codex32 import (
-    CoreLightningSecret,
     MasterSeed,
     Share,
     derive_share,
@@ -36,7 +35,7 @@ from codex32.errors import (
 from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
 
 
-def _payload_text(artifact: Share | MasterSeed | CoreLightningSecret) -> str:
+def _payload_text(artifact: Share | MasterSeed) -> str:
     return _u5_to_chars(artifact.payload_symbols)
 
 
@@ -112,9 +111,9 @@ def test_every_threshold_recovers_exactly_k_shares(threshold: int) -> None:
 
 def test_share_set_mismatches_have_distinct_errors() -> None:
     ms_secret, ms_masks = _ms_basis()
-    cl = parse_codex32(oracle_encode("cl", "2testa" + "q" * 52))
+    opaque = parse_codex32(oracle_encode("xy", "2testa" + "q" * len(ms_secret.payload_symbols)))
     with pytest.raises(MismatchedProfile):
-        derive_share([ms_secret, cl], "c")  # type: ignore[list-item]
+        derive_share([ms_secret, opaque], "c")  # type: ignore[list-item]
 
     threshold_three = parse_codex32(oracle_encode("ms", "3testc" + "q" * len(ms_secret.payload_symbols)))
     with pytest.raises(MismatchedThreshold):
@@ -186,7 +185,7 @@ def test_every_ordinary_index_can_be_a_fresh_target() -> None:
         assert derived.header.index == target
 
 
-@pytest.mark.parametrize("profile", ("cl", "bip39_12w", "bip39_24w"))
+@pytest.mark.parametrize("profile", ("bip39_12w", "bip39_24w"))
 def test_frozen_profile_sharing_vectors(profile: str) -> None:
     vector = SHARING_VECTORS[profile]
     secret = parse_codex32(vector["S"])

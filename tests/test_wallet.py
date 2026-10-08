@@ -1,7 +1,7 @@
 """Wallet interoperability is stateless and accepts only validated ms secrets."""
 
 import pytest
-from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_5
+from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_5, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
 
 from codex32 import MasterSeed, master_xprv, parse_codex32
@@ -25,7 +25,7 @@ def test_master_xprv_separates_test_network_serialization() -> None:
 @pytest.mark.parametrize(
     "invalid",
     (
-        parse_codex32(SHARING_VECTORS["cl"]["S"]),
+        parse_codex32(VECTOR_6["codex32_peev"]),
         parse_codex32(SHARING_VECTORS["bip39_12w"]["S"]),
         parse_codex32(VECTOR_2["share_A"]),
         b"not an artifact",

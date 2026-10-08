@@ -130,7 +130,7 @@ def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
     else:
         name = _profile_rules(artifact.profile).label
         if isinstance(artifact, Share):
-            name = name.replace("master seed", "master-seed").replace("HSM secret", "HSM-secret")
+            name = name.replace("master seed", "master-seed")
             heading = f"{name} share {header.index.upper()}"
         else:
             heading = f"{'Unshared' if header.threshold == 0 else 'Shared'} {name}"

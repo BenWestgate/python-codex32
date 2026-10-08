@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
-from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_5
+from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_5, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -150,7 +150,7 @@ def test_every_consecutive_erasure_burst(
     (
         (Profile.MS, VECTOR_1["secret_s"]),
         (Profile.MS, VECTOR_5["secret_s"]),
-        (Profile.CL, SHARING_VECTORS["cl"]["S"]),
+        (Profile.CL, VECTOR_6["codex32_peev"]),
         (Profile.BIP39_12W, SHARING_VECTORS["bip39_12w"]["S"]),
         (Profile.BIP39_24W, SHARING_VECTORS["bip39_24w"]["S"]),
     ),
@@ -504,7 +504,7 @@ def test_fixed_input_is_bounded_before_algebra(
 
 def test_suspected_profile_is_not_inferred() -> None:
     result = _correct_fixed(
-        SHARING_VECTORS["cl"]["S"],
+        VECTOR_6["codex32_peev"],
         suspected_profile=Profile.MS,
     )
     assert result is None
