@@ -7,7 +7,7 @@ The package uses one narrow dependency direction:
 ```text
 text -> format/header/checksum -> optional profile module -> immutable artifact
                                                    |-> BIP93 sharing
-                                                   |-> ms/cl generation
+                                                   |-> ms generation
                                                    |-> bounded correction
                                                    `-> MasterSeed wallet adapter
 
@@ -121,7 +121,7 @@ base artifact types rather than falling back to a registered application.
 | semantic S bytes | no | 16, 20, 24, 28, 32, or 64 | exactly 32 | no |
 | recovery and API share derivation | yes | yes | yes | yes |
 | `codex32` recovery/share/correction | yes | yes | yes | yes |
-| unshared generation / shared ceremony API | no | six supported sizes | exactly 32 bytes | no |
+| unshared generation / shared ceremony API | no | six supported sizes | no | no |
 | fresh generation CLI (`ms32`) | no | six supported sizes | no | no |
 | existing-S splitting | no | yes | yes | no |
 | wallet API | no | S only | no | no |
@@ -142,11 +142,10 @@ payload symbols; S requires zero outer padding and a valid embedded SHA-256
 checksum. Ordinary BIP39 shares are random masks and receive structural
 validation only.
 
-CL generation is explicit and uses a random identifier unless one is supplied.
 Current Core Lightning defaults to mnemonic recovery, but its recovery command
-retains an import path for codex32 HSM secrets. Generated CL S strings use the
-zero-padding convention emitted by CLN; parsed nonzero discarded bits remain
-valid and are preserved when re-sharing.
+retains an import path for codex32 HSM secrets. CLN-produced codex32 S strings
+use its zero-padding convention; parsed nonzero discarded bits remain valid and
+are preserved when re-sharing.
 
 The generic `codex32` façade supports CL and BIP39 inspection, correction,
 recovery, and share derivation. The `ms32` façade accepts only `ms` artifacts.
@@ -676,7 +675,7 @@ These choices are not presented as BIP93 requirements.
 | `ms` accepts only six seed sizes | follows the frozen PR #2258 profile with no legacy decoder |
 | random electronic output indices | reduces canonical index disclosure; explicit indices preserve requested order |
 | generation-only CRC padding | small recovery hint; not validity or share semantics |
-| fingerprint identifier only for fresh k=0 | shared sets, raw seeds, re-sharing, and CL generation use random IDs unless explicitly overridden |
+| fingerprint identifier only for fresh k=0 | shared sets, raw seeds, and re-sharing use random IDs unless explicitly overridden |
 | BIP39 profiles have no construction or wallet CLI | migration artifacts may still be checked, corrected, recovered, and re-shared generically |
 | reject existing derivation targets | enforces BIP93's fresh-index wording |
 | bounded structural correction is deliberately finite | exact capture safety, complete global rank layers, the 48-character ten-second target, and the package audit budget exclude a general recovery engine; longer valid strings keep the same bounded classes |
@@ -699,9 +698,9 @@ The four-character identifier is public metadata, not authentication.
   offline 20-bit predicate against candidate seeds.
 - A fresh shared set uses four independent random u5 symbols and leaks no
   seed-derived fingerprint bits.
-- Raw seed bytes, re-sharing, and CL generation use an independent random
-  identifier unless the caller supplies all four symbols. A random identifier
-  does not make a weak supplied seed safe.
+- Raw seed bytes and re-sharing use an independent random identifier unless the
+  caller supplies all four symbols. A random identifier does not make a weak
+  supplied seed safe.
 - Random re-sharing rejects the source set header and draws another identifier.
   An explicitly repeated source header remains an error.
 
