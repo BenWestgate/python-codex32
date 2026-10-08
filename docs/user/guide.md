@@ -89,8 +89,7 @@ port.
 
 Use a computer you believe is malware-free and whose other software you trust.
 Only codex32 and Bitcoin Core should perform recovery, derivation, wallet
-initialization, or signing. The QR tools below transport only public
-descriptors or PSBTs.
+initialization, or signing.
 
 Bitcoin Core wallet encryption is strongly recommended. Bitcoin Core owns the
 passphrase and its prompts; codex32 never asks for, reads, or forwards it.
@@ -203,15 +202,20 @@ worth the extra steps.
 ## More protection: watch-only wallet and offline signer
 
 On the offline signer, create an empty encrypted descriptor wallet with private
-keys enabled and run `ms32 wallet`. Keep that computer disconnected from every
-network while recovery text or signing keys are present.
+keys enabled and run `ms32 wallet`. Keep that computer permanently disconnected
+from every network as soon as Bitcoin Core and codex32 are installed and
+disconnect before recovery text or signing keys are present.
 
-After the signer is restored, follow Bitcoin Core v32's maintained
+After the signer is restored, follow Bitcoin Core's maintained
 [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md).
-That workflow owns the watch-only export/import and PSBT transport steps. In
+That workflow owns the watch-only export/import and PSBT transport steps.
+Note: an offline bootable USB stick is not the transfer drive. In
 Bitcoin Core v32, `exportwatchonlywallet` creates the watch-only wallet file and
 `restorewallet` loads it on the online node. Do not improvise a codex32-specific
 descriptor-transfer procedure in place of that maintained workflow.
+Before signing, inspect the decoded PSBT on the offline signer and verify every
+destination, amount, and fee against your intended payment; do not trust the
+online host's summary.
 
 ## Recover an existing or inherited wallet
 
@@ -244,7 +248,7 @@ its public wallet data with the separate wallet record.
    It gives Core the master private key, asks Core to create the standard
    account-0 descriptors, scans history, and relocks an encrypted wallet.
 6. If you need an online watch-only counterpart, keep the restored signer
-   offline and follow Bitcoin Core v32's
+   offline and follow Bitcoin Core's
    [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md)
    to export and restore the watch-only wallet. Let the online node synchronize,
    then compare the account, policy, addresses, balance, and transaction
@@ -307,12 +311,6 @@ their application validation; unknown HRPs remain opaque codex32 symbols.
 Keep the matching application worksheet and original wallet instructions with
 the inheritance plan. Published BIP-93 still defines the `ms` application; the
 arbitrary-HRP format direction is not yet merged into that specification.
-
-### QR troubleshooting
-
-Maximize the terminal and reduce its font size if a QR does not fit. Keep `qr`
-connected to the terminal; redirecting its output creates an image file. Only
-public descriptors, xpubs, and PSBTs may cross the offline boundary by QR.
 
 ## Technical references
 
