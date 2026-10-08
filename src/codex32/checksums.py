@@ -1,4 +1,4 @@
-"""Immutable checksum specifications used by codex32 and descriptors."""
+"""Immutable checksum specifications used by codex32."""
 
 from dataclasses import dataclass
 
@@ -16,7 +16,6 @@ _CODEX32_LONG_GEN = (
     0x0C577EAECCF1990D13C,
     0x1887F74F8DC71B10651,
 )
-_DESCSUM_GEN = (0xF5DEE51989, 0xA9FDCA3312, 0x1BAB10E32D, 0x3706B1677A, 0x644D626FFD)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,9 +50,6 @@ class _Checksum:
 
 _CODEX32 = _Checksum("codex32", _CODEX32_GEN, 13, 0x10CE0795C2FD1E62A, 93)
 _CODEX32_LONG = _Checksum("Long codex32", _CODEX32_LONG_GEN, 15, 0x43381E570BF4798AB26, 1023)
-
-# Descriptor checksum remains an independently specified, non-codex32 helper.
-DESCSUM = _Checksum("Descriptor", _DESCSUM_GEN, 8, 1)
 
 _CRC = (
     None,

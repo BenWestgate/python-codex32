@@ -18,7 +18,7 @@ from _wallet_test_vectors import CORE_FINGERPRINTS
 from codex32._bitcoin_core import BitcoinCore
 from codex32.bip93 import parse_codex32
 from codex32.profiles.ms32 import MasterSeed
-from codex32.wallet import core_descriptors
+from codex32.wallet import master_xprv
 
 # Frozen public BIP93 vector material; it has never controlled a funded wallet.
 _SEED = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
@@ -225,9 +225,8 @@ def main() -> None:
             if rpc("gettransaction", spend, wallet="restore")["confirmations"] < 1:
                 raise RuntimeError("recovered wallet did not sign and broadcast")
 
-            main_private = core_descriptors(secret, private=True, timestamp=0)
-            test_private = core_descriptors(secret, testnet=True, private=True, timestamp=0)
-            if "xprv" not in json.dumps(main_private) or "tprv" not in json.dumps(test_private):
+            mainnet, test_network = master_xprv(secret), master_xprv(secret, testnet=True)
+            if not mainnet.startswith("xprv") or not test_network.startswith("tprv"):
                 raise RuntimeError("mainnet/test-network root serialization was not separated")
 
             print(json.dumps({"bitcoin_core": network["subversion"], "status": "pass"}))

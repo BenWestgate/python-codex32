@@ -10,7 +10,6 @@ from codex32 import (
     CreationCeremony,
     MasterSeed,
     Profile,
-    core_descriptors,
     correct,
     derive_share,
     master_xprv,
@@ -45,9 +44,6 @@ def main() -> None:
     secret = parse_codex32(_SECRET)
     assert isinstance(secret, MasterSeed)
     assert master_xprv(secret) == _XPRV
-    private = core_descriptors(secret, private=True)
-    assert len(private) == 4
-    assert all("xprv" in record["desc"] for record in private)
     assert "bip32" not in sys.modules
     assert "coincurve" not in sys.modules
 

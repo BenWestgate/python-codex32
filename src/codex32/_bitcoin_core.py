@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import shutil
 import string
 import subprocess
@@ -15,7 +14,6 @@ from codex32._bip32 import _master_xprv_from_seed
 from codex32.bech32 import _u5_to_chars, convertbits
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
-from codex32.wallet import _descriptor_records
 
 
 class BitcoinCoreError(Exception):
@@ -34,9 +32,7 @@ _CHAINS = (
     ("regtest", "regtest"),
 )
 
-_ORIGIN = re.compile(r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]")
 _PRIVATE_MARKERS = ("xprv", "tprv")
-_PURPOSES = (44, 49, 84, 86)
 _OUTPUT_TYPES = ("legacy", "p2sh-segwit", "bech32", "bech32m")
 
 
@@ -217,79 +213,6 @@ class BitcoinCore:
                 "The recovered master fingerprint does not match the one from the wallet record. "
                 "Bitcoin Core was not changed."
             )
-
-    def _root_xpub(self, wallet: str) -> str:
-        result = self._rpc("gethdkeys", wallet=wallet)
-        if not isinstance(result, list) or len(result) != 1 or not isinstance(result[0], dict):
-            raise BitcoinCoreError("Bitcoin Core did not return the expected wallet HD key.")
-        xpub = result[0].get("xpub")
-        prefix = "xpub" if self.chain == "main" else "tpub"
-        if (
-            result[0].get("has_private") is not True
-            or not isinstance(xpub, str)
-            or not xpub.startswith(prefix)
-        ):
-            raise BitcoinCoreError("Bitcoin Core did not return the expected private wallet HD key.")
-        return xpub
-
-    def _derived_key(self, wallet: str, root_xpub: str, path: str) -> tuple[bytes, str]:
-        result = self._rpc(
-            "-named",
-            "derivehdkey",
-            f"path=m{path}",
-            f"hdkey={root_xpub}",
-            wallet=wallet,
-        )
-        origin = result.get("origin") if isinstance(result, dict) else None
-        xpub = result.get("xpub") if isinstance(result, dict) else None
-        match = _ORIGIN.fullmatch(origin) if isinstance(origin, str) else None
-        prefix = "xpub" if self.chain == "main" else "tpub"
-        if match is None or not isinstance(xpub, str) or not xpub.startswith(prefix):
-            raise BitcoinCoreError("Bitcoin Core did not return the expected derived HD key.")
-        normalized_path = match.group("path").replace("'", "h")
-        if normalized_path != path:
-            raise BitcoinCoreError("Bitcoin Core returned an unexpected derivation path.")
-        return bytes.fromhex(match.group("fingerprint")), f"{origin}{xpub}/<0;1>/*"
-
-    def public_descriptors(
-        self,
-        secret: MasterSeed,
-        *,
-        wallet: str,
-        account: int = 0,
-        timestamp: int | Literal["now"] = 0,
-    ) -> tuple[dict[str, object], ...]:
-        """Ask Core to derive account xpubs, then normalize their public descriptors."""
-        if not isinstance(secret, MasterSeed):
-            raise TypeError("wallet operations accept only MasterSeed")
-        root_xpub = self._root_xpub(wallet)
-        keys: list[str] = []
-        expected_fingerprint: bytes | None = None
-        for purpose in _PURPOSES:
-            path = f"/{purpose}h/{int(self.chain != 'main')}h/{account}h"
-            fingerprint, key = self._derived_key(wallet, root_xpub, path)
-            if expected_fingerprint is None:
-                expected_fingerprint = fingerprint
-            elif fingerprint != expected_fingerprint:
-                raise BitcoinCoreError("Bitcoin Core returned inconsistent master fingerprints.")
-            keys.append(key)
-        records = _descriptor_records(tuple(keys), timestamp)  # type: ignore[arg-type]
-        for record in records:
-            detail = self._rpc("getdescriptorinfo", stdin=str(record["desc"]) + "\n")
-            expansion = detail.get("multipath_expansion") if isinstance(detail, dict) else None
-            if (
-                not isinstance(detail, dict)
-                or detail.get("hasprivatekeys") is not False
-                or not isinstance(expansion, list)
-                or len(expansion) != 2
-                or not all(
-                    isinstance(descriptor, str)
-                    and not any(marker in descriptor for marker in _PRIVATE_MARKERS)
-                    for descriptor in expansion
-                )
-            ):
-                raise BitcoinCoreError("Bitcoin Core did not validate the expected public descriptor.")
-        return records
 
     def _target(self, name: str) -> tuple[bool, bool] | None:
         listing, info = self._rpc("listdescriptors", wallet=name), self._rpc("getwalletinfo", wallet=name)
