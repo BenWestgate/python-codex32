@@ -6,8 +6,7 @@ from math import comb
 from unittest.mock import patch
 
 import pytest
-from data.bip93_vectors import VECTOR_1, VECTOR_5
-from data.sharing_vectors import SHARING_VECTORS
+from data.bip93_vectors import VECTOR_1, VECTOR_5, VECTOR_6
 from test_bip39 import BIP39_12W_ZERO, BIP39_24W_ZERO
 
 from codex32 import CorrectionContext, MasterSeed, Profile, correct
@@ -336,7 +335,7 @@ def test_unknown_target_search_recovers_reachable_valid_length() -> None:
     ("profile", "source"),
     (
         (Profile.MS, VECTOR_5["secret_s"]),
-        (Profile.CL, SHARING_VECTORS["cl"]["S"]),
+        (Profile.CL, VECTOR_6["codex32_peev"]),
         (Profile.BIP39_12W, BIP39_12W_ZERO),
         (Profile.BIP39_24W, BIP39_24W_ZERO),
     ),

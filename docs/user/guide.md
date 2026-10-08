@@ -298,9 +298,11 @@ enter the damaged string with trailing `?` characters when asked; do not place a
 secret or share in the command arguments. The strong warning and literal `YES`
 gate apply before the completed suggestion is shown.
 
-The generic `codex32` façade can check, correct, recover, and derive shares for
-compatible Core Lightning, BIP39 worksheet, and opaque-HRP artifacts. It does
-not generate BIP39 words or Core Lightning secrets. Registered profiles retain
+The generic `codex32` façade can check and correct unshared Core Lightning HSM
+secrets, and check, correct, recover, and derive shares for compatible BIP39
+worksheet and opaque-HRP artifacts. Core Lightning HSM secrets cannot be split,
+because Core Lightning accepts only threshold 0. The façade does not generate
+BIP39 words or Core Lightning secrets. Registered profiles retain
 their application validation; unknown HRPs remain opaque codex32 symbols.
 Keep the matching application worksheet and original wallet instructions with
 the inheritance plan. Published BIP-93 still defines the `ms` application; the

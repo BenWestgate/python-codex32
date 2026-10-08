@@ -1,4 +1,4 @@
-"""Electronic master-seed generation and sharing of supported secrets."""
+"""Electronic master-seed generation and sharing."""
 
 from __future__ import annotations
 
@@ -29,7 +29,6 @@ from codex32.errors import (
     InvalidThreshold,
 )
 from codex32.profiles import Profile
-from codex32.profiles.cl32 import CoreLightningSecret
 from codex32.profiles.ms32 import (
     DEFAULT_SEED_BYTES,
     SEED_BYTE_LENGTHS,
@@ -117,9 +116,9 @@ def _fingerprint_identifier(fingerprint: bytes) -> str:
     return _u5_to_chars(tuple(convertbits(fingerprint, 8, 5, pad=True)[:4]))
 
 
-def _random_share(profile: Profile, threshold: int, identifier: str, index: str, length: int) -> Share:
+def _random_share(threshold: int, identifier: str, index: str, length: int) -> Share:
     symbols = tuple(value & 31 for value in secrets.token_bytes(length))
-    artifact = _from_parts(profile, Header(threshold, identifier, index), symbols)
+    artifact = _from_parts(Profile.MS, Header(threshold, identifier, index), symbols)
     assert isinstance(artifact, Share)
     return artifact
 
@@ -178,8 +177,7 @@ class CreationCeremony:
     _payload_length: int
     _pending: Share | None
     _position: int
-    _profile: Profile
-    _secret: MasterSeed | CoreLightningSecret | None
+    _secret: MasterSeed | None
     _set_identifier: str
     _threshold: int
 
@@ -192,24 +190,23 @@ class CreationCeremony:
     @classmethod
     def _start(
         cls,
-        profile: Profile,
         payload_length: int,
         threshold: int,
         share_count: int | None,
         indices: Sequence[str] | str | None,
         identifier: str,
-        secret: MasterSeed | CoreLightningSecret | None,
+        secret: MasterSeed | None,
     ) -> CreationCeremony:
         self = object.__new__(cls)
-        self._profile, self._payload_length = profile, payload_length
+        self._payload_length = payload_length
         self._threshold, self._set_identifier = threshold, identifier
         self._indices = _selection(threshold, share_count, indices)
         self._position, self._pending, self._finished = 0, None, False
         if secret is None:
             self._secret, self._basis, self._direct_count = None, [], threshold
         else:
-            reheadered = _from_parts(profile, Header(threshold, identifier, "s"), secret.payload_symbols)
-            assert isinstance(reheadered, (MasterSeed, CoreLightningSecret))
+            reheadered = _from_parts(Profile.MS, Header(threshold, identifier, "s"), secret.payload_symbols)
+            assert isinstance(reheadered, MasterSeed)
             self._secret, self._basis, self._direct_count = (
                 reheadered,
                 [reheadered],
@@ -232,7 +229,6 @@ class CreationCeremony:
         _supplied, byte_length = _seed_input(None, byte_length)
         identifier = _random_identifier() if identifier is None else _identifier(identifier)
         return cls._start(
-            Profile.MS,
             _payload_length(byte_length),
             threshold,
             share_count,
@@ -244,16 +240,16 @@ class CreationCeremony:
     @classmethod
     def from_secret(
         cls,
-        secret: MasterSeed | CoreLightningSecret,
+        secret: MasterSeed,
         *,
         threshold: int,
         share_count: int | None = None,
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
     ) -> CreationCeremony:
-        """Start a ceremony that shares an existing validated secret."""
-        if not isinstance(secret, (MasterSeed, CoreLightningSecret)):
-            raise TypeError("from_secret accepts only MasterSeed or CoreLightningSecret")
+        """Start a ceremony that shares an existing validated master seed."""
+        if not isinstance(secret, MasterSeed):
+            raise TypeError("from_secret accepts only MasterSeed")
         threshold = _threshold(threshold, allow_zero=False)
         random_identifier = identifier is None
         identifier = _random_identifier() if random_identifier else _identifier(identifier)
@@ -264,9 +260,7 @@ class CreationCeremony:
             if not random_identifier:
                 raise HeaderCollision("new share set must use a different set header")
             identifier = _random_identifier()
-        assert secret.profile is not None
         return cls._start(
-            secret.profile,
             len(secret.payload_symbols),
             threshold,
             share_count,
@@ -290,7 +284,6 @@ class CreationCeremony:
         if self._position < self._direct_count:
             while True:
                 pending = _random_share(
-                    self._profile,
                     self._threshold,
                     self._set_identifier,
                     index,
@@ -331,14 +324,14 @@ class CreationCeremony:
         self._pending = None
         return ConfirmationResult(True)
 
-    def finish(self) -> MasterSeed | CoreLightningSecret:
+    def finish(self) -> MasterSeed:
         """Return the secret after every requested card is confirmed."""
         if self._finished:
             raise CeremonyStateError("this creation ceremony is finished")
         if self._pending is not None or self._position != len(self._indices):
             raise CeremonyStateError("confirm every card before finishing the ceremony")
         secret = self._secret
-        assert isinstance(secret, (MasterSeed, CoreLightningSecret))
+        assert isinstance(secret, MasterSeed)
         self._finished = True
         self._basis.clear()
         self._indices = ()

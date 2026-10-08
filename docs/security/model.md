@@ -120,9 +120,10 @@ full-payload OS-CSPRNG request. The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
 text is never reparsed as the source secret and contributes no entropy. Existing
 complete Bitcoin master seeds are confirmed unchanged and initialize the wallet
-without new entropy. The `ms32` façade rejects CL. Existing CL secrets may still
-be parsed, recovered, inspected, corrected, derived, and re-shared through the
-generic API; fresh CL generation is not supported.
+without new entropy. The `ms32` façade rejects CL. The generic API parses,
+inspects, and corrects unshared CL secrets only: Core Lightning rejects shares
+and nonzero thresholds, so CL shares are rejected and CL secrets are never
+generated, derived, or re-shared.
 
 Creation retries show only entered text in contiguous regions: bold red means review the card, with reverse video added for the active region. Original card formatting is display-only; editable prefills retain entered case and spacing.
 Complete matching canonical groups freeze; local alignment preserves entered group ownership before edit minimization and proceeds without crossing frozen boundaries (see the API alignment rules).
@@ -176,10 +177,11 @@ those explanations; unproven scoring work is retained. Repeated masks and
 cancelled operations are removed only with a coverage proof. Pruning does not
 reallocate the ledger's mass to additional hypotheses.
 
-`codex32` checks, corrects, recovers, and derives shares for compatible CL,
-BIP39, and opaque-HRP sets. `ms32` applies an `ms` input filter and alone owns
-Bitcoin creation, xprv, and wallet commands. Both façades offer worksheet-residue
-correction; only `ms32 correct` offers `--bytes`.
+`codex32` checks and corrects unshared CL secrets, and checks, corrects,
+recovers, and derives shares for compatible BIP39 and opaque-HRP sets. `ms32`
+applies an `ms` input filter and alone owns Bitcoin creation, xprv, and wallet
+commands. Both façades offer worksheet-residue correction; only `ms32 correct`
+offers `--bytes`.
 
 ### Low-discrimination correction disclosure
 

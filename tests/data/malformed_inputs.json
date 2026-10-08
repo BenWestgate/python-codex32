@@ -6,7 +6,8 @@
     {"id": "mixed-case", "text": "Ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"},
     {"id": "invalid-checksum", "text": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlq"},
     {"id": "non-ascii", "text": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlé"},
-    {"id": "embedded-newline", "text": "ms10testsxxxxxxxxxxxxxxxx\nxxxxxxxxxx4nzvca9cmczlw"}
+    {"id": "embedded-newline", "text": "ms10testsxxxxxxxxxxxxxxxx\nxxxxxxxxxx4nzvca9cmczlw"},
+    {"id": "shared-core-lightning", "text": "cl12testapppppppppppppppppppppppppppppppppppppppppppppppppppprqasqgqsaeje2"}
   ],
   "interpolation": [
     {
@@ -27,7 +28,7 @@
       "id": "mismatched-profile",
       "artifacts": [
         "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM",
-        "cl12testapppppppppppppppppppppppppppppppppppppppppppppppppppprqasqgqsaeje2"
+        "bip39_12w12testapppppppppppppppppppppppppppnz8ygjskeu3nc"
       ]
     },
     {

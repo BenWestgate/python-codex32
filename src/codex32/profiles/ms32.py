@@ -76,7 +76,7 @@ class _Ms32Rules:
                 "16-, 20-, 24-, 28-, 32-, or 64-byte seed."
             )
 
-    def validate_payload(self, _payload: tuple[int, ...], _index: str) -> None:
+    def validate_payload(self, _payload: tuple[int, ...], _header: Header) -> None:
         pass
 
 

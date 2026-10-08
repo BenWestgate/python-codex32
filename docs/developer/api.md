@@ -67,8 +67,7 @@ generic parse-length failure.
   `.text` attribute.
 - Sharing interpolates payload and checksum together, explicitly constructs the
   target header, and reparses the result.
-- `generation.py` is the only entropy owner and generates only `ms`; it can
-  also share an existing `cl` secret.
+- `generation.py` is the only entropy owner; it generates and shares only `ms`.
 - Correction never edits the HRP or separator and reparses every candidate.
 - `_bip32.py` stops at HMAC-SHA512 root derivation, scalar validity, and root
   xprv/tprv Base58Check serialization. It performs no child derivation or
@@ -117,13 +116,13 @@ base artifact types rather than falling back to a registered application.
 
 | Capability | opaque HRP | `ms` | `cl` | `bip39_12w/24w` |
 |---|---:|---:|---:|---:|
-| parse S/share | yes | yes | yes | yes |
+| parse S/share | yes | yes | unshared S only | yes |
 | semantic S bytes | no | 16, 20, 24, 28, 32, or 64 | exactly 32 | no |
-| recovery and API share derivation | yes | yes | yes | yes |
-| `codex32` recovery/share/correction | yes | yes | yes | yes |
+| recovery and API share derivation | yes | yes | no | yes |
+| `codex32` recovery/share/correction | yes | yes | correction only | yes |
 | unshared generation / shared ceremony API | no | six supported sizes | no | no |
 | fresh generation CLI (`ms32`) | no | six supported sizes | no | no |
-| existing-S splitting | no | yes | yes | no |
+| existing-S splitting | no | yes | no | no |
 | wallet API | no | S only | no | no |
 
 Registered application semantics remain:
@@ -136,26 +135,25 @@ Registered application semantics remain:
 
 `ms` payloads encode exactly 16, 20, 24, 28, 32, or 64 seed bytes and may have
 any legal parsed trailing bits. Parsing, generation, ceremonies, raw-seed
-import, and CLI `--bytes` enforce the same six sizes. `cl` has 52 payload symbols; parsed
-discarded bits remain application data. BIP39 profiles have exactly 27/53
-payload symbols; S requires zero outer padding and a valid embedded SHA-256
-checksum. Ordinary BIP39 shares are random masks and receive structural
-validation only.
+import, and CLI `--bytes` enforce the same six sizes. `cl` has 52 payload
+symbols and threshold 0; parsed discarded bits remain application data. BIP39
+profiles have exactly 27/53 payload symbols; S requires zero outer padding and
+a valid embedded SHA-256 checksum. Ordinary BIP39 shares are random masks and
+receive structural validation only.
 
 Current Core Lightning defaults to mnemonic recovery, but its recovery command
-retains an import path for codex32 HSM secrets. CLN-produced codex32 S strings
-use its zero-padding convention; parsed nonzero discarded bits remain valid and
-are preserved when re-sharing.
+retains an import path for unshared codex32 HSM secrets. It rejects shares and
+any S with a nonzero threshold, so the `cl` profile rejects them too and there
+is no CL recovery, share derivation, or splitting.
 
-The generic `codex32` façade supports CL and BIP39 inspection, correction,
-recovery, and share derivation. The `ms32` façade accepts only `ms` artifacts.
+The generic `codex32` façade supports CL inspection and correction, and BIP39
+inspection, correction, recovery, and share derivation. The `ms32` façade
+accepts only `ms` artifacts.
 
 ## Secret generation
 
-`generation.py` is the only module that draws entropy. It generates BIP93
-master seeds and splits a validated master seed or Core Lightning HSM secret.
-Core Lightning now defaults to mnemonic recovery, but retains a codex32 HSM
-secret import path for recovery on an unused node.
+`generation.py` is the only module that draws entropy. It generates and
+splits BIP93 master seeds only.
 
 Fresh unshared seeds default to 16 bytes and use the first 20 bits of their
 BIP32 fingerprint as public identifier metadata. Fresh shared sets use four
@@ -182,8 +180,7 @@ only after every requested share is confirmed. There is no public one-shot
 sharing or `split_secret` function. Fresh and existing Bitcoin CLI creation
 requires interactive input and output, preflights local Bitcoin Core before
 entropy or recovery input, and initializes a user-selected wallet after every
-share is confirmed. CLI creation does not accept Core Lightning profiles; sharing
-an existing CL secret remains API-only.
+share is confirmed.
 Without `--existing`, omitting the Bitcoin header creates an unshared master
 seed. With `--existing` and no sharing threshold, a supplied codex32 secret is
 emitted and confirmed unchanged, and the original validated artifact initializes
@@ -251,10 +248,10 @@ string during setup. It cannot prove that the physical backup was
 corrected rather than reconstructed using confirmation feedback.
 
 For a fresh set, the final direct share is rejection-sampled until the recovered
-S has the private CRC padding convention (`ms`) or zero discarded bits (CL).
-The already confirmed `k-1` masks remain fixed. Neither padding rule is BIP93
-validity: parsed S strings may use any application-valid discarded bits, which
-re-sharing preserves exactly. CRC never applies to shares.
+S has the private CRC padding convention. The already confirmed `k-1` masks
+remain fixed. That padding rule is not BIP93 validity: parsed S strings may use
+any application-valid discarded bits, which re-sharing preserves exactly. CRC
+never applies to shares.
 
 Explicit output indices preserve caller order. A share count uses
 `SystemRandom.sample` over the 31 ordinary indices and preserves sample order.
@@ -313,7 +310,7 @@ applies registered S semantics when the HRP has a profile.
 
 `tests/test_sharing.py` proves that recovery and derivation still work after
 checksum creation is disabled. Official BIP93 vectors anchor the GF(32)
-arithmetic. CL and BIP39 use compact frozen string/result fixtures rather than
+arithmetic. BIP39 uses compact frozen string/result fixtures rather than
 a duplicate test implementation of interpolation or checksumming.
 
 ### BIP39 migration profiles

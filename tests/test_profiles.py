@@ -26,6 +26,7 @@ from codex32.bech32 import (
 )
 from codex32.bip93 import _checksum_for_encoded_length
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
+from codex32.correction import _correct_fixed
 from codex32.errors import (
     InvalidCase,
     InvalidCharacter,
@@ -167,6 +168,15 @@ def test_core_lightning_constructor_and_parsed_padding() -> None:
     parsed = parse_codex32(nonzero)
     assert isinstance(parsed, CoreLightningSecret)
     assert parsed.secret_bytes == original.secret_bytes
+
+
+@pytest.mark.parametrize("index", ("a", "s"))
+def test_core_lightning_rejects_shares_and_shared_secrets(index: str) -> None:
+    # Core Lightning imports only threshold-0 HSM secrets, so correction never suggests one.
+    shared = _oracle_encode("cl", f"2test{index}" + "q" * 52)
+    with pytest.raises(InvalidThreshold, match="must be unshared"):
+        parse_codex32(shared)
+    assert _correct_fixed(shared, suspected_profile="cl") is None
 
 
 @pytest.mark.parametrize(

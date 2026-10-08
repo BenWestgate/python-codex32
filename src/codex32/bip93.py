@@ -170,7 +170,7 @@ class Secret(_Artifact):
 def _validate_payload(profile: Profile, header: Header, payload: tuple[int, ...]) -> None:
     rules = _profile_rules(profile)
     rules.validate_payload_length(len(payload))
-    rules.validate_payload(payload, header.index)
+    rules.validate_payload(payload, header)
 
 
 def _artifact(
