@@ -696,8 +696,7 @@ The four-character identifier is public metadata, not authentication.
 - A fresh shared set uses four independent random u5 symbols and leaks no
   seed-derived fingerprint bits.
 - Raw seed bytes and re-sharing use an independent random identifier unless the
-  caller supplies all four symbols. A random identifier does not make a weak
-  supplied seed safe.
+  caller supplies all four symbols.
 - Random re-sharing rejects the source set header and draws another identifier.
   An explicitly repeated source header remains an error.
 
