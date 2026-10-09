@@ -14,8 +14,7 @@ def _error(name: str, base: type[CodexError], doc: str) -> type[CodexError]:
 InvalidCharacter = _error("InvalidCharacter", CodexError, "Input contains an invalid character.")
 MissingSeparator = _error("MissingSeparator", CodexError, "Input lacks a Bech32 separator.")
 InvalidCase = _error("InvalidCase", CodexError, "Input mixes upper- and lowercase characters.")
-InvalidLength = _error("InvalidLength", CodexError, "Input length is not permitted by its profile.")
-UnknownProfile = _error("UnknownProfile", CodexError, "The HRP is not a registered profile.")
+InvalidLength = _error("InvalidLength", CodexError, "Input length is not permitted.")
 InvalidChecksum = _error("InvalidChecksum", CodexError, "The outer checksum does not validate.")
 
 InvalidThreshold = _error("InvalidThreshold", CodexError, "The threshold is not 0 or 2 through 9.")
@@ -23,7 +22,6 @@ InvalidIdentifier = _error("InvalidIdentifier", CodexError, "The identifier is n
 InvalidShareIndex = _error("InvalidShareIndex", CodexError, "The share index conflicts with its header.")
 
 InvalidPadding = _error("InvalidPadding", CodexError, "The discarded payload padding is invalid.")
-InvalidBip39Checksum = _error("InvalidBip39Checksum", CodexError, "The BIP39 checksum is invalid.")
 
 InvalidShareSet = _error("InvalidShareSet", CodexError, "Artifacts cannot form an interpolation set.")
 WrongShareCount = _error("WrongShareCount", InvalidShareSet, "The share count differs from its threshold.")

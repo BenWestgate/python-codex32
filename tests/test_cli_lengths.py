@@ -2,7 +2,6 @@
 
 import pytest
 
-from codex32 import Profile
 from codex32._cli_input import InputError, _parse, _prefixed_input_error
 from codex32.errors import InvalidChecksum, InvalidLength
 
@@ -28,7 +27,7 @@ from codex32.errors import InvalidChecksum, InvalidLength
 def test_generic_length_profile_length_and_checksum_diagnostics(length, message, cause):
     value = "ms10fauxs" + "x" * (length - 9)
     with pytest.raises(InputError) as failure:
-        _parse(value, (Profile.MS,))
+        _parse(value, "ms")
     assert str(failure.value) == message
     assert isinstance(failure.value.__cause__, cause)
     if cause is InvalidLength:
@@ -38,10 +37,10 @@ def test_generic_length_profile_length_and_checksum_diagnostics(length, message,
 def test_reported_invalid_length_vector_in_neutral_entry():
     value = "ms10fauxs" + "x" * 73 + "r335l5tv88js3"
     with pytest.raises(InputError, match="This input has 95 characters") as failure:
-        _parse(value, (Profile.MS,))
+        _parse(value, "ms")
     assert _prefixed_input_error(failure.value, value, "", []) == str(failure.value)
 
 
 def test_unknown_profile_does_not_replace_checksum_failure_with_a_length_guess():
     with pytest.raises(InputError, match="The checksum does not match"):
-        _parse("zz10fauxs" + "x" * 87, (Profile.MS,))
+        _parse("zz10fauxs" + "x" * 87, "ms")

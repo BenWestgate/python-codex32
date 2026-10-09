@@ -11,11 +11,17 @@ from typing import NoReturn, SupportsIndex, cast
 from codex32._bip32 import _valid_root
 from codex32.bech32 import CHARSET, _u5_to_chars, convertbits
 from codex32.bip93 import (
+    DEFAULT_SEED_BYTES,
     IDX_SORT,
+    MS,
+    SEED_BYTE_LENGTHS,
     Header,
+    MasterSeed,
     Secret,
     Share,
     _from_parts,
+    _has_generation_padding,
+    _payload_length,
     derive_share,
     recover_secret,
 )
@@ -27,16 +33,6 @@ from codex32.errors import (
     InvalidLength,
     InvalidShareSelection,
     InvalidThreshold,
-)
-from codex32.profiles import Profile
-from codex32.profiles.ms32 import (
-    DEFAULT_SEED_BYTES,
-    SEED_BYTE_LENGTHS,
-    MasterSeed,
-    _payload_length,
-)
-from codex32.profiles.ms32 import (
-    _has_generation_padding as _ms_padding,
 )
 
 ORDINARY_INDICES = tuple(IDX_SORT[1:])
@@ -118,7 +114,7 @@ def _fingerprint_identifier(fingerprint: bytes) -> str:
 
 def _random_share(threshold: int, identifier: str, index: str, length: int) -> Share:
     symbols = tuple(value & 31 for value in secrets.token_bytes(length))
-    artifact = _from_parts(Profile.MS, Header(threshold, identifier, index), symbols)
+    artifact = _from_parts(MS, Header(threshold, identifier, index), symbols)
     assert isinstance(artifact, Share)
     return artifact
 
@@ -205,7 +201,7 @@ class CreationCeremony:
         if secret is None:
             self._secret, self._basis, self._direct_count = None, [], threshold
         else:
-            reheadered = _from_parts(Profile.MS, Header(threshold, identifier, "s"), secret.payload_symbols)
+            reheadered = _from_parts(MS, Header(threshold, identifier, "s"), secret.payload_symbols)
             assert isinstance(reheadered, MasterSeed)
             self._secret, self._basis, self._direct_count = (
                 reheadered,
@@ -270,7 +266,7 @@ class CreationCeremony:
         )
 
     def _candidate_is_accepted(self, secret: MasterSeed) -> bool:
-        return _valid_root(secret.seed_bytes) and _ms_padding(secret)
+        return _valid_root(secret.seed_bytes) and _has_generation_padding(secret)
 
     def next_share(self) -> Share:
         """Generate or derive the next card after the previous card is confirmed."""

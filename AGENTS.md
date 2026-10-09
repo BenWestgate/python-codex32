@@ -20,7 +20,7 @@ concise, with the outcome, relevant evidence, and any remaining limitations.
 ## Project structure
 
 Production code lives in `src/codex32/`; keep modules narrow and do not duplicate
-domain logic in `cli.py` or `profiles/`. Tests live in `tests/test_*.py`, with
+domain logic in `cli.py`. Tests live in `tests/test_*.py`, with
 frozen external vectors under `tests/data/`. Durable documentation is grouped
 under `docs/user/`, `docs/developer/`, and `docs/security/`. Local plans and
 unfinished reports belong in the ignored `docs/planning/` directory. `tools/`

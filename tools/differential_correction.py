@@ -9,7 +9,6 @@ from codex32.correction import (
     CorrectionCandidate,
     _correct_fixed,
 )
-from codex32.profiles import Profile
 
 _CORPUS_SHA256 = "6aa552b34c0bb2878d45dee2655c331d52e40e41e61cef523415d314ad9948e5"
 
@@ -32,7 +31,7 @@ def main() -> None:
     for case in document["cases"]:
         result = _correct_fixed(
             case["damaged"],
-            suspected_profile=Profile.MS,
+            hrp="ms",
         )
         expected = case["expected"]
         if expected is None:

@@ -12,14 +12,13 @@ from time import perf_counter
 
 from codex32._cli_input import _automatic_targets
 from codex32.bech32 import CHARSET
+from codex32.bip93 import TEXT_LENGTHS
 from codex32.correction import CorrectionContext
 from codex32.indel import (
     _CHARACTER_CLASSES,
     _required_header_substitutions,
     _search_many,
 )
-from codex32.profiles import Profile
-from codex32.profiles.ms32 import TEXT_LENGTHS
 from tools.correction_reference import _alignment_count, _variants
 
 DELTAS = (-8, -4, -3, -2, -1, 0, 1, 2, 3, 4, 8)
@@ -65,7 +64,7 @@ def benchmark(
     delta: int,
     memory: bool,
 ) -> dict[str, object]:
-    context = CorrectionContext(Profile.MS, length, immutable_prefix)
+    context = CorrectionContext("ms", length, immutable_prefix)
     damaged = _damaged_text(length, immutable_prefix, delta)
     counts = _mixed_counts(context, damaged) if delta == 0 else {}
     if memory:
@@ -101,7 +100,7 @@ def benchmark(
 
 def benchmark_cross_length(observed_length: int, *, unknown: bool = False) -> dict[str, object]:
     targets = TEXT_LENGTHS if unknown else _automatic_targets(observed_length)
-    contexts = tuple(CorrectionContext(Profile.MS, target, "ms1") for target in targets)
+    contexts = tuple(CorrectionContext("ms", target, "ms1") for target in targets)
     damaged = _damaged_text(observed_length, "ms1", 0)
     started = perf_counter()
     candidates, complete = _search_many(

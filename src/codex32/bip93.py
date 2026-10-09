@@ -11,8 +11,9 @@ from codex32.bech32 import (
     bech32_decode,
     bech32_encode,
     bech32_verify_checksum,
+    convertbits,
 )
-from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
+from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum, _crc_pad
 from codex32.errors import (
     DuplicateShareIndex,
     ExistingTargetIndex,
@@ -32,10 +33,32 @@ from codex32.errors import (
 )
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles import Profile, _optional_profile_rules, _profile_rules, _ProfileRules
 
 IDX_SORT = "sacdefghjklmnpqrtuvwxyz023456789"
 _CONSTRUCTION_TOKEN = object()
+
+# BIP93 master seeds: the "ms" HRP with one of six seed sizes (bytes, payload, text).
+MS = "ms"
+_MS_SIZES = ((16, 26, 48), (20, 32, 54), (24, 39, 61), (28, 45, 67), (32, 52, 74), (64, 103, 127))
+SEED_BYTE_LENGTHS, DEFAULT_SEED_BYTES = tuple(size[0] for size in _MS_SIZES), 16
+TEXT_LENGTHS = tuple(size[2] for size in _MS_SIZES)
+
+
+def _payload_length(byte_length: int) -> int:
+    return (byte_length * 8 + 4) // 5
+
+
+def _text_length(byte_length: int) -> int:
+    payload_length = _payload_length(byte_length)
+    return payload_length + (22 if payload_length + 22 <= 91 else 24)
+
+
+def _validate_ms_length(hrp: str, text_length: int) -> None:
+    if hrp == MS and text_length not in TEXT_LENGTHS:
+        raise InvalidLength(
+            f"This input has {text_length} characters. A Bitcoin master-seed backup must have "
+            "exactly 48, 54, 61, 67, 74, or 127 characters."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +118,7 @@ def _checksum_for_encoded_length(hrp: str, encoded_length: int) -> _Checksum:
     raise InvalidLength("expanded codex32 codeword exceeds 1023 symbols")
 
 
-def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ...], _Checksum]:
+def _decode_codex32(text: str) -> tuple[str, tuple[int, ...], _Checksum]:
     hrp, encoded = bech32_decode(text)
     if len(hrp) + 1 + len(encoded) < 21:
         raise InvalidLength("codex32 string must contain at least 21 characters")
@@ -104,11 +127,8 @@ def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ..
     Header._from_symbols(body[:6])
     if not bech32_verify_checksum(hrp, encoded, checksum):
         raise InvalidChecksum(f"invalid {checksum.kind} checksum")
-    profile_rules = _optional_profile_rules(hrp)
-    if profile_rules is not None:
-        profile_rules.validate_text_length(len(text))
-        profile_rules.validate_payload_length(len(body) - 6)
-    return hrp, profile_rules, tuple(encoded), checksum
+    _validate_ms_length(hrp, len(text))
+    return hrp, tuple(encoded), checksum
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -116,7 +136,6 @@ class _Artifact:
     text: str
     header: Header
     hrp: str
-    profile: Profile | None
     payload_symbols: tuple[int, ...]
 
     def __init__(
@@ -124,7 +143,6 @@ class _Artifact:
         text: str,
         header: Header,
         hrp: str,
-        profile: Profile | None,
         payload_symbols: tuple[int, ...],
         *,
         _token: object,
@@ -134,7 +152,6 @@ class _Artifact:
         object.__setattr__(self, "text", text)
         object.__setattr__(self, "header", header)
         object.__setattr__(self, "hrp", hrp)
-        object.__setattr__(self, "profile", profile)
         object.__setattr__(self, "payload_symbols", payload_symbols)
 
     def __str__(self) -> str:
@@ -167,47 +184,48 @@ class Secret(_Artifact):
     __slots__ = ()
 
 
-def _validate_payload(profile: Profile, header: Header, payload: tuple[int, ...]) -> None:
-    rules = _profile_rules(profile)
-    rules.validate_payload_length(len(payload))
-    rules.validate_payload(payload, header)
+class MasterSeed(Secret):
+    """A validated BIP93 ``ms`` secret."""
+
+    __slots__ = ()
+
+    @property
+    def seed_bytes(self) -> bytes:
+        """Return the BIP32 master-seed bytes represented by S."""
+        return bytes(convertbits(self.payload_symbols, 5, 8, pad=False, accept_any_padding=True))
+
+    @classmethod
+    def from_seed(cls, seed_bytes: bytes, *, identifier: str, threshold: int = 0) -> "MasterSeed":
+        """Encode a supported BIP93 master seed as S with generation-only CRC padding."""
+        if not isinstance(seed_bytes, bytes):
+            raise TypeError("seed_bytes must be bytes")
+        if len(seed_bytes) not in SEED_BYTE_LENGTHS:
+            raise InvalidLength("master seed must contain 16, 20, 24, 28, 32, or 64 bytes")
+        payload = tuple(convertbits(seed_bytes, 8, 5, pad=True, pad_value=_crc_pad(seed_bytes)))
+        artifact = _from_parts(MS, Header(threshold, identifier, "s"), payload)
+        assert isinstance(artifact, MasterSeed)
+        return artifact
 
 
-def _artifact(
-    text: str,
-    hrp: str,
-    profile: Profile | None,
-    header: Header,
-    payload: tuple[int, ...],
-) -> Share | Secret:
-    rules = _optional_profile_rules(hrp)
-    artifact_type = Share if header.index != "s" else (rules.secret_type if rules is not None else Secret)
-    return artifact_type(text, header, hrp, profile, payload, _token=_CONSTRUCTION_TOKEN)
+def _has_generation_padding(secret: MasterSeed) -> bool:
+    padding_bits = (len(secret.payload_symbols) * 5) % 8
+    padding = secret.payload_symbols[-1] & ((1 << padding_bits) - 1) if padding_bits else 0
+    return padding == _crc_pad(secret.seed_bytes)
 
 
 def parse_codex32(text: str) -> Share | Secret:
     """Validate one codex32 string and return an immutable artifact."""
-    hrp, profile_rules, encoded, checksum = _decode_codex32(text)
+    hrp, encoded, checksum = _decode_codex32(text)
     body = tuple(encoded[: -checksum.length])
     header = Header._from_symbols(body[:6])
-    payload = body[6:]
-    profile = profile_rules.profile if profile_rules is not None else None
-    if profile is not None:
-        _validate_payload(profile, header, payload)
-    return _artifact(text, hrp, profile, header, payload)
+    artifact_type = Share if header.index != "s" else MasterSeed if hrp == MS else Secret
+    return artifact_type(text, header, hrp, body[6:], _token=_CONSTRUCTION_TOKEN)
 
 
 def _from_parts(
-    hrp: str | Profile,
-    header: Header,
-    payload: tuple[int, ...],
-    *,
-    uppercase: bool = False,
+    hrp: str, header: Header, payload: tuple[int, ...], *, uppercase: bool = False
 ) -> Share | Secret:
-    normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
-    rules = _optional_profile_rules(normalized_hrp)
-    if rules is not None:
-        _validate_payload(rules.profile, header, payload)
+    normalized_hrp = hrp.lower()
     body = [*header._symbols, *payload]
     expanded_body_length = 2 * len(normalized_hrp) + 1 + len(body)
     checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
@@ -234,7 +252,6 @@ def _lagrange_weights(points: tuple[int, ...], target: int) -> tuple[int, ...]:
 class _ShareSet:
     artifacts: tuple[Share | Secret, ...]
     hrp: str
-    profile: Profile | None
     threshold: int
     identifier: str
     tails: tuple[tuple[int, ...], ...]
@@ -266,9 +283,8 @@ def _bounded_artifacts(
 
 
 def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]:
-    hrp, profile_rules, encoded, checksum = _decode_codex32(artifact.text)
-    profile = profile_rules.profile if profile_rules is not None else None
-    if hrp != artifact.hrp or profile is not artifact.profile:
+    hrp, encoded, checksum = _decode_codex32(artifact.text)
+    if hrp != artifact.hrp:
         raise InvalidShareSet("artifact text and validated application prefix disagree")
     return tuple(encoded[6:]), checksum.length, len(encoded)
 
@@ -306,7 +322,6 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     return _ShareSet(
         copied,
         first.hrp,
-        first.profile,
         threshold,
         first.header.identifier,
         tuple(tails),
@@ -360,13 +375,6 @@ def derive_share(basis: Sequence[Share | Secret], fresh_index: str) -> Share:
     target = _normalize_target(fresh_index, label="fresh_index")
     if target in share_set.indices:
         raise ExistingTargetIndex(f"Choose a different share index; {target.upper()} was already supplied.")
-    profile_rules = _optional_profile_rules(share_set.hrp)
-    if profile_rules is not None and profile_rules.basis_secret_type is not None:
-        implied_secret = _interpolate_tail(share_set, "s")
-        if not isinstance(implied_secret, Secret):
-            raise InvalidShareSet("interpolation did not produce a secret")
-        if not isinstance(implied_secret, profile_rules.basis_secret_type):
-            raise InvalidShareSet(profile_rules.basis_error)
     derived = _interpolate_tail(share_set, target)
     if not isinstance(derived, Share):
         raise InvalidShareSet("interpolation did not produce an ordinary share")

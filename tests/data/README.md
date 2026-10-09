@@ -3,7 +3,8 @@
 - `bip93_vectors.py` contains BIP93 vectors plus the six-size and checksum
   boundary fixtures from PR #2258 commit
   `5117f5831bcbf0485949e5951d2954b792eded28`.
-- `sharing_vectors.py` contains data-only BIP39 interpolation fixtures.
+- `sharing_vectors.py` contains data-only interpolation fixtures for HRPs other
+  than `ms`.
 - `p70_correction_vectors.json` is the frozen PR #70 correction corpus.
 - `malformed_inputs.json` freezes independent rejection cases for parsing,
   interpolation, correction, and CLI tokenization.

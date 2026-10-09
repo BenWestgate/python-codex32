@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 from data.bip93_vectors import VECTOR_1, VECTOR_2
-from data.sharing_vectors import INVALID_BIP39_IMPLIED_SECRET, SHARING_VECTORS
+from data.sharing_vectors import SHARING_VECTORS
 from test_cli import _FakeBitcoinCore, _TTYInput, _TTYOutput
 from test_generic_hrp import UNKNOWN
 
@@ -342,7 +342,7 @@ def test_seed_candidate_is_reannotated_after_later_search_admission(monkeypatch)
 
 
 @pytest.mark.parametrize("profile", ("bip39_12w", "bip39_24w"))
-def test_cli_derives_hand_produced_bip39_set_but_rejects_invalid_implied_secret(profile):
+def test_cli_derives_hand_produced_generic_set(profile):
     from test_generic_hrp import _invoke
 
     vector = SHARING_VECTORS[profile]
@@ -351,9 +351,6 @@ def test_cli_derives_hand_produced_bip39_set_but_rejects_invalid_implied_secret(
         vector["D"] + "\n",
         "",
     )
-    invalid = INVALID_BIP39_IMPLIED_SECRET
-    status, output, error = _invoke(cli.main, ["share", "d"], invalid["A"] + "\n" + invalid["C"])
-    assert status == 1 and output == "" and "embedded BIP39 entropy checksum is invalid" in error
 
 
 def test_confirmation_never_reads_answers_from_redirected_input(monkeypatch):

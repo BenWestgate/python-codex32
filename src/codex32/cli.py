@@ -36,10 +36,13 @@ from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
 from codex32.bip93 import (
     IDX_SORT,
+    MS,
     Header,
+    MasterSeed,
     Secret,
     Share,
     _normalize_target,
+    _text_length,
     derive_share,
     parse_codex32,
     recover_secret,
@@ -56,11 +59,6 @@ from codex32.generation import (
     CreationCeremony,
     generate_master_seed,
 )
-from codex32.profiles import Profile, _profile_rules
-from codex32.profiles.ms32 import MasterSeed
-from codex32.profiles.ms32 import (
-    _text_length as _ms_text_length,
-)
 from codex32.wallet import master_xprv
 
 Artifact = Share | Secret
@@ -69,12 +67,12 @@ Artifact = Share | Secret
 class _CliContext(NamedTuple):
     prog: str
     master_seed: bool
-    profiles: tuple[Profile, ...] | None
+    hrp: str | None
     initial_prefix: str
 
 
 _GENERIC = _CliContext("codex32", False, None, "")
-_MASTER_SEED = _CliContext("ms32", True, (Profile.MS,), "MS1")
+_MASTER_SEED = _CliContext("ms32", True, MS, "MS1")
 
 
 class _CommandError(Exception):
@@ -109,7 +107,7 @@ def _secret(artifacts: list[Artifact]) -> Secret:
 
 def _master_seed(fingerprint: Callable[[MasterSeed], bytes] | None = None) -> MasterSeed:
     if isinstance(
-        value := _secret(_artifacts(profiles=(Profile.MS,), initial_prefix="MS1", fingerprint=fingerprint)),
+        value := _secret(_artifacts(hrp=MS, initial_prefix="MS1", fingerprint=fingerprint)),
         MasterSeed,
     ):
         return value
@@ -118,7 +116,7 @@ def _master_seed(fingerprint: Callable[[MasterSeed], bytes] | None = None) -> Ma
 
 def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
     header = artifact.header
-    if artifact.profile is None:
+    if artifact.hrp != MS:
         heading = (
             f"codex32 share {header.index.upper()}"
             if isinstance(artifact, Share)
@@ -128,7 +126,7 @@ def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
             heading = heading[0].lower() + heading[1:]
         lines = [f"{'Valid ' if valid else ''}{heading}.", f"HRP: {artifact.hrp.upper()}"]
     else:
-        name = _profile_rules(artifact.profile).label
+        name = "Bitcoin master seed"
         if isinstance(artifact, Share):
             name = name.replace("master seed", "master-seed")
             heading = f"{name} share {header.index.upper()}"
@@ -181,7 +179,7 @@ def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinC
     artifacts = _artifacts(
         basis=True,
         excluded_index=index,
-        profiles=context.profiles,
+        hrp=context.hrp,
         initial_prefix=context.initial_prefix,
         fingerprint=core.fingerprint if core is not None else None,
     )
@@ -207,7 +205,7 @@ def _creation_header(value: str | None) -> tuple[int | None, str | None]:
     if lowered != value and value.upper() != value:
         raise _UsageError("The set header must use either uppercase or lowercase.")
     hrp, _separator, header = lowered.rpartition("1")
-    if hrp not in ("", Profile.MS.value):
+    if hrp not in ("", MS):
         raise _UsageError("The set header must begin with ms1.")
     if len(header) not in (1, 5) or header[0] not in "023456789":
         raise _UsageError(
@@ -245,7 +243,7 @@ def _creation_source() -> bytes | Artifact:
             candidates = _suggestions(
                 value,
                 "",
-                (Profile.MS,),
+                MS,
                 [],
                 allowed=lambda item: isinstance(item.artifact, MasterSeed),
             )
@@ -563,25 +561,25 @@ def _correct(
     if len(raw_hrp := normalized[:separator]) > 83 or not all("!" <= c <= "~" for c in raw_hrp):
         raise _UsageError("The application prefix must be at most 83 printable ASCII characters.")
     hrp = raw_hrp.lower()
-    if context.master_seed and hrp != Profile.MS.value:
+    if context.master_seed and hrp != MS:
         raise _UsageError("This command accepts only Bitcoin master-seed input beginning with ms1.")
     try:
         parse_codex32(normalized)
     except CodexError:
         pass
     else:
-        if isinstance(byte_length, int) and len(normalized) != _ms_text_length(byte_length):
+        if isinstance(byte_length, int) and len(normalized) != _text_length(byte_length):
             raise _UsageError("--bytes does not match the valid master-seed backup length.")
         _print("The codex32 string is already valid.")
         return 0
     search_value, erased, immutable = normalized, normalized, normalized[: separator + 1]
-    interpreted = _case_interpretation(normalized, immutable, context.profiles, None)
+    interpreted = _case_interpretation(normalized, immutable, context.hrp, None)
     if interpreted is not None:
         candidate, search_value, erased, immutable = interpreted
         if (
             candidate is not None
             and isinstance(byte_length, int)
-            and len(candidate.artifact.text) != _ms_text_length(byte_length)
+            and len(candidate.artifact.text) != _text_length(byte_length)
         ):
             raise _UsageError("--bytes does not match the corrected master-seed backup length.")
     else:
@@ -650,7 +648,7 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
     if command == "check":
         artifacts = _artifacts(
             one=True,
-            profiles=context.profiles,
+            hrp=context.hrp,
             initial_prefix=context.initial_prefix,
         )
         _print("\n\n".join("\n".join(_summary(item, valid=True)) for item in artifacts))
@@ -659,7 +657,7 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
         _emit(
             _secret(
                 _artifacts(
-                    profiles=context.profiles,
+                    hrp=context.hrp,
                     initial_prefix=context.initial_prefix,
                     fingerprint=fingerprint_core.fingerprint if fingerprint_core is not None else None,
                 )
