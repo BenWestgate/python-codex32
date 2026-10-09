@@ -9,7 +9,7 @@ import pytest
 from data.bip93_vectors import VECTOR_1, VECTOR_5, VECTOR_6
 
 from codex32 import CorrectionContext, MasterSeed, correct
-from codex32._cli_input import _correction_plan, _fingerprint_matcher
+from codex32._cli_input import _fingerprint_matcher
 from codex32.bip93 import TEXT_LENGTHS
 from codex32.correction import CorrectionCandidate, _best, _capture_volume, _erasure_state, _primary
 from codex32.generation import _fingerprint_identifier
@@ -154,9 +154,7 @@ def test_automatic_secondary_search_recovers_two_group_indels(
 ) -> None:
     source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = _group_damage(source, inserted, omitted)
-    contexts = tuple(
-        CorrectionContext("ms", target, "ms1") for target in _correction_plan("ms", None, len(damaged), None)
-    )
+    contexts = tuple(CorrectionContext("ms", target, "ms1") for target in TEXT_LENGTHS)
 
     candidates, complete = _search_many(
         contexts,
@@ -555,3 +553,31 @@ def test_full_checksum_burst_is_admitted_at_the_shared_mass_ceiling():
     damaged = SOURCE[:8] + "?" * 13 + SOURCE[21:]
     assert _correct_fixed(damaged, hrp="ms").artifact.text == SOURCE
     assert correct(CONTEXT, damaged)[0].artifact.text == SOURCE
+
+
+def test_public_correction_fails_closed_when_required_work_expires() -> None:
+    import codex32._competitors as competitors_module
+    import codex32.indel as indel_module
+    from codex32.correction import _correct_complete
+
+    source = VECTOR_1["secret_s"]
+    swapped = source[:40] + source[41] + source[40] + source[42:]
+    assert swapped != source
+    context = CorrectionContext("ms")
+    real = indel_module._search_target
+
+    def expire_after_fixed(state, *args, **kwargs):  # type: ignore[no-untyped-def]
+        # Run the fixed (BCH) pass, then expire every required or optional layer.
+        if set(state.counts) == {indel_module._FIXED}:
+            return real(state, *args, **kwargs)
+        return False
+
+    assert any(candidate.artifact.text == source for candidate in correct(context, swapped))
+    with (
+        patch.object(indel_module, "_search_target", expire_after_fixed),
+        patch.object(competitors_module, "_search_target", expire_after_fixed),
+    ):
+        assert correct(context, swapped) == ()
+        cli_candidates, complete = _correct_complete(context, swapped, competitors=True)
+    assert not complete
+    assert [(c.artifact.text, c.search_complete) for c in cli_candidates] == [(source, False)]

@@ -7,19 +7,14 @@ import difflib
 import os
 import sys
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import replace
-from functools import partial
-from time import monotonic
 from typing import Any, Literal, cast
 
-from codex32.bech32 import interpret_mixed_case
 from codex32.bip93 import (
     MS,
     TEXT_LENGTHS,
     MasterSeed,
     Secret,
     Share,
-    _checksum_for_encoded_length,
     _text_length,
     _validate_ms_length,
     _validate_recovery_prefix,
@@ -27,12 +22,13 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _capture_mass
+from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _correct_complete
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
     ExistingTargetIndex,
     InvalidChecksum,
+    InvalidCorrectionInput,
     InvalidLength,
     InvalidThreshold,
     MismatchedHrp,
@@ -357,160 +353,6 @@ def _display_prefix(prefix: str, grouped: bool) -> str:
     return displayed
 
 
-def _case_interpretation(
-    value: str,
-    prefix: str,
-    hrp: str | None,
-    allowed: Callable[[CorrectionCandidate], bool] | None,
-) -> tuple[CorrectionCandidate | None, str, str, str] | None:
-    # Normalize likely casing and mark contrary-case data as erasures.
-    separator = value.find("1")
-    base_length = separator + 1 if separator >= 0 else 0
-    immutable_length = len(prefix) if prefix and value.lower().startswith(prefix.lower()) else base_length
-    interpretation = interpret_mixed_case(value, immutable_length)
-    if interpretation is None:
-        return None
-    corrected, erased, uppercase = interpretation
-    corrected_prefix = prefix.upper() if uppercase else prefix.lower()
-    try:
-        artifact = _parse(corrected, hrp)
-    except InputError:
-        candidate = None
-    else:
-        bits = (
-            5 * _checksum_for_encoded_length(artifact.hrp, len(artifact.text) - len(artifact.hrp) - 1).length
-        )
-        proposed = CorrectionCandidate(artifact, (), 1, 0, 0, None, capture_space_bits=bits)
-        candidate = proposed if allowed is None or allowed(proposed) else None
-    return candidate, corrected, erased, corrected_prefix
-
-
-_PRIMARY_MS = (48, 74, 127)
-
-
-def _correction_plan(
-    hrp: str,
-    byte_length: int | Literal["?"] | None,
-    count: int,
-    target: int | None,
-) -> tuple[int, ...]:
-    if target is not None:
-        return (target,)
-    if isinstance(byte_length, int):
-        return (_text_length(byte_length),)
-    if byte_length == "?":
-        return TEXT_LENGTHS
-    if hrp.lower() == MS:
-        nearest = min(_PRIMARY_MS, key=lambda length: abs(count - length))
-        return (nearest, *(length for length in TEXT_LENGTHS if length != nearest))
-    return tuple(sorted({count + delta for delta in (*range(-4, 5), -8, 8)}))
-
-
-def _correction_candidates(
-    value: str,
-    hrp: str,
-    byte_length: int | Literal["?"] | None,
-    immutable: str,
-    excluded: tuple[str, ...] = (),
-    *,
-    target: int | None = None,
-    allowed: Callable[[CorrectionCandidate], bool] | None = None,
-    deadline: float | None = None,
-    capture_layers: list[tuple[int, int]] | None = None,
-    fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
-    seed_candidates: Sequence[CorrectionCandidate] = (),
-    required_only: bool = False,
-    optional_only: bool = False,
-) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
-    count = len(value.replace(" ", ""))
-    targets = _correction_plan(hrp, byte_length, count, target)
-    deadline = monotonic() + 10 if deadline is None else deadline
-    contexts = tuple(CorrectionContext(hrp, length, immutable, excluded) for length in targets)
-    from codex32.indel import _search_many
-
-    candidates, complete = _search_many(
-        contexts,
-        value,
-        primary=frozenset(targets),
-        deadline=deadline,
-        competitors=True,
-        allowed=allowed,
-        capture_layers=capture_layers,
-        seed_candidates=seed_candidates,
-        required_only=required_only,
-        optional_only=optional_only,
-    )
-    if allowed is not None:
-        candidates = tuple(candidate for candidate in candidates if allowed(candidate))
-    results = (
-        _best(candidates, prefer_common=byte_length == "?", fingerprint_match=fingerprint_match)
-        if complete
-        else candidates
-        if len(candidates) == 1 and not candidates[0].search_complete
-        else ()
-    )
-    return results, complete, deadline
-
-
-def _scheduled_candidates(
-    value: str,
-    erased: str,
-    hrp: str,
-    byte_length: int | Literal["?"] | None,
-    immutable: str,
-    excluded: tuple[str, ...] = (),
-    *,
-    target: int | None = None,
-    allowed: Callable[[CorrectionCandidate], bool] | None = None,
-    deadline: float | None = None,
-    fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
-) -> tuple[tuple[CorrectionCandidate, ...], bool]:
-    """Search both case interpretations under one deadline and capture ledger."""
-    search = partial(
-        _correction_candidates,
-        hrp=hrp,
-        byte_length=byte_length,
-        immutable=immutable,
-        excluded=excluded,
-        target=target,
-        allowed=allowed,
-        fingerprint_match=fingerprint_match,
-    )
-    first, retry = (erased, value) if erased != value else (value, None)
-    seeded: tuple[CorrectionCandidate, ...] = ()
-    if retry is not None:
-        # Find required candidates for both case interpretations before either
-        # full search can spend the shared deadline on optional alignment.
-        # These discovery passes deliberately do not charge capture_layers;
-        # the full searches below account each admitted frontier once.
-        for required_value in (first, retry):
-            seeded, complete, deadline = search(
-                required_value, deadline=deadline, seed_candidates=seeded, required_only=True
-            )
-            if not complete:
-                return (), False
-    capture_layers: list[tuple[int, int]] = []
-    full_search = partial(search, capture_layers=capture_layers, optional_only=retry is not None)
-    candidates, complete, deadline = full_search(first, deadline=deadline, seed_candidates=seeded)
-    if retry is None:
-        return candidates, complete
-    retry_candidates, retry_complete, _deadline = full_search(
-        retry, deadline=deadline, seed_candidates=(*seeded, *candidates)
-    )
-    complete = complete and retry_complete
-    annotated = []
-    for item in (*candidates, *retry_candidates):
-        volume, bits = _capture_mass(capture_layers, item.capture_volume)
-        annotated.append(replace(item, cumulative_capture_volume=volume, capture_space_bits=bits))
-    unique: dict[str, CorrectionCandidate] = {}
-    for item in _best(annotated, prefer_common=byte_length == "?", fingerprint_match=fingerprint_match):
-        # A copy from a completed earlier pass must not hide later truncation.
-        unique.setdefault(
-            item.artifact.text.lower(), item if complete else replace(item, search_complete=False)
-        )
-    return tuple(unique.values()), complete
-
-
 def _fingerprint_matcher(
     fingerprint: Callable[[MasterSeed], bytes] | None,
 ) -> Callable[[CorrectionCandidate], bool | None] | None:
@@ -534,42 +376,52 @@ def _suggestions(
     value: str,
     prefix: str,
     required_hrp: str | None,
-    accepted: list[Artifact],
+    accepted: Sequence[Artifact],
     *,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    byte_length: int | Literal["?"] | None = None,
 ) -> tuple[CorrectionCandidate, ...]:
-    fingerprint_match = _fingerprint_matcher(fingerprint)
-    erased = value
-    if interpretation := _case_interpretation(value, prefix, required_hrp, allowed):
-        candidate, value, erased, prefix = interpretation
-        if candidate is not None:
-            return (candidate,)
-    separator = value.lower().rfind("1")
-    if separator <= 0:
-        return ()
-    hrp = value[:separator].lower()
-    if required_hrp is not None and hrp != required_hrp:
-        return ()
-    excluded = tuple(artifact.header.index for artifact in accepted)
-    target = len(accepted[0].text) if accepted else None
-    immutable = (
-        value[: len(prefix)]
-        if prefix and value.lower().startswith(prefix.lower())
-        else prefix or value[: separator + 1]
-    )
-    return _scheduled_candidates(
+    return _corrections(
         value,
-        erased,
-        hrp,
-        None,
-        immutable,
-        excluded,
-        target=target,
+        prefix,
+        required_hrp,
+        accepted,
         allowed=allowed,
-        deadline=monotonic() + 10,
-        fingerprint_match=fingerprint_match,
+        fingerprint=fingerprint,
+        byte_length=byte_length,
     )[0]
+
+
+def _corrections(
+    value: str,
+    prefix: str,
+    required_hrp: str | None,
+    accepted: Sequence[Artifact],
+    *,
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
+    fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    byte_length: int | Literal["?"] | None = None,
+) -> tuple[tuple[CorrectionCandidate, ...], bool]:
+    """Run the library search, then the CLI's Hamming, CRC, and fingerprint tie breakers."""
+    separator = value.rfind("1")
+    hrp = value[: max(separator, 0)].lower()
+    if separator <= 0 or required_hrp not in (None, hrp):
+        return (), True
+    target = len(accepted[0].text) if accepted else None
+    if isinstance(byte_length, int):
+        target = _text_length(byte_length)
+    immutable = prefix if prefix and value.lower().startswith(prefix.lower()) else value[: separator + 1]
+    excluded = tuple(artifact.header.index for artifact in accepted)
+    context = CorrectionContext(hrp, target, _prefix_for_suffix(immutable, value), excluded)
+    try:
+        candidates, complete = _correct_complete(context, value, allowed=allowed, competitors=True)
+    except InvalidCorrectionInput:
+        return (), True
+    best = _best(
+        candidates, prefer_common=byte_length == "?", fingerprint_match=_fingerprint_matcher(fingerprint)
+    )
+    return best, complete
 
 
 def _validate_operational_artifact(

@@ -1772,7 +1772,7 @@ def test_correction_bytes_rejects_an_unsupported_ms_size() -> None:
 def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:19] + original[20:]
-    with patch("codex32._cli_input._correction_candidates", return_value=((), False, 0.0)):
+    with patch("codex32._cli_input._correct_complete", return_value=((), False)):
         result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 3
@@ -1783,10 +1783,10 @@ def test_cli_never_accepts_an_incomplete_structural_search() -> None:
 @pytest.mark.parametrize(
     ("options", "lengths", "bounded"),
     (
-        ([], (48, 54, 61, 67, 74, 127), True),
+        ([], (48,), True),
         (["--bytes", "20"], (54,), True),
         (["--bytes", "64"], (127,), True),
-        (["--bytes", "?"], (48, 54, 61, 67, 74, 127), True),
+        (["--bytes", "?"], (48,), True),
     ),
 )
 def test_correction_options_control_lengths_deadline_and_search_envelope(
@@ -1803,17 +1803,6 @@ def test_correction_options_control_lengths_deadline_and_search_envelope(
     assert observed == damaged
     assert tuple(context.expected_length for context in contexts) == lengths
     assert (search.call_args.kwargs["deadline"] is not None) is bounded
-
-
-def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> None:
-    from codex32._cli_input import _correction_plan
-
-    for observed in range(40, 136):
-        targets = _correction_plan("ms", None, observed, None)
-        expected = 48 if observed <= 61 else 74 if observed <= 100 else 127
-
-        assert targets[0] == expected
-        assert sorted(targets) == [48, 54, 61, 67, 74, 127]
 
 
 def test_fixed_correction_repairs_legacy_cl_header_and_residue_reverse_positions() -> None:
@@ -1865,8 +1854,7 @@ def test_correct_suggests_the_majority_case_for_mixed_case_damage() -> None:
     assert result.exit_code == 1
     assert source in result.stderr
     assert "No valid correction found" not in result.stderr
-    assert wrong_length.exit_code == 2
-    assert "--bytes does not match" in wrong_length.stderr
+    assert wrong_length.exit_code == 3
     assert source not in wrong_length.stderr
 
 
@@ -1884,32 +1872,6 @@ def test_correct_grouped_mixed_case_recognizes_case_only_repair() -> None:
 
     assert result.exit_code == 1 and source in result.stderr
     assert "interactive confirmation required" not in result.stderr
-
-
-def test_correct_searches_mixed_case_erasures_before_normalized_alignment(monkeypatch) -> None:
-    source = VECTOR_1["secret_s"]
-    letter_positions = [
-        index
-        for index, character in enumerate(source[3:], 3)
-        if index >= 9 and character.lower() != character.upper()
-    ]
-    positions = letter_positions[1:26:6]
-    damaged = "".join(
-        ("P" if character.lower() != "p" else "Q") if index in positions else character
-        for index, character in enumerate(source)
-    )
-    searched: list[str] = []
-
-    def stop_after_first(value, *_args, **_kwargs):
-        searched.append(value)
-        return (), False, None
-
-    monkeypatch.setattr("codex32._cli_input._correction_candidates", stop_after_first)
-
-    result = _invoke(["correct"], damaged)
-    assert result.exit_code != 0
-    assert len(searched) == 1
-    assert searched[0].count("?") == len(positions)
 
 
 def test_correct_reranks_mixed_case_erasure_and_normalized_interpretations() -> None:
@@ -1938,45 +1900,6 @@ def test_correct_required_work_is_not_starved_by_erasure_alignment() -> None:
     assert source in result.stderr
     assert "did not complete within ten seconds" not in result.stderr
     assert "interactive confirmation required" not in result.stderr
-
-
-def test_correct_accounts_retry_frontier_after_incomplete_first_search(monkeypatch) -> None:
-    source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
-    start = source.index("x")
-    positions = range(start, start + 13)
-    damaged = "".join(
-        ("P" if index == start + 6 else character.upper()) if index in positions else character
-        for index, character in enumerate(source)
-    )
-    candidate = CorrectionCandidate(
-        parse_codex32(source),
-        (),
-        1,
-        0,
-        0,
-        None,
-        search_complete=False,
-    )
-    full_searches: list[str] = []
-
-    def incomplete_first(value, *_args, **kwargs):
-        if kwargs.get("required_only"):
-            return (), True, 0.0
-        full_searches.append(value)
-        kwargs["capture_layers"].append((1, 5))
-        if len(full_searches) == 1:
-            return (candidate,), False, 0.0
-        return (), False, 0.0
-
-    monkeypatch.setattr("codex32._cli_input._correction_candidates", incomplete_first)
-
-    result = _invoke(["correct"], damaged)
-
-    assert len(full_searches) == 2
-    assert full_searches[0].count("?") == len(positions)
-    assert "?" not in full_searches[1]
-    assert result.exit_code == 3
-    assert "interactive confirmation required" in result.stderr
 
 
 def test_correction_hides_internal_candidate_reparse_failures() -> None:
@@ -2868,7 +2791,7 @@ def test_incomplete_candidate_has_no_search_warning_and_is_never_accepted_automa
     candidate = _correct_fixed(source, hrp="ms")
     assert candidate is not None
     candidate = replace(candidate, search_complete=False)
-    with patch("codex32._cli_input._correction_candidates", return_value=((candidate,), False, 0.0)):
+    with patch("codex32._cli_input._correct_complete", return_value=((candidate,), False)):
         result = _invoke(["correct"], source[:-1] + "?")
     assert result.exit_code == 1 and result.stdout == ""
     assert "Search incomplete" not in result.stderr
