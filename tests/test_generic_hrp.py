@@ -10,6 +10,7 @@ from _codex32_oracle import oracle_encode
 
 from codex32 import (
     CorrectionContext,
+    MasterSeed,
     Secret,
     Share,
     correct,
@@ -45,7 +46,7 @@ def test_opaque_hrp_parse_complete_recover_and_derive(vector: dict[str, str]) ->
     assert isinstance(secret, Secret) and type(secret) is Secret
     assert isinstance(a, Share) and isinstance(c, Share)
     assert secret.hrp == a.hrp == c.hrp == "zz"
-    assert secret.profile is a.profile is c.profile is None
+    assert not isinstance(secret, MasterSeed)
     assert secret.text.isupper()
     assert recover_secret([a, c]).text == vector["S"].upper()
     assert derive_share([secret, a], "d").text == vector["D"].upper()

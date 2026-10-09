@@ -13,8 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from codex32._bitcoin_core import BitcoinCore
-from codex32.bip93 import parse_codex32
-from codex32.profiles.ms32 import MasterSeed
+from codex32.bip93 import MasterSeed, parse_codex32
 
 # Frozen public BIP93 vector material; it has never controlled a funded wallet.
 _SEED = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"

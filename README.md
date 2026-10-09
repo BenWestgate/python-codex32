@@ -47,12 +47,10 @@ On Windows, activate the environment with `.venv\Scripts\activate` instead.
 
 The installed commands are `codex32` and `ms32`.
 
-`codex32` checks, corrects, recovers, and derives shares for registered or opaque
-application prefixes. `ms32` additionally creates Bitcoin master-seed backups
+`codex32` checks, corrects, recovers, and derives shares for any application
+prefix. `ms32` additionally creates Bitcoin master-seed backups
 and provides key and wallet setup.
 
-BIP39 worksheet profiles are supported for existing-backup recovery but are
-[not recommended for creating backups](https://secretcodex32.com/docs/index.html).
 Powerful correction searches, including recovery of genuinely unreadable
 characters, require interactive confirmation.
 

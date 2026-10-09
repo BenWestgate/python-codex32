@@ -3,9 +3,6 @@
 `codex32` checks, corrects, recovers, and derives shares across application
 prefixes. `ms32` provides Bitcoin master-seed workflows, including secure
 creation. Use `ms32 create` for new Bitcoin backups.
-BIP39 worksheet profiles are
-[not recommended for creation](https://secretcodex32.com/docs/index.html),
-but existing backups can be recovered and corrected.
 
 When correction has little checksum evidence left, either executable warns:
 
@@ -298,13 +295,11 @@ enter the damaged string with trailing `?` characters when asked; do not place a
 secret or share in the command arguments. The strong warning and literal `YES`
 gate apply before the completed suggestion is shown.
 
-The generic `codex32` façade can check and correct unshared Core Lightning HSM
-secrets, and check, correct, recover, and derive shares for compatible BIP39
-worksheet and opaque-HRP artifacts. Core Lightning HSM secrets cannot be split,
-because Core Lightning accepts only threshold 0. The façade does not generate
-BIP39 words or Core Lightning secrets. Registered profiles retain
-their application validation; unknown HRPs remain opaque codex32 symbols.
-Keep the matching application worksheet and original wallet instructions with
+The generic `codex32` façade can check, correct, recover, and derive shares for
+any application prefix, such as Core Lightning (`cl`) or BIP39 worksheet
+backups. It treats them as plain codex32 symbols and applies none of their
+application's own rules: Core Lightning, for example, accepts only unshared
+secrets. Keep the matching application worksheet and original wallet instructions with
 the inheritance plan. Published BIP-93 still defines the `ms` application; the
 arbitrary-HRP format direction is not yet merged into that specification.
 
@@ -321,9 +316,9 @@ and exact limits are documented in the [API and architecture guide](../developer
 Auditors should also read the [security model](../security/model.md).
 
 Interactive `create --existing` offers bounded correction for a mistyped codex32
-secret of the selected profile. Compare the entire proposed string with the
-original recovery card before answering yes. Bitcoin candidates show their master
-fingerprint above the text. Declining or finding no usable correction returns to
+`ms` secret. Compare the entire proposed string with the
+original recovery card before answering yes. The master fingerprint stays hidden
+until the wallet-record check. Declining or finding no usable correction returns to
 source entry; hexadecimal seeds are never corrected. Confirmation of newly
 created cards is a separate step after accepting the source.
 

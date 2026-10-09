@@ -30,20 +30,14 @@ from codex32.correction import (
     _word_roots,
 )
 from codex32.indel import _CLASSES, _FIXED, _alignment_counts, _frontier, _prepare, _search_many, _views
-from codex32.profiles import Profile
 
 BODY_LENGTHS = (40, 66, 93, 127, 1015, 1023)
-PUBLIC_LENGTHS = {
-    Profile.MS: (48, 54, 61, 67, 74, 127),
-    Profile.CL: (74,),
-    Profile.BIP39_12W: (56,),
-    Profile.BIP39_24W: (82,),
-}
+PUBLIC_LENGTHS = {"ms": (48, 54, 61, 67, 74, 127)}
 DELTAS = (-8, -4, -3, -2, -1, 0, 1, 2, 3, 4, 8)
 
 
 def public_case(
-    profile: Profile,
+    profile: str,
     displayed: int,
     depth: int,
     unknown: bool,
@@ -53,7 +47,7 @@ def public_case(
     seconds: float,
     memory: bool = False,
 ) -> dict[str, object]:
-    hrp = profile.value
+    hrp = profile
     prefix = hrp + "1" + ("2test" if frozen else "")
     random = Random(9001)
     text = hrp + "1" + "".join(random.choice(CHARSET) for _ in range(displayed + delta - len(hrp + "1")))

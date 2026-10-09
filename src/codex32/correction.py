@@ -39,17 +39,18 @@ from codex32.bech32 import (
 from codex32.bip93 import (
     IDX_SORT,
     Header,
+    MasterSeed,
     Secret,
     Share,
     _checksum_for_encoded_length,
+    _has_generation_padding,
+    _validate_ms_length,
     parse_codex32,
 )
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles import Profile, _optional_profile_rules
-from codex32.profiles.ms32 import MasterSeed, _has_generation_padding
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,15 +69,14 @@ class CorrectionContext:
 
     def __init__(
         self,
-        hrp: str | Profile,
+        hrp: str,
         expected_length: int | None = None,
         immutable_prefix: str | None = None,
         excluded_indices: tuple[str, ...] = (),
     ) -> None:
-        if not isinstance(hrp, (str, Profile)):
-            raise TypeError("hrp must be str or Profile")
-        normalized = hrp.value if isinstance(hrp, Profile) else hrp.lower()
-        object.__setattr__(self, "hrp", normalized)
+        if not isinstance(hrp, str):
+            raise TypeError("hrp must be str")
+        object.__setattr__(self, "hrp", hrp.lower())
         object.__setattr__(self, "expected_length", expected_length)
         object.__setattr__(self, "immutable_prefix", immutable_prefix)
         object.__setattr__(self, "excluded_indices", excluded_indices)
@@ -262,7 +262,7 @@ def _spec_for_checksum(checksum: _Checksum) -> _Spec:
         return _SHORT_SPEC
     if checksum is _CODEX32_LONG:
         return _LONG_SPEC
-    raise AssertionError("registered profile selected a non-codex32 checksum")
+    raise AssertionError("a non-codex32 checksum was selected")
 
 
 def _residue(spec: _Spec, hrp: str, body: list[int]) -> list[int]:
@@ -520,17 +520,15 @@ class _FixedCorrector:
 
     def __init__(
         self,
-        hrp: str | Profile,
+        hrp: str,
         body_length: int,
         uppercase: bool,
         max_substitutions: int | None,
         mutable_start: int = 0,
     ) -> None:
-        normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
-        profile_rules = _optional_profile_rules(normalized_hrp)
+        normalized_hrp = hrp.lower()
         checksum = _checksum_for_encoded_length(normalized_hrp, body_length)
-        if profile_rules is not None:
-            profile_rules.validate_payload_length(body_length - checksum.length - 6)
+        _validate_ms_length(normalized_hrp, len(normalized_hrp) + 1 + body_length)
         self.hrp = normalized_hrp
         self.prefix = f"{normalized_hrp}1"
         self.spec = _spec_for_checksum(checksum)
@@ -699,13 +697,13 @@ def _corrections_reach_target(spec: _Spec, residue: list[int], corrections: list
 def _correct_fixed(
     damaged_text: str,
     *,
-    suspected_profile: str | Profile,
+    hrp: str,
     max_substitutions: int | None = None,
     immutable_prefix: str | None = None,
 ) -> CorrectionCandidate | None:
-    if not isinstance(suspected_profile, (str, Profile)):
-        raise TypeError("suspected_profile must be str or Profile")
-    hrp = suspected_profile.value if isinstance(suspected_profile, Profile) else suspected_profile.lower()
+    if not isinstance(hrp, str):
+        raise TypeError("hrp must be str")
+    hrp = hrp.lower()
     try:
         uppercase = _validate_single_case_ascii(damaged_text)
     except TypeError:
@@ -756,9 +754,7 @@ def _validate_context(context: CorrectionContext) -> None:
             checksum = _checksum_for_encoded_length(context.hrp, body_length)
             if body_length < checksum.length + 6:
                 raise ValueError("expected_length must contain a header and checksum")
-            rules = _optional_profile_rules(context.hrp)
-            if rules is not None:
-                rules.validate_payload_length(body_length - checksum.length - 6)
+            _validate_ms_length(context.hrp, length)
         prefix = context.immutable_prefix
         if prefix is not None:
             if not isinstance(prefix, str):

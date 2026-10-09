@@ -16,8 +16,7 @@ from typing import Any
 from _wallet_test_vectors import CORE_FINGERPRINTS
 
 from codex32._bitcoin_core import BitcoinCore
-from codex32.bip93 import parse_codex32
-from codex32.profiles.ms32 import MasterSeed
+from codex32.bip93 import MasterSeed, parse_codex32
 from codex32.wallet import master_xprv
 
 # Frozen public BIP93 vector material; it has never controlled a funded wallet.

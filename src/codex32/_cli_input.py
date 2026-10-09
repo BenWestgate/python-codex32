@@ -14,9 +14,14 @@ from typing import Any, Literal, cast
 
 from codex32.bech32 import interpret_mixed_case
 from codex32.bip93 import (
+    MS,
+    TEXT_LENGTHS,
+    MasterSeed,
     Secret,
     Share,
     _checksum_for_encoded_length,
+    _text_length,
+    _validate_ms_length,
     _validate_recovery_prefix,
     _validate_share_set,
     parse_codex32,
@@ -35,12 +40,6 @@ from codex32.errors import (
     MismatchedPayloadLength,
     MismatchedThreshold,
     SecretInRecoverySet,
-)
-from codex32.profiles import Profile, _optional_profile_rules, _profile_rules
-from codex32.profiles.ms32 import (
-    TEXT_LENGTHS,
-    MasterSeed,
-    _text_length,
 )
 
 Artifact = Share | Secret
@@ -213,7 +212,7 @@ def _confirm_correction(
     try:
         if (
             isinstance(artifact, Share)
-            and artifact.profile is Profile.MS
+            and artifact.hrp == MS
             and not basis
             and (len(accepted) + 1 == artifact.header.threshold)
         ):
@@ -313,25 +312,22 @@ def _render_groups(
     ).rstrip()
 
 
-def _parse(value: str, profiles: tuple[Profile, ...] | None) -> Artifact:
+def _parse(value: str, hrp: str | None) -> Artifact:
     try:
         artifact = parse_codex32(value)
     except CodexError as error:
         message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
         if isinstance(error, InvalidChecksum):
             # Parsing has already checked the container and generic length.
-            # Explain an unsupported profile length without validating input
-            # or changing the parser's checksum-before-profile boundary.
+            # Explain an unsupported master-seed length without validating input
+            # or changing the parser's checksum-before-length boundary.
             try:
-                _profile_rules(value[: value.rfind("1")]).validate_text_length(len(value))
+                _validate_ms_length(value[: value.rfind("1")].lower(), len(value))
             except InvalidLength as length_error:
                 message = str(length_error)
-            except CodexError:
-                pass
         raise InputError(message) from error
-    if profiles is not None and artifact.profile not in profiles:
-        allowed = " or ".join(_profile_rules(profile).label for profile in profiles)
-        raise InputError(f"This command accepts only {allowed} input.")
+    if hrp is not None and artifact.hrp != hrp:
+        raise InputError("This command accepts only Bitcoin master seed input.")
     return artifact
 
 
@@ -377,7 +373,7 @@ def _display_prefix(prefix: str, grouped: bool) -> str:
 def _case_interpretation(
     value: str,
     prefix: str,
-    profiles: tuple[Profile, ...] | None,
+    hrp: str | None,
     allowed: Callable[[CorrectionCandidate], bool] | None,
 ) -> tuple[CorrectionCandidate | None, str, str, str] | None:
     # Normalize likely casing and mark contrary-case data as erasures.
@@ -390,7 +386,7 @@ def _case_interpretation(
     corrected, erased, uppercase = interpretation
     corrected_prefix = prefix.upper() if uppercase else prefix.lower()
     try:
-        artifact = _parse(corrected, profiles)
+        artifact = _parse(corrected, hrp)
     except InputError:
         candidate = None
     else:
@@ -406,7 +402,7 @@ _PRIMARY_MS = (48, 74, 127)
 
 
 def _correction_plan(
-    hrp: str | Profile,
+    hrp: str,
     byte_length: int | Literal["?"] | None,
     count: int,
     target: int | None,
@@ -418,9 +414,6 @@ def _correction_plan(
             frozenset(),
             True,
         )
-    normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
-    if normalized_hrp == Profile.CL.value:
-        return (74,), frozenset((74,)), frozenset(), True
     if isinstance(byte_length, int):
         return (
             ((length := _text_length(byte_length)),),
@@ -430,13 +423,9 @@ def _correction_plan(
         )
     if byte_length == "?":
         return TEXT_LENGTHS, frozenset(TEXT_LENGTHS), frozenset(), True
-    if normalized_hrp == Profile.MS.value:
+    if hrp.lower() == MS:
         nearest = min(_PRIMARY_MS, key=lambda length: abs(count - length))
         targets = (nearest, *(length for length in TEXT_LENGTHS if length != nearest))
-        return targets, frozenset(targets), frozenset(), True
-    rules = _optional_profile_rules(normalized_hrp)
-    if rules is not None and hasattr(rules, "text_length"):
-        targets = (rules.text_length,)
         return targets, frozenset(targets), frozenset(), True
     targets = tuple(sorted({count + delta for delta in (*range(-4, 5), -8, 8)}))
     return targets, frozenset(targets), frozenset(), True
@@ -444,7 +433,7 @@ def _correction_plan(
 
 def _correction_candidates(
     value: str,
-    profile: str | Profile,
+    hrp: str,
     byte_length: int | Literal["?"] | None,
     immutable: str,
     excluded: tuple[str, ...] = (),
@@ -459,9 +448,9 @@ def _correction_candidates(
     optional_only: bool = False,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
     count = len(value.replace(" ", ""))
-    targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
+    targets, primary, reduced, _timed = _correction_plan(hrp, byte_length, count, target)
     deadline = monotonic() + 10 if deadline is None else deadline
-    contexts = tuple(CorrectionContext(profile, length, immutable, excluded) for length in targets)
+    contexts = tuple(CorrectionContext(hrp, length, immutable, excluded) for length in targets)
     from codex32.indel import _search_many
 
     candidates, complete = _search_many(
@@ -492,7 +481,7 @@ def _correction_candidates(
 def _scheduled_candidates(
     value: str,
     erased: str,
-    profile: str | Profile,
+    hrp: str,
     byte_length: int | Literal["?"] | None,
     immutable: str,
     excluded: tuple[str, ...] = (),
@@ -505,7 +494,7 @@ def _scheduled_candidates(
     """Search both case interpretations under one deadline and capture ledger."""
     search = partial(
         _correction_candidates,
-        profile=profile,
+        hrp=hrp,
         byte_length=byte_length,
         immutable=immutable,
         excluded=excluded,
@@ -570,7 +559,7 @@ def _fingerprint_matcher(
 def _suggestions(
     value: str,
     prefix: str,
-    profiles: tuple[Profile, ...] | None,
+    required_hrp: str | None,
     accepted: list[Artifact],
     *,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
@@ -578,7 +567,7 @@ def _suggestions(
 ) -> tuple[CorrectionCandidate, ...]:
     fingerprint_match = _fingerprint_matcher(fingerprint)
     erased = value
-    if interpretation := _case_interpretation(value, prefix, profiles, allowed):
+    if interpretation := _case_interpretation(value, prefix, required_hrp, allowed):
         candidate, value, erased, prefix = interpretation
         if candidate is not None:
             return (candidate,)
@@ -586,9 +575,7 @@ def _suggestions(
     if separator <= 0:
         return ()
     hrp = value[:separator].lower()
-    rules = _optional_profile_rules(hrp)
-    profile = rules.profile if rules is not None else None
-    if profiles is not None and profile not in profiles:
+    if required_hrp is not None and hrp != required_hrp:
         return ()
     excluded = tuple(artifact.header.index for artifact in accepted)
     target = len(accepted[0].text) if accepted else None
@@ -630,7 +617,7 @@ def _validate_operational_artifact(
 
 
 def _redirected(
-    profiles: tuple[Profile, ...] | None,
+    hrp: str | None,
     *,
     basis: bool,
     one: bool,
@@ -645,7 +632,7 @@ def _redirected(
     accepted: list[Artifact] = []
     for token in tokens:
         try:
-            artifact = _parse(token, profiles)
+            artifact = _parse(token, hrp)
         except InputError:
             if one:
                 raise
@@ -666,7 +653,7 @@ def _redirected(
             candidates = _suggestions(
                 token,
                 "",
-                profiles,
+                hrp,
                 accepted,
                 allowed=allowed,
                 fingerprint=fingerprint,
@@ -712,7 +699,7 @@ def _prefixed_input_error(
     if not isinstance(cause, InvalidChecksum):
         return str(error)
     if accepted:
-        if accepted[0].profile is not Profile.MS:
+        if accepted[0].hrp != MS:
             return str(error)
         target = len(accepted[0].text)
         difference = len(value) - target
@@ -738,7 +725,7 @@ def _interactive(
     basis: bool,
     one: bool,
     excluded_index: str | None,
-    profiles: tuple[Profile, ...] | None,
+    hrp: str | None,
     initial_prefix: str,
     fingerprint: Callable[[MasterSeed], bytes] | None,
 ) -> list[Artifact]:
@@ -773,7 +760,7 @@ def _interactive(
         supplied_prefix = bool(prefix) and "1" not in value
         complete_value = value if not supplied_prefix else _prefix_for_suffix(prefix, value) + value
         try:
-            artifact = _parse(complete_value, profiles)
+            artifact = _parse(complete_value, hrp)
         except InputError as error:
             candidates = (
                 ()
@@ -781,7 +768,7 @@ def _interactive(
                 else _suggestions(
                     complete_value,
                     prefix,
-                    profiles,
+                    hrp,
                     accepted,
                     allowed=allowed,
                     fingerprint=fingerprint,
@@ -836,13 +823,13 @@ def read_artifacts(
     basis: bool = False,
     one: bool = False,
     excluded_index: str | None = None,
-    profiles: tuple[Profile, ...] | None = None,
+    hrp: str | None = None,
     initial_prefix: str = "",
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
 ) -> list[Artifact]:
     if not sys.stdin.isatty():
         return _redirected(
-            profiles,
+            hrp,
             basis=basis,
             one=one,
             excluded_index=excluded_index,
@@ -852,7 +839,7 @@ def read_artifacts(
         basis=basis,
         one=one,
         excluded_index=excluded_index,
-        profiles=profiles,
+        hrp=hrp,
         initial_prefix=initial_prefix,
         fingerprint=fingerprint,
     )

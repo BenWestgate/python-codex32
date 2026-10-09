@@ -5,7 +5,6 @@ from time import monotonic
 
 import pytest
 
-from codex32 import Profile
 from codex32._cli_input import _case_interpretation, _correction_candidates, _scheduled_candidates
 
 SOURCE = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
@@ -24,7 +23,7 @@ SOURCE = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
 def test_embedded_mixed_case_recovers_either_sole_interpretation_within_deadline(
     damaged: str, erasure_fixes: bool, normalized_fixes: bool
 ) -> None:
-    interpretation = _case_interpretation(damaged, "", (Profile.MS,), None)
+    interpretation = _case_interpretation(damaged, "", "ms", None)
 
     assert interpretation is not None
     direct, normalized, erased, _prefix = interpretation
@@ -32,7 +31,7 @@ def test_embedded_mixed_case_recovers_either_sole_interpretation_within_deadline
     immutable = normalized[: normalized.rfind("1") + 1]
     for value, fixes in ((erased, erasure_fixes), (normalized, normalized_fixes)):
         alone, alone_complete, _deadline = _correction_candidates(
-            value, Profile.MS, None, immutable, deadline=monotonic() + 10, required_only=True
+            value, "ms", None, immutable, deadline=monotonic() + 10, required_only=True
         )
         assert alone_complete
         assert [candidate.artifact.text for candidate in alone] == ([SOURCE] if fixes else [])
@@ -40,7 +39,7 @@ def test_embedded_mixed_case_recovers_either_sole_interpretation_within_deadline
     candidates, complete = _scheduled_candidates(
         normalized,
         erased,
-        Profile.MS,
+        "ms",
         None,
         immutable,
         deadline=monotonic() + 10,
@@ -54,12 +53,12 @@ def test_embedded_mixed_case_recovers_either_sole_interpretation_within_deadline
 
 def test_scheduled_truncation_survives_a_complete_later_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     damaged = "ms10testsxPxxxxxPxxxxxPxxxxxPxxxxxP4nzvca9cmczlw"
-    interpretation = _case_interpretation(damaged, "", (Profile.MS,), None)
+    interpretation = _case_interpretation(damaged, "", "ms", None)
     assert interpretation is not None
     _direct, normalized, erased, _prefix = interpretation
     immutable = normalized[: normalized.rfind("1") + 1]
     found, _complete, _deadline = _correction_candidates(
-        erased, Profile.MS, None, immutable, deadline=monotonic() + 10, required_only=True
+        erased, "ms", None, immutable, deadline=monotonic() + 10, required_only=True
     )
     full_searches: list[str] = []
 
@@ -74,7 +73,7 @@ def test_scheduled_truncation_survives_a_complete_later_pass(monkeypatch: pytest
 
     monkeypatch.setattr("codex32._cli_input._correction_candidates", truncated_first)
 
-    candidates, complete = _scheduled_candidates(normalized, erased, Profile.MS, None, immutable)
+    candidates, complete = _scheduled_candidates(normalized, erased, "ms", None, immutable)
 
     assert full_searches == [erased, normalized]
     assert not complete

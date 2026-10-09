@@ -8,7 +8,7 @@ from collections.abc import Callable
 from importlib.metadata import version
 from typing import Literal, NoReturn
 
-from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
+from codex32.bip93 import SEED_BYTE_LENGTHS
 
 
 class _Parser(argparse.ArgumentParser):

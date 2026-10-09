@@ -18,9 +18,8 @@ from codex32._bitcoin_core import (
     identifier_origin,
     parse_fingerprint,
 )
-from codex32.bip93 import parse_codex32
+from codex32.bip93 import MasterSeed, parse_codex32
 from codex32.generation import _fingerprint_identifier
-from codex32.profiles.ms32 import MasterSeed
 
 _parsed = parse_codex32("ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw")
 assert isinstance(_parsed, MasterSeed)
