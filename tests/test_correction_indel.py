@@ -9,7 +9,7 @@ import pytest
 from data.bip93_vectors import VECTOR_1, VECTOR_5, VECTOR_6
 
 from codex32 import CorrectionContext, MasterSeed, correct
-from codex32._cli_input import _correction_plan, _fingerprint_matcher
+from codex32._cli_input import _fingerprint_matcher
 from codex32.bip93 import TEXT_LENGTHS
 from codex32.correction import CorrectionCandidate, _best, _capture_volume, _erasure_state, _primary
 from codex32.generation import _fingerprint_identifier
@@ -154,10 +154,7 @@ def test_automatic_secondary_search_recovers_two_group_indels(
 ) -> None:
     source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = _group_damage(source, inserted, omitted)
-    contexts = tuple(
-        CorrectionContext("ms", target, "ms1")
-        for target in _correction_plan("ms", None, len(damaged), None)[0]
-    )
+    contexts = tuple(CorrectionContext("ms", target, "ms1") for target in TEXT_LENGTHS)
 
     candidates, complete = _search_many(
         contexts,
