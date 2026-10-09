@@ -5,19 +5,18 @@
 Reference implementation of BIP-0093 (codex32): checksummed, SSSS-aware BIP32 seed strings.
 
 This repository implements the codex32 string format described by BIP-0093.
-It provides encoding/decoding, regular/long codex32 checksums, CRC padding for base conversions,
-Shamir secret sharing scheme (SSSS) interpolation helpers and helpers to build codex32 strings from seed bytes.
+It provides parsing and validation, regular/long codex32 checksums, and Shamir secret sharing
+scheme (SSSS) recovery and share derivation.
 
 ## Features
-- Encode/decode codex32 data via `from_string` and `from_unchecksummed_string`.
+- Parse and validate codex32 strings with `parse_codex32`.
 - Regular checksum (13 chars) and long checksum (15 chars) support.
-- Construct codex32 strings from raw seed bytes via `from_seed`.
-- CRC-based default padding scheme for `from_seed`.
-- `from_seed` requires an explicit four-character identifier in its prefix.
-- Interpolate/recover shares via `interpolate_at`.
-- Parse codex32 strings and access parts via properties.
-- Mutate codex32 strings by reassigning `is_upper`, `hrp`, `k`, `ident`, `share_idx`, `data`, and `pad_val`.
-- Contains module and tests for Bech32/Bech32m and segwit addresses.
+- Recover a secret from `k` shares with `recover_secret`.
+- Derive a share at a fresh index with `derive_share`.
+- Typed, immutable `Header`, `Share` and `Secret` values.
+- Profiles for BIP32 master seeds (`ms`), Core Lightning secrets (`cl`) and
+  BIP39 entropy (`bip39_12w`, `bip39_24w`).
+- No third-party runtime dependencies.
 
 ## Security
 Caution: This is reference code. Verify carefully before using with real funds.
@@ -42,57 +41,21 @@ pip install codex32
 
 ## Quick usage
 ```python
-from codex32 import Codex32String
+from codex32 import derive_share, parse_codex32, recover_secret
 
-# Create from seed bytes
-s = Codex32String.from_seed(
-    bytes.fromhex('ffeeddccbbaa99887766554433221100'),
-    "ms13cashs",        # prefix string with explicit identifier (HRP + '1' + header)
-    0                   # padding value (default "CRC", otherwise integer)
-)
-print(s.s)              # codex32 string
+a = parse_codex32("MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM")
+c = parse_codex32("MS12NAMECACDEFGHJKLMNPQRSTUVWXYZ023FTR2GDZMPY6PN")
+print(a.header)  # Header(threshold=2, identifier='name', index='a')
 
-# Parse an existing codex32 string and inspect parts
-a = Codex32String("ms13casha320zyxwvutsrqpnmlkjhgfedca2a8d0zehn8a0t")
-print(a.hrp)            # human-readable part
-print(a.k)              # threshold parameter
-print(a.ident)          # 4 character identifier
-print(a.share_idx)      # share index character
-print(a.payload)        # payload part
-print(a.checksum)       # checksum part
-print(len(a))           # length of the codex32 string
-print(a.is_upper)       # case is upper True/False
-print(s.data.hex())     # raw seed bytes as hex
-print(a.pad_val)        # padding value integer, (MSB first)
+secret = recover_secret([a, c])
+print(secret.text)  # MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW
+print(secret.seed_bytes.hex())  # d1808e096b35b209ca12132b264662a5
 
-
-
-# Create from unchecksummed string (will append checksum)
-c = Codex32String.from_unchecksummed_string("ms13cashcacdefghjklmnpqrstuvwxyz023")
-print(str(c))           # equivalent to print(c.s)
-
-# Interpolate shares to recover or derive target share index
-shares = [s, a, c]
-derived_share_d = Codex32String.interpolate_at(shares, target='d')
-print(derived_share_d.s)
-
-# Create Codex32String object from existing codex32 string and validate any HRP
-e = Codex32String.from_string("cl", "cl10lueasd35kw6r5de5kueedxyesqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqanvrktzhlhusz")
-print(e.ident)
-print(e.s)
-
-# Relabel a Codex32String object
-e.ident = "cln2"
-print(e.ident)
-print(e.s)
-
-# Uppercase a Codex32String object (for encoding in QR codes or handwriting)
-e.is_upper = True
-print(e.s)
+print(derive_share([a, c], "d").text)  # a new share at index d
 ```
 
 ## Tests
-``` bash
-pip install -e .[dev]
-pytest
+```bash
+pip install -e '.[dev]'
+python -m pytest
 ```
