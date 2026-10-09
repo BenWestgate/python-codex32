@@ -34,11 +34,13 @@ from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
+from codex32.bech32 import bech32_decode
 from codex32.bip93 import (
     IDX_SORT,
     Header,
     Secret,
     Share,
+    _from_parts,
     _normalize_target,
     derive_share,
     parse_codex32,
@@ -57,6 +59,7 @@ from codex32.generation import (
     generate_master_seed,
 )
 from codex32.profiles import Profile, _profile_rules
+from codex32.profiles.ms32 import TEXT_LENGTHS as _MS_TEXT_LENGTHS
 from codex32.profiles.ms32 import MasterSeed
 from codex32.profiles.ms32 import (
     _text_length as _ms_text_length,
@@ -553,6 +556,46 @@ def _create(
     return 0
 
 
+def _worksheet_text(prompt: str) -> str:
+    value = _text(prompt, prompt_end=":\n\n> MS1")
+    return value if "1" in value else ("MS1" if value.isupper() else "ms1") + value
+
+
+def _checksum(plain: bool) -> int:
+    # Generation only: complete strings belong to check and correct (codex32 discussion #78).
+    if not sys.stdin.isatty():
+        raise _UsageError("Checksum generation requires an interactive terminal.")
+    warning = (
+        "DANGER: Incorrect input can cause permanent loss of funds.\n"
+        "Use this only for new data from the Codex32 Book and its Dice De-biasing Worksheet.\n"
+        "Never use it to replace the checksum of an existing backup. Use check or correct.\n"
+        "This command cannot verify how your data was generated.\n"
+        "Do not enter raw dice rolls, seed words, hexadecimal seeds, or passwords.\n"
+    )
+    _print(warning, err=True, danger=True)
+    text = _worksheet_text("Checksum worksheet non-pink bold squares")
+    if len(text) in _MS_TEXT_LENGTHS:
+        raise _UsageError("This command does not accept complete strings. Use check to check one.")
+    try:
+        hrp, body = bech32_decode(text)
+        # The Book's worksheet has 32 non-pink squares; only a 128-bit secret fits it.
+        if hrp != Profile.MS.value or len(text) + 13 != _ms_text_length(16):
+            raise ValueError
+        artifact = _from_parts(
+            Profile.MS, Header._from_symbols(tuple(body[:6])), tuple(body[6:]), uppercase=text.isupper()
+        )
+    except (CodexError, ValueError) as error:
+        raise _UsageError(
+            "The worksheet input is not in the expected format.\n"
+            "Consult the Codex32 Book and check the non-pink bold squares."
+        ) from error
+    clear = "\x1b[3J\x1b[2J\x1b[H" if sys.stderr.isatty() else ""
+    if _worksheet_text(clear + "Re-enter the worksheet non-pink bold squares").lower() != text.lower():
+        raise _CommandError("Entries do not match. Restart and re-enter the worksheet.")
+    _emit(artifact, plain)
+    return 0
+
+
 def _correct(
     residue: bool,
     erasures: tuple[int, ...],
@@ -715,6 +758,8 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
             cast(str | None, arguments.indices),
             bool(arguments.existing),
         )
+    if command == "checksum":
+        return _checksum(plain)
     if command == "correct":
         return _correct(
             bool(arguments.residue),

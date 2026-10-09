@@ -115,6 +115,19 @@ complete explicit `ms1` string.
 
 ## Creation, sharing, and recovery controls
 
+`ms32 checksum` generates a checksum only for new 128-bit Codex32 Book worksheet
+data. It is separate from `check` and `correct` and refuses input of any complete
+`ms` string length, so a damaged complete string cannot be mistaken for a longer
+unchecksummed payload. It requires two independently entered worksheet inputs
+before releasing the completed string. Between entries, the terminal and
+scrollback are cleared where supported; the second entry has no editable
+prefill. Comparison ignores case, whitespace, and the optional MS1 prefix.
+A mismatch, EOF, or interruption releases no completed string. Format errors
+give no detail. `--plain` and redirecting output do not skip confirmation;
+noninteractive input is rejected before it is read. Agreement cannot establish
+how the worksheet data was generated or detect an error already present on the
+worksheet. Terminal clearing remains best effort.
+
 Fresh shared creation generates *k* random initial shares. Each uses a separate
 full-payload OS-CSPRNG request. The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
@@ -179,8 +192,8 @@ reallocate the ledger's mass to additional hypotheses.
 
 `codex32` checks and corrects unshared CL secrets, and checks, corrects,
 recovers, and derives shares for compatible BIP39 and opaque-HRP sets. `ms32`
-applies an `ms` input filter and alone owns Bitcoin creation, xprv, and wallet
-commands. Both façades offer worksheet-residue correction; only `ms32 correct`
+applies an `ms` input filter and alone owns Bitcoin creation, checksum
+generation, xprv, and wallet commands. Both façades offer worksheet-residue correction; only `ms32 correct`
 offers `--bytes`.
 
 ### Low-discrimination correction disclosure
