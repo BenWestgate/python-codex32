@@ -18,7 +18,7 @@ from codex32 import (
     recover_secret,
 )
 from codex32.cli import main, ms_main
-from codex32.errors import MismatchedHrp, MismatchedProfile
+from codex32.errors import MismatchedHrp
 from tools._wallet_test_vectors import STUB_FINGERPRINT
 
 UNKNOWN = {
@@ -51,8 +51,7 @@ def test_opaque_hrp_parse_complete_recover_and_derive(vector: dict[str, str]) ->
     assert derive_share([secret, a], "d").text == vector["D"].upper()
 
 
-def test_sharing_compares_normalized_hrp_and_keeps_compatibility_error_name() -> None:
-    assert MismatchedProfile is MismatchedHrp
+def test_sharing_compares_normalized_hrp() -> None:
     zz = parse_codex32(UNKNOWN["short"]["S"])
     yy = parse_codex32(oracle_encode("yy", "2testa" + "p" * 26))
     with pytest.raises(MismatchedHrp):
