@@ -382,28 +382,14 @@ def _small_locator(sequence: list[int], maximum: int) -> list[int] | None:
     return [1, *coefficients] if len(coefficients) <= maximum else None
 
 
-def _locator_poly(
-    syndromes: list[int],
-    erasure_poly: list[int],
-    maximum: int | None,
-    erasure_products: tuple[tuple[int, ...], ...] | None = None,
-) -> list[int] | None:
+def _locator_poly(syndromes: list[int], erasure_poly: list[int], maximum: int | None) -> list[int] | None:
     degree = len(erasure_poly) - 1
-    if degree == 2 and erasure_products is not None:
-        first, second = erasure_products
-        modified = [
-            syndromes[index - 2] ^ first[syndromes[index]] ^ second[syndromes[index - 1]]
-            for index in range(2, len(syndromes))
-        ]
-    else:
-        modified = []
-        for output_index in range(degree, len(syndromes)):
-            value = syndromes[output_index - degree]
-            products = erasure_products
-            for index, coefficient in enumerate(erasure_poly[:-1]):
-                syndrome = syndromes[output_index - index]
-                value ^= _gf1024_mul(coefficient, syndrome) if products is None else products[index][syndrome]
-            modified.append(value)
+    modified = []
+    for output_index in range(degree, len(syndromes)):
+        value = syndromes[output_index - degree]
+        for index, coefficient in enumerate(erasure_poly[:-1]):
+            value ^= _gf1024_mul(coefficient, syndromes[output_index - index])
+        modified.append(value)
     if maximum is not None and maximum <= 2:
         return _small_locator(modified, maximum)
     coefficients, _adjustment = _synthesize_rec(list(reversed(modified)))
@@ -431,13 +417,12 @@ def _bch_syndrome_corrections(
     word_length: int,
     max_substitutions: int | None,
     erasure_state: tuple[tuple[int, ...], list[int]] | None = None,
-    erasure_products: tuple[tuple[int, ...], ...] | None = None,
 ) -> list[tuple[int, int]] | None:
     word_roots = _word_roots(spec, word_length)
     erasure_roots, erasure_poly = (
         _erasure_state(spec, word_length, tuple(erasure_indices)) if erasure_state is None else erasure_state
     )
-    locator = _locator_poly(syndromes, erasure_poly, max_substitutions, erasure_products)
+    locator = _locator_poly(syndromes, erasure_poly, max_substitutions)
     if locator is None or max_substitutions is not None and len(locator) - 1 > max_substitutions:
         return None
     errors = [
@@ -471,7 +456,6 @@ def _repair_body(
     alignment: tuple[int, tuple[tuple[int, ...], ...]],
     erasure_indices: Sequence[int] | None,
     erasure_state: tuple[tuple[int, ...], list[int]] | None,
-    erasure_products: tuple[tuple[int, ...], ...] | None,
     packed_syndromes: int | None = None,
 ) -> tuple[list[int], list[tuple[int, int]]] | None:
     erasures = (
@@ -491,7 +475,6 @@ def _repair_body(
             len(body),
             max_substitutions,
             erasure_state,
-            erasure_products,
         )
         if len(erasures) <= len(spec.roots)
         else None
@@ -526,7 +509,6 @@ class _FixedCorrector:
     __slots__ = (
         "alignment",
         "erasure_indices",
-        "erasure_products",
         "erasure_state",
         "hrp",
         "max_substitutions",
@@ -557,7 +539,6 @@ class _FixedCorrector:
         self.max_substitutions = max_substitutions
         self.mutable_start = mutable_start
         self.erasure_indices: tuple[int, ...] | None = None
-        self.erasure_products: tuple[tuple[int, ...], ...] | None = None
         self.erasure_state: tuple[tuple[int, ...], list[int]] | None = None
 
     def correct(
@@ -575,9 +556,6 @@ class _FixedCorrector:
                 return None
             self.erasure_indices = tuple(erasure_indices)
             self.erasure_state = _erasure_state(self.spec, len(values), self.erasure_indices)
-            # Alignment locations change frequently. Building 2048 products per
-            # pair costs more than the handful of GF(1024) multiplies per call.
-            self.erasure_products = None
         repair = _repair_body(
             self.spec,
             self.hrp,
@@ -586,7 +564,6 @@ class _FixedCorrector:
             self.alignment,
             erasure_indices,
             self.erasure_state if erasure_indices is not None else None,
-            self.erasure_products if erasure_indices is not None else None,
             packed_syndromes,
         )
         if repair is None:

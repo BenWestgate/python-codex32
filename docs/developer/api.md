@@ -725,7 +725,7 @@ export, descriptor construction, or wallet initialization before confirmation.
 
 Interactive `create --existing` offers bounded correction for a mistyped codex32
 secret of the selected profile. Compare the entire proposed string with the
-original recovery card before answering yes. Bitcoin candidates show their master
-fingerprint above the text. Declining or finding no usable correction returns to
+original recovery card before answering yes. The fingerprint stays hidden until
+the wallet-record check. Declining or finding no usable correction returns to
 source entry; hexadecimal seeds are never corrected. Confirmation of newly
 created cards is a separate step after accepting the source.
