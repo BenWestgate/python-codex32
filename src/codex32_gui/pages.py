@@ -872,7 +872,7 @@ def _new_wallet_page(
 
         def job() -> Record:
             if restoring:
-                wallet_setup.verify(core, secret, expected)
+                wallet_setup.verify(core, secret, expected, timestamp)
             wallet_setup.create(core, chosen, passphrase)
             return _record(core, secret, chosen, timestamp, expected, passphrase)
 
@@ -1065,13 +1065,16 @@ def _fingerprint_page(
 ) -> Adw.NavigationPage:
     """Take the master fingerprint from the wallet record. The library refuses a mismatch."""
     entered = Adw.EntryRow(title="Master fingerprint from your wallet record")
+    dated = Adw.EntryRow(title="Approximate creation date from the record, as YYYY-MM-DD")
     group = Adw.PreferencesGroup()
-    group.add(entered)
+    for row in (entered, dated) if restoring else (entered,):
+        group.add(row)
     status = _note(problem, "error" if problem else "")
 
     def go() -> None:
         try:
             expected = wallet_setup.parse_fingerprint(entered.get_text())
+            start = wallet_setup.parse_creation_date(dated.get_text()) if restoring else timestamp
         except ValueError as error:
             _say(status, str(error), "error")
             return
@@ -1079,15 +1082,15 @@ def _fingerprint_page(
 
         def job() -> str:
             try:
-                wallet_setup.verify(core, secret, expected)
-            except wallet_setup.FingerprintMismatch as error:
+                wallet_setup.verify(core, secret, expected, start)
+            except wallet_setup.BitcoinCoreError as error:
                 return str(error)
             return ""
 
         def follow(mismatch: str) -> Adw.NavigationPage | None:
             if mismatch:
                 return _fingerprint_page(view, core, secret, timestamp, restoring=restoring, problem=mismatch)
-            _wallets(view, core, secret, timestamp, expected, restoring=restoring)
+            _wallets(view, core, secret, start, expected, restoring=restoring)
             return None
 
         work.run(view, page, job, _then(view, page, follow, CARDS_SAFE))

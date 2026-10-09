@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import re
 import shutil
 import string
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from time import sleep
@@ -26,12 +28,12 @@ class FingerprintMismatch(BitcoinCoreError):
     """The recovered seed is not the wallet the operator's record describes."""
 
 
-_CHAINS = (
-    ("main", "mainnet"),
-    ("test", "testnet3"),
-    ("testnet4", "testnet4"),
-    ("signet", "signet"),
-    ("regtest", "regtest"),
+_CHAINS = (  # Name, label, and genesis block time: no block on that chain is older.
+    ("main", "mainnet", 1231006505),
+    ("test", "testnet3", 1296688602),
+    ("testnet4", "testnet4", 1714777860),
+    ("signet", "signet", 1598918400),
+    ("regtest", "regtest", 1296688602),
 )
 
 _ORIGIN = re.compile(r"\[(?P<fingerprint>[0-9a-f]{8})(?P<path>(?:/[0-9]+[h']?)*)\]")
@@ -55,6 +57,18 @@ NO_RECORD_WARNING = (
     "too: if you do not know what this wallet should hold, have someone you trust check it. Once you are "
     "sure, write the fingerprint on a new wallet record."
 )
+
+
+def parse_creation_date(text: str) -> int:
+    """Turn the record's approximate creation date into a rescan start; blank searches all history."""
+    try:
+        midnight = calendar.timegm(time.strptime(text.strip(), "%Y-%m-%d")) if text.strip() else 0
+    except ValueError:
+        raise ValueError("Type the creation date as YYYY-MM-DD, or leave it blank.") from None
+    if midnight > time.time() + 14 * 3600:  # Still in the future at UTC+14, the earliest time zone.
+        raise ValueError("That creation date is in the future.")
+    # A day early covers whatever time zone the record's date was written in.
+    return max(0, midnight - 86400)
 
 
 def identifier_note(origin: str | None) -> str:
@@ -107,7 +121,7 @@ class BitcoinCore:
         if executable is None:
             raise BitcoinCoreError("Install a reviewed bitcoin-cli before creating a backup.")
         choices: list[BitcoinCore] = []
-        for chain, _label in _CHAINS:
+        for chain, _label, _genesis in _CHAINS:
             client = cls(executable, chain, 0)
             try:
                 network = client._rpc("getnetworkinfo", timeout=5)
@@ -130,7 +144,7 @@ class BitcoinCore:
                 raise BitcoinCoreError("More than one local Bitcoin Core network is running.")
             tell("Local Bitcoin Core networks:")
             for number, choice in enumerate(choices, 1):
-                tell(f"  {number}. {dict(_CHAINS)[choice.chain]}")
+                tell(f"  {number}. {dict(c[:2] for c in _CHAINS)[choice.chain]}")
             while not (
                 (answer := ask("Choose a network number")).isdecimal() and 1 <= int(answer) <= len(choices)
             ):
@@ -138,7 +152,7 @@ class BitcoinCore:
             choices = [choices[int(answer) - 1]]
         client = choices[0]
         if tell is not None:
-            tell(f"Using Bitcoin Core on {dict(_CHAINS)[client.chain]}.")
+            tell(f"Using Bitcoin Core on {dict(c[:2] for c in _CHAINS)[client.chain]}.")
         return client
 
     def _rpc(
@@ -225,6 +239,35 @@ class BitcoinCore:
                 "The recovered master fingerprint does not match the one from the wallet record. "
                 "Bitcoin Core was not changed."
             )
+
+    def check_history(self, timestamp: int | Literal["now"]) -> None:
+        """Refuse a rescan that needs blocks Core lacks: Core would import the keys and lose the history."""
+        if timestamp == "now":  # A fresh seed has no history; Core itself warns while its wallets catch up.
+            return
+        genesis = next(born for chain, _label, born in _CHAINS if chain == self.chain)
+        info = c if isinstance(c := self._rpc("getblockchaininfo"), dict) else {}
+        height = info.get("pruneheight") if (p := info.get("pruned")) is True else 0 if p is False else None
+        # A real median time lies between the chain's genesis and Core's two-hour limit on future blocks.
+        tip = t if type(t := info.get("mediantime")) is int and genesis <= t < time.time() + 7200 else None
+        if type(height) is not int or height < 0 or type(tip) is not int:
+            raise BitcoinCoreError("Bitcoin Core did not say which blocks it still keeps.")
+        start = min(tip, timestamp)  # Core scans a future timestamp from the tip, with the same window.
+        # Until background validation ends, an AssumeUTXO node lacks the blocks below its snapshot.
+        cs = g.get("chainstates") or None if isinstance(g := self._rpc("getchainstates"), dict) else None
+        if type(cs) is not list or not all(type(c) is dict and c.get("validated") is True for c in cs):
+            raise BitcoinCoreError("Bitcoin Core is still downloading older blocks. Try again later.")
+        if height > 0:
+            b = self._rpc("getblockstats", str(height), '["time"]')
+            # Core starts two hours early, at the first block whose highest time so far reaches the
+            # timestamp. Block times are not monotonic, so a whole day of margin covers an earlier block
+            # that ran ahead of this one; dates are only day-accurate anyway. No block predates genesis.
+            kept = t if isinstance(b, dict) and type(t := b.get("time")) is int and t >= genesis else 0
+            if start < kept + 86400 or not kept:
+                since = f" from before {time.strftime('%Y-%m-%d', time.gmtime(kept))}" if kept else ""
+                raise BitcoinCoreError(
+                    f"This pruned node no longer has the blocks{since} that this wallet's history may be in. "
+                    "Enter a later creation date if your wallet record has one. Bitcoin Core was not changed."
+                )
 
     def _root_xpub(self, wallet: str) -> str:
         result = self._rpc("gethdkeys", wallet=wallet)
@@ -415,6 +458,8 @@ class BitcoinCore:
                 if state is None:
                     tell("That wallet is no longer eligible. Choose again.")
                     continue
+                # Checked last, after any wait above: a pruning node keeps pruning while it waits.
+                self.check_history(timestamp)
                 records = core_descriptors(
                     secret,
                     account=account,

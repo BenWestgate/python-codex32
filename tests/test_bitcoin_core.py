@@ -16,6 +16,7 @@ from codex32._bitcoin_core import (
     FingerprintMismatch,
     identifier_note,
     identifier_origin,
+    parse_creation_date,
     parse_fingerprint,
 )
 from codex32.bip93 import parse_codex32
@@ -336,6 +337,10 @@ class _ImportRPC:
         command = arguments[0]
         if command == "listwallets":
             return ["signer"]
+        if command == "getblockchaininfo":
+            return {"pruned": False, "mediantime": 1700000000}
+        if command == "getchainstates":
+            return {"chainstates": [{"validated": True}]}
         if command == "getwalletinfo":
             encryption = {"unlocked_until": 0 if self.locked else 100} if self.encrypted else {}
             return _empty_info(private_keys_enabled=self.private, **encryption)
@@ -800,3 +805,169 @@ def test_identifier_note_allows_supported_nonderived_codex32_identifiers() -> No
     assert "split shares" in note
     assert "supplied seed bytes" in note
     assert "explicit identifier" in note
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (("", 0), ("  ", 0), ("2024-03-02", 1709251200), (" 2024-03-02 ", 1709251200), ("1970-01-01", 0)),
+)
+def test_a_creation_date_starts_the_rescan_a_day_early(text: str, expected: int) -> None:
+    assert parse_creation_date(text) == expected
+
+
+@pytest.mark.parametrize("text", ("2024-13-01", "March 2024", "9999-01-01"))
+def test_an_unusable_creation_date_is_refused(text: str) -> None:
+    with pytest.raises(ValueError):
+        parse_creation_date(text)
+
+
+def test_tomorrow_is_refused_before_the_day_of_margin_could_hide_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "codex32._bitcoin_core.time.time", lambda: 1709251200 + 11 * 3600
+    )  # 2024-03-01 11:00Z
+    assert parse_creation_date("2024-03-02") == 1709251200  # Already 2024-03-02 at UTC+14.
+    with pytest.raises(ValueError, match="future"):
+        parse_creation_date("2024-03-03")
+
+
+def _pruned(
+    monkeypatch: pytest.MonkeyPatch,
+    chain: dict[str, object],
+    kept: int,
+    states: object = ({"validated": True},),
+) -> list[tuple[str, ...]]:
+    calls: list[tuple[str, ...]] = []
+
+    def rpc(_client: BitcoinCore, *arguments: str, **_keywords: object) -> object:
+        calls.append(arguments)
+        if arguments == ("getblockchaininfo",):
+            return {"mediantime": 1750000000, **chain}
+        if arguments == ("getchainstates",):
+            return {"chainstates": list(states)} if isinstance(states, tuple) else states
+        assert arguments == ("getblockstats", "800000", '["time"]')
+        return {"time": kept}
+
+    monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
+    return calls
+
+
+def test_a_rescan_into_pruned_blocks_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _pruned(monkeypatch, {"pruned": True, "pruneheight": 800000}, 1690000000)
+    with pytest.raises(BitcoinCoreError, match="before 2023-07-22"):
+        BitcoinCore("bitcoin-cli", "main", 320000).check_history(0)
+    assert calls == [("getblockchaininfo",), ("getchainstates",), ("getblockstats", "800000", '["time"]')]
+
+
+def test_the_history_check_is_the_last_step_before_import(monkeypatch: pytest.MonkeyPatch) -> None:
+    rpc = _ImportRPC()
+    rpc.locked = False
+    order: list[str] = []
+    monkeypatch.setattr(
+        BitcoinCore,
+        "_rpc",
+        lambda client, *args, wallet=None, stdin=None: (
+            order.append(args[0]) or rpc(client, *args, wallet=wallet, stdin=stdin)
+        ),
+    )
+    monkeypatch.setattr(BitcoinCore, "check_history", lambda _client, _timestamp: order.append("check"))
+    client = BitcoinCore("bitcoin-cli", "main", 320000)
+    client.initialize(
+        _SEED, lambda _prompt: "yes", lambda _message: None, expected_fingerprint=None, timestamp=0
+    )
+    assert order.index("check") == order.index("importdescriptors") - 1
+
+
+def test_a_block_time_before_the_selected_chains_genesis_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _pruned(monkeypatch, {"pruned": True, "pruneheight": 800000}, 1231006505)
+    with pytest.raises(BitcoinCoreError):
+        BitcoinCore("bitcoin-cli", "testnet4", 320000).check_history(1749000000)
+
+
+@pytest.mark.parametrize("kept", (True, 0, -1, 1, 1231006504, "1690000000", None))
+def test_an_unclear_block_time_fails_closed(monkeypatch: pytest.MonkeyPatch, kept: object) -> None:
+    _pruned(monkeypatch, {"pruned": True, "pruneheight": 800000}, kept)  # type: ignore[arg-type]
+    with pytest.raises(BitcoinCoreError):
+        BitcoinCore("bitcoin-cli", "main", 320000).check_history(1790000000)
+
+
+@pytest.mark.parametrize(
+    "chain",
+    (
+        None,
+        [],
+        {},
+        {"pruned": "yes"},
+        {"pruned": 1},
+        {"pruned": True},
+        {"pruned": True, "pruneheight": "800000"},
+        {"pruned": True, "pruneheight": -1},
+    ),
+)
+def test_unclear_pruning_metadata_fails_closed(monkeypatch: pytest.MonkeyPatch, chain: object) -> None:
+    monkeypatch.setattr(BitcoinCore, "_rpc", lambda _client, *_arguments, **_keywords: chain)
+    with pytest.raises(BitcoinCoreError, match="which blocks"):
+        BitcoinCore("bitcoin-cli", "main", 320000).check_history(0)
+
+
+def test_a_rescan_needs_a_day_past_the_pruned_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    _pruned(monkeypatch, {"pruned": True, "pruneheight": 800000}, 1690000000)
+    with pytest.raises(BitcoinCoreError):
+        BitcoinCore("bitcoin-cli", "main", 320000).check_history(1690000000 + 86399)
+
+
+def test_a_rescan_from_after_the_pruned_blocks_goes_ahead(monkeypatch: pytest.MonkeyPatch) -> None:
+    _pruned(monkeypatch, {"pruned": True, "pruneheight": 800000}, 1690000000)
+    BitcoinCore("bitcoin-cli", "main", 320000).check_history(1690000000 + 86400)
+
+
+@pytest.mark.parametrize("chain", ({"pruned": False}, {"pruned": True, "pruneheight": 0}))
+def test_an_unpruned_node_can_rescan_from_any_date(
+    monkeypatch: pytest.MonkeyPatch, chain: dict[str, object]
+) -> None:
+    calls = _pruned(monkeypatch, chain, 0)
+    BitcoinCore("bitcoin-cli", "main", 320000).check_history(0)
+    assert calls == [("getblockchaininfo",), ("getchainstates",)]
+
+
+def test_a_new_wallet_loads_without_asking_about_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _pruned(monkeypatch, {"pruned": True, "pruneheight": 800000}, 1690000000, None)
+    BitcoinCore("bitcoin-cli", "main", 320000).check_history("now")
+    assert calls == []
+
+
+def test_a_future_timestamp_is_checked_from_the_tip_core_scans_from(monkeypatch: pytest.MonkeyPatch) -> None:
+    _pruned(
+        monkeypatch, {"pruned": True, "pruneheight": 800000, "mediantime": 1690000000 + 86399}, 1690000000
+    )
+    with pytest.raises(BitcoinCoreError, match="before 2023-07-22"):
+        BitcoinCore("bitcoin-cli", "main", 320000).check_history(1900000000)
+
+
+@pytest.mark.parametrize("median", (None, "1690000000", True, 1, 1231006504, 10**20))
+def test_an_impossible_tip_time_fails_closed(monkeypatch: pytest.MonkeyPatch, median: object) -> None:
+    _pruned(monkeypatch, {"pruned": False, "mediantime": median}, 0)
+    with pytest.raises(BitcoinCoreError, match="which blocks"):
+        BitcoinCore("bitcoin-cli", "main", 320000).check_history(1790000000)
+
+
+@pytest.mark.parametrize(
+    "states",
+    (
+        ({"validated": True}, {"validated": False, "snapshot_blockhash": "00ab"}),
+        ({"validated": False, "snapshot_blockhash": "00ab"},),
+        ({"validated": 1},),
+        ("validated",),
+        (),
+        None,
+        {"chainstates": None},
+    ),
+)
+def test_a_restore_waits_for_assumeutxo_background_validation(
+    monkeypatch: pytest.MonkeyPatch, states: object
+) -> None:
+    calls = _pruned(monkeypatch, {"pruned": False}, 0, states)
+    with pytest.raises(BitcoinCoreError, match="older blocks"):
+        BitcoinCore("bitcoin-cli", "main", 320000).check_history(1790000000)
+    assert calls == [("getblockchaininfo",), ("getchainstates",)]

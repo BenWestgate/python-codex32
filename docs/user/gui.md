@@ -167,6 +167,19 @@ fingerprint and whether the backup identifier was made from the recovered seed,
 explains what that can and cannot prove, and restores only if you still choose
 to. Check the balance and history before you send money to that wallet.
 
+The same page asks for the approximate creation date from your wallet record.
+Bitcoin Core searches for the wallet's transactions from a day before that date,
+so a pruned node, which keeps only recent blocks, can still find them. Leave it
+blank to search all history. If the node has already pruned blocks the search
+would need, the window says so before it changes anything in Bitcoin Core; a
+date after the pruned blocks works, and otherwise the node must download the
+blockchain again. A node started from an AssumeUTXO snapshot lacks older blocks
+until it finishes checking them, so the window asks you to restore after that.
+A new wallet has no history to search, so it is made and loaded at once;
+Bitcoin Core itself shows that it is still catching up.
+New wallets made here are loaded each time Bitcoin Core
+starts, so a pruned node keeps them up to date instead of pruning past them.
+
 After the restore, **check** the remaining wallet details against your record
 rather than copy them onto it. It shows no creation date on that screen, because the
 real one is already on your record and today's would replace it.
