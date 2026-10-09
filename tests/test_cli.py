@@ -2523,7 +2523,7 @@ def test_create_existing_secret_confirms_original_before_initializing(
     with (
         patch.object(sys, "stdin", _TTYInput()),
         patch("codex32.cli._creation_source", return_value=secret),
-        patch("codex32.cli._generated_secret") as generate,
+        patch("codex32.cli.generate_master_seed") as generate,
         patch("codex32.cli.CreationCeremony.from_secret") as split,
         patch("codex32.cli.BitcoinCore.connect", return_value=core),
         contextlib.redirect_stdout(output),
@@ -2798,10 +2798,10 @@ def test_creation_source_correction_requires_approval(monkeypatch, capsys, respo
 
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", answer)
-    result = cli._creation_source(Profile.MS, _FakeBitcoinCore().fingerprint)
+    result = cli._creation_source()
     assert result == (parse_codex32(expected) if response == "yes" else bytes(16))
     output = capsys.readouterr().err
-    assert "Master fingerprint: 3F3521A6\n\n" in output
+    assert "Master fingerprint:" not in output
     assert module._card_text(expected, False) in output
     assert "31m" not in output
     assert "Does this entire string exactly match your recovery card? [y/N]: " in prompts
@@ -2810,11 +2810,9 @@ def test_creation_source_correction_requires_approval(monkeypatch, capsys, respo
         assert "Rejected:" not in output
 
 
-@pytest.mark.parametrize("kind", ["none", "ambiguous", "share", "wrong_profile", "fingerprint"])
+@pytest.mark.parametrize("kind", ["none", "ambiguous", "share", "wrong_profile"])
 def test_creation_source_unusable_candidates_retry(monkeypatch, capsys, kind):
     from types import SimpleNamespace
-
-    from codex32.errors import CodexError
 
     cli = importlib.import_module("codex32.cli")
     module = importlib.import_module("codex32._cli_input")
@@ -2829,12 +2827,7 @@ def test_creation_source_unusable_candidates_retry(monkeypatch, capsys, kind):
     answers = iter(("ms1invalid", "00" * 16))
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
-
-    def fail(seed):
-        raise CodexError("invalid seed")
-
-    fingerprint = fail if kind == "fingerprint" else _FakeBitcoinCore().fingerprint
-    assert cli._creation_source(Profile.MS, fingerprint) == bytes(16)
+    assert cli._creation_source() == bytes(16)
     output = capsys.readouterr().err
     assert "Possible correction:" not in output
     assert "Rejected:" in output
@@ -2858,7 +2851,7 @@ def test_creation_source_does_not_label_an_incomplete_share_candidate(monkeypatc
     monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
     monkeypatch.setattr(cli, "_suggestions", suggestions)
 
-    assert cli._creation_source(Profile.MS) == bytes(16)
+    assert cli._creation_source() == bytes(16)
     output = capsys.readouterr().err
     assert "Search incomplete:" not in output
     assert "Possible correction:" not in output
@@ -2881,17 +2874,14 @@ def test_creation_source_empty_then_interrupt(monkeypatch, exception):
     monkeypatch.setattr(module, "_editable_input", answer)
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: ())
     with pytest.raises(exception):
-        cli._creation_source(Profile.MS)
+        cli._creation_source()
 
 
-def test_creation_source_hex_and_noninteractive_never_search(monkeypatch):
+def test_creation_source_hex_never_searches(monkeypatch):
     cli = importlib.import_module("codex32.cli")
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: pytest.fail("unexpected search"))
     monkeypatch.setattr(sys, "stdin", io.StringIO("00" * 16))
-    assert cli._creation_source(Profile.MS) == bytes(16)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("ms1invalid"))
-    with pytest.raises(cli._UsageError):
-        cli._creation_source(Profile.MS)
+    assert cli._creation_source() == bytes(16)
 
 
 def test_creation_source_is_neutral_and_does_not_infer_ms1(monkeypatch, capsys):
@@ -2908,7 +2898,7 @@ def test_creation_source_is_neutral_and_does_not_infer_ms1(monkeypatch, capsys):
     monkeypatch.setattr(module, "_editable_input", answer)
     monkeypatch.setattr("codex32.indel._search_many", lambda *args, **kwargs: pytest.fail("searched"))
 
-    assert cli._creation_source(Profile.MS) == bytes(16)
+    assert cli._creation_source() == bytes(16)
     assert prompts == ["Enter an existing Bitcoin codex32 secret or hexadecimal seed:\n> "] * 2
     output = capsys.readouterr().err
     assert "Rejected:" in output
@@ -3073,11 +3063,9 @@ def test_create_existing_checks_the_record_before_import(monkeypatch: pytest.Mon
     secret = parse_codex32(VECTOR_1["secret_s"])
     core = _FakeBitcoinCore()
     checked = []
-    source_fingerprints = []
     emitted_fingerprints = []
 
-    def source(_profile, fingerprint=None):
-        source_fingerprints.append(fingerprint)
+    def source():
         return secret
 
     def record(_core, recovered):
@@ -3100,7 +3088,6 @@ def test_create_existing_checks_the_record_before_import(monkeypatch: pytest.Mon
     monkeypatch.setattr(cli, "_recorded_fingerprint", record)
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
     assert ms_main(["create", "--existing", *([header] if header else [])]) == 0
-    assert source_fingerprints == [None]
     assert emitted_fingerprints and all(fingerprint is None for fingerprint in emitted_fingerprints)
     assert checked == [secret.seed_bytes]
     assert core.expected == core.fingerprint(secret)
