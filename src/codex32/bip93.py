@@ -1,274 +1,377 @@
-# Portions of this file are derived from work by:
-#   Author: Leon Olsson Curr and Pearlwort Sneed <pearlwort@wpsoftware.net>
-#   License: BSD-3-Clause
-# Derived work: BECH32_INV, bech32_mul, bech32_lagrange, codex32_interpolate
-#
-# Modifications and additional code:
-# Copyright (c) 2026 Ben Westgate <benwestgate@protonmail.com>, MIT License
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
+# Portions of interpolation arithmetic are derived from rust-codex32 (BSD-3-Clause).
+"""Immutable BIP93 artifacts, parsing, recovery, and share derivation."""
 
-"""Reference implementation for codex32/Long codex32 and codex32-encoded master seeds."""
-
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from codex32.bech32 import (
     CHARSET,
-    chars_to_u5,
-    convertbits,
-    u5_to_chars,
-    u5_decode,
-    u5_encode,
-    u5_parse,
+    _chars_to_u5,
+    _u5_to_chars,
+    bech32_decode,
+    bech32_encode,
+    bech32_verify_checksum,
 )
-from codex32.checksums import CODEX32, CODEX32_LONG
-from codex32.errors import CodexError
+from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
+from codex32.errors import (
+    DuplicateShareIndex,
+    ExistingTargetIndex,
+    InvalidChecksum,
+    InvalidIdentifier,
+    InvalidLength,
+    InvalidShareIndex,
+    InvalidShareSet,
+    InvalidTargetIndex,
+    InvalidThreshold,
+    MismatchedHrp,
+    MismatchedIdentifier,
+    MismatchedPayloadLength,
+    MismatchedThreshold,
+    SecretInRecoverySet,
+    WrongShareCount,
+)
+from codex32.gf32 import _inverse as _gf32_inverse
+from codex32.gf32 import _multiply as _gf32_multiply
+from codex32.profiles import Profile, _optional_profile_rules, _profile_rules, _ProfileRules
 
-HRP_CODES = {
-    "ms": 0,  # BIP-0032 master seed
-    "cl": 1,  # CLN HSM secret
-}  # Registry: https://github.com/satoshilabs/slips/blob/master/slip-0173.md#uses-of-codex32
-IDX_ORDER = "sacdefghjklmnpqrstuvwxyz023456789"  # Canonical BIP93 share indices alphabetical order
-BECH32_INV = [
-    0,
-    1,
-    20,
-    24,
-    10,
-    8,
-    12,
-    29,
-    5,
-    11,
-    4,
-    9,
-    6,
-    28,
-    26,
-    31,
-    22,
-    18,
-    17,
-    23,
-    2,
-    25,
-    16,
-    19,
-    3,
-    21,
-    14,
-    30,
-    13,
-    7,
-    27,
-    15,
-]
+IDX_SORT = "sacdefghjklmnpqrtuvwxyz023456789"
+_CONSTRUCTION_TOKEN = object()
 
 
-# pylint: disable=missing-class-docstring
+@dataclass(frozen=True, slots=True)
+class Header:
+    """Normalized immutable BIP93 header."""
 
+    threshold: int
+    identifier: str
+    index: str
 
-class IdNotLength4(CodexError): ...
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.threshold, bool)
+            or not isinstance(self.threshold, int)
+            or self.threshold not in (0, *range(2, 10))
+        ):
+            raise InvalidThreshold("threshold must be 0 or an integer from 2 through 9")
+        if not isinstance(self.identifier, str):
+            raise InvalidIdentifier("identifier must be str")
+        identifier = self.identifier.lower()
+        if len(identifier) != 4 or any(character not in CHARSET for character in identifier):
+            raise InvalidIdentifier("identifier must be exactly four Bech32 symbols")
+        if not isinstance(self.index, str):
+            raise InvalidShareIndex("share index must be str")
+        index = self.index.lower()
+        if len(index) != 1 or index not in CHARSET:
+            raise InvalidShareIndex("share index must be one Bech32 symbol")
+        if self.threshold == 0 and index != "s":
+            raise InvalidShareIndex("An unshared secret (threshold 0) must use S as its index.")
+        object.__setattr__(self, "identifier", identifier)
+        object.__setattr__(self, "index", index)
 
-
-class InvalidThreshold(CodexError): ...
-
-
-class InvalidShareIndex(CodexError): ...
-
-
-class MismatchedLength(CodexError): ...
-
-
-class MismatchedHrp(CodexError): ...
-
-
-class MismatchedThreshold(CodexError): ...
-
-
-class MismatchedId(CodexError): ...
-
-
-class RepeatedIndex(CodexError): ...
-
-
-class ThresholdNotPassed(CodexError): ...
-
-
-class InvalidSeedLength(CodexError): ...
-
-
-def bech32_mul(a, b):
-    """Multiply two Bech32 values."""
-    res = 0
-    for i in range(5):
-        res ^= a if ((b >> i) & 1) else 0
-        a *= 2
-        a ^= 41 if (32 <= a) else 0
-    return res
-
-
-def bech32_lagrange(pts, x):
-    """Compute Bech32 lagrange."""
-    n = 1
-    c = []
-    for i in pts:
-        n = bech32_mul(n, i ^ x)
-        m = 1
-        for j in pts:
-            m = bech32_mul(m, (x if i == j else i) ^ j)
-        c.append(m)
-    return [bech32_mul(n, BECH32_INV[i]) for i in c]
-
-
-def codex32_decode(codex):
-    """Validate a codex32 string, and determine HRP and data."""
-    return u5_decode(codex, [CODEX32_LONG, CODEX32])
-
-
-def codex32_interpolate(strings, x):
-    """Interpolate a set of codex32 data values given target index."""
-    w = bech32_lagrange([s[5] for s in strings], x)
-    res = []
-    for i in range(len(strings[0])):
-        n = 0
-        for j, val in enumerate(strings):
-            n ^= bech32_mul(w[j], val[i])
-        res.append(n)
-    return res
-
-
-def codex32_encode(hrp: str, data):
-    """Compute a codex32 string given HRP and data values."""
-    spec = CODEX32_LONG if len(hrp) + len(data) > 80 else CODEX32
-    return u5_encode(hrp, data, spec)
-
-
-def decode(hrp: str, s: str, pad_val: int | str = "any"):
-    """Decode a codex32 string, and determine header, seed, and padding."""
-    hrpgot, data, _ = codex32_decode(s)
-    if hrpgot != hrp:
-        raise MismatchedHrp(f"{hrpgot} != {hrp}")
-    if len(header := u5_to_chars(data[:6])) < 6:
-        raise MismatchedLength(f"'{header}' header too short: {len(data)} < 6")
-    if not (k := header[0]).isdigit():
-        raise InvalidThreshold(f"threshold parameter '{k}' must be a digit")
-    if k == "0" and (idx := header[5]) != "s":
-        raise InvalidShareIndex(f"share index '{idx}' must be 's' when k='0'")
-    decoded = convertbits(data[6:], 5, 8, False, pad_val)
-    if hrp == "ms" and (not 16 <= (msl := len(decoded)) <= 64 or msl % 4):
-        raise InvalidSeedLength(f"Master seeds must be in 16..20..64 bytes, got {msl}")
-    pad = data[-1] % (1 << ((len(data[6:]) * 5) % 8))
-    return header, bytes(decoded), pad if pad_val == "any" else pad_val
-
-
-def encode(hrp: str, header: str, seed: bytes, pad_val: int | str = "CRC"):
-    """Encode a codex32 string given HRP, header, seed, and padding."""
-    u5_payload = convertbits(seed, 8, 5, True, pad_val)
-    ret = codex32_encode(hrp, chars_to_u5(header) + u5_payload)
-    if len(header) != 6 or (header, seed, pad_val) != decode(hrp, ret, pad_val):
-        raise MismatchedLength(f"'{header}' header must be 6 chars, got {len(header)}")
-    return ret
-
-
-class Codex32String:
-    """Class representing a codex32 string."""
-
-    def __init__(self, s: str) -> None:
-        """Initialize Codex32String from a codex32 string."""
-        self.is_upper = s.isupper()
-        self.hrp = codex32_decode(s)[0]
-        header, self.data, self.pad_val = decode(self.hrp, s)
-        self.k, self.ident, self.share_idx = header[0], header[1:5], header[5]
+    @classmethod
+    def _from_symbols(cls, symbols: tuple[int, ...]) -> "Header":
+        if len(symbols) != 6:
+            raise InvalidLength("codex32 header must contain six symbols")
+        text = _u5_to_chars(symbols)
+        if text[0] not in "023456789":
+            raise InvalidThreshold(
+                f"The threshold must be 0 or a number from 2 through 9; found {text[0]!r}."
+            )
+        return cls(int(text[0]), text[1:5], text[5])
 
     @property
-    def payload(self) -> str:
-        """Return the payload part of the codex32 string."""
-        return u5_to_chars(convertbits(self.data, 8, 5, True, self.pad_val))
+    def _symbols(self) -> tuple[int, ...]:
+        return tuple(_chars_to_u5(f"{self.threshold}{self.identifier}{self.index}"))
 
-    @property
-    def s(self) -> str:
-        """Return the full codex32 string."""
-        header = self.k + self.ident + self.share_idx
-        ret = encode(self.hrp, header, self.data, self.pad_val)
-        return ret.upper() if ret and self.is_upper else ret
+
+def _checksum_for_encoded_length(hrp: str, encoded_length: int) -> _Checksum:
+    expanded_length = 2 * len(hrp) + 1 + encoded_length
+    if expanded_length <= 93:
+        return _CODEX32
+    if expanded_length < 96:
+        raise InvalidLength("expanded codex32 lengths 94 and 95 are invalid")
+    if expanded_length <= 1023:
+        return _CODEX32_LONG
+    raise InvalidLength("expanded codex32 codeword exceeds 1023 symbols")
+
+
+def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ...], _Checksum]:
+    hrp, encoded = bech32_decode(text)
+    if len(hrp) + 1 + len(encoded) < 21:
+        raise InvalidLength("codex32 string must contain at least 21 characters")
+    checksum = _checksum_for_encoded_length(hrp, len(encoded))
+    body = tuple(encoded[: -checksum.length])
+    Header._from_symbols(body[:6])
+    if not bech32_verify_checksum(hrp, encoded, checksum):
+        raise InvalidChecksum(f"invalid {checksum.kind} checksum")
+    profile_rules = _optional_profile_rules(hrp)
+    if profile_rules is not None:
+        profile_rules.validate_text_length(len(text))
+        profile_rules.validate_payload_length(len(body) - 6)
+    return hrp, profile_rules, tuple(encoded), checksum
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class _Artifact:
+    text: str
+    header: Header
+    hrp: str
+    profile: Profile | None
+    payload_symbols: tuple[int, ...]
+
+    def __init__(
+        self,
+        text: str,
+        header: Header,
+        hrp: str,
+        profile: Profile | None,
+        payload_symbols: tuple[int, ...],
+        *,
+        _token: object,
+    ) -> None:
+        if _token is not _CONSTRUCTION_TOKEN:
+            raise TypeError("codex32 artifacts must be created by the public factories")
+        object.__setattr__(self, "text", text)
+        object.__setattr__(self, "header", header)
+        object.__setattr__(self, "hrp", hrp)
+        object.__setattr__(self, "profile", profile)
+        object.__setattr__(self, "payload_symbols", payload_symbols)
 
     def __str__(self) -> str:
-        return self.s
+        return f"<{type(self).__name__}: redacted>"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(<redacted>)"
 
     def __len__(self) -> int:
-        return len(self.s)
+        return len(self.text)
+
+
+class Share(_Artifact):
+    """Validated codex32 share; use ``.text`` for the explicit serialized value.
+
+    ``str(share)`` and ``repr(share)`` are deliberately redacted so accidental
+    logging or interpolation does not disclose recovery material.
+    """
+
+    __slots__ = ()
+
+
+class Secret(_Artifact):
+    """Validated codex32 secret; use ``.text`` for the explicit serialized value.
+
+    ``str(secret)`` and ``repr(secret)`` are deliberately redacted so accidental
+    logging or interpolation does not disclose recovery material.
+    """
+
+    __slots__ = ()
+
+
+def _validate_payload(profile: Profile, header: Header, payload: tuple[int, ...]) -> None:
+    rules = _profile_rules(profile)
+    rules.validate_payload_length(len(payload))
+    rules.validate_payload(payload, header)
+
+
+def _artifact(
+    text: str,
+    hrp: str,
+    profile: Profile | None,
+    header: Header,
+    payload: tuple[int, ...],
+) -> Share | Secret:
+    rules = _optional_profile_rules(hrp)
+    artifact_type = Share if header.index != "s" else (rules.secret_type if rules is not None else Secret)
+    return artifact_type(text, header, hrp, profile, payload, _token=_CONSTRUCTION_TOKEN)
+
+
+def parse_codex32(text: str) -> Share | Secret:
+    """Validate one codex32 string and return an immutable artifact."""
+    hrp, profile_rules, encoded, checksum = _decode_codex32(text)
+    body = tuple(encoded[: -checksum.length])
+    header = Header._from_symbols(body[:6])
+    payload = body[6:]
+    profile = profile_rules.profile if profile_rules is not None else None
+    if profile is not None:
+        _validate_payload(profile, header, payload)
+    return _artifact(text, hrp, profile, header, payload)
+
+
+def _from_parts(
+    hrp: str | Profile,
+    header: Header,
+    payload: tuple[int, ...],
+    *,
+    uppercase: bool = False,
+) -> Share | Secret:
+    normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
+    rules = _optional_profile_rules(normalized_hrp)
+    if rules is not None:
+        _validate_payload(rules.profile, header, payload)
+    body = [*header._symbols, *payload]
+    expanded_body_length = 2 * len(normalized_hrp) + 1 + len(body)
+    checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
+    # Validate the completed generic codeword, including the 94/95 gap.
+    _checksum_for_encoded_length(normalized_hrp, len(body) + checksum.length)
+    text = bech32_encode(normalized_hrp, body, checksum)
+    return parse_codex32(text.upper() if uppercase else text)
+
+
+def _lagrange_weights(points: tuple[int, ...], target: int) -> tuple[int, ...]:
+    weights: list[int] = []
+    for position, point in enumerate(points):
+        weight = 1
+        for other_position, other in enumerate(points):
+            if position == other_position:
+                continue
+            weight = _gf32_multiply(weight, target ^ other)
+            weight = _gf32_multiply(weight, _gf32_inverse(point ^ other))
+        weights.append(weight)
+    return tuple(weights)
+
+
+@dataclass(frozen=True, slots=True)
+class _ShareSet:
+    artifacts: tuple[Share | Secret, ...]
+    hrp: str
+    profile: Profile | None
+    threshold: int
+    identifier: str
+    tails: tuple[tuple[int, ...], ...]
+    uppercase: bool
 
     @property
-    def checksum(self) -> str:
-        """Return the checksum part of the codex32 string."""
-        return self.s[-codex32_decode(self.s)[2].cs_len :]
+    def indices(self) -> tuple[str, ...]:
+        return tuple(item.header.index for item in self.artifacts)
 
-    @classmethod
-    def from_unchecksummed_string(cls, s: str) -> "Codex32String":
-        """Create Codex32String from unchecksummed string."""
-        ret = codex32_encode(*u5_parse(s))
-        return cls(ret.upper() if s.isupper() else ret)
 
-    @classmethod
-    def from_string(cls, hrp: str, s: str) -> "Codex32String":
-        """Create Codex32String from a given codex32 string and HRP."""
-        if (hrpgot := u5_parse(s)[0]) != hrp:
-            raise MismatchedHrp(f"{hrpgot} != {hrp}")
-        return cls(s)
+def _bounded_artifacts(
+    artifacts: Sequence[Share | Secret],
+) -> tuple[Share | Secret, ...]:
+    if isinstance(artifacts, (str, bytes, bytearray)):
+        raise TypeError("share inputs must be validated artifacts, not text")
+    try:
+        count = len(artifacts)
+    except TypeError as error:
+        raise TypeError("share inputs must be a Sequence of artifacts") from error
+    if count == 0 or count > 9:
+        raise WrongShareCount("a share set must contain between 1 and 9 artifacts")
+    try:
+        copied = tuple(artifacts[position] for position in range(count))
+    except IndexError as error:
+        raise TypeError("share input Sequence changed length while being read") from error
+    if not all(isinstance(item, _Artifact) for item in copied):
+        raise TypeError("all share inputs must be validated codex32 artifacts")
+    return copied
 
-    @classmethod
-    def interpolate_at(
-        cls, shares: list["Codex32String"], target: str = "s"
-    ) -> "Codex32String":
-        """Interpolate a set of Codex32String objects to a specific target index."""
-        if not all(isinstance(share, Codex32String) for share in shares):
-            raise TypeError("All shares must be Codex32String instances")
-        if (threshold := int(shares[0].k) if shares else 1) > len(shares):
-            raise ThresholdNotPassed(f"threshold={threshold}, n_shares={len(shares)}")
-        for share in shares:
-            if len(shares[0]) != len(share):
-                raise MismatchedLength(f"{len(shares[0])}, {len(share)}")
-            if shares[0].hrp != share.hrp:
-                raise MismatchedHrp(f"{shares[0].hrp}, {share.hrp}")
-            if shares[0].k != share.k:
-                raise MismatchedThreshold(f"{shares[0].k}, {share.k}")
-            if shares[0].ident != share.ident:
-                raise MismatchedId(f"{shares[0].ident}, {share.ident}")
-            if [share.share_idx for share in shares].count(share.share_idx) > 1:
-                raise RepeatedIndex(share.share_idx)
-        if ret := [share for share in shares if share.share_idx == target.lower()]:
-            return ret.pop()
-        u5_shares = [codex32_decode(share.s)[1] for share in shares]
-        data = codex32_interpolate(u5_shares, CHARSET.find(target.lower()))
-        ret = codex32_encode(shares[0].hrp, data)
-        return cls(ret.upper() if all(s.s.upper() == s.s for s in shares) else ret)
 
-    @classmethod
-    def from_seed(
-        cls, data: bytes, prefix: str, pad_val: int | str = "CRC"
-    ) -> "Codex32String":
-        """Create Codex32String from seed bytes and a prefix with an identifier."""
-        hrp, data_part = u5_parse(prefix)
-        header = u5_to_chars(data_part)
-        k = "0" if not header else header[:1]
-        ident = header[1 : max(5, len(header) - 1)]
-        if len(ident) != 4:
-            raise IdNotLength4(f"prefix must contain a four-character identifier, got {len(ident)}")
-        share_idx = "s" if not header[5:] else header[5:6]
-        return cls(encode(hrp, k + ident + share_idx, data, pad_val))
+def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]:
+    hrp, profile_rules, encoded, checksum = _decode_codex32(artifact.text)
+    profile = profile_rules.profile if profile_rules is not None else None
+    if hrp != artifact.hrp or profile is not artifact.profile:
+        raise InvalidShareSet("artifact text and validated application prefix disagree")
+    return tuple(encoded[6:]), checksum.length, len(encoded)
+
+
+def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: bool = True) -> _ShareSet:
+    copied = _bounded_artifacts(artifacts)
+    first = copied[0]
+    threshold = first.header.threshold
+    if threshold not in range(2, 10):
+        raise MismatchedThreshold("linear sharing requires threshold 2 through 9")
+    if len(copied) > threshold or (require_exact and len(copied) != threshold):
+        raise WrongShareCount(f"threshold is {threshold}, but {len(copied)} artifacts were supplied")
+    first_tail, checksum_length, encoded_length = _artifact_tail(first)
+    tails = [first_tail]
+    indices = [first.header.index]
+    for item in copied[1:]:
+        if item.hrp != first.hrp:
+            raise MismatchedHrp(f"{first.hrp} and {item.hrp} cannot be combined")
+        if item.header.threshold != threshold:
+            raise MismatchedThreshold("share thresholds do not match")
+        if item.header.identifier != first.header.identifier:
+            raise MismatchedIdentifier("share identifiers do not match")
+        tail, item_checksum_length, item_encoded_length = _artifact_tail(item)
+        item_shape = (
+            len(item.payload_symbols),
+            item_checksum_length,
+            item_encoded_length,
+        )
+        if item_shape != (len(first.payload_symbols), checksum_length, encoded_length):
+            raise MismatchedPayloadLength("share payload/checksum lengths do not match")
+        tails.append(tail)
+        indices.append(item.header.index)
+    if len(set(indices)) != len(indices):
+        raise DuplicateShareIndex("share indices must be distinct")
+    return _ShareSet(
+        copied,
+        first.hrp,
+        first.profile,
+        threshold,
+        first.header.identifier,
+        tuple(tails),
+        all(item.text.isupper() for item in copied),
+    )
+
+
+def _validate_recovery_prefix(shares: Sequence[Share | Secret]) -> None:
+    share_set = _validate_share_set(shares, require_exact=False)
+    if any(isinstance(item, Secret) for item in share_set.artifacts):
+        raise SecretInRecoverySet("recovery accepts ordinary shares only")
+
+
+def _validate_basis_prefix(basis: Sequence[Share | Secret]) -> None:
+    _validate_share_set(basis, require_exact=False)
+
+
+def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
+    points = tuple(CHARSET.index(index) for index in share_set.indices)
+    weights = _lagrange_weights(points, CHARSET.index(target))
+    result: list[int] = []
+    for column in range(len(share_set.tails[0])):
+        value = 0
+        for row, weight in zip(share_set.tails, weights, strict=True):
+            value ^= _gf32_multiply(weight, row[column])
+        result.append(value)
+    header = Header(share_set.threshold, share_set.identifier, target)
+    text = f"{share_set.hrp}1{_u5_to_chars((*header._symbols, *result))}"
+    return parse_codex32(text.upper() if share_set.uppercase else text)
+
+
+def recover_secret(shares: Sequence[Share]) -> Secret:
+    """Recover S from exactly k compatible, distinct ordinary shares."""
+    share_set = _validate_share_set(shares)
+    if any(isinstance(item, Secret) for item in share_set.artifacts):
+        raise SecretInRecoverySet("recovery accepts ordinary shares only")
+    recovered = _interpolate_tail(share_set, "s")
+    if not isinstance(recovered, Secret):
+        raise InvalidShareSet("interpolation did not produce a secret")
+    return recovered
+
+
+def _normalize_target(value: object, *, label: str) -> str:
+    if not isinstance(value, str):
+        raise InvalidTargetIndex(f"{label} must be one Bech32 symbol")
+    normalized = value.lower()
+    if len(normalized) != 1 or normalized not in CHARSET or normalized == "s":
+        raise InvalidTargetIndex(f"{label} must be one of {IDX_SORT[1:].upper()}")
+    return normalized
+
+
+def derive_share(basis: Sequence[Share | Secret], fresh_index: str) -> Share:
+    """Interpolate one additional ordinary share at a previously unused index."""
+    share_set = _validate_share_set(basis)
+    target = _normalize_target(fresh_index, label="fresh_index")
+    if target in share_set.indices:
+        raise ExistingTargetIndex(f"Choose a different share index; {target.upper()} was already supplied.")
+    profile_rules = _optional_profile_rules(share_set.hrp)
+    if profile_rules is not None and profile_rules.basis_secret_type is not None:
+        implied_secret = _interpolate_tail(share_set, "s")
+        if not isinstance(implied_secret, Secret):
+            raise InvalidShareSet("interpolation did not produce a secret")
+        if not isinstance(implied_secret, profile_rules.basis_secret_type):
+            raise InvalidShareSet(profile_rules.basis_error)
+    derived = _interpolate_tail(share_set, target)
+    if not isinstance(derived, Share):
+        raise InvalidShareSet("interpolation did not produce an ordinary share")
+    return derived

@@ -1,5 +1,6 @@
 # Portions of this file are derived from work by:
 #   Copyright (c) 2017, 2020 Pieter Wuille
+#   Source: https://github.com/sipa/bech32/blob/master/ref/python/segwit_addr.py
 #
 # Additional code and modifications:
 #   Copyright (c) 2026 Ben Westgate <benwestgate@protonmail.com>
@@ -22,47 +23,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-"""Internal bech32 and u5 helpers for Bech32/codex32 encoding and decoding."""
+"""Bech32 character, container, and bit-conversion helpers."""
 
-from codex32.errors import CodexError
-from codex32.checksums import Checksum, crc_pad
-
-
-# pylint: disable=missing-class-docstring
-class InvalidDataValue(CodexError): ...
-
-
-class IncompleteGroup(CodexError): ...
-
-
-class InvalidLength(CodexError): ...
-
-
-class InvalidChar(CodexError): ...
-
-
-class InvalidCase(CodexError): ...
-
-
-class InvalidChecksum(CodexError): ...
-
-
-class InvalidPadding(CodexError): ...
-
-
-class MissingHrp(CodexError): ...
-
-
-class SeparatorNotFound(CodexError): ...
-
-
-class MissingChecksum(CodexError): ...
-
-
-class MissingEncoding(CodexError): ...
-
+from codex32.checksums import _Checksum
+from codex32.errors import (
+    InvalidCase,
+    InvalidCharacter,
+    InvalidChecksum,
+    InvalidLength,
+    InvalidPadding,
+    MissingSeparator,
+)
 
 CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+_MAX_LENGTH = 1024
 
 
 def bech32_hrp_expand(hrp: str) -> list[int]:
@@ -70,90 +44,122 @@ def bech32_hrp_expand(hrp: str) -> list[int]:
     return [ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp]
 
 
-def u5_to_chars(data: list[int]) -> str:
-    """Map list of 5-bit integers (0-31) -> Bech32 data-part string."""
-    for i, x in enumerate(data):
-        if not 0 <= x < 32:
-            raise InvalidDataValue(f"from 0 to 31 index={i} value={x}")
-    return "".join(CHARSET[d] for d in data)
+def _u5_to_chars(values: list[int] | tuple[int, ...]) -> str:
+    for index, value in enumerate(values):
+        if not 0 <= value < 32:
+            raise InvalidCharacter(f"u5 value {value} at index {index} is outside 0..31")
+    return "".join(CHARSET[value] for value in values)
 
 
-def u5_encode(hrp: str, data: list[int], spec: Checksum) -> str:
+def _chars_to_u5(value: str, first_position: int = 1) -> list[int]:
+    result: list[int] = []
+    for index, character in enumerate(value.lower()):
+        position = CHARSET.find(character)
+        if position < 0:
+            label = "Apostrophe (')" if character == "'" else f"The character {character!r}"
+            raise InvalidCharacter(
+                f"{label} is not allowed in a codex32 string (position {first_position + index})."
+            )
+        result.append(position)
+    return result
+
+
+def _validate_single_case_ascii(value: str) -> bool:
+    if not isinstance(value, str):
+        raise TypeError("codex32 input must be str")
+    if len(value) > _MAX_LENGTH:
+        raise InvalidLength(f"codex32 input exceeds {_MAX_LENGTH} characters")
+    for index, character in enumerate(value):
+        codepoint = ord(character)
+        if not 33 <= codepoint <= 126:
+            raise InvalidCharacter(f"non-printable U+{codepoint:04X} at position {index}")
+    if value.upper() != value and value.lower() != value:
+        raise InvalidCase("Use either all uppercase or all lowercase letters.")
+    return value.isupper()
+
+
+def interpret_mixed_case(value: str, immutable_length: int) -> tuple[str, str, bool] | None:
+    # Return majority-cased and minority-erased interpretations of mixed-case text.
+    if not value.isascii() or value.upper() == value or value.lower() == value:
+        return None
+    letters = [character for character in value[immutable_length:] if character.isalpha()]
+    uppercase = sum(character.isupper() for character in letters) > len(letters) / 2
+    normalized = value.upper() if uppercase else value.lower()
+    erased = "".join(
+        normalized[index]
+        if index < immutable_length or not character.isalpha() or character.isupper() == uppercase
+        else "?"
+        for index, character in enumerate(value)
+    )
+    return normalized, erased, uppercase
+
+
+def bech32_encode(hrp: str, data: list[int], spec: _Checksum) -> str:
     """Compute a Bech32 string given HRP and data values."""
-    combined = data + spec.create(bech32_hrp_expand(hrp) + data)
-    return hrp + "1" + u5_to_chars(combined)
+    checksum = spec.create(bech32_hrp_expand(hrp) + list(data))
+    return f"{hrp}1{_u5_to_chars([*data, *checksum])}"
 
 
-def chars_to_u5(bech: str) -> list[int]:
-    """Map Bech32 data-part string -> list of 5-bit integers (0-31)."""
-    for i, ch in enumerate(bech):
-        if ch not in CHARSET:
-            raise InvalidChar(f"'{ch!r}' at pos={i} in data part")
-    return [CHARSET.find(x) for x in bech]
+def bech32_verify_checksum(hrp: str, data: list[int], spec: _Checksum) -> bool:
+    """Verify the checksum selected by the calling application."""
+    return spec.verify(bech32_hrp_expand(hrp) + list(data))
 
 
-def u5_parse(bech: str) -> tuple[str, list[int]]:
-    """Parse a Bech32/Codex32 string, and return HRP and 5-bit data."""
-    for i, ch in enumerate(bech):
-        if ord(ch) < 33 or ord(ch) > 126:
-            raise InvalidChar(f"non-printable U+{ord(ch):04X} at pos={i}")
-    if bech.upper() != bech and bech.lower() != bech:
-        raise InvalidCase("mixed upper/lower case bech32 string")
-    if (pos := (bech := bech.lower()).rfind("1")) < 1:
-        raise MissingHrp("empty HRP") if not pos else SeparatorNotFound("'1' not found")
-    hrp = bech[:pos]
-    data = chars_to_u5(bech[pos + 1 :])
-    return hrp, data
-
-
-def u5_decode(bech: str, encodings: list[Checksum]) -> tuple[str, list[int], Checksum]:
-    """Validate a Bech32/Codex32 string, and determine HRP and data."""
-    hrp, data = u5_parse(bech)
-    e = MissingEncoding("no encoding or encodings were passed")
-    for spec in encodings:
-        if len(hrp) <= (datlen := len(bech) - 1 - spec.cs_len):
-            if datlen in (c := spec.coverage):
-                if spec.verify(bech32_hrp_expand(hrp) + data):
-                    return hrp, data[: -spec.cs_len], spec
-                e = InvalidChecksum(f"{spec.kind} checksum invalid for hrp and data")
-            if not isinstance(e, InvalidChecksum):
-                e = InvalidLength(f"{datlen} chars {spec.kind} reqs {min(c)}..{max(c)}")
-        if not isinstance(e, (InvalidLength, InvalidChecksum)):
-            e = MissingChecksum(f"{spec.kind}: {len(data)} data chars < {spec.cs_len}")
-    raise e
+def bech32_decode(value: str, spec: _Checksum | None = None) -> tuple[str, list[int]]:
+    """Validate a Bech32 string, optionally including its checksum."""
+    _validate_single_case_ascii(value)
+    separator = value.rfind("1")
+    if separator < 0:
+        raise MissingSeparator("No separator (1) was found.")
+    if separator == 0:
+        raise MissingSeparator("The application prefix before 1 is missing.")
+    lowered = value.lower()
+    hrp = lowered[:separator]
+    data = _chars_to_u5(lowered[separator + 1 :], separator + 2)
+    if spec is None:
+        return hrp, data
+    if len(data) < spec.length or not bech32_verify_checksum(hrp, data, spec):
+        raise InvalidChecksum(f"invalid {spec.kind} checksum")
+    return hrp, data[: -spec.length]
 
 
 def convertbits(
-    data: list[int] | bytes,
+    data: bytes | list[int] | tuple[int, ...],
     frombits: int,
     tobits: int,
-    pad: bool = True,
-    pad_val: int | str = 0,
+    *,
+    pad: bool,
+    pad_value: int = 0,
+    accept_any_padding: bool = False,
 ) -> list[int]:
-    """General power-of-2 base conversion."""
+    """General power-of-two base conversion derived from ``segwit_addr.py``."""
     acc = 0
     bits = 0
-    ret = []
+    result: list[int] = []
     maxv = (1 << tobits) - 1
     max_acc = (1 << (frombits + tobits - 1)) - 1
     for value in data:
-        if value < 0 or (value >> frombits):
-            raise InvalidDataValue(f"{value} is not in 0 to {(1 << frombits) - 1}")
+        if value < 0 or value >> frombits:
+            raise InvalidCharacter(f"value {value} is outside {frombits}-bit range")
         acc = ((acc << frombits) | value) & max_acc
         bits += frombits
         while bits >= tobits:
             bits -= tobits
-            ret.append((acc >> bits) & maxv)
-    if not pad and bits >= frombits:
-        raise IncompleteGroup(f" {bits} bits remaining, must be {frombits - 1} or less")
-    pad_len = (tobits - bits) if pad and bits else bits
-    pv = crc_pad(convertbits(data, frombits, 1)) if pad_val == "CRC" else pad_val
-    if isinstance(pad_val, int) and not 0 <= pad_val < (1 << pad_len):
-        raise InvalidDataValue(f"padding int {pad_val} must be 0 to {(1<<pad_len) - 1}")
-    if pad and bits:
-        if not isinstance(pv, int):
-            raise InvalidPadding(f"pad_val must be int or 'CRC' if pad=True, got {pv}")
-        ret.append((acc << (tobits - bits) | pv) & maxv)
-    elif pv not in ("any", acc % (1 << bits)):
-        raise InvalidPadding(f"padding has to be {pad_val}")
-    return ret
+            result.append((acc >> bits) & maxv)
+    if not pad:
+        if bits >= frombits:
+            raise InvalidLength(
+                f"incomplete conversion group leaves {bits} bits; at most {frombits - 1} allowed"
+            )
+        if bits and not accept_any_padding and acc & ((1 << bits) - 1):
+            raise InvalidPadding("nonzero discarded padding")
+        return result
+    if not bits:
+        if pad_value:
+            raise InvalidPadding("padding value supplied when no padding is present")
+        return result
+    padding_bits = tobits - bits
+    if not 0 <= pad_value < (1 << padding_bits):
+        raise InvalidPadding(f"padding value {pad_value} does not fit in {padding_bits} bits")
+    result.append(((acc << padding_bits) | pad_value) & maxv)
+    return result
