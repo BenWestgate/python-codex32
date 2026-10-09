@@ -9,10 +9,9 @@ from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_5, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from test_profiles import _oracle_encode
 
 import codex32
-from codex32 import CorrectionCandidate, CorrectionContext, CorrectionEdit, Profile, correct, indel
+from codex32 import CorrectionCandidate, CorrectionContext, CorrectionEdit, correct, indel
 from codex32.bech32 import CHARSET
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.correction import (
@@ -44,9 +43,9 @@ def _change(
 
 def _success(
     damaged: str,
-    profile: Profile = Profile.MS,
+    hrp: str = "ms",
 ) -> CorrectionCandidate:
-    result = _correct_fixed(damaged, suspected_profile=profile)
+    result = _correct_fixed(damaged, hrp=hrp)
     assert isinstance(result, CorrectionCandidate)
     return result
 
@@ -74,7 +73,7 @@ def test_frozen_p70_differential_corpus() -> None:
     for case in document["cases"]:
         result = _correct_fixed(
             case["damaged"],
-            suspected_profile=Profile.MS,
+            hrp="ms",
         )
         if case["expected"] is None:
             assert result is None
@@ -146,22 +145,22 @@ def test_every_consecutive_erasure_burst(
 
 
 @pytest.mark.parametrize(
-    ("profile", "source"),
+    ("hrp", "source"),
     (
-        (Profile.MS, VECTOR_1["secret_s"]),
-        (Profile.MS, VECTOR_5["secret_s"]),
-        (Profile.CL, VECTOR_6["codex32_peev"]),
-        (Profile.BIP39_12W, SHARING_VECTORS["bip39_12w"]["S"]),
-        (Profile.BIP39_24W, SHARING_VECTORS["bip39_24w"]["S"]),
+        ("ms", VECTOR_1["secret_s"]),
+        ("ms", VECTOR_5["secret_s"]),
+        ("cl", VECTOR_6["codex32_peev"]),
+        ("bip39_12w", SHARING_VECTORS["bip39_12w"]["S"]),
+        ("bip39_24w", SHARING_VECTORS["bip39_24w"]["S"]),
     ),
 )
-def test_all_registered_profiles_use_public_correction_api(
-    profile: Profile,
+def test_ms_and_generic_hrps_use_public_correction_api(
+    hrp: str,
     source: str,
 ) -> None:
-    prefix_length = len(profile.value) + 1
+    prefix_length = len(hrp) + 1
     positions = [prefix_length + offset for offset in (2, 7, 12, 17)]
-    result = correct(CorrectionContext(profile), _change(source, positions))
+    result = correct(CorrectionContext(hrp, len(source)), _change(source, positions))
     assert len(result) == 1 and result[0].artifact.text == source
 
 
@@ -169,7 +168,7 @@ def test_public_candidate_reports_fixed_edits_and_ranking_inputs() -> None:
     source = VECTOR_1["secret_s"]
     positions = [7, 11]
     damaged = _change(source, positions, erasures=1)
-    result = correct(CorrectionContext(Profile.MS), damaged)
+    result = correct(CorrectionContext("ms"), damaged)
 
     assert len(result) == 1
     candidate = result[0]
@@ -195,28 +194,28 @@ def test_public_candidate_reports_fixed_edits_and_ranking_inputs() -> None:
 def test_public_context_constrains_length_prefix_and_used_indices() -> None:
     source = VECTOR_2["share_A"]
     valid = CorrectionContext(
-        Profile.MS,
+        "ms",
         expected_length=len(source),
         immutable_prefix=source[:8],
     )
     candidate = correct(valid, source)
 
     assert len(candidate) == 1 and candidate[0].artifact.text == source
-    assert correct(CorrectionContext(Profile.MS, expected_length=74), source) == ()
-    assert correct(CorrectionContext(Profile.MS, immutable_prefix="ms12cash"), source) == ()
-    assert correct(CorrectionContext(Profile.MS, excluded_indices=("A",)), source) == ()
+    assert correct(CorrectionContext("ms", expected_length=74), source) == ()
+    assert correct(CorrectionContext("ms", immutable_prefix="ms12cash"), source) == ()
+    assert correct(CorrectionContext("ms", excluded_indices=("A",)), source) == ()
 
 
 @pytest.mark.parametrize(
     "context",
     (
-        CorrectionContext(Profile.MS, expected_length=True),  # type: ignore[arg-type]
-        CorrectionContext(Profile.MS, expected_length=49),
-        CorrectionContext(Profile.MS, immutable_prefix="ms11test"),
-        CorrectionContext(Profile.MS, immutable_prefix="ms10tes!"),
-        CorrectionContext(Profile.MS, excluded_indices=["a"]),  # type: ignore[arg-type]
-        CorrectionContext(Profile.MS, excluded_indices=("s",)),
-        CorrectionContext(Profile.MS, excluded_indices=("a", "A")),
+        CorrectionContext("ms", expected_length=True),  # type: ignore[arg-type]
+        CorrectionContext("ms", expected_length=49),
+        CorrectionContext("ms", immutable_prefix="ms11test"),
+        CorrectionContext("ms", immutable_prefix="ms10tes!"),
+        CorrectionContext("ms", excluded_indices=["a"]),  # type: ignore[arg-type]
+        CorrectionContext("ms", excluded_indices=("s",)),
+        CorrectionContext("ms", excluded_indices=("a", "A")),
     ),
 )
 def test_malformed_public_context_is_rejected(context: CorrectionContext) -> None:
@@ -225,7 +224,7 @@ def test_malformed_public_context_is_rejected(context: CorrectionContext) -> Non
 
 
 def test_public_records_are_frozen_slotted_and_unchanged_input_is_a_candidate() -> None:
-    context = CorrectionContext(Profile.MS)
+    context = CorrectionContext("ms")
     candidate = correct(context, VECTOR_1["secret_s"])[0]
 
     assert not hasattr(context, "__dict__")
@@ -238,12 +237,12 @@ def test_public_records_are_frozen_slotted_and_unchanged_input_is_a_candidate() 
 
 def test_public_correction_keeps_prefix_immutable_and_types_strict() -> None:
     source = VECTOR_1["secret_s"]
-    assert correct(CorrectionContext(Profile.MS), "cl1" + source[3:]) == ()
-    assert correct(CorrectionContext(Profile.MS), source[:2] + "x" + source[3:]) == ()
+    assert correct(CorrectionContext("ms"), "cl1" + source[3:]) == ()
+    assert correct(CorrectionContext("ms"), source[:2] + "x" + source[3:]) == ()
     with pytest.raises(TypeError):
-        correct(Profile.MS, source)  # type: ignore[arg-type]
+        correct("ms", source)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
-        correct(CorrectionContext(Profile.MS), b"backup")  # type: ignore[arg-type]
+        correct(CorrectionContext("ms"), b"backup")  # type: ignore[arg-type]
 
 
 def test_uppercase_input_preserves_case_and_reverse_addends() -> None:
@@ -272,7 +271,7 @@ def test_public_correction_interprets_mixed_case_by_majority(uppercase: bool) ->
     )
     mixed = source[:position] + source[position].swapcase() + source[position + 1 :]
 
-    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), mixed)
+    result = correct(CorrectionContext("ms", expected_length=len(source)), mixed)
 
     assert len(result) == 1
     assert result[0].artifact.text == source
@@ -286,7 +285,7 @@ def test_grouped_mixed_case_keeps_the_recorded_header_immutable() -> None:
         for index, character in enumerate(source)
     )
     grouped = " ".join(damaged[index : index + 4] for index in range(0, len(damaged), 4))
-    context = CorrectionContext(Profile.MS, expected_length=len(source), immutable_prefix=source[:8].lower())
+    context = CorrectionContext("ms", expected_length=len(source), immutable_prefix=source[:8].lower())
 
     result = correct(context, grouped)
 
@@ -299,7 +298,7 @@ def test_public_correction_does_not_casefold_non_ascii() -> None:
     source = VECTOR_1["secret_s"].upper()
     damaged = source[:10] + "ß" + source[11:]
 
-    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+    result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert result == ()
 
@@ -308,7 +307,7 @@ def test_public_correction_searches_identical_case_interpretation_once() -> None
     source = VECTOR_1["secret_s"]
     damaged = source[0].upper() + source[1:]
 
-    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+    result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert len(result) == 1
     assert result[0].artifact.text == source
@@ -335,7 +334,7 @@ def test_mixed_case_erasure_search_precedes_normalized_alignment(monkeypatch: py
 
     monkeypatch.setattr("codex32.indel._search_many", stop_after_first)
 
-    assert correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged) == ()
+    assert correct(CorrectionContext("ms", expected_length=len(source)), damaged) == ()
     assert len(searched) == 1
     assert searched[0].count("?") == len(positions)
 
@@ -358,7 +357,7 @@ def test_mixed_case_candidate_still_searches_normalized_competitors(monkeypatch:
 
     monkeypatch.setattr("codex32.indel._search_many", search)
 
-    assert correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged) == (candidate,)
+    assert correct(CorrectionContext("ms", expected_length=len(source)), damaged) == (candidate,)
     assert len(searched) == 4
     assert ["?" in value for value, _seeded, _required, _optional in searched] == [True, False, True, False]
     assert [required for _value, _seeded, required, _optional in searched] == [True, True, False, False]
@@ -370,7 +369,7 @@ def test_mixed_case_required_work_is_not_starved_by_erasure_alignment() -> None:
     source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
     damaged = "ms10TpstsxXxxxxxXxxxxxXxxxxXxxxxxXx4nzvcA9cmczlW"
 
-    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+    result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert len(result) == 1
     assert result[0].artifact.text == source
@@ -416,7 +415,7 @@ def test_mixed_case_correction_edits_preserve_the_entered_character(
     observed = entered.lower() if uppercase else entered
     damaged = source[:position] + observed + source[position + 1 :]
 
-    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+    result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert len(result) == 1
     assert result[0].artifact.text == source
@@ -430,8 +429,8 @@ def test_mixed_case_does_not_reclassify_unrelated_structural_erasures() -> None:
     damaged = source[:8] + "qqqq" + source[12:]
     mixed = damaged[:12] + damaged[12].upper() + damaged[13:]
 
-    plain = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
-    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), mixed)
+    plain = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
+    result = correct(CorrectionContext("ms", expected_length=len(source)), mixed)
 
     assert len(plain) == len(result) == 1
     assert result[0].artifact.text == source
@@ -446,7 +445,7 @@ def test_mixed_case_structural_edits_preserve_the_entered_character() -> None:
     source = VECTOR_1["secret_s"]
     damaged = source[:3] + "P" + source[4:20] + source[21:]
 
-    result = correct(CorrectionContext(Profile.MS, expected_length=len(source)), damaged)
+    result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert len(result) == 1
     assert result[0].artifact.text == source
@@ -460,55 +459,44 @@ def test_fixed_failures_are_fail_closed() -> None:
     damaged[8:22] = "?" * 14
     body_failure = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx8ueney9awjglu"
     cases = (
-        (mixed, Profile.MS),
-        ("cl1" + VECTOR_1["secret_s"][3:], Profile.MS),
-        ("cl1" + "q" * 40, Profile.CL),
-        ("".join(damaged), Profile.MS),
-        (body_failure, Profile.MS),
+        (mixed, "ms"),
+        ("cl1" + VECTOR_1["secret_s"][3:], "ms"),
+        ("".join(damaged), "ms"),
+        (body_failure, "ms"),
     )
-    assert all(_correct_fixed(value, suspected_profile=profile) is None for value, profile in cases)
+    assert all(_correct_fixed(value, hrp=profile) is None for value, profile in cases)
 
 
 def test_bch_and_linear_failures_return_no_candidate() -> None:
     source = VECTOR_1["secret_s"]
     five_errors = _change(source, [5, 12, 19, 26, 33])
     mixed = _change(source, [5, 8, 11, 14, 17, 20, 23, 26, 29, 32], erasures=9)
-    assert _correct_fixed(five_errors, suspected_profile=Profile.MS) is None
-    assert _correct_fixed(mixed, suspected_profile=Profile.MS) is None
-
-
-def test_bip39_outer_correction_must_reparse_embedded_checksum() -> None:
-    invalid = _oracle_encode("bip39_12w", "0tests" + "q" * 27)
-    damaged = _change(invalid, [invalid.rfind("1") + 8])
-    result = _correct_fixed(
-        damaged,
-        suspected_profile=Profile.BIP39_12W,
-    )
-    assert result is None
+    assert _correct_fixed(five_errors, hrp="ms") is None
+    assert _correct_fixed(mixed, hrp="ms") is None
 
 
 @pytest.mark.parametrize(
     ("value", "profile"),
     (
-        ("ms1" + "q" * 1022, Profile.MS),
-        ("ms10test\n" + "q" * 40, Profile.MS),
+        ("ms1" + "q" * 1022, "ms"),
+        ("ms10test\n" + "q" * 40, "ms"),
     ),
 )
 def test_fixed_input_is_bounded_before_algebra(
     value: str,
-    profile: Profile,
+    profile: str,
 ) -> None:
-    result = _correct_fixed(value, suspected_profile=profile)
+    result = _correct_fixed(value, hrp=profile)
     assert result is None
 
 
-def test_suspected_profile_is_not_inferred() -> None:
+def test_hrp_is_not_inferred() -> None:
     result = _correct_fixed(
         VECTOR_6["codex32_peev"],
-        suspected_profile=Profile.MS,
+        hrp="ms",
     )
     assert result is None
-    assert _correct_fixed(VECTOR_1["secret_s"], suspected_profile="ms") is not None
+    assert _correct_fixed(VECTOR_1["secret_s"], hrp="ms") is not None
 
 
 def test_private_book_residue_uses_reverse_index() -> None:
@@ -522,7 +510,7 @@ def test_unmapped_short_locator_roots_are_not_silently_dropped() -> None:
     damaged = (
         "ms10testsqqqsyquyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8varg0jzgfzyvjz2f389q5j52ev9cmlrfhvw53es26"
     )
-    result = _correct_fixed(damaged, suspected_profile=Profile.MS)
+    result = _correct_fixed(damaged, hrp="ms")
     assert result is None
 
 

@@ -1,4 +1,4 @@
-"""Independent profile-length, checksum-boundary, and CL tests."""
+"""Independent master-seed length and checksum-boundary tests."""
 
 import pytest
 from _codex32_oracle import oracle_encode as _oracle_encode
@@ -10,23 +10,17 @@ from data.bip93_vectors import (
     VALID_CODEX32,
     VALID_CODEX32_LONG,
     VECTOR_2,
-    VECTOR_6,
 )
 
-from codex32 import (
-    CoreLightningSecret,
-    MasterSeed,
-    parse_codex32,
-)
+from codex32 import MasterSeed, parse_codex32
 from codex32.bech32 import (
     CHARSET,
     _chars_to_u5,
     bech32_decode,
     bech32_hrp_expand,
 )
-from codex32.bip93 import _checksum_for_encoded_length
+from codex32.bip93 import SEED_BYTE_LENGTHS, TEXT_LENGTHS, _checksum_for_encoded_length
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
-from codex32.correction import _correct_fixed
 from codex32.errors import (
     InvalidCase,
     InvalidCharacter,
@@ -35,7 +29,6 @@ from codex32.errors import (
     InvalidThreshold,
     MissingSeparator,
 )
-from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, TEXT_LENGTHS
 
 
 def _payload(data: bytes, padding: int) -> str:
@@ -123,7 +116,7 @@ def test_checksum_is_verified_before_unknown_hrp_dispatch() -> None:
     valid_generic = _oracle_encode("zz", "0tests" + "q" * 26)
     artifact = parse_codex32(valid_generic)
     assert artifact.hrp == "zz"
-    assert artifact.profile is None
+    assert not isinstance(artifact, MasterSeed)
     with pytest.raises(InvalidChecksum):
         parse_codex32("zz10tests" + "q" * 39)
 
@@ -138,7 +131,7 @@ def test_common_header_is_validated_before_checksum() -> None:
     ("hrp", "payload_length"),
     (("ms", 26), ("cl", 52), ("bip39_12w", 27), ("bip39_24w", 53)),
 )
-def test_checksum_precedes_profile_length(hrp: str, payload_length: int) -> None:
+def test_checksum_precedes_length(hrp: str, payload_length: int) -> None:
     valid = _oracle_encode(hrp, "0tests" + "q" * payload_length)
     with pytest.raises(InvalidChecksum):
         parse_codex32(valid[:-1])
@@ -151,32 +144,11 @@ def test_generic_length_and_checksum_precede_ms_length() -> None:
         parse_codex32("ms10tests" + "q" * 40)
 
 
-def test_valid_profile_length_still_reports_checksum_failure() -> None:
+def test_valid_ms_length_still_reports_checksum_failure() -> None:
     valid = _oracle_encode("ms", "0tests" + "q" * 26)
     damaged = valid[:-1] + ("q" if valid[-1] != "q" else "p")
     with pytest.raises(InvalidChecksum):
         parse_codex32(damaged)
-
-
-def test_core_lightning_constructor_and_parsed_padding() -> None:
-    original = parse_codex32(VECTOR_6["codex32_peev"])
-    assert isinstance(original, CoreLightningSecret)
-    assert original.payload_symbols[-1] & 0xF == 0
-    payload = list(original.payload_symbols)
-    payload[-1] |= 0xF
-    nonzero = _oracle_encode("cl", "0peevs" + "".join(CHARSET[value] for value in payload))
-    parsed = parse_codex32(nonzero)
-    assert isinstance(parsed, CoreLightningSecret)
-    assert parsed.secret_bytes == original.secret_bytes
-
-
-@pytest.mark.parametrize("index", ("a", "s"))
-def test_core_lightning_rejects_shares_and_shared_secrets(index: str) -> None:
-    # Core Lightning imports only threshold-0 HSM secrets, so correction never suggests one.
-    shared = _oracle_encode("cl", f"2test{index}" + "q" * 52)
-    with pytest.raises(InvalidThreshold, match="must be unshared"):
-        parse_codex32(shared)
-    assert _correct_fixed(shared, suspected_profile="cl") is None
 
 
 @pytest.mark.parametrize(

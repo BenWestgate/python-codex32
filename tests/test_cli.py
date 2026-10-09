@@ -17,14 +17,12 @@ from unittest.mock import patch
 import pytest
 from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
-from test_bip39 import BIP39_12W_ZERO
 
 from codex32 import (
     ConfirmationResult,
     CorrectionCandidate,
     CorrectionContext,
     MasterSeed,
-    Profile,
     Secret,
     Share,
     derive_share,
@@ -33,10 +31,10 @@ from codex32 import (
 )
 from codex32._bitcoin_core import BitcoinCore
 from codex32.bech32 import _chars_to_u5, bech32_encode
+from codex32.bip93 import SEED_BYTE_LENGTHS
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
 from codex32.generation import _fingerprint_identifier
-from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
 from tools._wallet_test_vectors import stub_fingerprint
 
 
@@ -231,13 +229,13 @@ def _output_artifacts(result: _Result, profile: str = "ms") -> list[Share | Secr
     return [parse_codex32("".join(line.split())) for line in lines if line.lower().startswith(profile + "1")]
 
 
-def test_check_supports_every_registered_application() -> None:
+def test_check_describes_ms_and_generic_hrps() -> None:
     strings = (
         VECTOR_1["secret_s"],
         VECTOR_3["secret_s"],
         VECTOR_2["share_A"],
         VECTOR_6["codex32_cln2"],
-        BIP39_12W_ZERO,
+        SHARING_VECTORS["bip39_12w"]["S"],
         SHARING_VECTORS["bip39_24w"]["S"],
     )
     result = _invoke(["check"], *strings)
@@ -252,11 +250,15 @@ def test_check_supports_every_registered_application() -> None:
         "Valid Bitcoin master-seed share A.\n"
         "Backup identifier: NAME\n"
         "Shares needed for recovery: 2\n\n"
-        "Valid unshared Core Lightning HSM secret.\n"
+        "Valid unshared codex32 secret.\n"
+        "HRP: CL\n"
         "Backup identifier: CLN2\n\n"
-        "Valid unshared 12-word BIP39 worksheet.\n"
-        "Backup identifier: TEST\n\n"
-        "Valid shared 24-word BIP39 worksheet.\n"
+        "Valid shared codex32 secret.\n"
+        "HRP: BIP39_12W\n"
+        "Backup identifier: TEST\n"
+        "Shares needed for recovery: 2\n\n"
+        "Valid shared codex32 secret.\n"
+        "HRP: BIP39_24W\n"
         "Backup identifier: TEST\n"
         "Shares needed for recovery: 2\n"
     )
@@ -272,14 +274,6 @@ def test_check_supports_every_registered_application() -> None:
         "Identifier:",
     ):
         assert forbidden not in result.stdout
-
-
-@pytest.mark.parametrize("index", ("a", "s"))
-def test_check_rejects_shared_core_lightning_artifacts(index: str) -> None:
-    result = _invoke(["check"], bech32_encode("cl", _chars_to_u5(f"2test{index}" + "q" * 52), _CODEX32))
-
-    assert result.exit_code == 2
-    assert "A Core Lightning HSM secret backup must be unshared, with threshold 0." in result.stderr
 
 
 def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -313,24 +307,9 @@ def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> N
             27,
             ("A Bitcoin master-seed backup must have exactly 48, 54, 61, 67, 74, or 127 characters."),
         ),
-        (
-            "cl",
-            51,
-            ("This input has 73 characters. A Core Lightning HSM secret backup must have exactly 74."),
-        ),
-        (
-            "bip39_12w",
-            26,
-            ("This input has 55 characters. A 12-word BIP39 worksheet backup must have exactly 56."),
-        ),
-        (
-            "bip39_24w",
-            52,
-            ("This input has 81 characters. A 24-word BIP39 worksheet backup must have exactly 82."),
-        ),
     ),
 )
-def test_check_reports_profile_lengths_for_people(hrp: str, payload_length: int, message: str) -> None:
+def test_check_reports_ms_lengths_for_people(hrp: str, payload_length: int, message: str) -> None:
     body = _chars_to_u5("0tests" + "q" * payload_length)
     expanded_body_length = 2 * len(hrp) + 1 + len(body)
     checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
@@ -560,7 +539,7 @@ def test_embedded_correction_schedules_both_mixed_case_interpretations_before_al
     source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
     damaged = "ms10testsxPxxxxxPxxxxxPxxxxxPxxxxxP4nzvca9cmczlw"
 
-    candidates = input_module._suggestions(damaged, "", (Profile.MS,), [])
+    candidates = input_module._suggestions(damaged, "", "ms", [])
 
     assert len(candidates) == 1
     assert candidates[0].artifact.text == source
@@ -949,7 +928,7 @@ def test_tty_subsequent_correction_recases_confirmed_immutable_context(
     assert captured.out.strip() == VECTOR_2["secret_S"].lower()
     assert "Possible correction:\n\nMaster fingerprint: FAB6868A\n\n" in captured.err
     assert input_module._card_text(expected, False) in captured.err
-    assert contexts == [(CorrectionContext(Profile.MS, len(VECTOR_2["share_A"]), prefix, ("a",)),)]
+    assert contexts == [(CorrectionContext("ms", len(VECTOR_2["share_A"]), prefix, ("a",)),)]
 
 
 def test_tty_recovery_accepts_complete_uppercase_and_retries(
@@ -1831,7 +1810,7 @@ def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> 
     from codex32._cli_input import _correction_plan
 
     for observed in range(40, 136):
-        targets = _correction_plan(Profile.MS, None, observed, None)[0]
+        targets = _correction_plan("ms", None, observed, None)[0]
         expected = 48 if observed <= 61 else 74 if observed <= 100 else 127
 
         assert targets[0] == expected
@@ -1867,7 +1846,7 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
 
     removed = _invoke(["correct", "--prefix", "ms"], original)
     damaged_prefix = _invoke(["correct"], "?" + original[1:])
-    bip39 = _invoke(["correct"], BIP39_12W_ZERO)
+    bip39 = _invoke(["correct"], SHARING_VECTORS["bip39_12w"]["S"])
     assert removed.exit_code == 2
     assert "Remove or correct these arguments: --prefix" in removed.stderr
     assert damaged_prefix.exit_code == 3
@@ -2887,7 +2866,7 @@ def test_incomplete_candidate_has_no_search_warning_and_is_never_accepted_automa
     from codex32.correction import _correct_fixed
 
     source = VECTOR_1["secret_s"]
-    candidate = _correct_fixed(source, suspected_profile=Profile.MS)
+    candidate = _correct_fixed(source, hrp="ms")
     assert candidate is not None
     candidate = replace(candidate, search_complete=False)
     with patch("codex32._cli_input._correction_candidates", return_value=((candidate,), False, 0.0)):

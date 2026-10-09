@@ -5,7 +5,7 @@ from itertools import combinations, permutations
 import pytest
 from _codex32_oracle import oracle_encode
 from data.bip93_vectors import VECTOR_2, VECTOR_3
-from data.sharing_vectors import INVALID_BIP39_IMPLIED_SECRET, SHARING_VECTORS
+from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -17,13 +17,11 @@ from codex32 import (
     recover_secret,
 )
 from codex32.bech32 import CHARSET, _u5_to_chars
-from codex32.bip93 import IDX_SORT
+from codex32.bip93 import IDX_SORT, SEED_BYTE_LENGTHS
 from codex32.checksums import _Checksum
 from codex32.errors import (
     DuplicateShareIndex,
     ExistingTargetIndex,
-    InvalidBip39Checksum,
-    InvalidPadding,
     InvalidTargetIndex,
     MismatchedHrp,
     MismatchedIdentifier,
@@ -32,7 +30,6 @@ from codex32.errors import (
     SecretInRecoverySet,
     WrongShareCount,
 )
-from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
 
 
 def _payload_text(artifact: Share | MasterSeed) -> str:
@@ -195,18 +192,6 @@ def test_frozen_profile_sharing_vectors(profile: str) -> None:
     assert recover_secret([a, c]).text == vector["S"]
     assert derive_share([secret, a], "c").text == vector["C"]  # type: ignore[list-item]
     assert derive_share([a, c], "d").text == vector["D"]
-
-
-def test_invalid_implied_bip39_secret_rejects_recovery_and_derivation() -> None:
-    a = parse_codex32(INVALID_BIP39_IMPLIED_SECRET["A"])
-    c = parse_codex32(INVALID_BIP39_IMPLIED_SECRET["C"])
-    assert isinstance(a, Share) and isinstance(c, Share)
-    for operation in (
-        lambda: recover_secret([a, c]),
-        lambda: derive_share([a, c], "d"),
-    ):
-        with pytest.raises((InvalidPadding, InvalidBip39Checksum)):
-            operation()
 
 
 @given(st.sampled_from(SEED_BYTE_LENGTHS), st.booleans())

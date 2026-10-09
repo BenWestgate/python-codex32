@@ -9,7 +9,6 @@ from codex32 import (
     CorrectionContext,
     CreationCeremony,
     MasterSeed,
-    Profile,
     correct,
     derive_share,
     master_xprv,
@@ -39,7 +38,7 @@ def main() -> None:
     assert recover_secret(shares) == generated
     assert derive_share(shares, "d").header.index == "d"
     damaged = shares[0].text[:-1] + "?"
-    assert correct(CorrectionContext(Profile.MS), damaged)
+    assert correct(CorrectionContext("ms"), damaged)
 
     secret = parse_codex32(_SECRET)
     assert isinstance(secret, MasterSeed)

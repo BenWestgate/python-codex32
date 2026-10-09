@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from codex32 import CorrectionContext, Profile, correct, parse_codex32, recover_secret
+from codex32 import CorrectionContext, correct, parse_codex32, recover_secret
 from codex32._cli_parser import parser
 from codex32.errors import CodexError
 
@@ -28,7 +28,7 @@ def test_malformed_interpolation_corpus(case: dict[str, object]) -> None:
 
 @pytest.mark.parametrize("case", _DOCUMENT["correction"], ids=lambda case: case["id"])
 def test_malformed_correction_corpus(case: dict[str, str]) -> None:
-    assert correct(CorrectionContext(Profile(case["profile"])), case["text"]) == ()
+    assert correct(CorrectionContext(case["profile"]), case["text"]) == ()
 
 
 @pytest.mark.parametrize("case", _DOCUMENT["cli_tokens"], ids=lambda case: case["id"])

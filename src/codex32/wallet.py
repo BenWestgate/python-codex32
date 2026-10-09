@@ -1,7 +1,7 @@
 """Bitcoin wallet interoperability for validated master seeds."""
 
 from codex32._bip32 import _master_xprv_from_seed
-from codex32.profiles.ms32 import MasterSeed
+from codex32.bip93 import MasterSeed
 
 
 def master_xprv(secret: MasterSeed, *, testnet: bool = False) -> str:
