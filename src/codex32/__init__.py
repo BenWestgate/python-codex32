@@ -13,6 +13,7 @@ from .profiles import Profile
 from .profiles.bip39 import Bip39Secret
 from .profiles.cl32 import CoreLightningSecret
 from .profiles.ms32 import MasterSeed
+from .wallet import master_xprv
 
 __all__ = [
     "Bip39Secret",
@@ -25,6 +26,7 @@ __all__ = [
     "Secret",
     "Share",
     "derive_share",
+    "master_xprv",
     "parse_codex32",
     "recover_secret",
 ]
