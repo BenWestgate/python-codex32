@@ -314,6 +314,42 @@ Maximize the terminal and reduce its font size if a QR does not fit. Keep `qr`
 connected to the terminal; redirecting its output creates an image file. Only
 public descriptors, xpubs, and PSBTs may cross the offline boundary by QR.
 
+## Common questions
+
+**Why is the master fingerprint on the wallet record and not on the cards?**
+On a card, it would let anyone holding one card fewer than the threshold test
+guesses for the seed. Without it, those cards reveal nothing about the seed.
+Shared cards use a random identifier for the same reason. A record stored apart
+from the cards is also an independent check when you restore.
+
+**Why does restore ask me to type the fingerprint?**
+A mistaken correction, a card from another backup, or a typo in a hex seed each
+produce a valid wallet that your cards can't recover. Typing the fingerprint
+from the record makes codex32 compare all eight characters before Bitcoin Core
+is changed, and that needs the record in hand. With no record, press Enter:
+codex32 shows the fingerprint with a warning and asks before restoring.
+
+**How do I know how long a string is while typing it?**
+Neither `ms1` nor the header says. A Bitcoin master seed is 48, 54, 61, 67, 74
+or 127 characters. Most are 48, which is 12 groups of four and fits the
+[standard card](recovery-card.html). 256-bit seeds are 74, which is 19 groups
+with two characters in the last and fits the [256-bit card](recovery-card-256.html).
+54, 61, 67 and 127-character backups have no printable card yet. The first
+string you enter sets the length for the rest.
+
+**Which share indices do I get, and what is `S`?**
+`ms32 create 2` chooses random share indices by default; use `--indices` to
+choose specific ones. Shared creation never shows `S`, the secret itself.
+`ms32 create` with no threshold writes one unshared secret card, and
+`ms32 secret` rebuilds the secret from shares. Each run without `--existing`
+makes a new seed. Shared backups use a random identifier unless you specify
+one. For an unshared backup, the default identifier comes from the first 20
+bits of the BIP32 master fingerprint.
+
+**Does letter case matter?**
+A codex32 string is all uppercase or all lowercase, and mixing them makes it
+invalid. Either case gives the same seed and fingerprint.
+
 ## Technical references
 
 Automation, low-level private exports, parser behavior, correction mathematics,
