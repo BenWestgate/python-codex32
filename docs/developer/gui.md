@@ -28,12 +28,13 @@ without a display and run in ordinary CI. `tools/gui_walkthrough.py` drives the
 real widgets through every task under a throwaway X server and is the cheapest
 way to see the screens without a desktop.
 
-The package carries its own budget of 2,000 logical lines, separate from the
+The package carries its own budget of 2,050 logical lines, separate from the
 5,000 the installed library keeps, and `tests/test_gui_boundaries.py` enforces
 it. The plan proposed 1,000 before the screens were written and the budget was
 1,800 before the security review of 2026-09-19; that review's remediations are
 about 250 lines, and the rest of the difference is user-facing wording in
-`pages.py`, which is the first priority this program was built for.
+`pages.py`, which is the first priority this program was built for. It was
+2,000 until the **Before you start** page and handwriting key of 2026-10-03.
 
 ## Claims, and how to check each one
 
@@ -43,7 +44,10 @@ about 250 lines, and the rest of the difference is user-facing wording in
    `hashlib`, or `hmac`. Entropy belongs to `CreationCeremony`.
 2. **No network.** Nothing imports `socket`, `ssl`, `urllib`, or `http`, and no
    module imports `subprocess`. The only child process is the `bitcoin-cli` the
-   library already starts.
+   library already starts. Separately, `_ready_page` may ask the desktop to open
+   a bundled blank form with `Gtk.FileLauncher`; it is the only caller. It
+   passes a path under `codex32_gui/forms/`, or under `CODEX32_FORMS_DIR` when a
+   launcher has copied the forms where a confined browser can read them.
 3. **Nothing reaches disk.** Nothing imports `os`, `pathlib`, `io`, `tempfile`,
    `shutil`, `pickle`, `sqlite3`, or `logging`, and nothing calls `open`. There
    is no settings file, no recent list, no log, and no clipboard write.
