@@ -71,6 +71,7 @@ You will need:
 
 Before running `create` for a real wallet, have your blank cards, a pen, and
 wallet record ready, and choose separate trusted places for shared cards.
+When handwriting recovery text, follow the card legend: stroke S, slash 0, cross Z and 7, and give 5 a flat top; O, I, and B are not codex32 characters.
 If you want to try the process first, use the signet practice setup below.
 
 Run Bitcoin Core before starting. If practical, disconnect the computer from
