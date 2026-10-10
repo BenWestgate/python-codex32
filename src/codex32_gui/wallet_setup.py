@@ -1,16 +1,7 @@
-"""Every Bitcoin Core interaction this program performs, including the passphrase.
+"""The GUI's declared Core passphrase boundary (security invariant 9).
 
-`docs/security/invariants.md` invariant 9 states that codex32 has no passphrase
-channel, and the library still has none: it tells the operator to unlock the
-wallet in Bitcoin-Qt. The graphical program declares one deliberate exception,
-confined to this file, because a person who has just written three cards by hand
-should not have to open a second application and type a console command.
-
-The passphrase reaches `bitcoin-cli` through `-stdinwalletpassphrase` and
-`-stdin`, never through a command argument, so it is absent from `/proc` and
-`ps`. It is never stored, never logged, and never written to disk. Import and
-verification remain the library's `BitcoinCore.initialize`, and `fill` holds a
-`finally`-protected obligation to lock again any wallet this file unlocked.
+Passphrases use bitcoin-cli stdin, never arguments or disk; fill relocks on exit.
+Core owns startup loading. Return its creation warnings for display.
 """
 
 from __future__ import annotations
@@ -32,8 +23,11 @@ from codex32._bitcoin_core import (
     FingerprintMismatch,
     identifier_note,
     identifier_origin,
+    parse_creation_date,
     parse_fingerprint,
 )
+
+Timestamp = int | Literal["now"]
 
 __all__ = [
     "NO_RECORD_WARNING",
@@ -52,6 +46,7 @@ __all__ = [
     "identity",
     "initialize",
     "network",
+    "parse_creation_date",
     "parse_fingerprint",
     "relock",
     "require_unlocked",
@@ -146,7 +141,7 @@ def connect(chain: str | None = None) -> BitcoinCore:
 
 def network(core: BitcoinCore) -> str:
     """Return the chain this connection selected, named the way the operator chose it."""
-    return dict(_CHAINS).get(core.chain, core.chain)
+    return dict(c[:2] for c in _CHAINS).get(core.chain, core.chain)
 
 
 def fingerprint(core: BitcoinCore, secret: MasterSeed) -> str:
@@ -160,9 +155,10 @@ def identity(core: BitcoinCore, secret: MasterSeed) -> tuple[str, str]:
     return fingerprint.hex(), identifier_note(identifier_origin(secret, fingerprint))
 
 
-def verify(core: BitcoinCore, secret: MasterSeed, expected: bytes | None) -> None:
-    """Refuse a seed that is not the recorded wallet before any wallet is listed or touched."""
+def verify(core: BitcoinCore, secret: MasterSeed, expected: bytes | None, start: Timestamp) -> None:
+    """Refuse a seed that is not the recorded wallet, or pruned history, before any wallet is touched."""
     core.verify_identity(secret, expected)
+    core.check_history(start)
 
 
 def fingerprint_provider(core: BitcoinCore) -> Callable[[bytes], bytes]:
@@ -217,21 +213,31 @@ def _passphrase(passphrase: str) -> str:
     return passphrase
 
 
-def create(core: BitcoinCore, name: str, passphrase: str) -> None:
-    """Create one blank descriptor wallet with private keys enabled, and nothing else."""
+def create(core: BitcoinCore, name: str, passphrase: str) -> tuple[str, ...]:
+    """Create one blank descriptor wallet and return Core's warnings for the operator."""
+    # Let Core persist startup loading so the wallet follows new blocks.
     arguments = [f"wallet_name={_wallet_name(name)}", "disable_private_keys=false", "blank=true"]
+    arguments.append("load_on_startup=true")
     if passphrase:
         arguments.append(f"passphrase={_passphrase(passphrase)}")
     try:
-        core._rpc("-named", "createwallet", stdin="\n".join(arguments) + "\n")
+        created = core._rpc("-named", "createwallet", stdin="\n".join(arguments) + "\n")
     except UnicodeEncodeError:
         raise BitcoinCoreError(_UNSENDABLE) from None
     except BitcoinCoreError as error:
         raise BitcoinCoreError(
             "Bitcoin Core would not create a wallet with that name. A wallet of that name may exist already."
         ) from error
-    if core._target(name) is None:
-        raise BitcoinCoreError("Bitcoin Core did not create an empty wallet that codex32 can fill.")
+    notes = created.get("warnings", []) if isinstance(created, dict) else None
+    if (
+        not isinstance(created, dict)
+        or created.get("name") != name
+        or core._target(name) is None
+        or type(notes) is not list
+        or any(type(w) is not str for w in notes)
+    ):
+        raise BitcoinCoreError("Bitcoin Core did not return an empty wallet and its warnings.")
+    return tuple(notes)
 
 
 def relock(core: BitcoinCore, name: str) -> None:
@@ -320,7 +326,7 @@ def fill(
     """
     if not passphrase:
         return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)
-    verify(core, secret, expected)
+    verify(core, secret, expected, timestamp)
     unlock(core, name, passphrase)
     try:
         return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)

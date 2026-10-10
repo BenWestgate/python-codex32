@@ -76,8 +76,9 @@ _RESTORED = (
     "Check each of these against your wallet record. They should all match.",
     (
         "If the master fingerprint is not the one on your record, these cards do not belong to that "
-        "wallet: stop, and do not send anything to it. Bitcoin Core is now scanning the chain from "
-        "the beginning, so your balance and history are not complete until it has finished."
+        "wallet: stop, and do not send anything to it. Bitcoin Core scans from the creation date you "
+        "supplied, or from the beginning if you left it blank. Earlier payments can be missed if the "
+        "date was too late. Let Core finish syncing, then check your balance and past payments."
     ),
 )
 CARDS_SAFE = (
@@ -870,17 +871,19 @@ def _new_wallet_page(
         chosen = name.get_text().strip()
         page = _working(view, "Bitcoin Core", "Creating the wallet and writing your keys into it…")
 
-        def job() -> Record:
+        def job() -> tuple[Record, tuple[str, ...]]:
             if restoring:
-                wallet_setup.verify(core, secret, expected)
-            wallet_setup.create(core, chosen, passphrase)
-            return _record(core, secret, chosen, timestamp, expected, passphrase)
+                wallet_setup.verify(core, secret, expected, timestamp)
+            warnings = wallet_setup.create(core, chosen, passphrase)
+            return _record(core, secret, chosen, timestamp, expected, passphrase), warnings
 
         work.run(
             view,
             page,
             job,
-            _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE),
+            _then(
+                view, page, lambda result: _finished_page(view, result[0], restoring, result[1]), CARDS_SAFE
+            ),
         )
 
     def go() -> None:
@@ -1065,13 +1068,16 @@ def _fingerprint_page(
 ) -> Adw.NavigationPage:
     """Take the master fingerprint from the wallet record. The library refuses a mismatch."""
     entered = Adw.EntryRow(title="Master fingerprint from your wallet record")
+    dated = Adw.EntryRow(title="Approximate creation date from the record, as YYYY-MM-DD")
     group = Adw.PreferencesGroup()
-    group.add(entered)
+    for row in (entered, dated) if restoring else (entered,):
+        group.add(row)
     status = _note(problem, "error" if problem else "")
 
     def go() -> None:
         try:
             expected = wallet_setup.parse_fingerprint(entered.get_text())
+            start = wallet_setup.parse_creation_date(dated.get_text()) if restoring else timestamp
         except ValueError as error:
             _say(status, str(error), "error")
             return
@@ -1079,15 +1085,15 @@ def _fingerprint_page(
 
         def job() -> str:
             try:
-                wallet_setup.verify(core, secret, expected)
-            except wallet_setup.FingerprintMismatch as error:
+                wallet_setup.verify(core, secret, expected, start)
+            except wallet_setup.BitcoinCoreError as error:
                 return str(error)
             return ""
 
         def follow(mismatch: str) -> Adw.NavigationPage | None:
             if mismatch:
                 return _fingerprint_page(view, core, secret, timestamp, restoring=restoring, problem=mismatch)
-            _wallets(view, core, secret, timestamp, expected, restoring=restoring)
+            _wallets(view, core, secret, start, expected, restoring=restoring)
             return None
 
         work.run(view, page, job, _then(view, page, follow, CARDS_SAFE))
@@ -1135,14 +1141,10 @@ def _import(
     )
 
 
-def _finished_page(view: Adw.NavigationView, record: Record, restoring: bool = False) -> Adw.NavigationPage:
-    """Show the wallet-identity fields.
-
-    A new wallet's are copied onto the wallet record. A restored wallet's are the
-    final accident-safety checks that the cards just entered match the recorded
-    wallet, so they are checked against the record instead, and no creation date is offered: the one this
-    wallet was born with is on the record already, and today's would replace it.
-    """
+def _finished_page(
+    view: Adw.NavigationView, record: Record, restoring: bool = False, warnings: tuple[str, ...] = ()
+) -> Adw.NavigationPage:
+    """Show identity and Core warnings; only new wallets get a date to record."""
     heading, asked, closing = _RESTORED if restoring else _CREATED
     dated = () if restoring else (("Approximate creation date", time.strftime("%Y-%m-%d")),)
     content = _column(
@@ -1160,6 +1162,7 @@ def _finished_page(view: Adw.NavigationView, record: Record, restoring: bool = F
             ),
         ),
         _note(closing, "warning" if restoring else ""),
+        *(_note(warning, "warning") for warning in warnings),
     )
     return _page(
         "Finished",
