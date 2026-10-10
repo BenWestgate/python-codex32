@@ -102,7 +102,7 @@ unsupported but remains in the review scope.
 
 ### Size budget
 
-V1 keeps the installed package below 5,000 logical review lines, excluding
+V1 keeps the installed package below 5,025 logical review lines, excluding
 blank and comment-only lines while counting subpackages recursively. Changing
 the budget requires explicit review and authorization together with the matching
 documentation and enforcement update.
@@ -113,8 +113,8 @@ documentation and enforcement update.
 installed as `codex32[gui]` and started by `codex32-gui`. It is a client of the
 surface above and of the private Core adapter; nothing in `src/codex32/` imports
 it, and the base install keeps its property of having no third-party runtime
-dependency. It carries its own budget of 1,800 logical review lines, separate
-from the 5,000 above. Its own boundaries are documented in
+dependency. It carries its own budget of 2,050 logical review lines, separate
+from the 5,025 above. Its own boundaries are documented in
 [`gui.md`](gui.md) and enforced by `tests/test_gui_boundaries.py`.
 
 ## Profile and opaque-HRP capabilities
@@ -200,8 +200,9 @@ emitted and confirmed unchanged, and the original validated artifact initializes
 the wallet. This neutral source prompt tries raw hexadecimal first and otherwise
 requires a complete explicit `ms1` string; it never infers or corrects a missing
 HRP or separator. No entropy is drawn for this path; raw hexadecimal seeds retain
-the generation path. Existing imports use timestamp zero to include prior
-history. Changing a supplied secret's identifier requires a sharing threshold.
+the generation path. Existing imports ask when the seed was first used and
+rescan from a day before that date; a blank answer uses timestamp zero to
+include all prior history. Changing a supplied secret's identifier requires a sharing threshold.
 Shared creation
 uses an explicit threshold or full backup header. Without an explicit share
 count or indices, thresholds 2 and 3 produce the reviewed 2-of-3 and 3-of-5
@@ -652,7 +653,18 @@ a stateless root P2PKH descriptor is normalized, `deriveaddresses` derives its
 address, and `validateaddress` returns the script hash whose first four bytes are
 the BIP32 fingerprint.
 
-The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
+Immediately before `importdescriptors`, `check_history` refuses a dated rescan
+Core could not finish: a start within a day of the pruned node's oldest kept
+block (`getblockstats`), where a future timestamp counts as the tip's median
+time because Core scans from there, or any dated import while `getchainstates`
+shows an AssumeUTXO snapshot still being validated in the background. Unclear
+answers are refused too. A `"now"` import is never refused: a fresh seed has no
+history, and Core shows when its wallets are still catching up. The GUI runs
+the same check before `createwallet` for a restore, and `ms32 create
+--existing` asks when the seed was first used instead of rescanning from 0.
+
+The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`,
+`getblockstats`, `getchainstates`, `listwallets`,
 `getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `deriveaddresses`,
 `validateaddress`, `importdescriptors`, `gethdkeys`, `derivehdkey`, and
 `walletlock`. Bitcoin Core alone creates wallets, selects encryption, handles

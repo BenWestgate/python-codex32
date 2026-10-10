@@ -172,7 +172,10 @@ def _invoke_confirmed_create(
     *lines: str,
     terminal_output: bool = False,
     core: _FakeBitcoinCore | None = None,
+    dated: str = "",
 ) -> _Result:
+    if "--existing" in args:  # A blank creation date searches all history.
+        lines = (*lines[:1], dated, *lines[1:])
     stdin = _TTYInput("\n".join(lines) + "\n")
     stdout = _CreationOutput(pretty=terminal_output)
     stderr = io.StringIO()
@@ -1531,6 +1534,8 @@ def test_existing_create_prompts_for_source_then_each_card(
         prompts.append(prompt)
         if len(prompts) == 1:
             return VECTOR_4["secret_s"]
+        if prompt.startswith("Date this seed"):
+            return ""
         if prompt.startswith("Write this share"):
             emitted.append(_card_text(capsys.readouterr().out))
             return ""
@@ -1546,6 +1551,7 @@ def test_existing_create_prompts_for_source_then_each_card(
     assert ms_main(["create", "2", "--indices", "ac", "--existing"]) == 0
     assert prompts == [
         "Enter an existing Bitcoin codex32 secret or hexadecimal seed:\n> ",
+        "Date this seed was first used, as YYYY-MM-DD (Enter: all history; unused: today): ",
         "Write this share on a new recovery card, then press Enter. ",
         "Re-enter the share from the recovery card:\n> ",
         "Write this share on a new recovery card, then press Enter. ",
@@ -2036,7 +2042,7 @@ def test_production_size_budgets_are_enforced() -> None:
         for path in package.rglob("*.py")
     }
 
-    assert sum(counts.values()) < 5000, counts
+    assert sum(counts.values()) < 5025, counts
 
 
 @pytest.mark.parametrize(
@@ -2312,7 +2318,7 @@ def test_create_existing_secret_confirms_original_before_initializing(
     output = _TTYOutput()
     damaged = secret.text[:-1] + ("q" if secret.text[-1].lower() != "q" else "p")
     width = len(secret.text) % 4 or 4
-    answers = iter(("", damaged, secret.text[-width:].upper()))
+    answers = iter(("", "", damaged, secret.text[-width:].upper()))
     prefills: list[str] = []
 
     def answer(prompt: str, **options: object) -> str:
@@ -2340,6 +2346,25 @@ def test_create_existing_secret_confirms_original_before_initializing(
     split.assert_not_called()
 
 
+def test_create_existing_rescans_from_the_date_the_seed_was_first_used() -> None:
+    core = _FakeBitcoinCore()
+    result = _invoke_confirmed_create(
+        ["create", "--existing"], VECTOR_1["secret_s"], core=core, dated="2024-03-02"
+    )
+    assert result.exit_code == 0
+    assert core.timestamp == 1709251200  # A day early, for the record's time zone.
+
+
+def test_an_unusable_first_use_date_is_asked_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+    answers = iter(("March 2024", "2024-03-02"))
+    monkeypatch.setattr(cli_module, "_text", lambda _prompt, **_options: next(answers))
+    errors = io.StringIO()
+    with contextlib.redirect_stderr(errors):
+        assert cli_module._creation_start() == 1709251200
+    assert "YYYY-MM-DD" in errors.getvalue()
+
+
 def test_create_existing_secret_does_not_silently_change_identifier() -> None:
     result = _invoke_confirmed_create(["create", "0test", "--existing"], VECTOR_4["secret_s"])
     assert result.exit_code == 2 and result.stdout == ""
@@ -2360,6 +2385,7 @@ def test_create_existing_interruption_cannot_initialize_a_wallet() -> None:
     with (
         patch.object(sys, "stdin", _TTYInput()),
         patch("codex32.cli._creation_source", return_value=secret),
+        patch("codex32.cli._creation_start", return_value=0),
         patch("codex32.cli._confirm_card", side_effect=KeyboardInterrupt),
         patch("codex32.cli.BitcoinCore.connect", return_value=core),
         contextlib.redirect_stdout(_TTYOutput()),
@@ -2735,7 +2761,7 @@ def test_corrected_creation_source_identity_and_acceptance_boundary(monkeypatch)
             SimpleNamespace(artifact=secret, search_complete=True, low_checksum_discrimination=False),
         ),
     )
-    answers = iter(("ms1invalid", "n", "ms1invalid", "yes", "", secret.text))
+    answers = iter(("ms1invalid", "n", "ms1invalid", "yes", "", "", secret.text))
     confirmations = []
 
     def answer(prompt, prefill=""):

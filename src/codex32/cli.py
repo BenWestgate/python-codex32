@@ -15,6 +15,7 @@ from codex32._bitcoin_core import (
     FingerprintMismatch,
     identifier_note,
     identifier_origin,
+    parse_creation_date,
     parse_fingerprint,
 )
 from codex32._cli_input import (
@@ -69,6 +70,7 @@ class _CliContext(NamedTuple):
 
 _GENERIC = _CliContext("codex32", False, None, "")
 _MASTER_SEED = _CliContext("ms32", True, (Profile.MS,), "MS1")
+_FIRST_USED = "Date this seed was first used, as YYYY-MM-DD (Enter: all history; unused: today)"
 
 
 class _CommandError(Exception):
@@ -357,6 +359,15 @@ def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
     return _text("Restore without a wallet record? [y/N]", optional=True).lower() in ("y", "yes")
 
 
+def _creation_start() -> int:
+    """Ask when an existing seed was first used, so a pruned node rescans only what it still has."""
+    while True:
+        try:
+            return parse_creation_date(_text(_FIRST_USED, optional=True))
+        except ValueError as error:
+            _print(str(error), err=True)
+
+
 def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed) -> bytes | None:
     """Take the master fingerprint from a recovery record until the library accepts it."""
     prompt = "Type the master fingerprint from your wallet record (Enter if none)"
@@ -486,6 +497,7 @@ def _create(
         raise _UsageError("Use --existing when supplying a seed or secret.")
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
+    start: int | Literal["now"] = _creation_start() if existing else "now"
     try:
         if threshold == 0:
             if isinstance(source, MasterSeed):
@@ -499,11 +511,7 @@ def _create(
             _emit(secret, False, fingerprint=core.fingerprint)
             if sys.stdin.isatty():
                 _confirm_card(secret)
-            return (
-                _initialize_wallet(core, secret, timestamp=0 if existing else "now", fresh=not existing)
-                if core is not None
-                else 0
-            )
+            return _initialize_wallet(core, secret, timestamp=start, fresh=not existing)
         if isinstance(source, MasterSeed):
             ceremony = CreationCeremony.from_secret(
                 source,
@@ -541,10 +549,7 @@ def _create(
         _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
     finished = ceremony.finish()
     assert isinstance(finished, MasterSeed)
-    if core is not None:
-        return _initialize_wallet(core, finished, timestamp=0 if existing else "now", fresh=not existing)
-    _print("\nEvery recovery card was confirmed from its re-entered text.", err=True)
-    return 0
+    return _initialize_wallet(core, finished, timestamp=start, fresh=not existing)
 
 
 def _correct(

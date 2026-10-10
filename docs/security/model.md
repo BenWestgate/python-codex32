@@ -256,7 +256,7 @@ Core adapter.
 | Departure | Required behavior |
 |---|---|
 | Passphrase | The operator may supply a Bitcoin Core wallet passphrase. It reaches `bitcoin-cli` through `-stdinwalletpassphrase`, never through an argument, so it is absent from `/proc` and process listings. It is not stored, not logged, and not written to disk, and a passphrase containing a line break is refused rather than truncated. A passphrase this computer's locale would encode as something other than what Bitcoin-Qt sends is refused, so no half-encoded secret reaches a screen or a traceback. The screen keeps the command line's behavior as an alternative: the operator may unlock in Bitcoin-Qt instead, and the program then only rechecks wallet state. |
-| Wallet creation | `createwallet` may be issued once, with `wallet_name`, `disable_private_keys=false`, `blank=true`, and a `passphrase` only when one was given. No other option is sent, and the resulting wallet must pass the same eligibility test as any other destination before it is used. Names are restricted to printable text without leading or trailing spaces, and may not contain a slash or be `.` or `..`, so a name can neither span the one-argument-per-line channel nor describe a path. |
+| Wallet creation | `createwallet` may be issued once, with `wallet_name`, `disable_private_keys=false`, `blank=true`, `load_on_startup=true`, and a `passphrase` only when one was given. No other option is sent. `load_on_startup` makes Bitcoin Core, not codex32, persist startup loading in its own settings so the wallet can follow new blocks after restart. Core creation warnings, including a failed startup-setting save, are displayed to the operator on the finished page; codex32 adds no second startup-loading or quarantine policy. The resulting wallet must pass the same eligibility test as any other destination before it is used. Names are restricted to printable text without leading or trailing spaces, and may not contain a slash or be `.` or `..`, so a name can neither span the one-argument-per-line channel nor describe a path. |
 | Relocking | Every wallet this program unlocks carries a `finally`-protected obligation of its own, in `wallet_setup.fill`, that requests `walletlock` and verifies `unlocked_until` is zero. The library's obligation is armed only after it has chosen a wallet, so a refusal raised before that point would otherwise leave an unlocked wallet open until Bitcoin Core's own timeout. Worker threads are not daemons, so closing the window during an import runs both obligations rather than skipping them. |
 
 Destination selection is unchanged and is not delegated to prompt wording. The
@@ -278,7 +278,12 @@ fingerprint, the identifier result, and the warning before the operator chooses.
 
 The program draws no entropy, opens no socket, starts no process of its own, and
 writes no file: no settings, no recent list, no log, and no clipboard write of
-recovery text. Entered recovery text is cleared when its screen is left, subject
+recovery text. One button pair is the exception to "no process": **Before you
+start** can ask the desktop, through GTK's `FileLauncher`, to open one of the two
+blank printable forms shipped in `codex32_gui/forms/`. The desktop chooses and
+starts the viewer. Only those forms are passed, never recovery text, and this
+happens before any seed is drawn. A launcher may set `CODEX32_FORMS_DIR` to a
+copy of the forms that a confined browser can read; Bails does this on Tails. Entered recovery text is cleared when its screen is left, subject
 to the zeroization limitation above.
 
 Two disclosure channels belong to the toolkit rather than to this program, and

@@ -42,8 +42,10 @@ and evidence.
    `codex32_gui/wallet_setup.py`, which is also the only module there that
    speaks to Bitcoin Core: it may send an operator-supplied passphrase to
    `bitcoin-cli` on standard input to unlock a wallet, may create one blank
-   descriptor wallet with a fixed set of arguments and no options, and may
-   request `walletlock`. It stores no passphrase and writes nothing to disk.
+   descriptor wallet with a fixed set of arguments and no options (one of them,
+   `load_on_startup=true`, has Bitcoin Core itself keep the wallet loaded at
+   every start), and may request `walletlock`. It stores no passphrase and
+   writes nothing to disk.
    An unlocked encrypted signer is relocked and verified on every exit path: by
    the library, unchanged, and additionally by a `finally`-protected obligation
    covering every wallet the graphical program itself unlocked. No window may
