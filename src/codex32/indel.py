@@ -552,7 +552,6 @@ def _search_many(
     damaged_text: str,
     *,
     primary: frozenset[int],
-    reduced: frozenset[int] = frozenset(),
     deadline: float | None = None,
     max_character_depth: int = 4,
     competitors: bool = False,

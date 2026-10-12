@@ -108,7 +108,6 @@ def benchmark_cross_length(observed_length: int, *, unknown: bool = False) -> di
         contexts,
         damaged,
         primary=frozenset((48, 74, 127)),
-        reduced=frozenset() if unknown else frozenset((54, 61, 67)),
     )
     seconds = perf_counter() - started
     if not complete or candidates:
