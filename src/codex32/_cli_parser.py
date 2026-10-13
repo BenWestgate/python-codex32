@@ -183,6 +183,14 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         help="use an existing Bitcoin codex32 secret or hexadecimal seed",
     )
 
+    checksum = _command(commands, "checksum", "generate the checksum for a new Codex32 Book worksheet")
+    checksum.description = (
+        "Generate the checksum for new data on a Codex32 Book checksum worksheet. "
+        "Never use it on an existing backup: use check or correct. "
+        "Requires an interactive terminal and two matching entries."
+    )
+    _terminal_output(checksum)
+
     wallet = _command(commands, "wallet", "restore a Bitcoin Core wallet")
     _wallet_options(wallet)
 

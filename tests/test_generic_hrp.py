@@ -122,6 +122,7 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
         "    share     derive a share from codex32 strings\n"
         "    correct   suggest repairs for a damaged codex32 string\n"
         "    create    create or confirm a backup, or split an existing secret\n"
+        "    checksum  generate the checksum for a new Codex32 Book worksheet\n"
         "    wallet    restore a Bitcoin Core wallet\n"
         "    xprv      export the root extended private key\n\n"
         "Never include a secret or share in command arguments.\n"
@@ -129,9 +130,8 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
     )
     for command in ("check", "correct", "secret", "share"):
         assert command in generic_help and command in ms_help
-    for command in ("create", "xprv", "wallet"):
+    for command in ("create", "checksum", "xprv", "wallet"):
         assert command not in generic_help and command in ms_help
-    assert "checksum" not in generic_help and "checksum" not in ms_help
     correct_help = _invoke(main, ["correct", "--help"])[1]
     assert (
         "Suggest repairs for wrong, unreadable, missing, extra, or swapped characters\n"
