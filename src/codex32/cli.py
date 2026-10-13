@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable, Sequence
+from functools import partial
 from typing import Literal, NamedTuple, cast
 
 from codex32._bitcoin_core import (
@@ -23,7 +24,6 @@ from codex32._cli_input import (
     _card_text,
     _confirm_correction,
     _corrections,
-    _entered_groups,
     _fingerprint_matcher,
     _render_groups,
     _require_correction_confirmation,
@@ -55,6 +55,7 @@ from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 from codex32.generation import (
     ConfirmationResult,
     CreationCeremony,
+    _confirmation,
     generate_master_seed,
 )
 from codex32.wallet import master_xprv
@@ -274,10 +275,13 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
         preserve_groups=True,
     )
     expected = artifact.text
-    groups, changed = _entered_groups(entered, expected)
-    while changed:
-        start = min(changed)
-        end = start + 1
+    confirm = confirm or partial(_confirmation, expected=expected)
+    result = confirm(entered)
+    groups, changed = list(result.entered_groups), {group - 1 for group in result.mismatched_groups}
+    while not result.accepted:
+        if not changed:
+            raise RuntimeError("Confirmation rejected.")
+        start = end = min(changed)
         while end in changed:
             end += 1
         _print(_render_groups(groups, changed, len(expected), range(start, end)), err=True)
@@ -293,26 +297,20 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
         )
         compact = "".join(replacement.split())
         if compact.lower() == expected.lower():
-            groups = [replacement]
-            break
-        if len(compact) > len(expected[start * 4 : end * 4]) and compact.lower().startswith(
+            groups, changed = [replacement], set()
+        elif len(compact) > len(expected[start * 4 : end * 4]) and compact.lower().startswith(
             (expected.split("1", 1)[0] + "1").lower()
         ):
-            _print(
-                "Please re-enter only the highlighted region that remains incorrect.",
-                err=True,
-            )
+            _print("Please re-enter only the highlighted region that remains incorrect.", err=True)
             continue
-        if not compact:
-            continue
-        groups[start:end], remaining = _entered_groups(replacement, expected[start * 4 : end * 4])
-        changed.difference_update(range(start, end))
-        changed.update(start + i for i in remaining)
-    entered = "".join(groups)
-    if "".join(entered.split()).lower() != expected.lower():
-        raise RuntimeError("Confirmation mismatch.")
-    if confirm is not None and not confirm(entered).accepted:
-        raise RuntimeError("Confirmation rejected.")
+        elif compact:
+            # Align a retry only within its region so confirmed neighbors never shift.
+            region = _confirmation(replacement, expected[start * 4 : end * 4])
+            groups[start:end] = region.entered_groups
+            changed.difference_update(range(start, end))
+            changed.update(start + group - 1 for group in region.mismatched_groups)
+        if not changed:
+            result = confirm("".join(groups))
 
 
 def _show_fingerprint(core: BitcoinCore, secret: MasterSeed, action: str) -> None:
