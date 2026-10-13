@@ -229,6 +229,10 @@ def test_confirmation_gates_each_entropy_draw_and_reports_groups(
     damaged = first.text[:4] + ("q" if first.text[4] != "q" else "p") + first.text[5:]
     result = ceremony.confirm(damaged)
     assert not result.accepted and result.mismatched_groups == (2,)
+    dropped = ceremony.confirm(first.text[:9] + first.text[10:])
+    # A dropped character marks only its own group, not every later group.
+    assert not dropped.accepted and dropped.mismatched_groups == (3,)
+    assert "".join(dropped.entered_groups) == first.text[:9] + first.text[10:]
     assert calls == [26]
     assert ceremony.confirm(" \n".join(first.text.upper())).accepted
     second = ceremony.next_share()
