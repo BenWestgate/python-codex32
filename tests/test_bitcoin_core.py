@@ -876,8 +876,9 @@ class _EntropyRPC:
         if method == self.fail:
             raise BitcoinCoreError("Bitcoin Core rejected the requested wallet operation.")
         if method == "createwallet":
-            assert arguments[:2] == ("-named", "createwallet") and arguments[2].startswith("wallet_name=/")
-            open(arguments[2].removeprefix("wallet_name="), "w").close()
+            path = arguments[2].removeprefix("wallet_name=")
+            assert arguments[:2] == ("-named", "createwallet") and os.path.isabs(path)
+            open(path, "w").close()
         if method == "addhdkey":
             self.keys.append({"xpub": f"xpub{len(self.keys)}", "xprv": f"xprv{len(self.keys)}"})
             return {"xpub": self.keys[-1]["xpub"]}
