@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ import pytest
 from codex32._bitcoin_core import (
     BitcoinCore,
     BitcoinCoreError,
+    CoreEntropy,
     FingerprintMismatch,
     identifier_note,
     identifier_origin,
@@ -858,3 +860,72 @@ def test_identifier_note_allows_supported_nonderived_codex32_identifiers() -> No
     assert "split shares" in note
     assert "supplied seed bytes" in note
     assert "explicit identifier" in note
+
+
+class _EntropyRPC:
+    """Fake Core that adds one HD key per addhdkey call to a temporary wallet folder."""
+
+    def __init__(self, fail: str = "") -> None:
+        self.calls: list[tuple[tuple[str, ...], str | None, str | None]] = []
+        self.keys: list[dict[str, str]] = []
+        self.fail = fail
+
+    def __call__(self, *arguments: str, wallet: str | None = None, stdin: str | None = None) -> object:
+        self.calls.append((arguments, wallet, stdin))
+        method = next(argument for argument in arguments if not argument.startswith("-"))
+        if method == self.fail:
+            raise BitcoinCoreError("Bitcoin Core rejected the requested wallet operation.")
+        if method == "createwallet":
+            path = arguments[2].removeprefix("wallet_name=")
+            assert arguments[:2] == ("-named", "createwallet") and os.path.isabs(path)
+            open(path, "w").close()
+        if method == "addhdkey":
+            self.keys.append({"xpub": f"xpub{len(self.keys)}", "xprv": f"xprv{len(self.keys)}"})
+            return {"xpub": self.keys[-1]["xpub"]}
+        return list(self.keys) if method == "gethdkeys" else None
+
+
+def test_core_entropy_hashes_fresh_core_keys_from_a_deleted_encrypted_wallet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rpc = _EntropyRPC()
+    monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
+    entropy = CoreEntropy(BitcoinCore("bitcoin-cli", "main", 320000))
+
+    first, second = entropy(40), entropy(4)
+    digests = [hashlib.sha256(f"xprv{number}".encode()).digest() for number in range(3)]
+    assert (first, second) == (digests[0] + digests[1][:8], digests[2][:4])
+    methods = [next(a for a in arguments if not a.startswith("-")) for arguments, _w, _s in rpc.calls]
+    draw = ["walletpassphrase", "addhdkey", "gethdkeys"]
+    assert methods == ["createwallet", *draw, "addhdkey", "gethdkeys", "walletlock", *draw, "walletlock"]
+    wallet = rpc.calls[0][0][2].removeprefix("wallet_name=")
+    folder = os.path.dirname(wallet)
+    assert os.path.isabs(wallet) and os.path.exists(wallet)
+    assert folder.startswith("/dev/shm/") or not os.path.isdir("/dev/shm")
+    assert "blank=true" in rpc.calls[0][0] and rpc.calls[0][2] == f"passphrase={entropy._passphrase}\n"
+    assert all(entropy._passphrase not in " ".join(arguments) for arguments, _w, _s in rpc.calls)
+    assert all(called_wallet == wallet for _a, called_wallet, _s in rpc.calls[1:])
+
+    entropy.close()
+    assert rpc.calls[-1] == (("unloadwallet", wallet), None, None) and not os.path.exists(folder)
+    calls = len(rpc.calls)
+    entropy.close()
+    assert len(rpc.calls) == calls
+
+
+@pytest.mark.parametrize("failure", ("createwallet", "walletpassphrase", "addhdkey", "gethdkeys"))
+def test_core_entropy_failure_stops_creation_and_relocks(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    rpc = _EntropyRPC(fail=failure)
+    monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
+    entropy = CoreEntropy(BitcoinCore("bitcoin-cli", "main", 320000))
+
+    with pytest.raises(BitcoinCoreError, match="randomness only from Bitcoin Core"):
+        entropy(16)
+    if failure in ("addhdkey", "gethdkeys"):
+        assert rpc.calls[-1][0] == ("walletlock",)
+    folder = os.path.dirname(rpc.calls[0][0][2].removeprefix("wallet_name="))
+    rpc.fail = "unloadwallet"
+    entropy.close()
+    assert not os.path.exists(folder)

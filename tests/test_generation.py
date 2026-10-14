@@ -3,6 +3,7 @@
 import copy
 import pickle
 from itertools import combinations
+from secrets import token_bytes
 
 import pytest
 from data.bip93_vectors import VECTOR_2, VECTOR_4, VECTOR_6
@@ -55,7 +56,9 @@ def _seed(byte_length: int) -> bytes:
 
 def test_fresh_unshared_ms_supports_every_bip93_size() -> None:
     for byte_length in SEED_BYTE_LENGTHS:
-        secret = generate_master_seed(byte_length=byte_length, fingerprint=stub_fingerprint)
+        secret = generate_master_seed(
+            byte_length=byte_length, fingerprint=stub_fingerprint, entropy=token_bytes
+        )
         assert len(secret.seed_bytes) == byte_length
         assert secret.header.threshold == 0
         assert secret.header.identifier == _fingerprint_identifier(stub_fingerprint(secret.seed_bytes))
@@ -75,7 +78,7 @@ def test_fresh_shared_ms_supports_every_bip93_size() -> None:
     for byte_length in SEED_BYTE_LENGTHS:
         secret, shares = _complete(
             CreationCeremony.master_seed(
-                byte_length=byte_length, threshold=2, indices="ac", identifier="test"
+                entropy=token_bytes, byte_length=byte_length, threshold=2, indices="ac", identifier="test"
             )
         )
         assert _indices(shares) == "ac"
@@ -85,7 +88,9 @@ def test_fresh_shared_ms_supports_every_bip93_size() -> None:
 
 @pytest.mark.parametrize("threshold", range(2, 10))
 def test_fresh_generation_recovers_at_every_threshold(threshold: int) -> None:
-    secret, shares = _complete(CreationCeremony.master_seed(threshold=threshold, share_count=threshold))
+    secret, shares = _complete(
+        CreationCeremony.master_seed(entropy=token_bytes, threshold=threshold, share_count=threshold)
+    )
     assert len({share.header.index for share in shares}) == threshold
     assert recover_secret(shares) == secret
 
@@ -95,7 +100,7 @@ def test_generated_subsets_recover_across_sizes_and_threshold_boundaries(
     threshold: int, byte_length: int
 ) -> None:
     ceremony = CreationCeremony.master_seed(
-        byte_length=byte_length, threshold=threshold, share_count=threshold + 2
+        entropy=token_bytes, byte_length=byte_length, threshold=threshold, share_count=threshold + 2
     )
     secret, shares = _complete(ceremony)
 
@@ -111,7 +116,11 @@ def test_supplied_seed_round_trip(byte_length: int, threshold: int) -> None:
     source = generate_master_seed(_seed(byte_length), identifier="test")
     secret, shares = _complete(
         CreationCeremony.from_secret(
-            source, threshold=threshold, indices=ORDINARY_INDICES[:threshold], identifier="name"
+            source,
+            entropy=token_bytes,
+            threshold=threshold,
+            indices=ORDINARY_INDICES[:threshold],
+            identifier="name",
         )
     )
     assert isinstance(secret, MasterSeed) and secret.seed_bytes == _seed(byte_length)
@@ -125,17 +134,26 @@ def test_every_other_16_through_64_byte_generation_size_is_rejected() -> None:
         with pytest.raises(InvalidLength):
             generate_master_seed(byte_length=byte_length)
         with pytest.raises(InvalidLength):
-            CreationCeremony.master_seed(threshold=2, indices="ac", byte_length=byte_length)
+            CreationCeremony.master_seed(
+                entropy=token_bytes, threshold=2, indices="ac", byte_length=byte_length
+            )
 
 
 def test_raw_bytes_accept_random_or_explicit_identifiers() -> None:
     raw = bytes(range(16))
     with pytest.raises(InvalidLength):
         generate_master_seed(raw, byte_length=16, identifier="test")
-    random_secret = generate_master_seed(raw)
+    random_secret = generate_master_seed(raw, entropy=token_bytes)
     secret = generate_master_seed(raw, identifier="TEST")
     assert len(random_secret.header.identifier) == 4
     assert secret.header.identifier == "test"
+
+
+def test_draws_need_a_source_that_returns_exactly_the_requested_bytes() -> None:
+    with pytest.raises(ValueError, match="entropy source"):
+        generate_master_seed(bytes(range(16)))
+    with pytest.raises(CodexError, match="wrong number of bytes"):
+        CreationCeremony.master_seed(threshold=2, share_count=2, entropy=lambda length: bytes(length - 1))
 
 
 def test_supplied_seed_must_form_a_valid_bip32_root(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,12 +165,16 @@ def test_supplied_seed_must_form_a_valid_bip32_root(monkeypatch: pytest.MonkeyPa
 def test_explicit_and_random_output_order_contracts() -> None:
     source = generate_master_seed(bytes(range(16)), identifier="test")
     _secret, shares = _complete(
-        CreationCeremony.from_secret(source, threshold=3, indices="7CaD", identifier="name")
+        CreationCeremony.from_secret(
+            source, entropy=token_bytes, threshold=3, indices="7CaD", identifier="name"
+        )
     )
     assert _indices(shares) == "7cad"
 
     _secret, all_shares = _complete(
-        CreationCeremony.from_secret(source, threshold=2, share_count=31, identifier="cash")
+        CreationCeremony.from_secret(
+            source, entropy=token_bytes, threshold=2, share_count=31, identifier="cash"
+        )
     )
     assert len(set(_indices(all_shares))) == 31
     assert set(_indices(all_shares)) == set(ORDINARY_INDICES)
@@ -173,7 +195,7 @@ def test_explicit_and_random_output_order_contracts() -> None:
 )
 def test_invalid_share_selections(arguments: dict[str, object]) -> None:
     with pytest.raises(InvalidShareSelection):
-        CreationCeremony.master_seed(identifier="test", **arguments)  # type: ignore[arg-type]
+        CreationCeremony.master_seed(entropy=token_bytes, identifier="test", **arguments)  # type: ignore[arg-type]
 
 
 def test_oversized_index_strings_are_bounded_before_normalization(
@@ -185,8 +207,12 @@ def test_oversized_index_strings_are_bounded_before_normalization(
     monkeypatch.setattr(generation_module, "_index", unexpected_normalization)
     source = generate_master_seed(bytes(range(16)), identifier="test")
     operations = (
-        lambda: CreationCeremony.master_seed(threshold=2, indices="a" * 32, identifier="test"),
-        lambda: CreationCeremony.from_secret(source, threshold=2, indices="a" * 32, identifier="name"),
+        lambda: CreationCeremony.master_seed(
+            entropy=token_bytes, threshold=2, indices="a" * 32, identifier="test"
+        ),
+        lambda: CreationCeremony.from_secret(
+            source, entropy=token_bytes, threshold=2, indices="a" * 32, identifier="name"
+        ),
     )
     for operation in operations:
         with pytest.raises(InvalidShareSelection, match="at most 31"):
@@ -196,6 +222,7 @@ def test_oversized_index_strings_are_bounded_before_normalization(
 def test_unordered_indices_and_invalid_thresholds_are_rejected() -> None:
     with pytest.raises(TypeError):
         CreationCeremony.master_seed(
+            entropy=token_bytes,
             threshold=2,
             indices={"a", "c"},
             identifier="test",  # type: ignore[arg-type]
@@ -203,24 +230,21 @@ def test_unordered_indices_and_invalid_thresholds_are_rejected() -> None:
     for threshold in (0, 1, 10, True, "2"):
         with pytest.raises(InvalidThreshold):
             CreationCeremony.master_seed(
+                entropy=token_bytes,
                 threshold=threshold,
                 share_count=2,
                 identifier="test",  # type: ignore[arg-type]
             )
 
 
-def test_confirmation_gates_each_entropy_draw_and_reports_groups(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_confirmation_gates_each_entropy_draw_and_reports_groups() -> None:
     calls = []
-    original = generation_module.secrets.token_bytes
 
     def recorded(length: int) -> bytes:
         calls.append(length)
-        return original(length)
+        return token_bytes(length)
 
-    monkeypatch.setattr(generation_module.secrets, "token_bytes", recorded)
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="acd", identifier="test")
+    ceremony = CreationCeremony.master_seed(entropy=recorded, threshold=2, indices="acd", identifier="test")
     assert calls == []
     first = ceremony.next_share()
     assert calls == [26]
@@ -242,7 +266,7 @@ def test_confirmation_gates_each_entropy_draw_and_reports_groups(
 
 
 def test_final_share_rejection_retains_confirmed_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    ceremony = CreationCeremony.master_seed(entropy=token_bytes, threshold=2, indices="ac", identifier="test")
     first = ceremony.next_share()
     assert ceremony.confirm(first.text).accepted
     original = ceremony._candidate_is_accepted
@@ -275,7 +299,7 @@ def test_final_share_rejection_retains_confirmed_prefix(monkeypatch: pytest.Monk
 
 
 def test_final_ms_share_retries_a_bip32_invalid_root(monkeypatch: pytest.MonkeyPatch) -> None:
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    ceremony = CreationCeremony.master_seed(entropy=token_bytes, threshold=2, indices="ac", identifier="test")
     first = ceremony.next_share()
     assert ceremony.confirm(first.text).accepted
     original = generation_module._valid_root
@@ -295,7 +319,7 @@ def test_final_ms_share_retries_a_bip32_invalid_root(monkeypatch: pytest.MonkeyP
 
 
 def test_ceremony_state_is_fail_closed() -> None:
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    ceremony = CreationCeremony.master_seed(entropy=token_bytes, threshold=2, indices="ac", identifier="test")
     with pytest.raises(CeremonyStateError):
         ceremony.confirm("anything")
     with pytest.raises(CeremonyStateError):
@@ -314,7 +338,7 @@ def test_ceremony_state_is_fail_closed() -> None:
 
 
 def test_ceremony_cannot_be_copied_or_serialized() -> None:
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    ceremony = CreationCeremony.master_seed(entropy=token_bytes, threshold=2, indices="ac", identifier="test")
     pending = ceremony.next_share()
     assert ceremony.confirm(pending.text).accepted
 
@@ -331,13 +355,17 @@ def test_resharing_preserves_padding_and_requires_a_new_header() -> None:
     source = parse_codex32(VECTOR_4["secret_s_alternate_0"])
     assert isinstance(source, MasterSeed)
     secret, shares = _complete(
-        CreationCeremony.from_secret(source, threshold=2, indices="ac", identifier="name")
+        CreationCeremony.from_secret(
+            source, entropy=token_bytes, threshold=2, indices="ac", identifier="name"
+        )
     )
     assert secret.payload_symbols == source.payload_symbols
     assert recover_secret(shares).payload_symbols == source.payload_symbols
     with pytest.raises(HeaderCollision):
-        CreationCeremony.from_secret(secret, threshold=2, indices="ac", identifier="name")
-    randomized = CreationCeremony.from_secret(secret, threshold=2, indices="ac")
+        CreationCeremony.from_secret(
+            secret, entropy=token_bytes, threshold=2, indices="ac", identifier="name"
+        )
+    randomized = CreationCeremony.from_secret(secret, entropy=token_bytes, threshold=2, indices="ac")
     assert randomized.next_share().header.identifier != secret.header.identifier
 
 
@@ -352,6 +380,7 @@ def test_from_secret_rejects_non_secret_artifacts() -> None:
         with pytest.raises(TypeError):
             CreationCeremony.from_secret(
                 artifact,
+                entropy=token_bytes,
                 threshold=2,
                 indices="ac",
                 identifier="test",  # type: ignore[arg-type]
