@@ -579,9 +579,9 @@ def test_xprv_explains_prefilled_threshold_and_uncorrectable_length(monkeypatch,
     assert ms_main(["xprv"]) == 0
     rejected = [line for line in capsys.readouterr().err.splitlines() if line.startswith("Rejected:")]
     assert rejected == [
-        "Rejected: After the prefilled MS1, enter a threshold of 0 or 2 through 9; found 'n'.",
+        "Rejected: The threshold must be 0 or a number from 2 through 9; found 'n'.",
         (
-            "Rejected: The string has 39 characters; valid Bitcoin master-seed codex32 lengths are "
+            "Rejected: This input has 39 characters. A Bitcoin master-seed backup must have exactly "
             "48, 54, 61, 67, 74, or 127 characters."
         ),
     ]
@@ -600,7 +600,7 @@ def test_xprv_reports_every_uncorrectable_prefixed_ms_length(monkeypatch, capsys
     assert ms_main(["xprv"]) == 0
     output = capsys.readouterr().err
     for length in lengths:
-        assert f"The string has {length} characters; valid Bitcoin master-seed codex32 lengths are" in output
+        assert f"This input has {length} characters. A Bitcoin master-seed backup must have" in output
 
 
 def test_prefixed_ms_lengths_at_correction_boundary_explain_length_and_still_search(
@@ -645,10 +645,8 @@ def test_complete_paste_keeps_ordinary_threshold_error(monkeypatch, capsys) -> N
     assert "After the prefilled" not in output
 
 
-@pytest.mark.parametrize(("difference", "word"), ((-9, "short of"), (9, "too long for")))
-def test_subsequent_prefixed_ms_input_reports_required_set_length(
-    monkeypatch, capsys, difference, word
-) -> None:
+@pytest.mark.parametrize("difference", (-9, 9))
+def test_subsequent_prefixed_ms_input_reports_required_set_length(monkeypatch, capsys, difference) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     prefix = "MS12NAME"
     suffix = VECTOR_2["share_C"][len(prefix) :]
@@ -662,10 +660,8 @@ def test_subsequent_prefixed_ms_input_reports_required_set_length(
     assert main(["secret", "--plain"]) == 0
     output = capsys.readouterr()
     assert output.out.strip() == VECTOR_2["secret_S"]
-    assert (
-        f"Rejected: The string is 9 characters {word} the required {len(VECTOR_2['share_C'])}-character "
-        "length."
-    ) in output.err
+    length = len(VECTOR_2["share_C"]) + difference
+    assert f"Rejected: This input has {length} characters." in output.err
 
 
 @pytest.mark.parametrize(
