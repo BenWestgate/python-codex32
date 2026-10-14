@@ -24,13 +24,7 @@ class FingerprintMismatch(BitcoinCoreError):
     """The recovered seed is not the wallet the operator's record describes."""
 
 
-_CHAINS = (
-    ("main", "mainnet"),
-    ("test", "testnet3"),
-    ("testnet4", "testnet4"),
-    ("signet", "signet"),
-    ("regtest", "regtest"),
-)
+_CHAIN_NAMES = {"main": "mainnet", "test": "testnet3"}
 
 _PRIVATE_MARKERS = ("xprv", "tprv")
 _OUTPUT_TYPES = ("legacy", "p2sh-segwit", "bech32", "bech32m")
@@ -91,48 +85,29 @@ class BitcoinCore:
     version: int
 
     @classmethod
-    def connect(
-        cls,
-        ask: Callable[[str], str] | None = None,
-        tell: Callable[[str], None] | None = None,
-    ) -> BitcoinCore:
+    def connect(cls, tell: Callable[[str], None] | None = None) -> BitcoinCore:
+        """Use the network bitcoin-cli is configured for, and say which one it is."""
         executable = shutil.which("bitcoin-cli")
         if executable is None:
             raise BitcoinCoreError("Install a reviewed bitcoin-cli before creating a backup.")
-        choices: list[BitcoinCore] = []
-        for chain, _label in _CHAINS:
-            client = cls(executable, chain, 0)
-            try:
-                network = client._rpc("getnetworkinfo", timeout=5)
-                blockchain = client._rpc("getblockchaininfo", timeout=5)
-            except BitcoinCoreError:
-                continue
-            version = network.get("version") if isinstance(network, dict) else None
-            reported = blockchain.get("chain") if isinstance(blockchain, dict) else None
-            if isinstance(version, bool) or not isinstance(version, int) or reported != chain:
-                continue
-            if version >= 320000:
-                choices.append(cls(executable, chain, version))
-        if not choices:
+        client = cls(executable, "", 0)
+        try:
+            network = client._rpc("getnetworkinfo", timeout=5)
+            blockchain = client._rpc("getblockchaininfo", timeout=5)
+        except BitcoinCoreError as error:
             raise BitcoinCoreError(
-                "No local Bitcoin Core RPC server found.\nStart Bitcoin Core "
-                "with local RPC enabled.\nFor signet practice: bitcoin-qt -signet -server"
-            )
-        if len(choices) > 1:
-            if ask is None or tell is None:
-                raise BitcoinCoreError("More than one local Bitcoin Core network is running.")
-            tell("Local Bitcoin Core networks:")
-            for number, choice in enumerate(choices, 1):
-                tell(f"  {number}. {dict(_CHAINS)[choice.chain]}")
-            while not (
-                (answer := ask("Choose a network number")).isdecimal() and 1 <= int(answer) <= len(choices)
-            ):
-                tell("Enter one of the displayed numbers.")
-            choices = [choices[int(answer) - 1]]
-        client = choices[0]
+                "No local Bitcoin Core RPC server found.\nStart Bitcoin Core with local RPC enabled.\n"
+                "bitcoin-cli uses the network set in bitcoin.conf; for signet practice add signet=1."
+            ) from error
+        version = network.get("version") if isinstance(network, dict) else None
+        chain = blockchain.get("chain") if isinstance(blockchain, dict) else None
+        if isinstance(version, bool) or not isinstance(version, int) or not isinstance(chain, str):
+            raise BitcoinCoreError("Bitcoin Core returned unexpected network information.")
+        if version < 320000:
+            raise BitcoinCoreError("Bitcoin Core 32.0 or newer is required.")
         if tell is not None:
-            tell(f"Using Bitcoin Core on {dict(_CHAINS)[client.chain]}.")
-        return client
+            tell(f"Using Bitcoin Core on {_CHAIN_NAMES.get(chain, chain)}.")
+        return cls(executable, chain, version)
 
     def _rpc(
         self,
@@ -141,7 +116,7 @@ class BitcoinCore:
         stdin: str | None = None,
         timeout: int = 120,
     ) -> object:
-        command = [self.executable, f"-chain={self.chain}", "-rpcconnect=127.0.0.1"]
+        command = [self.executable, "-rpcconnect=127.0.0.1"]
         if wallet is not None:
             command.append(f"-rpcwallet={wallet}")
         if stdin is not None:
