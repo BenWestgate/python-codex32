@@ -2,6 +2,7 @@
 
 from .bip93 import (
     Header,
+    MasterSeed,
     Secret,
     Share,
     derive_share,
@@ -22,17 +23,11 @@ from .generation import (
     CreationCeremony,
     generate_master_seed,
 )
-from .profiles import Profile
-from .profiles.bip39 import Bip39Secret
-from .profiles.cl32 import CoreLightningSecret
-from .profiles.ms32 import MasterSeed
 from .wallet import master_xprv
 
 __all__ = [
-    "Bip39Secret",
     "CodexError",
     "ConfirmationResult",
-    "CoreLightningSecret",
     "CorrectionCandidate",
     "CorrectionContext",
     "CorrectionEdit",
@@ -40,7 +35,6 @@ __all__ = [
     "Header",
     "InvalidCorrectionInput",
     "MasterSeed",
-    "Profile",
     "Secret",
     "Share",
     "WorksheetCorrection",

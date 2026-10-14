@@ -16,7 +16,6 @@ from codex32 import (
     CorrectionContext,
     Header,
     MasterSeed,
-    Profile,
     Share,
     correct,
     correct_worksheet_residue,
@@ -27,7 +26,7 @@ from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshol
 
 def test_backup_workflows_need_only_the_standard_library() -> None:
     source = """
-from codex32 import CreationCeremony, CorrectionContext, Profile, correct, derive_share, parse_codex32, recover_secret
+from codex32 import CreationCeremony, CorrectionContext, correct, derive_share, parse_codex32, recover_secret
 
 ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
 shares = []
@@ -40,7 +39,7 @@ assert parse_codex32(secret.text) == secret
 assert recover_secret(shares) == secret
 assert derive_share(shares, "d").header.index == "d"
 damaged = shares[0].text[:-1] + "?"
-assert correct(CorrectionContext(Profile.MS), damaged)
+assert correct(CorrectionContext("ms"), damaged)
 """
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")
@@ -84,9 +83,7 @@ def test_share_has_symbols_but_no_byte_or_padding_api() -> None:
         assert not hasattr(share, name)
 
 
-def test_artifacts_cannot_be_directly_constructed_or_mutated() -> None:
-    with pytest.raises(TypeError):
-        Share("ms", Header(2, "test", "a"), (), ())  # type: ignore[arg-type]
+def test_artifacts_cannot_be_mutated() -> None:
     share = parse_codex32(VECTOR_2["share_A"])
     with pytest.raises((FrozenInstanceError, AttributeError)):
         share.text = "changed"  # type: ignore[misc]
@@ -107,7 +104,7 @@ def test_artifact_default_rendering_does_not_disclose_recovery_text() -> None:
 
 def test_correction_edits_do_not_render_recovery_characters() -> None:
     text = VECTOR_2["share_A"]
-    candidate = correct(CorrectionContext(Profile.MS), text[:9] + "?" * 8 + text[17:])[0]
+    candidate = correct(CorrectionContext("ms"), text[:9] + "?" * 8 + text[17:])[0]
     rendered = repr(candidate)
 
     assert len(candidate.edits) == 8

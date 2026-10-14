@@ -47,23 +47,21 @@ On Windows, activate the environment with `.venv\Scripts\activate` instead.
 
 The installed commands are `codex32` and `ms32`.
 
-`codex32` checks, corrects, recovers, and derives shares for registered or opaque
-application prefixes. `ms32` additionally creates Bitcoin master-seed backups
+`codex32` checks, corrects, recovers, and derives shares for any application
+prefix. `ms32` additionally creates Bitcoin master-seed backups
 and provides key and wallet setup.
 
-BIP39 worksheet profiles are supported for existing-backup recovery but are
-[not recommended for creating backups](https://secretcodex32.com/docs/index.html).
 Powerful correction searches, including recovery of genuinely unreadable
 characters, require interactive confirmation.
 
 ## Start here
 
-Start Bitcoin Core 32 or newer with local RPC enabled. codex32 detects and
-reports the local Bitcoin Core network. To practice with Bitcoin-Qt on signet,
-start it with:
+Start Bitcoin Core 32 or newer with local RPC enabled. codex32 uses the
+network `bitcoin-cli` is configured for and reports it. To practice on signet,
+add `signet=1` to `bitcoin.conf`, then start Bitcoin-Qt with:
 
 ```bash
-bitcoin-qt -signet -server
+bitcoin-qt -server
 ```
 
 Then run:

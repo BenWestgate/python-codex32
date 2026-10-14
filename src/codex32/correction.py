@@ -39,17 +39,18 @@ from codex32.bech32 import (
 from codex32.bip93 import (
     IDX_SORT,
     Header,
+    MasterSeed,
     Secret,
     Share,
     _checksum_for_encoded_length,
+    _has_generation_padding,
+    _validate_ms_length,
     parse_codex32,
 )
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles import Profile, _optional_profile_rules
-from codex32.profiles.ms32 import MasterSeed, _has_generation_padding
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,15 +69,14 @@ class CorrectionContext:
 
     def __init__(
         self,
-        hrp: str | Profile,
+        hrp: str,
         expected_length: int | None = None,
         immutable_prefix: str | None = None,
         excluded_indices: tuple[str, ...] = (),
     ) -> None:
-        if not isinstance(hrp, (str, Profile)):
-            raise TypeError("hrp must be str or Profile")
-        normalized = hrp.value if isinstance(hrp, Profile) else hrp.lower()
-        object.__setattr__(self, "hrp", normalized)
+        if not isinstance(hrp, str):
+            raise TypeError("hrp must be str")
+        object.__setattr__(self, "hrp", hrp.lower())
         object.__setattr__(self, "expected_length", expected_length)
         object.__setattr__(self, "immutable_prefix", immutable_prefix)
         object.__setattr__(self, "excluded_indices", excluded_indices)
@@ -262,7 +262,7 @@ def _spec_for_checksum(checksum: _Checksum) -> _Spec:
         return _SHORT_SPEC
     if checksum is _CODEX32_LONG:
         return _LONG_SPEC
-    raise AssertionError("registered profile selected a non-codex32 checksum")
+    raise AssertionError("a non-codex32 checksum was selected")
 
 
 def _residue(spec: _Spec, hrp: str, body: list[int]) -> list[int]:
@@ -382,28 +382,14 @@ def _small_locator(sequence: list[int], maximum: int) -> list[int] | None:
     return [1, *coefficients] if len(coefficients) <= maximum else None
 
 
-def _locator_poly(
-    syndromes: list[int],
-    erasure_poly: list[int],
-    maximum: int | None,
-    erasure_products: tuple[tuple[int, ...], ...] | None = None,
-) -> list[int] | None:
+def _locator_poly(syndromes: list[int], erasure_poly: list[int], maximum: int | None) -> list[int] | None:
     degree = len(erasure_poly) - 1
-    if degree == 2 and erasure_products is not None:
-        first, second = erasure_products
-        modified = [
-            syndromes[index - 2] ^ first[syndromes[index]] ^ second[syndromes[index - 1]]
-            for index in range(2, len(syndromes))
-        ]
-    else:
-        modified = []
-        for output_index in range(degree, len(syndromes)):
-            value = syndromes[output_index - degree]
-            products = erasure_products
-            for index, coefficient in enumerate(erasure_poly[:-1]):
-                syndrome = syndromes[output_index - index]
-                value ^= _gf1024_mul(coefficient, syndrome) if products is None else products[index][syndrome]
-            modified.append(value)
+    modified = []
+    for output_index in range(degree, len(syndromes)):
+        value = syndromes[output_index - degree]
+        for index, coefficient in enumerate(erasure_poly[:-1]):
+            value ^= _gf1024_mul(coefficient, syndromes[output_index - index])
+        modified.append(value)
     if maximum is not None and maximum <= 2:
         return _small_locator(modified, maximum)
     coefficients, _adjustment = _synthesize_rec(list(reversed(modified)))
@@ -431,13 +417,12 @@ def _bch_syndrome_corrections(
     word_length: int,
     max_substitutions: int | None,
     erasure_state: tuple[tuple[int, ...], list[int]] | None = None,
-    erasure_products: tuple[tuple[int, ...], ...] | None = None,
 ) -> list[tuple[int, int]] | None:
     word_roots = _word_roots(spec, word_length)
     erasure_roots, erasure_poly = (
         _erasure_state(spec, word_length, tuple(erasure_indices)) if erasure_state is None else erasure_state
     )
-    locator = _locator_poly(syndromes, erasure_poly, max_substitutions, erasure_products)
+    locator = _locator_poly(syndromes, erasure_poly, max_substitutions)
     if locator is None or max_substitutions is not None and len(locator) - 1 > max_substitutions:
         return None
     errors = [
@@ -471,7 +456,6 @@ def _repair_body(
     alignment: tuple[int, tuple[tuple[int, ...], ...]],
     erasure_indices: Sequence[int] | None,
     erasure_state: tuple[tuple[int, ...], list[int]] | None,
-    erasure_products: tuple[tuple[int, ...], ...] | None,
     packed_syndromes: int | None = None,
 ) -> tuple[list[int], list[tuple[int, int]]] | None:
     erasures = (
@@ -491,7 +475,6 @@ def _repair_body(
             len(body),
             max_substitutions,
             erasure_state,
-            erasure_products,
         )
         if len(erasures) <= len(spec.roots)
         else None
@@ -526,7 +509,6 @@ class _FixedCorrector:
     __slots__ = (
         "alignment",
         "erasure_indices",
-        "erasure_products",
         "erasure_state",
         "hrp",
         "max_substitutions",
@@ -538,17 +520,15 @@ class _FixedCorrector:
 
     def __init__(
         self,
-        hrp: str | Profile,
+        hrp: str,
         body_length: int,
         uppercase: bool,
         max_substitutions: int | None,
         mutable_start: int = 0,
     ) -> None:
-        normalized_hrp = hrp.value if isinstance(hrp, Profile) else hrp.lower()
-        profile_rules = _optional_profile_rules(normalized_hrp)
+        normalized_hrp = hrp.lower()
         checksum = _checksum_for_encoded_length(normalized_hrp, body_length)
-        if profile_rules is not None:
-            profile_rules.validate_payload_length(body_length - checksum.length - 6)
+        _validate_ms_length(normalized_hrp, len(normalized_hrp) + 1 + body_length)
         self.hrp = normalized_hrp
         self.prefix = f"{normalized_hrp}1"
         self.spec = _spec_for_checksum(checksum)
@@ -557,7 +537,6 @@ class _FixedCorrector:
         self.max_substitutions = max_substitutions
         self.mutable_start = mutable_start
         self.erasure_indices: tuple[int, ...] | None = None
-        self.erasure_products: tuple[tuple[int, ...], ...] | None = None
         self.erasure_state: tuple[tuple[int, ...], list[int]] | None = None
 
     def correct(
@@ -575,9 +554,6 @@ class _FixedCorrector:
                 return None
             self.erasure_indices = tuple(erasure_indices)
             self.erasure_state = _erasure_state(self.spec, len(values), self.erasure_indices)
-            # Alignment locations change frequently. Building 2048 products per
-            # pair costs more than the handful of GF(1024) multiplies per call.
-            self.erasure_products = None
         repair = _repair_body(
             self.spec,
             self.hrp,
@@ -586,7 +562,6 @@ class _FixedCorrector:
             self.alignment,
             erasure_indices,
             self.erasure_state if erasure_indices is not None else None,
-            self.erasure_products if erasure_indices is not None else None,
             packed_syndromes,
         )
         if repair is None:
@@ -722,13 +697,13 @@ def _corrections_reach_target(spec: _Spec, residue: list[int], corrections: list
 def _correct_fixed(
     damaged_text: str,
     *,
-    suspected_profile: str | Profile,
+    hrp: str,
     max_substitutions: int | None = None,
     immutable_prefix: str | None = None,
 ) -> CorrectionCandidate | None:
-    if not isinstance(suspected_profile, (str, Profile)):
-        raise TypeError("suspected_profile must be str or Profile")
-    hrp = suspected_profile.value if isinstance(suspected_profile, Profile) else suspected_profile.lower()
+    if not isinstance(hrp, str):
+        raise TypeError("hrp must be str")
+    hrp = hrp.lower()
     try:
         uppercase = _validate_single_case_ascii(damaged_text)
     except TypeError:
@@ -779,9 +754,7 @@ def _validate_context(context: CorrectionContext) -> None:
             checksum = _checksum_for_encoded_length(context.hrp, body_length)
             if body_length < checksum.length + 6:
                 raise ValueError("expected_length must contain a header and checksum")
-            rules = _optional_profile_rules(context.hrp)
-            if rules is not None:
-                rules.validate_payload_length(body_length - checksum.length - 6)
+            _validate_ms_length(context.hrp, length)
         prefix = context.immutable_prefix
         if prefix is not None:
             if not isinstance(prefix, str):
@@ -883,7 +856,11 @@ def _best(
 
 
 def _correct_complete(
-    context: CorrectionContext, damaged_text: str, *, deadline: float | None = None
+    context: CorrectionContext,
+    damaged_text: str,
+    *,
+    deadline: float | None = None,
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
     if not isinstance(context, CorrectionContext):
         raise TypeError("context must be CorrectionContext")
@@ -952,6 +929,8 @@ def _correct_complete(
                     c.expected_length for c in preflight_contexts if c.expected_length is not None
                 ),
                 deadline=deadline,
+                competitors=True,
+                allowed=allowed,
                 observed_text=damaged_text,
                 seed_candidates=candidates,
                 required_only=True,
@@ -979,6 +958,8 @@ def _correct_complete(
             value,
             primary=frozenset(c.expected_length for c in contexts if c.expected_length is not None),
             deadline=deadline,
+            competitors=True,
+            allowed=allowed,
             capture_layers=capture_layers,
             observed_text=damaged_text,
             seed_candidates=candidates,
@@ -987,9 +968,13 @@ def _correct_complete(
         complete &= current_complete
         if not current_complete and not candidates:
             return (), False
-    candidates = (
-        _restore_case_edits(candidates, uppercase=uppercase) if interpretation is not None else candidates
-    )
+    if interpretation is not None:
+        candidates = _restore_case_edits(candidates, uppercase=uppercase)
+    if allowed is not None:
+        candidates = tuple(candidate for candidate in candidates if allowed(candidate))
+    if not complete:
+        # A candidate from a completed pass must not hide a later truncation.
+        candidates = tuple(replace(candidate, search_complete=False) for candidate in candidates)
     return candidates, complete
 
 

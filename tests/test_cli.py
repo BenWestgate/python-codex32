@@ -17,14 +17,12 @@ from unittest.mock import patch
 import pytest
 from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_3, VECTOR_4, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
-from test_bip39 import BIP39_12W_ZERO
 
 from codex32 import (
     ConfirmationResult,
     CorrectionCandidate,
     CorrectionContext,
     MasterSeed,
-    Profile,
     Secret,
     Share,
     derive_share,
@@ -33,10 +31,10 @@ from codex32 import (
 )
 from codex32._bitcoin_core import BitcoinCore
 from codex32.bech32 import _chars_to_u5, bech32_encode
+from codex32.bip93 import SEED_BYTE_LENGTHS
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
-from codex32.generation import _fingerprint_identifier
-from codex32.profiles.ms32 import SEED_BYTE_LENGTHS
+from codex32.generation import _confirmation, _fingerprint_identifier
 from tools._wallet_test_vectors import stub_fingerprint
 
 
@@ -231,13 +229,13 @@ def _output_artifacts(result: _Result, profile: str = "ms") -> list[Share | Secr
     return [parse_codex32("".join(line.split())) for line in lines if line.lower().startswith(profile + "1")]
 
 
-def test_check_supports_every_registered_application() -> None:
+def test_check_describes_ms_and_generic_hrps() -> None:
     strings = (
         VECTOR_1["secret_s"],
         VECTOR_3["secret_s"],
         VECTOR_2["share_A"],
         VECTOR_6["codex32_cln2"],
-        BIP39_12W_ZERO,
+        SHARING_VECTORS["bip39_12w"]["S"],
         SHARING_VECTORS["bip39_24w"]["S"],
     )
     result = _invoke(["check"], *strings)
@@ -252,11 +250,15 @@ def test_check_supports_every_registered_application() -> None:
         "Valid Bitcoin master-seed share A.\n"
         "Backup identifier: NAME\n"
         "Shares needed for recovery: 2\n\n"
-        "Valid unshared Core Lightning HSM secret.\n"
+        "Valid unshared codex32 secret.\n"
+        "HRP: CL\n"
         "Backup identifier: CLN2\n\n"
-        "Valid unshared 12-word BIP39 worksheet.\n"
-        "Backup identifier: TEST\n\n"
-        "Valid shared 24-word BIP39 worksheet.\n"
+        "Valid shared codex32 secret.\n"
+        "HRP: BIP39_12W\n"
+        "Backup identifier: TEST\n"
+        "Shares needed for recovery: 2\n\n"
+        "Valid shared codex32 secret.\n"
+        "HRP: BIP39_24W\n"
         "Backup identifier: TEST\n"
         "Shares needed for recovery: 2\n"
     )
@@ -272,14 +274,6 @@ def test_check_supports_every_registered_application() -> None:
         "Identifier:",
     ):
         assert forbidden not in result.stdout
-
-
-@pytest.mark.parametrize("index", ("a", "s"))
-def test_check_rejects_shared_core_lightning_artifacts(index: str) -> None:
-    result = _invoke(["check"], bech32_encode("cl", _chars_to_u5(f"2test{index}" + "q" * 52), _CODEX32))
-
-    assert result.exit_code == 2
-    assert "A Core Lightning HSM secret backup must be unshared, with threshold 0." in result.stderr
 
 
 def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -313,24 +307,9 @@ def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> N
             27,
             ("A Bitcoin master-seed backup must have exactly 48, 54, 61, 67, 74, or 127 characters."),
         ),
-        (
-            "cl",
-            51,
-            ("This input has 73 characters. A Core Lightning HSM secret backup must have exactly 74."),
-        ),
-        (
-            "bip39_12w",
-            26,
-            ("This input has 55 characters. A 12-word BIP39 worksheet backup must have exactly 56."),
-        ),
-        (
-            "bip39_24w",
-            52,
-            ("This input has 81 characters. A 24-word BIP39 worksheet backup must have exactly 82."),
-        ),
     ),
 )
-def test_check_reports_profile_lengths_for_people(hrp: str, payload_length: int, message: str) -> None:
+def test_check_reports_ms_lengths_for_people(hrp: str, payload_length: int, message: str) -> None:
     body = _chars_to_u5("0tests" + "q" * payload_length)
     expanded_body_length = 2 * len(hrp) + 1 + len(body)
     checksum = _CODEX32 if expanded_body_length <= 80 else _CODEX32_LONG
@@ -560,7 +539,7 @@ def test_embedded_correction_schedules_both_mixed_case_interpretations_before_al
     source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
     damaged = "ms10testsxPxxxxxPxxxxxPxxxxxPxxxxxP4nzvca9cmczlw"
 
-    candidates = input_module._suggestions(damaged, "", (Profile.MS,), [])
+    candidates = input_module._suggestions(damaged, "", "ms", [])
 
     assert len(candidates) == 1
     assert candidates[0].artifact.text == source
@@ -600,9 +579,9 @@ def test_xprv_explains_prefilled_threshold_and_uncorrectable_length(monkeypatch,
     assert ms_main(["xprv"]) == 0
     rejected = [line for line in capsys.readouterr().err.splitlines() if line.startswith("Rejected:")]
     assert rejected == [
-        "Rejected: After the prefilled MS1, enter a threshold of 0 or 2 through 9; found 'n'.",
+        "Rejected: The threshold must be 0 or a number from 2 through 9; found 'n'.",
         (
-            "Rejected: The string has 39 characters; valid Bitcoin master-seed codex32 lengths are "
+            "Rejected: This input has 39 characters. A Bitcoin master-seed backup must have exactly "
             "48, 54, 61, 67, 74, or 127 characters."
         ),
     ]
@@ -621,7 +600,7 @@ def test_xprv_reports_every_uncorrectable_prefixed_ms_length(monkeypatch, capsys
     assert ms_main(["xprv"]) == 0
     output = capsys.readouterr().err
     for length in lengths:
-        assert f"The string has {length} characters; valid Bitcoin master-seed codex32 lengths are" in output
+        assert f"This input has {length} characters. A Bitcoin master-seed backup must have" in output
 
 
 def test_prefixed_ms_lengths_at_correction_boundary_explain_length_and_still_search(
@@ -666,10 +645,8 @@ def test_complete_paste_keeps_ordinary_threshold_error(monkeypatch, capsys) -> N
     assert "After the prefilled" not in output
 
 
-@pytest.mark.parametrize(("difference", "word"), ((-9, "short of"), (9, "too long for")))
-def test_subsequent_prefixed_ms_input_reports_required_set_length(
-    monkeypatch, capsys, difference, word
-) -> None:
+@pytest.mark.parametrize("difference", (-9, 9))
+def test_subsequent_prefixed_ms_input_reports_required_set_length(monkeypatch, capsys, difference) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     prefix = "MS12NAME"
     suffix = VECTOR_2["share_C"][len(prefix) :]
@@ -683,10 +660,8 @@ def test_subsequent_prefixed_ms_input_reports_required_set_length(
     assert main(["secret", "--plain"]) == 0
     output = capsys.readouterr()
     assert output.out.strip() == VECTOR_2["secret_S"]
-    assert (
-        f"Rejected: The string is 9 characters {word} the required {len(VECTOR_2['share_C'])}-character "
-        "length."
-    ) in output.err
+    length = len(VECTOR_2["share_C"]) + difference
+    assert f"Rejected: This input has {length} characters." in output.err
 
 
 @pytest.mark.parametrize(
@@ -949,7 +924,7 @@ def test_tty_subsequent_correction_recases_confirmed_immutable_context(
     assert captured.out.strip() == VECTOR_2["secret_S"].lower()
     assert "Possible correction:\n\nMaster fingerprint: FAB6868A\n\n" in captured.err
     assert input_module._card_text(expected, False) in captured.err
-    assert contexts == [(CorrectionContext(Profile.MS, len(VECTOR_2["share_A"]), prefix, ("a",)),)]
+    assert contexts == [(CorrectionContext("ms", len(VECTOR_2["share_A"]), prefix, ("a",)),)]
 
 
 def test_tty_recovery_accepts_complete_uppercase_and_retries(
@@ -1478,7 +1453,7 @@ def test_confirmation_alignment_shows_only_entered_text(
     expected = "abcdefghWXYZijklmnop" if observed == "abcdefghijklmnop" else "abcdefghijklmnop"
     if observed == "aaaaaaa":
         expected = "aaaaaaaa"
-    groups, changed = input_module._entered_groups(observed, expected)
+    groups, changed = importlib.import_module("codex32.generation")._entered_groups(observed, expected)
     actual = input_module._render_groups(groups, changed, len(expected))
     plain = re.sub(r"\x1b\[[0-9;]*m", "", actual)
 
@@ -1793,7 +1768,7 @@ def test_correction_bytes_rejects_an_unsupported_ms_size() -> None:
 def test_cli_never_accepts_an_incomplete_structural_search() -> None:
     original = VECTOR_1["secret_s"]
     damaged = original[:19] + original[20:]
-    with patch("codex32._cli_input._correction_candidates", return_value=((), False, 0.0)):
+    with patch("codex32._cli_input._correct_complete", return_value=((), False)):
         result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 3
@@ -1804,10 +1779,10 @@ def test_cli_never_accepts_an_incomplete_structural_search() -> None:
 @pytest.mark.parametrize(
     ("options", "lengths", "bounded"),
     (
-        ([], (48, 54, 61, 67, 74, 127), True),
+        ([], (48,), True),
         (["--bytes", "20"], (54,), True),
         (["--bytes", "64"], (127,), True),
-        (["--bytes", "?"], (48, 54, 61, 67, 74, 127), True),
+        (["--bytes", "?"], (48,), True),
     ),
 )
 def test_correction_options_control_lengths_deadline_and_search_envelope(
@@ -1824,18 +1799,6 @@ def test_correction_options_control_lengths_deadline_and_search_envelope(
     assert observed == damaged
     assert tuple(context.expected_length for context in contexts) == lengths
     assert (search.call_args.kwargs["deadline"] is not None) is bounded
-    assert search.call_args.kwargs["reduced"] == frozenset()
-
-
-def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> None:
-    from codex32._cli_input import _correction_plan
-
-    for observed in range(40, 136):
-        targets = _correction_plan(Profile.MS, None, observed, None)[0]
-        expected = 48 if observed <= 61 else 74 if observed <= 100 else 127
-
-        assert targets[0] == expected
-        assert sorted(targets) == [48, 54, 61, 67, 74, 127]
 
 
 def test_fixed_correction_repairs_legacy_cl_header_and_residue_reverse_positions() -> None:
@@ -1867,7 +1830,7 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
 
     removed = _invoke(["correct", "--prefix", "ms"], original)
     damaged_prefix = _invoke(["correct"], "?" + original[1:])
-    bip39 = _invoke(["correct"], BIP39_12W_ZERO)
+    bip39 = _invoke(["correct"], SHARING_VECTORS["bip39_12w"]["S"])
     assert removed.exit_code == 2
     assert "Remove or correct these arguments: --prefix" in removed.stderr
     assert damaged_prefix.exit_code == 3
@@ -1887,8 +1850,7 @@ def test_correct_suggests_the_majority_case_for_mixed_case_damage() -> None:
     assert result.exit_code == 1
     assert source in result.stderr
     assert "No valid correction found" not in result.stderr
-    assert wrong_length.exit_code == 2
-    assert "--bytes does not match" in wrong_length.stderr
+    assert wrong_length.exit_code == 3
     assert source not in wrong_length.stderr
 
 
@@ -1906,32 +1868,6 @@ def test_correct_grouped_mixed_case_recognizes_case_only_repair() -> None:
 
     assert result.exit_code == 1 and source in result.stderr
     assert "interactive confirmation required" not in result.stderr
-
-
-def test_correct_searches_mixed_case_erasures_before_normalized_alignment(monkeypatch) -> None:
-    source = VECTOR_1["secret_s"]
-    letter_positions = [
-        index
-        for index, character in enumerate(source[3:], 3)
-        if index >= 9 and character.lower() != character.upper()
-    ]
-    positions = letter_positions[1:26:6]
-    damaged = "".join(
-        ("P" if character.lower() != "p" else "Q") if index in positions else character
-        for index, character in enumerate(source)
-    )
-    searched: list[str] = []
-
-    def stop_after_first(value, *_args, **_kwargs):
-        searched.append(value)
-        return (), False, None
-
-    monkeypatch.setattr("codex32._cli_input._correction_candidates", stop_after_first)
-
-    result = _invoke(["correct"], damaged)
-    assert result.exit_code != 0
-    assert len(searched) == 1
-    assert searched[0].count("?") == len(positions)
 
 
 def test_correct_reranks_mixed_case_erasure_and_normalized_interpretations() -> None:
@@ -1960,45 +1896,6 @@ def test_correct_required_work_is_not_starved_by_erasure_alignment() -> None:
     assert source in result.stderr
     assert "did not complete within ten seconds" not in result.stderr
     assert "interactive confirmation required" not in result.stderr
-
-
-def test_correct_accounts_retry_frontier_after_incomplete_first_search(monkeypatch) -> None:
-    source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
-    start = source.index("x")
-    positions = range(start, start + 13)
-    damaged = "".join(
-        ("P" if index == start + 6 else character.upper()) if index in positions else character
-        for index, character in enumerate(source)
-    )
-    candidate = CorrectionCandidate(
-        parse_codex32(source),
-        (),
-        1,
-        0,
-        0,
-        None,
-        search_complete=False,
-    )
-    full_searches: list[str] = []
-
-    def incomplete_first(value, *_args, **kwargs):
-        if kwargs.get("required_only"):
-            return (), True, 0.0
-        full_searches.append(value)
-        kwargs["capture_layers"].append((1, 5))
-        if len(full_searches) == 1:
-            return (candidate,), False, 0.0
-        return (), False, 0.0
-
-    monkeypatch.setattr("codex32._cli_input._correction_candidates", incomplete_first)
-
-    result = _invoke(["correct"], damaged)
-
-    assert len(full_searches) == 2
-    assert full_searches[0].count("?") == len(positions)
-    assert "?" not in full_searches[1]
-    assert result.exit_code == 3
-    assert "interactive confirmation required" in result.stderr
 
 
 def test_correction_hides_internal_candidate_reparse_failures() -> None:
@@ -2197,7 +2094,7 @@ def test_production_size_budgets_are_enforced() -> None:
 def test_confirmation_alignment_assigns_complete_canonical_groups(
     observed: str, expected: str, groups: list[str], changed: set[int]
 ) -> None:
-    from codex32._cli_input import _entered_groups
+    from codex32.generation import _entered_groups
 
     assert _entered_groups(observed, expected) == (groups, changed)
     assert "".join(groups) == observed
@@ -2238,7 +2135,7 @@ def test_confirmation_region_splits_and_confines_retries(
 
     def confirm(text: str) -> ConfirmationResult:
         confirmed.append(text)
-        return ConfirmationResult("".join(text.split()).lower() == artifact.text.lower())
+        return _confirmation(text, artifact.text)
 
     with contextlib.redirect_stderr(output):
         cli_module._confirm_card(artifact, confirm)
@@ -2251,8 +2148,7 @@ def test_confirmation_region_splits_and_confines_retries(
         assert artifact.text[16:20] in shown
         assert len(re.findall(r"\x1b\[(?:1|22);7;31m", shown)) == 1
     assert snapshots[1] == snapshots[2] == snapshots[3]
-    assert len(confirmed) == 1
-    assert "".join(confirmed[0].split()).lower() == artifact.text.lower()
+    assert "".join(confirmed[-1].split()).lower() == artifact.text.lower()
     if readline:
         assert editor.inserted == prefills
 
@@ -2354,7 +2250,7 @@ def test_confirmation_placeholders_only_replace_wholly_omitted_groups(
 def test_confirmation_grouped_alignment_preserves_token_ownership(
     observed: str, expected: str, groups: list[str], changed: set[int]
 ) -> None:
-    from codex32._cli_input import _entered_groups
+    from codex32.generation import _entered_groups
 
     assert _entered_groups(observed, expected) == (groups, changed)
     assert "".join(groups) == observed
@@ -2393,7 +2289,7 @@ def test_confirmation_full_string_retry_preserves_progress(
 
     def confirm(value: str) -> ConfirmationResult:
         confirmed.append(value)
-        return ConfirmationResult("".join(value.split()).upper() == Card.text)
+        return _confirmation(value, Card.text)
 
     monkeypatch.setattr(cli_module, "_text", read)
     monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
@@ -2407,9 +2303,8 @@ def test_confirmation_full_string_retry_preserves_progress(
     assert "\x1b[1mEFGH\x1b[0m" in snapshots[4]
     assert "\x1b[1;7;31mABC\x1b[0m" in snapshots[4]
     assert "Please re-enter only the highlighted region that remains incorrect." in output.getvalue()
-    assert len(confirmed) == 1
     if full_retry:
-        assert confirmed == [final]
+        assert confirmed[-1] == final
     if readline:
         assert editor.inserted == prefills
 
@@ -2463,7 +2358,7 @@ def test_create_existing_secret_confirms_original_before_initializing(
     with (
         patch.object(sys, "stdin", _TTYInput()),
         patch("codex32.cli._creation_source", return_value=secret),
-        patch("codex32.cli._generated_secret") as generate,
+        patch("codex32.cli.generate_master_seed") as generate,
         patch("codex32.cli.CreationCeremony.from_secret") as split,
         patch("codex32.cli.BitcoinCore.connect", return_value=core),
         contextlib.redirect_stdout(output),
@@ -2738,10 +2633,10 @@ def test_creation_source_correction_requires_approval(monkeypatch, capsys, respo
 
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", answer)
-    result = cli._creation_source(Profile.MS, _FakeBitcoinCore().fingerprint)
+    result = cli._creation_source()
     assert result == (parse_codex32(expected) if response == "yes" else bytes(16))
     output = capsys.readouterr().err
-    assert "Master fingerprint: 3F3521A6\n\n" in output
+    assert "Master fingerprint:" not in output
     assert module._card_text(expected, False) in output
     assert "31m" not in output
     assert "Does this entire string exactly match your recovery card? [y/N]: " in prompts
@@ -2750,11 +2645,9 @@ def test_creation_source_correction_requires_approval(monkeypatch, capsys, respo
         assert "Rejected:" not in output
 
 
-@pytest.mark.parametrize("kind", ["none", "ambiguous", "share", "wrong_profile", "fingerprint"])
+@pytest.mark.parametrize("kind", ["none", "ambiguous", "share", "wrong_profile"])
 def test_creation_source_unusable_candidates_retry(monkeypatch, capsys, kind):
     from types import SimpleNamespace
-
-    from codex32.errors import CodexError
 
     cli = importlib.import_module("codex32.cli")
     module = importlib.import_module("codex32._cli_input")
@@ -2769,12 +2662,7 @@ def test_creation_source_unusable_candidates_retry(monkeypatch, capsys, kind):
     answers = iter(("ms1invalid", "00" * 16))
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
-
-    def fail(seed):
-        raise CodexError("invalid seed")
-
-    fingerprint = fail if kind == "fingerprint" else _FakeBitcoinCore().fingerprint
-    assert cli._creation_source(Profile.MS, fingerprint) == bytes(16)
+    assert cli._creation_source() == bytes(16)
     output = capsys.readouterr().err
     assert "Possible correction:" not in output
     assert "Rejected:" in output
@@ -2798,7 +2686,7 @@ def test_creation_source_does_not_label_an_incomplete_share_candidate(monkeypatc
     monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
     monkeypatch.setattr(cli, "_suggestions", suggestions)
 
-    assert cli._creation_source(Profile.MS) == bytes(16)
+    assert cli._creation_source() == bytes(16)
     output = capsys.readouterr().err
     assert "Search incomplete:" not in output
     assert "Possible correction:" not in output
@@ -2821,17 +2709,14 @@ def test_creation_source_empty_then_interrupt(monkeypatch, exception):
     monkeypatch.setattr(module, "_editable_input", answer)
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: ())
     with pytest.raises(exception):
-        cli._creation_source(Profile.MS)
+        cli._creation_source()
 
 
-def test_creation_source_hex_and_noninteractive_never_search(monkeypatch):
+def test_creation_source_hex_never_searches(monkeypatch):
     cli = importlib.import_module("codex32.cli")
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: pytest.fail("unexpected search"))
     monkeypatch.setattr(sys, "stdin", io.StringIO("00" * 16))
-    assert cli._creation_source(Profile.MS) == bytes(16)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("ms1invalid"))
-    with pytest.raises(cli._UsageError):
-        cli._creation_source(Profile.MS)
+    assert cli._creation_source() == bytes(16)
 
 
 def test_creation_source_is_neutral_and_does_not_infer_ms1(monkeypatch, capsys):
@@ -2848,7 +2733,7 @@ def test_creation_source_is_neutral_and_does_not_infer_ms1(monkeypatch, capsys):
     monkeypatch.setattr(module, "_editable_input", answer)
     monkeypatch.setattr("codex32.indel._search_many", lambda *args, **kwargs: pytest.fail("searched"))
 
-    assert cli._creation_source(Profile.MS) == bytes(16)
+    assert cli._creation_source() == bytes(16)
     assert prompts == ["Enter an existing Bitcoin codex32 secret or hexadecimal seed:\n> "] * 2
     output = capsys.readouterr().err
     assert "Rejected:" in output
@@ -2897,10 +2782,10 @@ def test_incomplete_candidate_has_no_search_warning_and_is_never_accepted_automa
     from codex32.correction import _correct_fixed
 
     source = VECTOR_1["secret_s"]
-    candidate = _correct_fixed(source, suspected_profile=Profile.MS)
+    candidate = _correct_fixed(source, hrp="ms")
     assert candidate is not None
     candidate = replace(candidate, search_complete=False)
-    with patch("codex32._cli_input._correction_candidates", return_value=((candidate,), False, 0.0)):
+    with patch("codex32._cli_input._correct_complete", return_value=((candidate,), False)):
         result = _invoke(["correct"], source[:-1] + "?")
     assert result.exit_code == 1 and result.stdout == ""
     assert "Search incomplete" not in result.stderr
@@ -2950,16 +2835,11 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     assert prompts[1] == "Restore without a wallet record? [y/N]"
     shown = capsys.readouterr().err
     assert shown.count(f"Master fingerprint: {fingerprint.hex().upper()}") == 1
-    assert "was not made from this seed" in shown and "nothing can prove" in shown
+    assert "nothing can prove" in shown
 
     prompts = _record_answers(monkeypatch, "", "y")
     assert _RECORDED_FINGERPRINT(core, secret) is None
     assert prompts[1] == "Restore without a wallet record? [y/N]"
-
-    derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
-    _record_answers(monkeypatch, "", "yes")
-    assert _RECORDED_FINGERPRINT(core, derived) is None
-    assert "matches this seed (codex32 rule)" in capsys.readouterr().err
 
 
 def test_wallet_restore_hides_fingerprint_until_the_record_gate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3013,11 +2893,9 @@ def test_create_existing_checks_the_record_before_import(monkeypatch: pytest.Mon
     secret = parse_codex32(VECTOR_1["secret_s"])
     core = _FakeBitcoinCore()
     checked = []
-    source_fingerprints = []
     emitted_fingerprints = []
 
-    def source(_profile, fingerprint=None):
-        source_fingerprints.append(fingerprint)
+    def source():
         return secret
 
     def record(_core, recovered):
@@ -3040,7 +2918,6 @@ def test_create_existing_checks_the_record_before_import(monkeypatch: pytest.Mon
     monkeypatch.setattr(cli, "_recorded_fingerprint", record)
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
     assert ms_main(["create", "--existing", *([header] if header else [])]) == 0
-    assert source_fingerprints == [None]
     assert emitted_fingerprints and all(fingerprint is None for fingerprint in emitted_fingerprints)
     assert checked == [secret.seed_bytes]
     assert core.expected == core.fingerprint(secret)

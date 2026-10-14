@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 from data.bip93_vectors import VECTOR_1, VECTOR_2
-from data.sharing_vectors import INVALID_BIP39_IMPLIED_SECRET, SHARING_VECTORS
+from data.sharing_vectors import SHARING_VECTORS
 from test_cli import _FakeBitcoinCore, _TTYInput, _TTYOutput
 from test_generic_hrp import UNKNOWN
 
@@ -102,7 +102,7 @@ def test_noninteractive_gate_emits_only_operational_error(entrypoint, plain):
         patch.object(sys, "stdin", io.StringIO(VECTOR_1["secret_s"][:-1] + "?")),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
-        patch.object(_cli_input, "_correction_candidates", return_value=((_candidate(),), True, None)),
+        patch.object(_cli_input, "_correct_complete", return_value=((_candidate(),), True)),
     ):
         status = entrypoint(["correct", *(["--plain"] if plain else [])])
     prog = "codex32" if entrypoint is cli.main else "ms32"
@@ -129,9 +129,7 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
     monkeypatch.setattr(_cli_input, "_editable_input", respond)
     monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
     monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: (candidate,))
-    monkeypatch.setattr(
-        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
-    )
+    monkeypatch.setattr(_cli_input, "_correct_complete", lambda *args, **kwargs: ((candidate,), True))
     core = _FakeBitcoinCore()
     monkeypatch.setattr(cli.BitcoinCore, "connect", lambda *args: core)
     stdout, stderr = _TTYOutput(), _TTYOutput()
@@ -165,9 +163,7 @@ def test_yes_reveals_candidate_after_gate_with_plain_output(monkeypatch):
         return next(responses)
 
     monkeypatch.setattr(_cli_input, "_editable_input", respond)
-    monkeypatch.setattr(
-        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
-    )
+    monkeypatch.setattr(_cli_input, "_correct_complete", lambda *args, **kwargs: ((candidate,), True))
     with (
         patch.object(sys, "stdin", _TTYInput()),
         contextlib.redirect_stdout(stdout),
@@ -183,9 +179,7 @@ def test_redirected_stderr_blocks_low_discrimination_disclosure(monkeypatch):
     candidate = _candidate(source)
     responses = iter((source[:-1] + "?",))
     monkeypatch.setattr(_cli_input, "_editable_input", lambda *args, **kwargs: next(responses))
-    monkeypatch.setattr(
-        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
-    )
+    monkeypatch.setattr(_cli_input, "_correct_complete", lambda *args, **kwargs: ((candidate,), True))
     stdout, stderr = io.StringIO(), io.StringIO()
     with (
         patch.object(sys, "stdin", _TTYInput()),
@@ -220,9 +214,7 @@ def test_redirected_correct_uses_terminal_gate_without_second_confirmation(monke
         return "YES"
 
     monkeypatch.setattr(_cli_input, "_confirmation_input", confirm)
-    monkeypatch.setattr(
-        _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
-    )
+    monkeypatch.setattr(_cli_input, "_correct_complete", lambda *args, **kwargs: ((candidate,), True))
     stdout, stderr = io.StringIO(), _TTYOutput()
     with (
         patch.object(sys, "stdin", io.StringIO(source[:-1] + "?")),
@@ -342,7 +334,7 @@ def test_seed_candidate_is_reannotated_after_later_search_admission(monkeypatch)
 
 
 @pytest.mark.parametrize("profile", ("bip39_12w", "bip39_24w"))
-def test_cli_derives_hand_produced_bip39_set_but_rejects_invalid_implied_secret(profile):
+def test_cli_derives_hand_produced_generic_set(profile):
     from test_generic_hrp import _invoke
 
     vector = SHARING_VECTORS[profile]
@@ -351,6 +343,9 @@ def test_cli_derives_hand_produced_bip39_set_but_rejects_invalid_implied_secret(
         vector["D"] + "\n",
         "",
     )
-    invalid = INVALID_BIP39_IMPLIED_SECRET
-    status, output, error = _invoke(cli.main, ["share", "d"], invalid["A"] + "\n" + invalid["C"])
-    assert status == 1 and output == "" and "embedded BIP39 entropy checksum is invalid" in error
+
+
+def test_confirmation_never_reads_answers_from_redirected_input(monkeypatch):
+    monkeypatch.setattr(_cli_input.sys, "stdin", io.StringIO("YES\n"))
+    with pytest.raises(_cli_input.InteractiveConfirmationRequired):
+        _cli_input._confirmation_input("Type YES: ")

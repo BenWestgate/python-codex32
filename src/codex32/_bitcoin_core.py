@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import string
@@ -11,9 +10,7 @@ from time import sleep
 from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
-from codex32.bech32 import _u5_to_chars, convertbits
-from codex32.generation import _fingerprint_identifier
-from codex32.profiles.ms32 import MasterSeed
+from codex32.bip93 import MasterSeed
 
 
 class BitcoinCoreError(Exception):
@@ -24,13 +21,7 @@ class FingerprintMismatch(BitcoinCoreError):
     """The recovered seed is not the wallet the operator's record describes."""
 
 
-_CHAINS = (
-    ("main", "mainnet"),
-    ("test", "testnet3"),
-    ("testnet4", "testnet4"),
-    ("signet", "signet"),
-    ("regtest", "regtest"),
-)
+_CHAIN_NAMES = {"main": "mainnet", "test": "testnet3"}
 
 _PRIVATE_MARKERS = ("xprv", "tprv")
 _OUTPUT_TYPES = ("legacy", "p2sh-segwit", "bech32", "bech32m")
@@ -54,36 +45,6 @@ NO_RECORD_WARNING = (
 )
 
 
-def identifier_note(origin: str | None) -> str:
-    # Say what `identifier_origin` found, for an operator restoring without a record.
-    if origin is None:
-        return (
-            "The backup identifier was not made from this seed. That can be normal for codex32 backups "
-            "made from split shares, supplied seed bytes or an explicit identifier. Bails made every "
-            "identifier from its seed, so for a Bails backup these are the wrong or mixed-up cards."
-        )
-    return (
-        f"The backup identifier matches this seed ({origin} rule). That rules out most mixed-up cards, "
-        "but not cards replaced on purpose."
-    )
-
-
-def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
-    """Check codex32's fingerprint or Bails' three-character seed-digest identifier."""
-    identifier = secret.header.identifier
-    if identifier == _fingerprint_identifier(fingerprint):
-        return "codex32"
-    for name, digest in (("Bails", "ripemd160"), ("Bails alpha", "sha256")):
-        try:
-            hashed = hashlib.new(digest, secret.seed_bytes).digest()
-        except ValueError:
-            continue
-        derived = convertbits(hashed, 8, 5, pad=True)
-        if identifier[:3] == _u5_to_chars(tuple(derived[:3])):
-            return name
-    return None
-
-
 @dataclass(frozen=True)
 class BitcoinCore:
     executable: str
@@ -91,48 +52,29 @@ class BitcoinCore:
     version: int
 
     @classmethod
-    def connect(
-        cls,
-        ask: Callable[[str], str] | None = None,
-        tell: Callable[[str], None] | None = None,
-    ) -> BitcoinCore:
+    def connect(cls, tell: Callable[[str], None] | None = None) -> BitcoinCore:
+        """Use the network bitcoin-cli is configured for, and say which one it is."""
         executable = shutil.which("bitcoin-cli")
         if executable is None:
             raise BitcoinCoreError("Install a reviewed bitcoin-cli before creating a backup.")
-        choices: list[BitcoinCore] = []
-        for chain, _label in _CHAINS:
-            client = cls(executable, chain, 0)
-            try:
-                network = client._rpc("getnetworkinfo", timeout=5)
-                blockchain = client._rpc("getblockchaininfo", timeout=5)
-            except BitcoinCoreError:
-                continue
-            version = network.get("version") if isinstance(network, dict) else None
-            reported = blockchain.get("chain") if isinstance(blockchain, dict) else None
-            if isinstance(version, bool) or not isinstance(version, int) or reported != chain:
-                continue
-            if version >= 320000:
-                choices.append(cls(executable, chain, version))
-        if not choices:
+        client = cls(executable, "", 0)
+        try:
+            network = client._rpc("getnetworkinfo", timeout=5)
+            blockchain = client._rpc("getblockchaininfo", timeout=5)
+        except BitcoinCoreError as error:
             raise BitcoinCoreError(
-                "No local Bitcoin Core RPC server found.\nStart Bitcoin Core "
-                "with local RPC enabled.\nFor signet practice: bitcoin-qt -signet -server"
-            )
-        if len(choices) > 1:
-            if ask is None or tell is None:
-                raise BitcoinCoreError("More than one local Bitcoin Core network is running.")
-            tell("Local Bitcoin Core networks:")
-            for number, choice in enumerate(choices, 1):
-                tell(f"  {number}. {dict(_CHAINS)[choice.chain]}")
-            while not (
-                (answer := ask("Choose a network number")).isdecimal() and 1 <= int(answer) <= len(choices)
-            ):
-                tell("Enter one of the displayed numbers.")
-            choices = [choices[int(answer) - 1]]
-        client = choices[0]
+                "No local Bitcoin Core RPC server found.\nStart Bitcoin Core with local RPC enabled.\n"
+                "bitcoin-cli uses the network set in bitcoin.conf; for signet practice add signet=1."
+            ) from error
+        version = network.get("version") if isinstance(network, dict) else None
+        chain = blockchain.get("chain") if isinstance(blockchain, dict) else None
+        if isinstance(version, bool) or not isinstance(version, int) or not isinstance(chain, str):
+            raise BitcoinCoreError("Bitcoin Core returned unexpected network information.")
+        if version < 320000:
+            raise BitcoinCoreError("Bitcoin Core 32.0 or newer is required.")
         if tell is not None:
-            tell(f"Using Bitcoin Core on {dict(_CHAINS)[client.chain]}.")
-        return client
+            tell(f"Using Bitcoin Core on {_CHAIN_NAMES.get(chain, chain)}.")
+        return cls(executable, chain, version)
 
     def _rpc(
         self,
@@ -141,7 +83,7 @@ class BitcoinCore:
         stdin: str | None = None,
         timeout: int = 120,
     ) -> object:
-        command = [self.executable, f"-chain={self.chain}", "-rpcconnect=127.0.0.1"]
+        command = [self.executable, "-rpcconnect=127.0.0.1"]
         if wallet is not None:
             command.append(f"-rpcwallet={wallet}")
         if stdin is not None:

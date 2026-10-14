@@ -7,10 +7,10 @@ from unittest.mock import patch
 
 import pytest
 from data.bip93_vectors import VECTOR_1, VECTOR_5, VECTOR_6
-from test_bip39 import BIP39_12W_ZERO, BIP39_24W_ZERO
 
-from codex32 import CorrectionContext, MasterSeed, Profile, correct
-from codex32._cli_input import _correction_plan, _fingerprint_matcher
+from codex32 import CorrectionContext, MasterSeed, correct
+from codex32._cli_input import _fingerprint_matcher
+from codex32.bip93 import TEXT_LENGTHS
 from codex32.correction import CorrectionCandidate, _best, _capture_volume, _erasure_state, _primary
 from codex32.generation import _fingerprint_identifier
 from codex32.indel import (
@@ -27,13 +27,12 @@ from codex32.indel import (
     _search_many,
     _search_target,
 )
-from codex32.profiles.ms32 import TEXT_LENGTHS
 from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint
 from tools.correction_capture import cross_length_classes
 from tools.correction_reference import _REDUCED_CLASSES, _alignment_count, _reductions
 
 SOURCE = VECTOR_1["secret_s"]
-CONTEXT = CorrectionContext(Profile.MS, expected_length=len(SOURCE))
+CONTEXT = CorrectionContext("ms", expected_length=len(SOURCE))
 
 
 def _groups(text: str) -> list[str]:
@@ -130,7 +129,7 @@ def test_optional_three_character_indels_recover_intermediate_lengths(
     states = tuple(
         state
         for target in TEXT_LENGTHS
-        if (state := _prepare(CorrectionContext(Profile.MS, target, "ms1"), damaged, _CLASSES)) is not None
+        if (state := _prepare(CorrectionContext("ms", target, "ms1"), damaged, _CLASSES)) is not None
     )
     frontier = _frontier(states, frozenset(TEXT_LENGTHS))
     state = next(s for s in states if s.target == len(source))
@@ -155,10 +154,7 @@ def test_automatic_secondary_search_recovers_two_group_indels(
 ) -> None:
     source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = _group_damage(source, inserted, omitted)
-    contexts = tuple(
-        CorrectionContext(Profile.MS, target, "ms1")
-        for target in _correction_plan(Profile.MS, None, len(damaged), None)[0]
-    )
+    contexts = tuple(CorrectionContext("ms", target, "ms1") for target in TEXT_LENGTHS)
 
     candidates, complete = _search_many(
         contexts,
@@ -216,7 +212,7 @@ def test_group_search_does_not_depend_on_spaces() -> None:
 
 def test_immutable_confirmed_header_reduces_domains_and_cannot_be_repaired() -> None:
     prefix = SOURCE[:8]
-    context = CorrectionContext(Profile.MS, 48, prefix)
+    context = CorrectionContext("ms", 48, prefix)
     character = next(shape for shape in _CHARACTER_CLASSES if (shape.inserted, shape.omitted) == (2, 2))
     two_groups = next(shape for shape in _GROUP_CLASSES if (shape.inserted, shape.omitted) == (0, 2))
 
@@ -327,23 +323,18 @@ def test_fixed_volume_retains_every_bch_substitution_layer() -> None:
 def test_unknown_target_search_recovers_reachable_valid_length() -> None:
     damaged = SOURCE[:19] + SOURCE[20:]
 
-    assert correct(CorrectionContext(Profile.MS), damaged)[0].artifact.text == SOURCE
+    assert correct(CorrectionContext("ms"), damaged)[0].artifact.text == SOURCE
     assert correct(CONTEXT, damaged)[0].artifact.text == SOURCE
 
 
 @pytest.mark.parametrize(
-    ("profile", "source"),
-    (
-        (Profile.MS, VECTOR_5["secret_s"]),
-        (Profile.CL, VECTOR_6["codex32_peev"]),
-        (Profile.BIP39_12W, BIP39_12W_ZERO),
-        (Profile.BIP39_24W, BIP39_24W_ZERO),
-    ),
+    ("hrp", "source"),
+    (("ms", VECTOR_5["secret_s"]), ("cl", VECTOR_6["codex32_peev"])),
 )
-def test_structural_search_supports_every_profile(profile: Profile, source: str) -> None:
+def test_structural_search_supports_ms_and_generic_hrps(hrp: str, source: str) -> None:
     damaged = source[:17] + source[18:]
 
-    result = correct(CorrectionContext(profile, expected_length=len(source)), damaged)
+    result = correct(CorrectionContext(hrp, expected_length=len(source)), damaged)
 
     assert [candidate.artifact.text for candidate in result] == [source]
 
@@ -358,7 +349,7 @@ def test_two_each_with_two_substitutions_is_admitted_by_shared_bound() -> None:
     damaged[3] = "2"
     damaged[41] = "q" if damaged[41] != "q" else "p"
 
-    state = _prepare(CorrectionContext(Profile.MS, 48), "".join(damaged), _CLASSES)
+    state = _prepare(CorrectionContext("ms", 48), "".join(damaged), _CLASSES)
     assert state is not None
     shape = next(s for s in state.counts if s.inserted == s.omitted == 2)
     frontier = _frontier((state,), frozenset((48,)))
@@ -383,7 +374,7 @@ def test_two_each_with_one_substitution_uses_the_generic_fixed_core() -> None:
     view = _View(symbols, ((0, len(symbols)),), len(symbols))
     view = view.splice(28 - 3, 1, 0).splice(14 - 3, 1, 0)
     view = view.splice(18 - 3, 0, 1).splice(32 - 3, 0, 1)
-    state = _prepare(CorrectionContext(Profile.MS, 48), text, _CLASSES)
+    state = _prepare(CorrectionContext("ms", 48), text, _CLASSES)
     assert state is not None
     shape = next(s for s in state.counts if s.inserted == s.omitted == 2)
     frontier = _frontier((state,), frozenset((48,)))
@@ -455,7 +446,7 @@ def test_production_cross_length_frontier_matches_independent_arithmetic() -> No
             for target in TEXT_LENGTHS
             if (
                 state := _prepare(
-                    CorrectionContext(Profile.MS, target, "ms1"),
+                    CorrectionContext("ms", target, "ms1"),
                     text,
                     _CLASSES,
                 )
@@ -488,7 +479,7 @@ def test_production_cross_length_frontier_matches_independent_arithmetic() -> No
 
 
 def test_primary_target_runs_first_and_secondary_search_is_proof_driven() -> None:
-    contexts = tuple(CorrectionContext(Profile.MS, target, "ms1") for target in TEXT_LENGTHS)
+    contexts = tuple(CorrectionContext("ms", target, "ms1") for target in TEXT_LENGTHS)
     damaged = SOURCE + "qq"
     artifact = MasterSeed.from_seed(bytes(16), identifier="test")
 
@@ -515,7 +506,7 @@ def test_primary_target_runs_first_and_secondary_search_is_proof_driven() -> Non
 
 
 def test_cross_target_paths_deduplicate_the_same_final_string_globally() -> None:
-    contexts = tuple(CorrectionContext(Profile.MS, target, "ms1") for target in (48, 54))
+    contexts = tuple(CorrectionContext("ms", target, "ms1") for target in (48, 54))
     artifact = MasterSeed.from_seed(bytes(16), identifier="test")
     candidate = CorrectionCandidate(artifact, (), 1 << 200, 0, 0, None)
 
@@ -561,5 +552,5 @@ def test_full_checksum_burst_is_admitted_at_the_shared_mass_ceiling():
     from codex32.correction import _correct_fixed
 
     damaged = SOURCE[:8] + "?" * 13 + SOURCE[21:]
-    assert _correct_fixed(damaged, suspected_profile=Profile.MS).artifact.text == SOURCE
+    assert _correct_fixed(damaged, hrp="ms").artifact.text == SOURCE
     assert correct(CONTEXT, damaged)[0].artifact.text == SOURCE

@@ -5,7 +5,7 @@
 The package uses one narrow dependency direction:
 
 ```text
-text -> format/header/checksum -> optional profile module -> immutable artifact
+text -> format/header/checksum -> ms length rule -> immutable artifact
                                                    |-> BIP93 sharing
                                                    |-> ms generation
                                                    |-> bounded correction
@@ -17,13 +17,14 @@ CLI -> public APIs above -> private bitcoin-cli subprocess adapter
 The format layer first validates ASCII, case, separator, characters, and the
 absolute size bound. The application parser selects the checksum type from the
 generic encoded length and validates the common header before verifying the
-outer checksum. Only afterward may the HRP select a registered application
-profile. The parser then checks its application length and payload semantics.
-An unregistered HRP crosses the boundary only as an opaque base `Secret` or
-`Share`, with normalized `hrp`, `profile is None`, and no invented payload meaning.
+outer checksum. Only afterward does an `ms` HRP add the BIP93 master-seed
+length rule and the `MasterSeed` type for S. Every other HRP crosses the
+boundary as a base `Secret` or `Share`, with normalized `hrp` and no invented
+payload meaning. Applications with their own HRP add their rules on top of
+these generic artifacts.
 
 CLI input diagnostics preserve generic container, header, and length failures.
-After a checksum failure, the CLI may report an unsupported profile text length
+After a checksum failure, the CLI may report an unsupported `ms` text length
 instead. This diagnostic does not validate the input or change parser ordering;
 alignment correction remains available. Frozen-prefix hints do not override a
 generic parse-length failure.
@@ -33,9 +34,8 @@ generic parse-length failure.
 | Concept | Single owner | Evidence |
 |---|---|---|
 | Bech32 characters, container, and `convertbits` | `bech32.py` | `test_bech32.py` |
-| codex32 checksum selection and header boundary | `bip93.py` | `test_profiles.py`, BIP93 vectors |
+| codex32 checksum selection, header boundary, and `ms` lengths | `bip93.py` | `test_lengths.py`, BIP93 vectors |
 | checksum and CRC arithmetic | `checksums.py` | official vectors, `test_crc.py` |
-| optional application rules and S types | `profiles/ms32.py`, `cl32.py`, `bip39.py` | profile and BIP39 tests |
 | immutable base artifacts and interpolation | `bip93.py` | BIP93 vectors, `test_sharing.py` |
 | entropy, masks, identifiers, output indices | `generation.py` | `test_generation.py` |
 | shared GF(32) arithmetic | `gf32.py` | sharing vectors and correction corpus |
@@ -43,7 +43,7 @@ generic parse-length failure.
 | structural alignment and admission | `indel.py` | `test_correction_indel.py`, `test_correction_capture.py` |
 | CLI competitor scheduling and pruning | `_competitors.py` | `test_competitors.py` |
 | incremental alignment syndromes | `_alignment.py` | `test_alignment.py` |
-| stdlib-only BIP32 root validation and serialization | `_bip32.py`, `profiles/ms32.py` | BIP32 and wallet vectors |
+| stdlib-only BIP32 root validation and serialization | `_bip32.py` | BIP32 and wallet vectors |
 | root xprv handoff | `wallet.py` | `test_wallet.py` |
 | Core target selection, descriptor requests, and subprocess state | `_bitcoin_core.py` | `test_bitcoin_core.py`, regtest |
 | bounded stdin, fixed-prefix TTY entry, and whole-card confirmation | `_cli_input.py` | `test_cli.py` |
@@ -51,16 +51,16 @@ generic parse-length failure.
 
 ### Boundaries
 
-- Only parsing and profile-specific factories construct artifacts.
+- Parsing and `MasterSeed.from_seed` construct artifacts. Direct construction
+  skips validation and is unsupported; nothing blocks it.
 - `bech32.py` keeps the recognizable BIP173 reference names and accumulator
   structure. Encoding takes an explicit checksum specification. Decoding
   without one returns the HRP and complete data part after checking only the
   Bech32 container rules; decoding with one also verifies and removes that
   checksum. The module does not select codex32 checksum lengths, validate
   codex32 headers, or decode application payloads.
-- `profiles/__init__.py` optionally selects one of the registered application
-  modules. Labels, lengths, padding, diagnostics, and S types stay with their
-  application; unknown HRPs remain opaque and there is no runtime registration.
+- The library knows only BIP93's `ms` application. Other HRPs stay generic;
+  there is no profile registry.
 - Headers and artifacts are immutable; shares expose symbols, not bytes.
 - Artifact `str()` and `repr()` render redacted placeholders. Code that
   intentionally serializes a validated `Share` or `Secret` must use its explicit
@@ -99,7 +99,7 @@ generic parse-length failure.
   hidden state.
 
 Private Python names are convention rather than access control. The supported
-surface is the 22-name package `__all__`; direct use of private helpers is
+surface is the package `__all__`; direct use of private helpers is
 unsupported but remains in the review scope.
 
 ### Size budget
@@ -109,46 +109,25 @@ blank and comment-only lines while counting subpackages recursively. Changing
 the budget requires explicit review and authorization together with the matching
 documentation and enforcement update.
 
-## Profile and opaque-HRP capabilities
+## `ms` and other HRPs
 
-There is no runtime registration. An unknown HRP uses generic codex32 rules and
-base artifact types rather than falling back to a registered application.
+The library implements BIP93's `ms` application and nothing else. Any other HRP
+uses generic codex32 rules and base artifact types; an application that needs
+its own lengths or payload checks applies them to those artifacts itself.
 
-| Capability | opaque HRP | `ms` | `cl` | `bip39_12w/24w` |
-|---|---:|---:|---:|---:|
-| parse S/share | yes | yes | unshared S only | yes |
-| semantic S bytes | no | 16, 20, 24, 28, 32, or 64 | exactly 32 | no |
-| recovery and API share derivation | yes | yes | no | yes |
-| `codex32` recovery/share/correction | yes | yes | correction only | yes |
-| unshared generation / shared ceremony API | no | six supported sizes | no | no |
-| fresh generation CLI (`ms32`) | no | six supported sizes | no | no |
-| existing-S splitting | no | yes | no | no |
-| wallet API | no | S only | no | no |
-
-Registered application semantics remain:
-
-| Capability | `ms` | `cl` | `bip39_12w/24w` |
-|---|---:|---:|---:|
-| semantic S bytes | 16, 20, 24, 28, 32, or 64 | exactly 32 | no |
-| fixed BCH API | yes | yes | yes |
-| bounded structural API | yes | yes | yes |
+| Capability | other HRP | `ms` |
+|---|---:|---:|
+| parse S/share, recover, derive shares | yes | yes |
+| fixed BCH and bounded structural correction | yes | yes |
+| semantic S bytes (`MasterSeed.seed_bytes`) | no | 16, 20, 24, 28, 32, or 64 |
+| generation, ceremonies, existing-S splitting | no | six supported sizes |
+| wallet API and `ms32` | no | yes |
 
 `ms` payloads encode exactly 16, 20, 24, 28, 32, or 64 seed bytes and may have
 any legal parsed trailing bits. Parsing, generation, ceremonies, raw-seed
-import, and CLI `--bytes` enforce the same six sizes. `cl` has 52 payload
-symbols and threshold 0; parsed discarded bits remain application data. BIP39
-profiles have exactly 27/53 payload symbols; S requires zero outer padding and
-a valid embedded SHA-256 checksum. Ordinary BIP39 shares are random masks and
-receive structural validation only.
-
-Current Core Lightning defaults to mnemonic recovery, but its recovery command
-retains an import path for unshared codex32 HSM secrets. It rejects shares and
-any S with a nonzero threshold, so the `cl` profile rejects them too and there
-is no CL recovery, share derivation, or splitting.
-
-The generic `codex32` façade supports CL inspection and correction, and BIP39
-inspection, correction, recovery, and share derivation. The `ms32` façade
-accepts only `ms` artifacts.
+import, and CLI `--bytes` enforce the same six sizes. The generic `codex32`
+command checks, corrects, recovers, and derives shares for any HRP; `ms32`
+accepts only `ms`.
 
 ## Secret generation
 
@@ -239,7 +218,7 @@ case and useful spacing without crossing frozen boundaries. Every newly
 matching complete group freezes immediately, and the leftmost remaining run
 is next. Empty and unchanged retries are unsuccessful; retries are unlimited.
 A completely correct full-string retry confirms through the same callback.
-An incorrect retry beginning with the expected profile and separator and longer
+An incorrect retry beginning with the expected HRP and separator and longer
 than the active canonical region is recognized as a full-string attempt. It
 preserves current progress, clarifies which region remains incorrect, and
 redisplays that region. Other submissions are aligned locally.
@@ -261,7 +240,7 @@ never applies to shares.
 Explicit output indices preserve caller order. A share count uses
 `SystemRandom.sample` over the 31 ordinary indices and preserves sample order.
 There is no entropy injection, sorting, caller-supplied partial-basis
-completion, or BIP39 generation. Ceremonies reject copying and serialization;
+completion. Ceremonies reject copying and serialization;
 the CLI does not resume an interrupted ceremony.
 
 ## Recovery and additional-share derivation
@@ -296,7 +275,6 @@ Input collections are bounded before at most nine artifacts are copied.
 6. Extract the complete payload-plus-checksum tail from each artifact.
 7. Interpolate the tail in GF(32) at S or the fresh target.
 8. Construct the target header explicitly and reparse the complete string.
-9. For BIP39 derivation, first interpolate and validate the implied S.
 
 The HRP and common threshold/identifier fields are not interpolated. The target
 index is explicit. Output is uppercase only when every input is uppercase;
@@ -311,29 +289,18 @@ existing checksum symbols produces the checksum for the explicit target index
 and interpolated payload. This keeps sharing visibly symbol-only and avoids a
 second checksum-generation step. Reparsing the result is mandatory: it verifies
 the checksum relationship, restores the immutable artifact boundary, and
-applies registered S semantics when the HRP has a profile.
+applies the `ms` length rule and `MasterSeed` type.
 
 `tests/test_sharing.py` proves that recovery and derivation still work after
 checksum creation is disabled. Official BIP93 vectors anchor the GF(32)
-arithmetic. BIP39 uses compact frozen string/result fixtures rather than
+arithmetic. Other HRPs use compact frozen string/result fixtures rather than
 a duplicate test implementation of interpolation or checksumming.
-
-### BIP39 migration profiles
-
-Ordinary BIP39 shares are validated only as exact-length codex32 symbol masks.
-A recovered S must additionally have zero outer padding and a valid embedded
-BIP39 checksum. Derivation validates the implied S before propagating the set.
-The public API may recover or derive codex32 artifacts; it never exposes BIP39
-entropy, a mnemonic, generation, or wallet derivation. The generic `codex32`
-CLI exposes BIP39 recovery and derivation. Derivation first reconstructs and
-validates the implied BIP39 S. BIP39 construction, mnemonic output, and wallet
-interpretation remain unavailable.
 
 ### Deliberate Rust-reference differences
 
 - Exactly `k` artifacts are required; extra points are not silently accepted.
 - A requested target that is already present is rejected rather than returned.
-- Profile-specific S semantics, including BIP39, are applied after recovery.
+- The `MasterSeed` type is applied to a recovered `ms` S.
 - The target header is constructed from validated common fields rather than
   obtained by interpolating constant header columns.
 
@@ -348,23 +315,21 @@ sharing, recovery, or wallet APIs.
 
 ### Public full-string API
 
-`correct(CorrectionContext(hrp, ...), damaged_text)` supports registered and
-opaque HRPs. `hrp` accepts a lowercase-insensitive string or `Profile` and is
-stored as a normalized lowercase string. The context fixes that HRP and may supply:
+`correct(CorrectionContext(hrp, ...), damaged_text)` supports `ms` and any
+other HRP. `hrp` is a case-insensitive string stored in lowercase. The context fixes that HRP and may supply:
 
 - `expected_length`, the complete canonical string length;
 - `immutable_prefix`, program-supplied text outside the correction domain; and
 - `excluded_indices`, ordinary share indices already accepted in a recovery.
 
-With or without `expected_length`, registered correction searches only valid
-profile lengths reachable by a supported structural family. An opaque target
+With or without `expected_length`, `ms` correction searches only valid
+master-seed lengths reachable by a supported structural family. Another HRP
 considers character offsets -4 through +4 and group offsets -8/-4/0/+4/+8,
-filtered through generic codex32 shape validation. Registered profile length
-and payload validation is unchanged. Every attempt has a ten-second deadline.
+filtered through generic codex32 shape validation. Every attempt has a ten-second deadline.
 
 The HRP, separator, and any confirmed five-character threshold/identifier header
-are immutable. Profile registration is never a candidate-ranking signal and
-cannot transform one application namespace into another. Every returned
+are immutable. The HRP is never a candidate-ranking signal and correction
+cannot change it. Every returned
 artifact crosses `parse_codex32`; suggestions remain untrusted and require
 exact whole-string confirmation before operational use.
 
@@ -376,7 +341,7 @@ For included classes `(V, b)`, let `B = max(b)` and
 `C = sum(V << (B - b))`. The fields store `C` and `B`.
 `low_checksum_discrimination` is exactly `32*C > 2**B`; equality leaves five
 bits and does not trigger. Candidate ranking remains based on its own volume.
-No profile semantics, CRC, fingerprint, pruning, or timeout discount this sum.
+No `ms` length rule, CRC, fingerprint, pruning, or timeout discount this sum.
 The API remains noninteractive. Clients displaying candidates can use this
 property to enforce the CLI's low-discrimination disclosure boundary.
 `search_complete=False` identifies a unique-so-far result from interrupted
@@ -435,7 +400,7 @@ the mutable body length. All fixed, character, group and target-length layers
 share one admission ledger. Complete equal-volume batches are admitted only
 while their cumulative mass is at or below `1`. Integer scaling handles
 65-bit and 75-bit checksum spaces together. Consecutive fixed erasures are
-included in this ledger, with no independent allowance. Profile validation,
+included in this ledger, with no independent allowance. Length validation,
 CRC and fingerprint hints do not enlarge it.
 
 The inclusive ceiling permits full 13/15-erasure completion, whose capture
@@ -460,8 +425,7 @@ character expansion, with lower capture-volume layers first within each
 phase. A layer can be omitted once its rank is strictly worse than the
 current best result. Otherwise the deadline is checked during enumeration.
 
-The required baseline is `A<=2` and `G<=2` at every current public profile
-length. Host restarts prevented an uninterrupted timing certification; the
+The required baseline is `A<=2` and `G<=2` at every valid `ms` length. Host restarts prevented an uninterrupted timing certification; the
 recorded capped measurements do not promote a wall-time guarantee. Deeper `A=3/4` work is best effort within the deadline. No tentative
 40/66/93/127 cutoff is a protocol constant or a promoted deeper guarantee.
 See [alignment benchmark evidence](alignment-benchmarks.md) for measured public
@@ -487,7 +451,7 @@ whole-string acceptance boundary. Public Python search signatures and required
 versus optional completion behavior are unchanged.
 
 CLI pruning proves coverage using fixed BCH's `E + 2*S <= 8` sphere or the
-minimum distance of nine at the same profile and length. It accounts for
+minimum distance of nine at the same HRP and length. It accounts for
 residual substitutions, existing erasures, and cancelling structural edits.
 Discovery coverage alone is insufficient: a redundant layer may give a known
 artifact a lower capture volume or Hamming weight. Symbol-count and positional
@@ -499,7 +463,7 @@ Completed simpler mask/deletion layers can cover repeated masks and masks remove
 by deletion. The original mass ledger is preserved without expanding admission
 to spend savings from redundant hypotheses. Execution remains on one CPU.
 
-`tools/alignment_benchmark.py --public` exercises valid profile lengths, target
+`tools/alignment_benchmark.py --public` exercises valid `ms` lengths, target
 knowledge, header freezing, reachable offsets and explicit erasures.
 `--kernel` separately samples BCH-body lengths 40/66/93/127/1015/1023, character
 depths 2/3/4 and group depth 2, and reports generation, syndrome, BCH, locator,
@@ -509,7 +473,7 @@ may represent a synthetic word that is not a valid public application string.
 ### Worksheet residue API
 
 `correct_worksheet_residue` accepts only a 13- or 15-symbol residue and uses
-zero-based reverse positions. It has no profile, HRP, or complete-string length.
+zero-based reverse positions. It has no HRP or complete-string length.
 `()` means already correct, a tuple contains unique addends, and `None` means no
 unique correction. The CLI alone converts displayed positions to one-based.
 
@@ -576,8 +540,7 @@ conditioning. Direct `MasterSeed.from_seed` encodes the same convention.
 ## Wallet interoperability
 
 Public wallet operations accept only a validated `MasterSeed`. `wallet.py` is
-stateless and never accepts shares, Core Lightning secrets, BIP39 migration
-artifacts, or raw bytes.
+stateless and never accepts shares, other HRPs' secrets, or raw bytes.
 
 The public adapter has one function: `master_xprv(secret, testnet=False)`
 returns the BIP32 root extended private key, using stdlib-only serialization.
@@ -664,9 +627,7 @@ secret-root warning.
 Bitcoin Core 32 or newer and exercises direct wallet restoration, account-0
 and timestamp handling, Core-created public descriptors, balance discovery,
 sign/broadcast behavior on regtest, relocking, and mainnet/test-network root
-serialization. `tools/bitcoin_core_main_smoke.py` repeats the descriptor,
-account-0, timestamp, and relocking checks against an isolated main-chain Core
-instance without connecting to peers.
+serialization.
 
 ## Deliberate divergences and non-goals
 
@@ -674,17 +635,17 @@ These choices are not presented as BIP93 requirements.
 
 | Decision | Reason |
 |---|---|
-| `ms` accepts only six seed sizes | follows the frozen PR #2258 profile with no legacy decoder |
+| `ms` accepts only six seed sizes | follows frozen bips PR #2258 with no legacy decoder |
 | random electronic output indices | reduces canonical index disclosure; explicit indices preserve requested order |
 | generation-only CRC padding | small recovery hint; not validity or share semantics |
 | fingerprint identifier only for fresh k=0 | shared sets, raw seeds, and re-sharing use random IDs unless explicitly overridden |
-| BIP39 profiles have no construction or wallet CLI | migration artifacts may still be checked, corrected, recovered, and re-shared generically |
+| only `ms` has application rules | other applications (Core Lightning, BIP39 worksheets) apply their own rules to generic artifacts |
 | reject existing derivation targets | enforces BIP93's fresh-index wording |
 | bounded structural correction is deliberately finite | exact capture safety, complete global rank layers, the 48-character ten-second target, and the package audit budget exclude a general recovery engine; longer valid strings keep the same bounded classes |
 | no caller-supplied partial-basis completion | unauthenticated points can create incompatible same-header polynomials |
 
 Unknown-HRP application interpretation, GUI, direct sockets, a general RPC
-client, secret storage, runtime profiles, BIP39 mnemonics, and arbitrary descriptor parsing are
+client, secret storage, application profiles, BIP39 mnemonics, and arbitrary descriptor parsing are
 explicit v1 non-goals.
 Structural correction is bounded as documented above; broader multi-candidate
 recovery remains a separate-tool concern. Pending-standard compatibility, the
@@ -715,7 +676,7 @@ difference highlighting. Only `correct` highlights corrected four-character
 windows; creation retains its separate transcription-error localization.
 Acceptance requires “Does this entire string exactly match your recovery card?
 [y/N]:” with explicit `y` or `yes`; rejection preserves the input flow. `check`
-never searches for corrections. An intact first-entry profile prefix is immutable.
+never searches for corrections. An intact first-entry HRP prefix is immutable.
 
 Bitcoin secret candidates display their master fingerprint above the card text.
 Final-share candidates in recovery commands provisionally reconstruct an isolated
@@ -724,8 +685,8 @@ Preview failures reject the candidate. No candidate enters accepted state, key
 export, descriptor construction, or wallet initialization before confirmation.
 
 Interactive `create --existing` offers bounded correction for a mistyped codex32
-secret of the selected profile. Compare the entire proposed string with the
-original recovery card before answering yes. Bitcoin candidates show their master
-fingerprint above the text. Declining or finding no usable correction returns to
+`ms` secret. Compare the entire proposed string with the
+original recovery card before answering yes. The fingerprint stays hidden until
+the wallet-record check. Declining or finding no usable correction returns to
 source entry; hexadecimal seeds are never corrected. Confirmation of newly
 created cards is a separate step after accepting the source.

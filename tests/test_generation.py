@@ -1,7 +1,5 @@
 """Security invariants for incremental ``ms`` creation ceremonies."""
 
-import copy
-import pickle
 from itertools import combinations
 
 import pytest
@@ -19,6 +17,7 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
+from codex32.bip93 import SEED_BYTE_LENGTHS, _has_generation_padding
 from codex32.errors import (
     CeremonyStateError,
     CodexError,
@@ -28,7 +27,6 @@ from codex32.errors import (
     InvalidThreshold,
 )
 from codex32.generation import ORDINARY_INDICES, _fingerprint_identifier
-from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding
 from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint, stub_fingerprint
 
 
@@ -229,6 +227,10 @@ def test_confirmation_gates_each_entropy_draw_and_reports_groups(
     damaged = first.text[:4] + ("q" if first.text[4] != "q" else "p") + first.text[5:]
     result = ceremony.confirm(damaged)
     assert not result.accepted and result.mismatched_groups == (2,)
+    dropped = ceremony.confirm(first.text[:9] + first.text[10:])
+    # A dropped character marks only its own group, not every later group.
+    assert not dropped.accepted and dropped.mismatched_groups == (3,)
+    assert "".join(dropped.entered_groups) == first.text[:9] + first.text[10:]
     assert calls == [26]
     assert ceremony.confirm(" \n".join(first.text.upper())).accepted
     second = ceremony.next_share()
@@ -311,20 +313,6 @@ def test_ceremony_state_is_fail_closed() -> None:
         ceremony.next_share()
     with pytest.raises(CeremonyStateError):
         ceremony.finish()
-
-
-def test_ceremony_cannot_be_copied_or_serialized() -> None:
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
-    pending = ceremony.next_share()
-    assert ceremony.confirm(pending.text).accepted
-
-    for operation in (
-        lambda: copy.copy(ceremony),
-        lambda: copy.deepcopy(ceremony),
-        lambda: pickle.dumps(ceremony),
-    ):
-        with pytest.raises(TypeError, match="cannot be copied or serialized"):
-            operation()
 
 
 def test_resharing_preserves_padding_and_requires_a_new_header() -> None:

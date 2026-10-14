@@ -16,8 +16,7 @@ from typing import Any
 from _wallet_test_vectors import CORE_FINGERPRINTS
 
 from codex32._bitcoin_core import BitcoinCore
-from codex32.bip93 import parse_codex32
-from codex32.profiles.ms32 import MasterSeed
+from codex32.bip93 import MasterSeed, parse_codex32
 from codex32.wallet import master_xprv
 
 # Frozen public BIP93 vector material; it has never controlled a funded wallet.
@@ -59,7 +58,7 @@ def main() -> None:
         wrapper_directory.mkdir()
         wrapper = wrapper_directory / "bitcoin-cli"
         wrapper.write_text(
-            f'#!/bin/sh\nexec {shlex.quote(real_cli)} {shlex.quote(f"-datadir={datadir}")} "$@"\n'
+            f'#!/bin/sh\nexec {shlex.quote(real_cli)} -regtest {shlex.quote(f"-datadir={datadir}")} "$@"\n'
         )
         wrapper.chmod(0o700)
         os.environ["PATH"] = str(wrapper_directory) + os.pathsep + os.environ.get("PATH", "")

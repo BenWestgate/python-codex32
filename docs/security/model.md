@@ -7,9 +7,8 @@ immutable Python object created after all required checks pass.
 The [security invariants](invariants.md) are the mandatory high-level contract.
 This document gives their controls, limitations, and verification evidence.
 
-This model covers generic opaque-HRP codex32 artifacts, the `ms` master-seed
-profile, the `cl` Core Lightning profile, and supported BIP39 migration artifacts. Creation and wallet controls
-focus on Bitcoin master seeds. User safety and vulnerability reporting belong
+This model covers generic codex32 artifacts for any HRP and BIP93's `ms`
+master seeds. Creation and wallet controls focus on Bitcoin master seeds. User safety and vulnerability reporting belong
 in [SECURITY.md](../../SECURITY.md); procedures belong in the
 [user guide](../user/guide.md).
 
@@ -22,7 +21,7 @@ fingerprints, and wallet history cannot spend funds but remain privacy-sensitive
 
 | Boundary | Security requirement |
 |---|---|
-| Untrusted text | Text remains untrusted until a parser or profile factory returns a validated artifact. |
+| Untrusted text | Text remains untrusted until the parser or `MasterSeed.from_seed` returns a validated artifact. |
 | Package API | Recovery, derivation, sharing, and wallet operations accept validated artifacts, not unchecked text. |
 | Python process | Secret objects remain in process memory; normal output must not reveal them unintentionally. |
 | Operator and paper | The operator controls transcription, physical recovery cards, wallet records, and acceptance of correction suggestions. |
@@ -85,19 +84,19 @@ The operator must:
 
 Parsing first checks the generic Bech32 container, selects the checksum type
 from the generic encoded length, and validates the common codex32 header. It
-then verifies the codex32 checksum. Only after checksum verification may the
-human-readable part (HRP) select a profile or may codex32 enforce application
-lengths or interpret payload semantics.
+then verifies the codex32 checksum. Only after checksum verification does an
+`ms` human-readable part (HRP) add the master-seed length rule and seed-byte
+meaning.
 
-Only parsers and profile-specific factories construct immutable validated
+Only the parser and `MasterSeed.from_seed` construct immutable validated
 artifacts. A share has symbol semantics and cannot be converted to bytes.
 Default `str()` and `repr()` rendering of artifacts is redacted; callers must
 use `.text` explicitly when they intentionally need the serialized recovery
 string. This reduces accidental disclosure through logs and interpolation but
 does not make `.text` safe to expose.
-Registration adds semantics but is not required for generic parsing, recovery,
-derivation, or correction. Wallet and profile-specific generation APIs do not
-accept opaque artifacts or raw strings.
+Generic parsing, recovery, derivation, and correction work for any HRP.
+Wallet and generation APIs accept only `MasterSeed`, never other HRPs'
+artifacts or raw strings.
 
 Every derived, recovered, or corrected result is reparsed through the same
 boundary. This prevents internal arithmetic from bypassing format, header,
@@ -120,10 +119,7 @@ full-payload OS-CSPRNG request. The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
 text is never reparsed as the source secret and contributes no entropy. Existing
 complete Bitcoin master seeds are confirmed unchanged and initialize the wallet
-without new entropy. The `ms32` façade rejects CL. The generic API parses,
-inspects, and corrects unshared CL secrets only: Core Lightning rejects shares
-and nonzero thresholds, so CL shares are rejected and CL secrets are never
-generated, derived, or re-shared.
+without new entropy. The `ms32` façade accepts only `ms`.
 
 Creation retries show only entered text in contiguous regions: bold red means review the card, with reverse video added for the active region. Original card formatting is display-only; editable prefills retain entered case and spacing.
 Complete matching canonical groups freeze; local alignment preserves entered group ownership before edit minimization and proceeds without crossing frozen boundaries (see the API alignment rules).
@@ -177,8 +173,7 @@ those explanations; unproven scoring work is retained. Repeated masks and
 cancelled operations are removed only with a coverage proof. Pruning does not
 reallocate the ledger's mass to additional hypotheses.
 
-`codex32` checks and corrects unshared CL secrets, and checks, corrects,
-recovers, and derives shares for compatible BIP39 and opaque-HRP sets. `ms32`
+`codex32` checks, corrects, recovers, and derives shares for any HRP. `ms32`
 applies an `ms` input filter and alone owns Bitcoin creation, xprv, and wallet
 commands. Both façades offer worksheet-residue correction; only `ms32 correct`
 offers `--bytes`.
@@ -219,10 +214,6 @@ supplied erasure positions. It uses the same threshold before releasing addends.
 The Python API remains an expert, noninteractive primitive: candidate objects
 carry cumulative volume and its denominator exponent for clients to inspect.
 
-BIP39 worksheet profiles are compatibility formats and are not recommended
-for creation. New Bitcoin backups should use the secure random generation in
-`ms32 create`.
-
 ## Bitcoin Core controls
 
 Automatic initialization applies to fresh Bitcoin master-seed creation,
@@ -255,8 +246,8 @@ initialization.
 
 | Boundary | Focused evidence |
 |---|---|
-| Parsing and profiles | [`test_bech32.py`](../../tests/test_bech32.py), [`test_bip93.py`](../../tests/test_bip93.py), and [`test_profiles.py`](../../tests/test_profiles.py) |
+| Parsing and `ms` lengths | [`test_bech32.py`](../../tests/test_bech32.py), [`test_bip93.py`](../../tests/test_bip93.py), and [`test_lengths.py`](../../tests/test_lengths.py) |
 | Creation, sharing, and recovery | [`test_generation.py`](../../tests/test_generation.py), [`test_sharing.py`](../../tests/test_sharing.py), and the BIP93 vectors under `tests/data/` |
 | Correction | [`test_correction_bch.py`](../../tests/test_correction_bch.py), [`test_correction_indel.py`](../../tests/test_correction_indel.py), [`correction_capture.py`](../../tools/correction_capture.py), and [`differential_correction.py --verify`](../../tools/differential_correction.py) |
-| Bitcoin Core and wallets | [`test_bitcoin_core.py`](../../tests/test_bitcoin_core.py), [`test_wallet.py`](../../tests/test_wallet.py), [`bitcoin_core_regtest.py`](../../tools/bitcoin_core_regtest.py), and [`bitcoin_core_main_smoke.py`](../../tools/bitcoin_core_main_smoke.py) |
+| Bitcoin Core and wallets | [`test_bitcoin_core.py`](../../tests/test_bitcoin_core.py), [`test_wallet.py`](../../tests/test_wallet.py), and [`bitcoin_core_regtest.py`](../../tools/bitcoin_core_regtest.py) |
 | CLI channels and input | [`test_cli.py`](../../tests/test_cli.py) |
