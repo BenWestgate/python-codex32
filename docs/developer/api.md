@@ -627,9 +627,7 @@ secret-root warning.
 Bitcoin Core 32 or newer and exercises direct wallet restoration, account-0
 and timestamp handling, Core-created public descriptors, balance discovery,
 sign/broadcast behavior on regtest, relocking, and mainnet/test-network root
-serialization. `tools/bitcoin_core_main_smoke.py` repeats the descriptor,
-account-0, timestamp, and relocking checks against an isolated main-chain Core
-instance without connecting to peers.
+serialization.
 
 ## Deliberate divergences and non-goals
 
