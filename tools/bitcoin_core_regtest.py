@@ -15,8 +15,9 @@ from typing import Any
 
 from _wallet_test_vectors import CORE_FINGERPRINTS
 
-from codex32._bitcoin_core import BitcoinCore
-from codex32.bip93 import parse_codex32
+from codex32._bitcoin_core import BitcoinCore, CoreEntropy
+from codex32.bip93 import parse_codex32, recover_secret
+from codex32.generation import CreationCeremony
 from codex32.profiles.ms32 import MasterSeed
 from codex32.wallet import master_xprv
 
@@ -132,6 +133,25 @@ def main() -> None:
             for seed, expected_fingerprint in CORE_FINGERPRINTS.items():
                 if client.fingerprint_seed(seed) != expected_fingerprint:
                     raise RuntimeError("Bitcoin Core fingerprint fixture mismatch")
+
+            entropy = CoreEntropy(client)
+            ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", entropy=entropy)
+            shares = []
+            for _ in range(2):
+                shares.append(ceremony.next_share())
+                if not ceremony.confirm(shares[-1].text).accepted:
+                    raise RuntimeError("a Core-random share failed confirmation")
+            folder = entropy._folder
+            temporary_wallet = os.path.join(folder, "w")
+            if rpc("getwalletinfo", wallet=temporary_wallet)["unlocked_until"] != 0:
+                raise RuntimeError("the temporary randomness wallet was not encrypted and relocked")
+            if len(rpc("gethdkeys", wallet=temporary_wallet)) < 3:
+                raise RuntimeError("Core did not supply a fresh key for each draw")
+            entropy.close()
+            if os.path.exists(folder) or temporary_wallet in rpc("listwallets"):
+                raise RuntimeError("the temporary randomness wallet was not deleted")
+            if recover_secret(shares) != ceremony.finish():
+                raise RuntimeError("Core-random shares did not recover their seed")
             expected_fingerprint = CORE_FINGERPRINTS[secret.seed_bytes]
             answers = iter(("yes",))
             if (

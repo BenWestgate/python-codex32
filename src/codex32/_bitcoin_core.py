@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import secrets
 import shutil
 import string
 import subprocess
+import tempfile
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from time import sleep
 from typing import Literal
@@ -430,3 +434,64 @@ class BitcoinCore:
             if waited:
                 tell("")
             return name
+
+
+class CoreEntropy:
+    """Draw randomness from fresh Bitcoin Core HD keys in a temporary encrypted wallet."""
+
+    def __init__(self, core: BitcoinCore) -> None:
+        self._core, self._folder, self._passphrase = core, "", secrets.token_hex(32)
+
+    def __call__(self, length: int) -> bytes:
+        try:
+            return self._draw(length)
+        except BitcoinCoreError as error:
+            raise BitcoinCoreError(
+                f"{error} New cards take their randomness only from Bitcoin Core, so creation stopped. "
+                "Mark any cards from it void."
+            ) from error
+
+    def _draw(self, length: int) -> bytes:
+        wallet = self._wallet()
+        self._core._rpc("walletpassphrase", wallet=wallet, stdin=f"{self._passphrase}\n60\n")
+        data = b""
+        try:
+            while len(data) < length:
+                added = self._core._rpc("addhdkey", wallet=wallet)
+                keys = self._core._rpc("-named", "gethdkeys", "private=true", wallet=wallet)
+                xpub = added.get("xpub") if isinstance(added, dict) else None
+                listed = keys if isinstance(keys, list) else []
+                xprvs = [
+                    key.get("xprv") for key in listed if isinstance(key, dict) and key.get("xpub") == xpub
+                ]
+                if not isinstance(xpub, str) or len(xprvs) != 1 or not isinstance(xprvs[0], str):
+                    raise BitcoinCoreError("Bitcoin Core did not return a fresh HD key.")
+                data += hashlib.sha256(xprvs[0].encode()).digest()
+        finally:
+            self._core._rpc("walletlock", wallet=wallet)
+        return data[:length]
+
+    def _wallet(self) -> str:
+        if not self._folder:
+            ram = "/dev/shm"
+            self._folder = tempfile.mkdtemp(prefix="codex32-", dir=ram if os.path.isdir(ram) else None)
+            self._core._rpc(
+                "-named",
+                "createwallet",
+                f"wallet_name={os.path.join(self._folder, 'w')}",
+                "blank=true",
+                "load_on_startup=false",
+                stdin=f"passphrase={self._passphrase}\n",
+            )
+        return os.path.join(self._folder, "w")
+
+    def close(self) -> None:
+        """Unload and delete the temporary wallet, if one was created."""
+        folder, self._folder = self._folder, ""
+        if not folder:
+            return
+        with suppress(BitcoinCoreError):
+            self._core._rpc("unloadwallet", os.path.join(folder, "w"))
+        shutil.rmtree(folder, ignore_errors=True)
+        if os.path.exists(folder):
+            raise BitcoinCoreError(f"Delete the temporary Bitcoin Core wallet folder {folder}.")

@@ -11,6 +11,7 @@ import sysconfig
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from secrets import token_bytes
 from typing import cast
 from unittest.mock import patch
 
@@ -31,7 +32,7 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
-from codex32._bitcoin_core import BitcoinCore
+from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
 from codex32.bech32 import _chars_to_u5, bech32_encode
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
@@ -122,9 +123,26 @@ class _FakeBitcoinCore:
         return "test-wallet"
 
 
+class _FakeEntropy:
+    """Stand in for Bitcoin Core's temporary randomness wallet."""
+
+    def __init__(self, _core: object = None, failure: str = "") -> None:
+        self.closed, self.failure = False, failure
+
+    def __call__(self, length: int) -> bytes:
+        assert not self.closed
+        if self.failure:
+            raise BitcoinCoreError(self.failure)
+        return token_bytes(length)
+
+    def close(self) -> None:
+        self.closed = True
+
+
 @pytest.fixture(autouse=True)
 def _offline_core(monkeypatch):
     monkeypatch.setattr("codex32.cli.BitcoinCore.connect", lambda *args, **kwargs: _FakeBitcoinCore())
+    monkeypatch.setattr("codex32.cli.CoreEntropy", _FakeEntropy)
 
 
 _RECORDED_FINGERPRINT = importlib.import_module("codex32.cli")._recorded_fingerprint
@@ -1489,18 +1507,29 @@ def test_confirmation_alignment_shows_only_entered_text(
 
 
 def test_interrupted_creation_marks_partial_cards_void() -> None:
-    stdout, stderr = _TTYOutput(), io.StringIO()
+    stdout, stderr, entropy = _TTYOutput(), io.StringIO(), _FakeEntropy()
     with (
         patch.object(sys, "stdin", _TTYInput()),
         patch("codex32.cli._confirm_card", side_effect=KeyboardInterrupt),
         patch("codex32.cli.BitcoinCore.connect", return_value=_FakeBitcoinCore()),
+        patch("codex32.cli.CoreEntropy", return_value=entropy),
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
         status = ms_main(["create", "2", "--indices", "ac"])
 
-    assert status == 130
+    assert status == 130 and entropy.closed
     assert "Mark every card from this incomplete creation void" in stderr.getvalue()
+
+
+@pytest.mark.parametrize("header", ("0", "2"))
+def test_creation_stops_without_bitcoin_core_randomness(header: str) -> None:
+    entropy = _FakeEntropy(failure="Core supplied no randomness.")
+    with patch("codex32.cli.CoreEntropy", return_value=entropy):
+        result = _invoke_confirmed_create(["create", header])
+
+    assert result.exit_code == 1 and entropy.closed and result.stdout == ""
+    assert "Core supplied no randomness." in result.stderr
 
 
 def test_interruption_after_confirmation_keeps_cards_valid() -> None:

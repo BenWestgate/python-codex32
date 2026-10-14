@@ -12,6 +12,7 @@ from codex32._bitcoin_core import (
     NO_RECORD_WARNING,
     BitcoinCore,
     BitcoinCoreError,
+    CoreEntropy,
     FingerprintMismatch,
     identifier_note,
     identifier_origin,
@@ -338,12 +339,14 @@ def _generated_secret(
     byte_length: int | None,
     identifier: str | None,
     fingerprint: Callable[[bytes], bytes] | None = None,
+    entropy: Callable[[int], bytes] | None = None,
 ) -> MasterSeed:
     return generate_master_seed(
         source,
         byte_length=byte_length,
         identifier=identifier,
         fingerprint=fingerprint,
+        entropy=entropy,
     )
 
 
@@ -488,6 +491,7 @@ def _create(
         raise _UsageError("Use --existing when supplying a seed or secret.")
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
+    entropy = CoreEntropy(core)
     try:
         if threshold == 0:
             if isinstance(source, MasterSeed):
@@ -497,7 +501,8 @@ def _create(
                     )
                 secret = source
             else:
-                secret = _generated_secret(source, byte_length, identifier, core.fingerprint_seed)
+                secret = _generated_secret(source, byte_length, identifier, core.fingerprint_seed, entropy)
+            entropy.close()
             _emit(secret, False, fingerprint=None if existing else core.fingerprint)
             if sys.stdin.isatty():
                 _confirm_card(secret)
@@ -515,15 +520,17 @@ def _create(
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
+                entropy=entropy,
             )
         elif source is not None:
-            source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
+            source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed, entropy)
             ceremony = CreationCeremony.from_secret(
                 source_secret,
                 threshold=threshold,
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
+                entropy=entropy,
             )
         else:
             ceremony = CreationCeremony.master_seed(
@@ -532,18 +539,21 @@ def _create(
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
+                entropy=entropy,
             )
+        output_count = shares if shares is not None else len(indices or "")
+        for position in range(output_count):
+            artifact = ceremony.next_share()
+            _emit(artifact, False, gap=position > 0)
+            _confirm_card(artifact, ceremony.confirm)
+            _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
+        finished = ceremony.finish()
     except HeaderCollision as error:
         raise _CommandError(f"{error}; choose another set header") from error
     except CodexError as error:
         raise _CommandError(str(error)) from error
-    output_count = shares if shares is not None else len(indices or "")
-    for position in range(output_count):
-        artifact = ceremony.next_share()
-        _emit(artifact, False, gap=position > 0)
-        _confirm_card(artifact, ceremony.confirm)
-        _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
-    finished = ceremony.finish()
+    finally:
+        entropy.close()
     assert isinstance(finished, MasterSeed)
     if core is not None:
         return _initialize_wallet(

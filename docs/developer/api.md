@@ -37,7 +37,8 @@ generic parse-length failure.
 | checksum and CRC arithmetic | `checksums.py` | official vectors, `test_crc.py` |
 | optional application rules and S types | `profiles/ms32.py`, `cl32.py`, `bip39.py` | profile and BIP39 tests |
 | immutable base artifacts and interpolation | `bip93.py` | BIP93 vectors, `test_sharing.py` |
-| entropy, masks, identifiers, output indices | `generation.py` | `test_generation.py` |
+| masks, identifiers, output indices from caller entropy | `generation.py` | `test_generation.py` |
+| Bitcoin Core randomness for `ms32 create` | `_bitcoin_core.py` | `test_bitcoin_core.py`, regtest fixture |
 | shared GF(32) arithmetic | `gf32.py` | sharing vectors and correction corpus |
 | fixed BCH and worksheet correction | `correction.py` | `test_correction_bch.py` |
 | structural alignment and admission | `indel.py` | `test_correction_indel.py`, `test_correction_capture.py` |
@@ -67,7 +68,9 @@ generic parse-length failure.
   `.text` attribute.
 - Sharing interpolates payload and checksum together, explicitly constructs the
   target header, and reparses the result.
-- `generation.py` is the only entropy owner; it generates and shares only `ms`.
+- `generation.py` alone turns entropy into seeds, shares, identifiers, and
+  indices; every byte comes from the caller's `entropy` source. It generates and
+  shares only `ms`.
 - Correction never edits the HRP or separator and reparses every candidate.
 - `_bip32.py` stops at HMAC-SHA512 root derivation, scalar validity, and root
   xprv/tprv Base58Check serialization. It performs no child derivation or
@@ -152,8 +155,10 @@ accepts only `ms` artifacts.
 
 ## Secret generation
 
-`generation.py` is the only module that draws entropy. It generates and
-splits BIP93 master seeds only.
+`generation.py` is the only module that turns entropy into secrets. It generates
+and splits BIP93 master seeds only. Every random byte comes from the caller's
+`entropy` callable, which must return exactly the requested number of bytes;
+the CLI passes Bitcoin Core's (see [Bitcoin Core randomness](#bitcoin-core-randomness)).
 
 Fresh unshared seeds default to 16 bytes and use the first 20 bits of their
 BIP32 fingerprint as public identifier metadata. Fresh shared sets use four
@@ -169,17 +174,20 @@ boundary; there is no legacy decoder.
 The one-shot function creates only unshared secrets:
 
 ```python
-generate_master_seed(seed_bytes=None, *, byte_length=None, identifier=None, fingerprint=None)
+generate_master_seed(
+    seed_bytes=None, *, byte_length=None, identifier=None, fingerprint=None, entropy=None
+)
 ```
 
 A fresh seed with no `identifier` needs `fingerprint`: a callable that takes
 the seed bytes and returns their four-byte BIP32 master fingerprint. This
 package has no secp256k1 arithmetic, so the CLI asks Bitcoin Core. Without
-either argument, fresh generation raises `ValueError`.
+either argument, fresh generation raises `ValueError`, as does any draw without
+`entropy`. Supplied seed bytes with an `identifier` need no entropy.
 
 Shared creation uses `CreationCeremony.master_seed(...)` or
-`CreationCeremony.from_secret(...)`. Exactly one of `share_count` and `indices`
-is required. `next_share()` returns one pending share, `confirm(text)` must
+`CreationCeremony.from_secret(...)`; both require `entropy`. Exactly one of
+`share_count` and `indices` is required. `next_share()` returns one pending share, `confirm(text)` must
 accept its independently re-entered string, and `finish()` returns the secret
 only after every requested share is confirmed. There is no public one-shot
 sharing or `split_secret` function. Fresh and existing Bitcoin CLI creation
@@ -206,10 +214,10 @@ The ceremony follows the two BIP93 constructions:
 - a fresh set draws `k` independent complete u5 masks;
 - an existing S uses S plus `k-1` independent complete u5 masks.
 
-Each direct share uses a separate `secrets.token_bytes` request and cannot be
-followed by another draw until its string is confirmed. The pause gives the OS an
-opportunity to mix fresh noise; Python cannot guarantee that new physical
-entropy arrives between calls. User input is never treated as entropy. Each
+Each direct share uses a separate `entropy` request and cannot be followed by
+another draw until its string is confirmed. The pause gives the source an
+opportunity to mix fresh noise; nothing guarantees that new physical entropy
+arrives between calls. User input is never treated as entropy. Each
 byte is mapped with `value & 31`, which maps exactly eight byte values to each
 u5 value.
 
@@ -258,9 +266,9 @@ remain fixed. That padding rule is not BIP93 validity: parsed S strings may use
 any application-valid discarded bits, which re-sharing preserves exactly. CRC
 never applies to shares.
 
-Explicit output indices preserve caller order. A share count uses
-`SystemRandom.sample` over the 31 ordinary indices and preserves sample order.
-There is no entropy injection, sorting, caller-supplied partial-basis
+Explicit output indices preserve caller order. A share count draws
+indices from the 31 ordinary ones by unbiased rejection sampling of entropy
+bytes, in draw order. There is no sorting, caller-supplied partial-basis
 completion, or BIP39 generation. Ceremonies reject copying and serialization;
 the CLI does not resume an interrupted ceremony.
 
@@ -613,7 +621,7 @@ Immediately before adding the key, every target property is checked again. The
 original `CreationCeremony.finish()` result or validated recovered master seed
 supplies the root xprv. Confirmation text is never reparsed into this source.
 The key is sent only through `bitcoin-cli -stdin`; raw Core errors are suppressed,
-and no passphrase interface exists.
+and codex32 never asks for or handles the operator's wallet passphrase.
 
 For wallet restoration and `ms32 create --existing`, callers make the wallet-record
 decision before initialization. `BitcoinCore.initialize()` calls `verify_identity()`
@@ -637,7 +645,24 @@ the BIP32 fingerprint.
 The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
 `getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `deriveaddresses`,
 `validateaddress`, `addhdkey`,
-`createwalletdescriptor`, `importdescriptors`, and `walletlock`.
+`createwalletdescriptor`, `importdescriptors`, and `walletlock`, plus
+`createwallet`, `walletpassphrase`, `gethdkeys`, and `unloadwallet` for the
+temporary randomness wallet.
+
+### Bitcoin Core randomness
+
+`ms32 create` takes every random byte from Bitcoin Core, whose
+`GetStrongRandBytes` mixes the OS generator with CPU RDRAND/RDSEED where
+available, timestamps, and accumulated state. On the first draw `CoreEntropy`
+creates a blank wallet in a new folder under `/dev/shm`, or the system
+temporary folder where that does not exist. The wallet is encrypted from birth
+with a 256-bit passphrase from Python `secrets` that only `bitcoin-cli -stdin`
+receives. Each draw unlocks it, adds one fresh HD key per 32 bytes with
+`addhdkey`, reads it with `gethdkeys private=true`, uses the SHA-256 of the
+xprv, and relocks. Creation unloads and deletes the wallet when it ends, fails,
+or is interrupted. If Core cannot create the wallet or draw from it, `create`
+stops; there is no fallback. A killed process leaves the encrypted folder until
+it is deleted, which under `/dev/shm` happens at the latest on shutdown.
 Bitcoin Core alone creates wallets, selects encryption, handles
 passphrases, stores keys, and provides normal wallet behavior.
 

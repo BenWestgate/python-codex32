@@ -8,8 +8,9 @@ and evidence.
    HRPs remain opaque and never gain invented application semantics.
 2. APIs accept only immutable validated artifacts. Outputs are reparsed;
    recovery and derivation reject sets with mismatched normalized HRPs or shapes.
-3. Shared creation uses a separate OS-CSPRNG call for each random initial share,
-   gated by confirmation. Input cannot replace entropy or the original secret.
+3. Shared creation uses a separate entropy call for each random initial share,
+   gated by confirmation. `ms32 create` draws only from Bitcoin Core, with no
+   fallback. Input cannot replace entropy or the original secret.
 4. Wallet setup uses the original ceremony result or a validated recovered seed.
    Restore authenticates the recovered seed before any wallet is listed,
    unlocked, or imported into: normally with the master fingerprint typed from
@@ -36,8 +37,9 @@ and evidence.
    operator confirms an eligible descriptor wallet by exact name.
 8. Wallet state is revalidated before handing Core the master key. Core must
    accept that key and create every requested account-0 wallet descriptor.
-9. codex32 has no passphrase channel. An unlocked encrypted signer is relocked
-   and verified on every exit path.
+9. codex32 never handles the operator's wallet passphrase. An unlocked encrypted
+   signer is relocked and verified on every exit path, and the temporary
+   randomness wallet is relocked after each draw and deleted after creation.
 10. External text, Core output, public wallet data, and PSBTs are untrusted.
 11. Only Bitcoin Core descriptor wallets sign with codex32-derived keys.
     Sensitive operations use only codex32 or Core on malware-free computers
