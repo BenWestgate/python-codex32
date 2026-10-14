@@ -11,7 +11,6 @@ from typing import Any, Literal, cast
 
 from codex32.bip93 import (
     MS,
-    TEXT_LENGTHS,
     MasterSeed,
     Secret,
     Share,
@@ -30,17 +29,10 @@ from codex32.errors import (
     InvalidChecksum,
     InvalidCorrectionInput,
     InvalidLength,
-    InvalidThreshold,
-    MismatchedHrp,
-    MismatchedIdentifier,
-    MismatchedPayloadLength,
-    MismatchedThreshold,
-    SecretInRecoverySet,
 )
 
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
-_MAX_CORRECTION_LENGTH_DELTA = 8
 
 _line_editor: Any
 try:
@@ -250,17 +242,16 @@ def _render_groups(
 def _parse(value: str, hrp: str | None) -> Artifact:
     try:
         artifact = parse_codex32(value)
+    except InvalidChecksum as error:
+        # The parser checks checksums before master-seed lengths; explain a
+        # wrong length without changing that order.
+        try:
+            _validate_ms_length(value[: value.rfind("1")].lower(), len(value))
+        except InvalidLength as length_error:
+            raise InputError(str(length_error)) from error
+        raise InputError(str(error)) from error
     except CodexError as error:
-        message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
-        if isinstance(error, InvalidChecksum):
-            # Parsing has already checked the container and generic length.
-            # Explain an unsupported master-seed length without validating input
-            # or changing the parser's checksum-before-length boundary.
-            try:
-                _validate_ms_length(value[: value.rfind("1")].lower(), len(value))
-            except InvalidLength as length_error:
-                message = str(length_error)
-        raise InputError(message) from error
+        raise InputError(str(error)) from error
     if hrp is not None and artifact.hrp != hrp:
         raise InputError("This command accepts only Bitcoin master seed input.")
     return artifact
@@ -452,52 +443,6 @@ def _redirected(
     return accepted
 
 
-_FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
-    InvalidChecksum: "The checksum does not match.",
-    MismatchedHrp: "These strings are for different applications.",
-    MismatchedThreshold: "These strings require different numbers of shares.",
-    MismatchedIdentifier: "These strings have different identifiers.",
-    MismatchedPayloadLength: "These strings have different lengths.",
-    DuplicateShareIndex: "That share index was already entered.",
-    SecretInRecoverySet: "Enter ordinary shares rather than the shared secret.",
-}
-
-
-def _prefixed_input_error(
-    error: InputError,
-    value: str,
-    prefix: str,
-    accepted: list[Artifact],
-) -> str:
-    cause = error.__cause__
-    if isinstance(cause, InvalidThreshold) and prefix.lower() == "ms1":
-        found = value[len(prefix) : len(prefix) + 1].lower()
-        if found:
-            return f"After the prefilled {prefix}, enter a threshold of 0 or 2 through 9; found {found!r}."
-    if not isinstance(cause, InvalidChecksum):
-        return str(error)
-    if accepted:
-        if accepted[0].hrp != MS:
-            return str(error)
-        target = len(accepted[0].text)
-        difference = len(value) - target
-        if abs(difference) <= _MAX_CORRECTION_LENGTH_DELTA:
-            return str(error)
-        direction = "too long for" if difference > 0 else "short of"
-        return (
-            f"The string is {abs(difference)} characters {direction} the required {target}-character length."
-        )
-    if prefix.lower() != "ms1":
-        return str(error)
-    if min(abs(len(value) - target) for target in TEXT_LENGTHS) <= _MAX_CORRECTION_LENGTH_DELTA:
-        return str(error)
-    lengths = ", ".join(str(length) for length in TEXT_LENGTHS[:-1]) + f", or {TEXT_LENGTHS[-1]}"
-    return (
-        f"The string has {len(value)} characters; valid Bitcoin master-seed codex32 lengths are "
-        f"{lengths} characters."
-    )
-
-
 def _interactive(
     *,
     basis: bool,
@@ -565,19 +510,14 @@ def _interactive(
             if confirmation is True:
                 artifact = candidates[0].artifact
             else:
-                message = (
-                    _prefixed_input_error(error, complete_value, prefix, accepted)
-                    if supplied_prefix
-                    else str(error)
-                )
-                _stderr(f"Rejected: {message}\n")
+                _stderr(f"Rejected: {error}\n")
                 prefill = _retry_text(entered, prefix)
                 prefix = _prefix_for_suffix(prefix, prefill)
                 continue
         try:
             validate(artifact)
         except CodexError as error:
-            _stderr(f"Rejected: {_FRIENDLY_SET_ERRORS.get(type(error), str(error))}\n")
+            _stderr(f"Rejected: {error}\n")
             duplicate = isinstance(error, (DuplicateShareIndex, ExistingTargetIndex))
             prefill = "" if duplicate else _retry_text(entered, prefix)
             continue

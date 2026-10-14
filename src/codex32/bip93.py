@@ -126,7 +126,7 @@ def _decode_codex32(text: str) -> tuple[str, tuple[int, ...], _Checksum]:
     body = tuple(encoded[: -checksum.length])
     Header._from_symbols(body[:6])
     if not bech32_verify_checksum(hrp, encoded, checksum):
-        raise InvalidChecksum(f"invalid {checksum.kind} checksum")
+        raise InvalidChecksum("The checksum does not match.")
     _validate_ms_length(hrp, len(text))
     return hrp, tuple(encoded), checksum
 
@@ -294,7 +294,7 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     first = copied[0]
     threshold = first.header.threshold
     if threshold not in range(2, 10):
-        raise MismatchedThreshold("linear sharing requires threshold 2 through 9")
+        raise MismatchedThreshold("Only strings with a threshold of 2 through 9 can be combined.")
     if len(copied) > threshold or (require_exact and len(copied) != threshold):
         raise WrongShareCount(f"threshold is {threshold}, but {len(copied)} artifacts were supplied")
     first_tail, checksum_length, encoded_length = _artifact_tail(first)
@@ -302,11 +302,11 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     indices = [first.header.index]
     for item in copied[1:]:
         if item.hrp != first.hrp:
-            raise MismatchedHrp(f"{first.hrp} and {item.hrp} cannot be combined")
+            raise MismatchedHrp("These strings are for different applications.")
         if item.header.threshold != threshold:
-            raise MismatchedThreshold("share thresholds do not match")
+            raise MismatchedThreshold("These strings require different numbers of shares.")
         if item.header.identifier != first.header.identifier:
-            raise MismatchedIdentifier("share identifiers do not match")
+            raise MismatchedIdentifier("These strings have different identifiers.")
         tail, item_checksum_length, item_encoded_length = _artifact_tail(item)
         item_shape = (
             len(item.payload_symbols),
@@ -314,11 +314,11 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
             item_encoded_length,
         )
         if item_shape != (len(first.payload_symbols), checksum_length, encoded_length):
-            raise MismatchedPayloadLength("share payload/checksum lengths do not match")
+            raise MismatchedPayloadLength("These strings have different lengths.")
         tails.append(tail)
         indices.append(item.header.index)
     if len(set(indices)) != len(indices):
-        raise DuplicateShareIndex("share indices must be distinct")
+        raise DuplicateShareIndex("That share index was already entered.")
     return _ShareSet(
         copied,
         first.hrp,
@@ -332,7 +332,7 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
 def _validate_recovery_prefix(shares: Sequence[Share | Secret]) -> None:
     share_set = _validate_share_set(shares, require_exact=False)
     if any(isinstance(item, Secret) for item in share_set.artifacts):
-        raise SecretInRecoverySet("recovery accepts ordinary shares only")
+        raise SecretInRecoverySet("Enter ordinary shares rather than the shared secret.")
 
 
 def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
@@ -353,7 +353,7 @@ def recover_secret(shares: Sequence[Share]) -> Secret:
     """Recover S from exactly k compatible, distinct ordinary shares."""
     share_set = _validate_share_set(shares)
     if any(isinstance(item, Secret) for item in share_set.artifacts):
-        raise SecretInRecoverySet("recovery accepts ordinary shares only")
+        raise SecretInRecoverySet("Enter ordinary shares rather than the shared secret.")
     recovered = _interpolate_tail(share_set, "s")
     if not isinstance(recovered, Secret):
         raise InvalidShareSet("interpolation did not produce a secret")
