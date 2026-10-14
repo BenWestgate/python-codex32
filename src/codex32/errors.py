@@ -17,13 +17,11 @@ InvalidCase = _error("InvalidCase", CodexError, "Input mixes upper- and lowercas
 InvalidLength = _error("InvalidLength", CodexError, "Input length is not permitted.")
 InvalidChecksum = _error("InvalidChecksum", CodexError, "The outer checksum does not validate.")
 
-InvalidHeader = _error("InvalidHeader", CodexError, "The six-symbol header is invalid.")
-InvalidThreshold = _error("InvalidThreshold", InvalidHeader, "The threshold is not 0 or 2 through 9.")
-InvalidIdentifier = _error("InvalidIdentifier", InvalidHeader, "The identifier is not four symbols.")
-InvalidShareIndex = _error("InvalidShareIndex", InvalidHeader, "The share index conflicts with its header.")
+InvalidThreshold = _error("InvalidThreshold", CodexError, "The threshold is not 0 or 2 through 9.")
+InvalidIdentifier = _error("InvalidIdentifier", CodexError, "The identifier is not four symbols.")
+InvalidShareIndex = _error("InvalidShareIndex", CodexError, "The share index conflicts with its header.")
 
-InvalidPayload = _error("InvalidPayload", CodexError, "The payload is not permitted.")
-InvalidPadding = _error("InvalidPadding", InvalidPayload, "The discarded payload padding is invalid.")
+InvalidPadding = _error("InvalidPadding", CodexError, "The discarded payload padding is invalid.")
 
 InvalidShareSet = _error("InvalidShareSet", CodexError, "Artifacts cannot form an interpolation set.")
 WrongShareCount = _error("WrongShareCount", InvalidShareSet, "The share count differs from its threshold.")
