@@ -67,22 +67,9 @@ class InteractiveConfirmationRequired(Exception):
 
 
 def _confirmation_input(prompt: str) -> str:
-    if sys.stdin.isatty():
-        return _editable_input(prompt)
-    if not sys.stderr.isatty():
+    if not sys.stdin.isatty():
         raise InteractiveConfirmationRequired
-    terminal_name = "CONIN$" if os.name == "nt" else "/dev/tty"
-    try:
-        with open(terminal_name, encoding="utf-8", buffering=1) as terminal:
-            if not terminal.isatty():
-                raise InteractiveConfirmationRequired
-            print(prompt, end="", file=sys.stderr, flush=True)
-            answer = terminal.readline()
-    except OSError:
-        raise InteractiveConfirmationRequired from None
-    if not answer:
-        raise EOFError
-    return answer.rstrip("\r\n")
+    return _editable_input(prompt)
 
 
 def _require_correction_confirmation(low_discrimination: bool) -> None:

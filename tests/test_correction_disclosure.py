@@ -361,3 +361,9 @@ def test_cli_derives_hand_produced_bip39_set_but_rejects_invalid_implied_secret(
     invalid = INVALID_BIP39_IMPLIED_SECRET
     status, output, error = _invoke(cli.main, ["share", "d"], invalid["A"] + "\n" + invalid["C"])
     assert status == 1 and output == "" and "embedded BIP39 entropy checksum is invalid" in error
+
+
+def test_confirmation_never_reads_answers_from_redirected_input(monkeypatch):
+    monkeypatch.setattr(_cli_input.sys, "stdin", io.StringIO("YES\n"))
+    with pytest.raises(_cli_input.InteractiveConfirmationRequired):
+        _cli_input._confirmation_input("Type YES: ")
