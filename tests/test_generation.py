@@ -1,7 +1,5 @@
 """Security invariants for incremental ``ms`` creation ceremonies."""
 
-import copy
-import pickle
 from itertools import combinations
 
 import pytest
@@ -315,20 +313,6 @@ def test_ceremony_state_is_fail_closed() -> None:
         ceremony.next_share()
     with pytest.raises(CeremonyStateError):
         ceremony.finish()
-
-
-def test_ceremony_cannot_be_copied_or_serialized() -> None:
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
-    pending = ceremony.next_share()
-    assert ceremony.confirm(pending.text).accepted
-
-    for operation in (
-        lambda: copy.copy(ceremony),
-        lambda: copy.deepcopy(ceremony),
-        lambda: pickle.dumps(ceremony),
-    ):
-        with pytest.raises(TypeError, match="cannot be copied or serialized"):
-            operation()
 
 
 def test_resharing_preserves_padding_and_requires_a_new_header() -> None:

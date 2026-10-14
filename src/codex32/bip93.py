@@ -3,6 +3,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import islice
 
 from codex32.bech32 import (
     CHARSET,
@@ -35,7 +36,6 @@ from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
 
 IDX_SORT = "sacdefghjklmnpqrtuvwxyz023456789"
-_CONSTRUCTION_TOKEN = object()
 
 # BIP93 master seeds: the "ms" HRP with one of six seed sizes (bytes, payload, text).
 MS = "ms"
@@ -131,28 +131,14 @@ def _decode_codex32(text: str) -> tuple[str, tuple[int, ...], _Checksum]:
     return hrp, tuple(encoded), checksum
 
 
-@dataclass(frozen=True, slots=True, init=False)
+@dataclass(frozen=True, slots=True)
 class _Artifact:
+    """Create artifacts with parse_codex32 or the factories, which validate them."""
+
     text: str
     header: Header
     hrp: str
     payload_symbols: tuple[int, ...]
-
-    def __init__(
-        self,
-        text: str,
-        header: Header,
-        hrp: str,
-        payload_symbols: tuple[int, ...],
-        *,
-        _token: object,
-    ) -> None:
-        if _token is not _CONSTRUCTION_TOKEN:
-            raise TypeError("codex32 artifacts must be created by the public factories")
-        object.__setattr__(self, "text", text)
-        object.__setattr__(self, "header", header)
-        object.__setattr__(self, "hrp", hrp)
-        object.__setattr__(self, "payload_symbols", payload_symbols)
 
     def __str__(self) -> str:
         return f"<{type(self).__name__}: redacted>"
@@ -219,7 +205,7 @@ def parse_codex32(text: str) -> Share | Secret:
     body = tuple(encoded[: -checksum.length])
     header = Header._from_symbols(body[:6])
     artifact_type = Share if header.index != "s" else MasterSeed if hrp == MS else Secret
-    return artifact_type(text, header, hrp, body[6:], _token=_CONSTRUCTION_TOKEN)
+    return artifact_type(text, header, hrp, body[6:])
 
 
 def _from_parts(
@@ -262,43 +248,24 @@ class _ShareSet:
         return tuple(item.header.index for item in self.artifacts)
 
 
-def _bounded_artifacts(
-    artifacts: Sequence[Share | Secret],
-) -> tuple[Share | Secret, ...]:
-    if isinstance(artifacts, (str, bytes, bytearray)):
-        raise TypeError("share inputs must be validated artifacts, not text")
-    try:
-        count = len(artifacts)
-    except TypeError as error:
-        raise TypeError("share inputs must be a Sequence of artifacts") from error
-    if count == 0 or count > 9:
-        raise WrongShareCount("a share set must contain between 1 and 9 artifacts")
-    try:
-        copied = tuple(artifacts[position] for position in range(count))
-    except IndexError as error:
-        raise TypeError("share input Sequence changed length while being read") from error
-    if not all(isinstance(item, _Artifact) for item in copied):
-        raise TypeError("all share inputs must be validated codex32 artifacts")
-    return copied
-
-
-def _artifact_tail(artifact: Share | Secret) -> tuple[tuple[int, ...], int, int]:
-    hrp, encoded, checksum = _decode_codex32(artifact.text)
-    if hrp != artifact.hrp:
-        raise InvalidShareSet("artifact text and validated application prefix disagree")
-    return tuple(encoded[6:]), checksum.length, len(encoded)
+def _artifact_tail(artifact: Share | Secret) -> tuple[int, ...]:
+    """Return the payload and checksum symbols of already-validated text."""
+    return tuple(_chars_to_u5(artifact.text[len(artifact.hrp) + 7 :].lower()))
 
 
 def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: bool = True) -> _ShareSet:
-    copied = _bounded_artifacts(artifacts)
+    copied = tuple(islice(artifacts, 10))  # enough to reject an oversized set
+    if not all(isinstance(item, _Artifact) for item in copied):
+        raise TypeError("all share inputs must be validated codex32 artifacts")
+    if not 1 <= len(copied) <= 9:
+        raise WrongShareCount("a share set must contain between 1 and 9 artifacts")
     first = copied[0]
     threshold = first.header.threshold
     if threshold not in range(2, 10):
         raise MismatchedThreshold("Only strings with a threshold of 2 through 9 can be combined.")
     if len(copied) > threshold or (require_exact and len(copied) != threshold):
         raise WrongShareCount(f"threshold is {threshold}, but {len(copied)} artifacts were supplied")
-    first_tail, checksum_length, encoded_length = _artifact_tail(first)
-    tails = [first_tail]
+    tails = [_artifact_tail(first)]
     indices = [first.header.index]
     for item in copied[1:]:
         if item.hrp != first.hrp:
@@ -307,15 +274,9 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
             raise MismatchedThreshold("These strings require different numbers of shares.")
         if item.header.identifier != first.header.identifier:
             raise MismatchedIdentifier("These strings have different identifiers.")
-        tail, item_checksum_length, item_encoded_length = _artifact_tail(item)
-        item_shape = (
-            len(item.payload_symbols),
-            item_checksum_length,
-            item_encoded_length,
-        )
-        if item_shape != (len(first.payload_symbols), checksum_length, encoded_length):
+        if len(item.text) != len(first.text):
             raise MismatchedPayloadLength("These strings have different lengths.")
-        tails.append(tail)
+        tails.append(_artifact_tail(item))
         indices.append(item.header.index)
     if len(set(indices)) != len(indices):
         raise DuplicateShareIndex("That share index was already entered.")
