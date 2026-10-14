@@ -14,8 +14,6 @@ from codex32._bitcoin_core import (
     BitcoinCore,
     BitcoinCoreError,
     FingerprintMismatch,
-    identifier_note,
-    identifier_origin,
     parse_fingerprint,
 )
 from codex32._cli_input import (
@@ -56,6 +54,7 @@ from codex32.generation import (
     ConfirmationResult,
     CreationCeremony,
     _confirmation,
+    _fingerprint_identifier,
     generate_master_seed,
 )
 from codex32.wallet import master_xprv
@@ -323,8 +322,20 @@ def _show_fingerprint(core: BitcoinCore, secret: MasterSeed, action: str) -> Non
 def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
     fingerprint = core.fingerprint(secret)
     _print(f"\nMaster fingerprint: {fingerprint.hex().upper()}", err=True)
-    _print(f"Backup identifier: {secret.header.identifier.upper()}", err=True)
-    _print(identifier_note(identifier_origin(secret, fingerprint)), err=True)
+    if secret.header.threshold == 0:
+        # New unshared codex32 backups take their identifier from the fingerprint.
+        if secret.header.identifier == _fingerprint_identifier(fingerprint):
+            _print(
+                "The backup identifier matches this fingerprint, so the card is consistent with itself. "
+                "That does not show it is the wallet you expect.",
+                err=True,
+            )
+        else:
+            _print(
+                "The backup identifier does not match this fingerprint. New unshared codex32 backups "
+                "take their identifier from it, so check this is the right card.",
+                err=True,
+            )
     _print(NO_RECORD_WARNING, err=True)
     return _text("Restore without a wallet record? [y/N]", optional=True).lower() in ("y", "yes")
 
