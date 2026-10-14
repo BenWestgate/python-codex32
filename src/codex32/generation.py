@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import NoReturn, SupportsIndex, cast
 
 from codex32._bip32 import _valid_root
-from codex32.bech32 import CHARSET, _u5_to_chars, convertbits
+from codex32.bech32 import _u5_to_chars, convertbits
 from codex32.bip93 import (
     DEFAULT_SEED_BYTES,
     IDX_SORT,
@@ -29,7 +29,6 @@ from codex32.errors import (
     CeremonyStateError,
     CodexError,
     HeaderCollision,
-    InvalidIdentifier,
     InvalidLength,
     InvalidShareSelection,
     InvalidThreshold,
@@ -114,21 +113,11 @@ def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
     return groups, changed
 
 
-def _threshold(value: object, *, allow_zero: bool = True) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise InvalidThreshold("threshold must be an integer")
-    if value not in ((0, *range(2, 10)) if allow_zero else tuple(range(2, 10))):
-        raise InvalidThreshold(f"threshold must be {'0 or ' if allow_zero else ''}2 through 9")
-    return value
-
-
-def _identifier(value: object) -> str:
-    if not isinstance(value, str):
-        raise InvalidIdentifier("identifier must be str")
-    value = value.lower()
-    if len(value) != 4 or any(character not in CHARSET for character in value):
-        raise InvalidIdentifier("identifier must be four Bech32 symbols")
-    return value
+def _shared_header(threshold: int, identifier: str) -> Header:
+    """Validate a new share set's header fields once, through Header."""
+    if threshold == 0:
+        raise InvalidThreshold("A shared backup needs a threshold of 2 through 9.")
+    return Header(threshold, identifier, "a")
 
 
 def _index(value: object) -> str:
@@ -214,13 +203,13 @@ def generate_master_seed(
     if supplied is not None:
         if not _valid_root(supplied):
             raise CodexError("master seed does not form a valid BIP32 root")
-        identifier = _random_identifier() if identifier is None else _identifier(identifier)
+        identifier = _random_identifier() if identifier is None else identifier
         return MasterSeed.from_seed(supplied, identifier=identifier)
     if identifier is None and fingerprint is None:
         raise ValueError(
             "fresh unshared master-seed generation requires a fingerprint provider or identifier"
         )
-    selected_identifier = _identifier(identifier) if identifier is not None else None
+    selected_identifier = Header(0, identifier, "s").identifier if identifier is not None else None
     while True:
         fresh = secrets.token_bytes(length)
         if not _valid_root(fresh):
@@ -289,15 +278,14 @@ class CreationCeremony:
         identifier: str | None = None,
     ) -> CreationCeremony:
         """Start a ceremony for a fresh shared Bitcoin master seed."""
-        threshold = _threshold(threshold, allow_zero=False)
+        header = _shared_header(threshold, _random_identifier() if identifier is None else identifier)
         _supplied, byte_length = _seed_input(None, byte_length)
-        identifier = _random_identifier() if identifier is None else _identifier(identifier)
         return cls._start(
             _payload_length(byte_length),
-            threshold,
+            header.threshold,
             share_count,
             indices,
-            identifier,
+            header.identifier,
             None,
         )
 
@@ -314,9 +302,9 @@ class CreationCeremony:
         """Start a ceremony that shares an existing validated master seed."""
         if not isinstance(secret, MasterSeed):
             raise TypeError("from_secret accepts only MasterSeed")
-        threshold = _threshold(threshold, allow_zero=False)
         random_identifier = identifier is None
-        identifier = _random_identifier() if random_identifier else _identifier(identifier)
+        header = _shared_header(threshold, _random_identifier() if identifier is None else identifier)
+        threshold, identifier = header.threshold, header.identifier
         while (threshold, identifier) == (
             secret.header.threshold,
             secret.header.identifier,
