@@ -343,3 +343,9 @@ def test_cli_derives_hand_produced_generic_set(profile):
         vector["D"] + "\n",
         "",
     )
+
+
+def test_confirmation_never_reads_answers_from_redirected_input(monkeypatch):
+    monkeypatch.setattr(_cli_input.sys, "stdin", io.StringIO("YES\n"))
+    with pytest.raises(_cli_input.InteractiveConfirmationRequired):
+        _cli_input._confirmation_input("Type YES: ")
