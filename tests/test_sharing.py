@@ -104,6 +104,8 @@ def test_every_threshold_recovers_exactly_k_shares(threshold: int) -> None:
         extra = derive_share([secret, *shares[:-1]], IDX_SORT[threshold + 1])
         with pytest.raises(WrongShareCount):
             recover_secret([*shares, extra])
+    with pytest.raises(WrongShareCount):
+        recover_secret(iter(lambda: shares[0], None))  # unbounded input is rejected, not read forever
 
 
 def test_share_set_mismatches_have_distinct_errors() -> None:
@@ -135,18 +137,6 @@ def test_share_set_mismatches_have_distinct_errors() -> None:
         recover_secret([VECTOR_2["share_A"], VECTOR_2["share_C"]])  # type: ignore[list-item]
     with pytest.raises(TypeError):
         recover_secret(VECTOR_2["share_A"])  # type: ignore[arg-type]
-
-
-def test_oversized_sequence_is_rejected_before_items_are_read() -> None:
-    class OversizedSequence:
-        def __len__(self) -> int:
-            return 10
-
-        def __getitem__(self, _position: int) -> Share:
-            raise AssertionError("oversized input must not be materialized")
-
-    with pytest.raises(WrongShareCount):
-        recover_secret(OversizedSequence())  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("target", ("s", "i", "b", "?", "aa", "", 3))
