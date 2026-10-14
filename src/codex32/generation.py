@@ -6,7 +6,7 @@ import secrets
 from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from typing import NoReturn, SupportsIndex, cast
+from typing import cast
 
 from codex32._bip32 import _valid_root
 from codex32.bech32 import _u5_to_chars, convertbits
@@ -233,12 +233,6 @@ class CreationCeremony:
     _secret: MasterSeed | None
     _set_identifier: str
     _threshold: int
-
-    def __init__(self) -> None:
-        raise TypeError("use a CreationCeremony class constructor")
-
-    def __reduce_ex__(self, _protocol: SupportsIndex) -> NoReturn:
-        raise TypeError("creation ceremonies cannot be copied or serialized")
 
     @classmethod
     def _start(

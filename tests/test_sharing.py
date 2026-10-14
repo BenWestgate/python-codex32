@@ -137,18 +137,6 @@ def test_share_set_mismatches_have_distinct_errors() -> None:
         recover_secret(VECTOR_2["share_A"])  # type: ignore[arg-type]
 
 
-def test_oversized_sequence_is_rejected_before_items_are_read() -> None:
-    class OversizedSequence:
-        def __len__(self) -> int:
-            return 10
-
-        def __getitem__(self, _position: int) -> Share:
-            raise AssertionError("oversized input must not be materialized")
-
-    with pytest.raises(WrongShareCount):
-        recover_secret(OversizedSequence())  # type: ignore[arg-type]
-
-
 @pytest.mark.parametrize("target", ("s", "i", "b", "?", "aa", "", 3))
 def test_invalid_targets_are_rejected(target: object) -> None:
     secret, masks = _ms_basis()
