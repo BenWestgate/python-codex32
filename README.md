@@ -59,8 +59,7 @@ print(a.payload)        # payload part
 print(a.checksum)       # checksum part
 print(len(a))           # length of the codex32 string
 print(a.is_upper)       # case is upper True/False
-print(s.data.hex())     # raw seed bytes as hex (None for shares)
-print(s.pad_val)        # padding value integer, (MSB first) (None for shares)
+print(s.data().hex())   # master seed bytes as hex ("ms" secrets only)
 
 
 

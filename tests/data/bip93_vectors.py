@@ -160,22 +160,19 @@ INVALID_MASTER_SEED = [
 ]
 
 INVALID_MASTER_SEED_ENC = [
-    ("MS", "0FAUXS", bytes(16)),  # Invalid uppercase
-    ("MS", "0fauxs", bytes(16)),  # Invalid mixed case
-    ("ms", "0FAUXS", bytes(16)),  # Invalid mixed case
-    ("", "0fauxs", bytes(16)),  # Invalid empty HRP
-    ("ms", "", b"\xd0" * 32),  # Invalid empty header
-    ("ms", "0faux", b"\x80" * 32),  # Invalid missing share idx
-    ("ms", "0", b"\x80" * 32),  # Invalid missing identifier and share idx
-    ("ms", "0fauxxxs", bytes(16)),  # Invalid identifier length
-    ("ms", "fauxxs", bytes(32)),  # Invalid threshold
-    ("ms", "0fauxx", bytes(64)),  # Invalid share idx
-    ("ms", "2fauxa", bytes(16)),  # Invalid share idx: shares are not encoded from bytes
-    ("ms", "0fauxs", bytes(15)),  # Invalid seed length (<16 bytes)
-    ("ms", "0fauxs", bytes(65)),  # Invalid seed length (>64 bytes)
-    ("ms", "0fauxs", bytes(17)),  # Invalid seed length (non-multiple of 4 bytes)
-    ("ms", "0fauxs", bytes(18)),  # Invalid seed length (non-multiple of 4 bytes)
-    ("ms", "0fauxs", bytes(19)),  # Invalid seed length (non-multiple of 4 bytes)
+    ("0FAUXS", bytes(16)),  # Invalid mixed case
+    ("", b"\xd0" * 32),  # Invalid empty header
+    ("0faux", b"\x80" * 32),  # Invalid missing share idx
+    ("0", b"\x80" * 32),  # Invalid missing identifier and share idx
+    ("0fauxxxs", bytes(16)),  # Invalid identifier length
+    ("fauxxs", bytes(32)),  # Invalid threshold
+    ("0fauxx", bytes(64)),  # Invalid share idx
+    ("2fauxa", bytes(16)),  # Invalid share idx: shares are not encoded from bytes
+    ("0fauxs", bytes(15)),  # Invalid seed length (<16 bytes)
+    ("0fauxs", bytes(65)),  # Invalid seed length (>64 bytes)
+    ("0fauxs", bytes(17)),  # Invalid seed length (non-multiple of 4 bytes)
+    ("0fauxs", bytes(18)),  # Invalid seed length (non-multiple of 4 bytes)
+    ("0fauxs", bytes(19)),  # Invalid seed length (non-multiple of 4 bytes)
 ]
 
 
