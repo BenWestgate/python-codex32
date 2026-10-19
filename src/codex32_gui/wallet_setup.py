@@ -7,6 +7,7 @@ Core owns startup loading. Return its creation warnings for display.
 from __future__ import annotations
 
 import codecs
+import contextlib
 import json
 import locale
 import re
@@ -228,14 +229,8 @@ def create(core: BitcoinCore, name: str, passphrase: str) -> tuple[str, ...]:
         raise BitcoinCoreError(
             "Bitcoin Core would not create a wallet with that name. A wallet of that name may exist already."
         ) from error
-    notes = created.get("warnings", []) if isinstance(created, dict) else None
-    if (
-        not isinstance(created, dict)
-        or created.get("name") != name
-        or core._target(name) is None
-        or type(notes) is not list
-        or any(type(w) is not str for w in notes)
-    ):
+    notes = created.get("warnings", []) if isinstance(created, dict) and created.get("name") == name else None
+    if type(notes) is not list or any(type(w) is not str for w in notes) or core._target(name) is None:
         raise BitcoinCoreError("Bitcoin Core did not return an empty wallet and its warnings.")
     return tuple(notes)
 
@@ -246,6 +241,9 @@ def relock(core: BitcoinCore, name: str) -> None:
         core._rpc("walletlock", wallet=name)
         state = core._rpc("getwalletinfo", wallet=name)
     except BitcoinCoreError as error:
+        with contextlib.suppress(BitcoinCoreError):  # Only a listing without it proves it was unloaded.
+            if name not in core._names():  # As after a rescan that missed blocks: no keys are open.
+                return
         raise BitcoinCoreError(_STILL_OPEN) from error
     if not isinstance(state, dict) or state.get("unlocked_until") != 0:
         raise BitcoinCoreError(_STILL_OPEN)

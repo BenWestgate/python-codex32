@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import contextlib
 import hashlib
 import json
 import re
@@ -359,16 +360,12 @@ class BitcoinCore:
         unlocked = info.get("unlocked_until")
         return (unlocked is not None, unlocked == 0) if eligible else None
 
-    def _select(
-        self,
-        ask: Callable[[str], str],
-        tell: Callable[[str], None],
-    ) -> str:
+    def _select(self, ask: Callable[[str], str], tell: Callable[[str], None]) -> str:
+        def agree(name: str) -> bool:
+            return ask(f"Use blank wallet {json.dumps(name)}? [y/N]").lower() in ("y", "yes")
+
         choices = tuple(name for name in sorted(self._names()) if self._target(name) is not None)
-        if len(choices) == 1 and ask(f"Use blank wallet {json.dumps(choices[0])}? [y/N]").lower() in (
-            "y",
-            "yes",
-        ):
+        if len(choices) == 1 and agree(choices[0]):
             return choices[0]
         while True:
             if choices:
@@ -379,10 +376,7 @@ class BitcoinCore:
                 answer = ask("Choose a wallet number")
                 if answer.isdecimal() and 1 <= int(answer) <= len(choices):
                     name = choices[int(answer) - 1]
-                    if ask(f"Use blank wallet {json.dumps(name)}? [y/N]").lower() in (
-                        "y",
-                        "yes",
-                    ):
+                    if agree(name):
                         return name
                     continue
                 if answer != str(len(choices) + 1):
@@ -397,15 +391,11 @@ class BitcoinCore:
             while True:
                 sleep(1)
                 names = set(self._names())
-                new = names - before
-                appeared = tuple(name for name in sorted(new) if self._target(name) is not None)
+                appeared = tuple(name for name in sorted(names - before) if self._target(name) is not None)
                 if appeared:
                     break
             choices = tuple(name for name in sorted(names) if self._target(name) is not None)
-            if len(appeared) == 1 and ask(f"Use blank wallet {json.dumps(appeared[0])}? [y/N]").lower() in (
-                "y",
-                "yes",
-            ):
+            if len(appeared) == 1 and agree(appeared[0]):
                 return appeared[0]
 
     def initialize(
@@ -478,6 +468,19 @@ class BitcoinCore:
                     and all(isinstance(item, dict) and item.get("success") is True for item in imported)
                 )
                 if not valid:
+                    # Core keeps keys whose rescan hit missing blocks, so close that wallet; it lacks history.
+                    if isinstance(imported, list) and any("Rescan failed" in str(i) for i in imported):
+                        # Not loaded on startup either. Core may still fail, or warn that it will load it again,
+                        # so the message below holds whether or not this closed it.
+                        with contextlib.suppress(BitcoinCoreError):
+                            self._rpc("unloadwallet", name, "false")
+                            relock = False  # An unloaded wallet holds no unlocked keys.
+                        # Only Core's pruning hint means the date is too early; an aborted scan needs a retry.
+                        date = "a later date, if recorded" if "pruning" in str(imported) else "the same date"
+                        raise BitcoinCoreError(
+                            f"Bitcoin Core could not search all of {name}'s history. Do not use that wallet, and close "
+                            f"it in Bitcoin Core whenever it is open. Restore into a new wallet with {date}."
+                        )
                     raise BitcoinCoreError("Bitcoin Core did not import every private descriptor.")
                 public = self.public_descriptors(
                     secret,

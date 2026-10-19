@@ -51,6 +51,8 @@ class _Core:
         if supplied is not None and "-stdin" in options:
             arguments += lines
         name = next((item[11:] for item in options if item.startswith("-rpcwallet=")), None)
+        if name is not None and name not in self.wallets:  # Core refuses a wallet that is not loaded.
+            return subprocess.CompletedProcess(command, 18, "", "Requested wallet does not exist")
         return subprocess.CompletedProcess(command, 0, self._reply(arguments[0], arguments[1:], name), "")
 
     def _reply(self, method: str, arguments: list[str], name: str | None) -> str:
@@ -292,6 +294,31 @@ def test_an_import_that_fails_before_the_library_arms_its_own_relock_still_locks
         wallet_setup.fill(core, _SEED, "fresh", PASSPHRASE, expected=None)
     assert fake.called("walletlock")
     assert fake.wallets["fresh"].locked
+
+
+def test_a_wallet_closed_for_missing_history_keeps_its_own_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
+
+    def unload(*_arguments: object, **_keywords: object) -> str:
+        del fake.wallets["fresh"]
+        raise BitcoinCoreError("fresh misses history and was closed.")
+
+    monkeypatch.setattr(wallet_setup, "initialize", unload)
+    with pytest.raises(BitcoinCoreError, match="misses history"):
+        wallet_setup.fill(core, _SEED, "fresh", PASSPHRASE, expected=None)
+
+
+def test_a_failed_relock_still_asks_for_a_check_when_core_stops_answering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core, _fake = _client(monkeypatch, {"fresh": _Wallet(True, False)})
+
+    def down(*_arguments: object, **_keywords: object) -> object:
+        raise BitcoinCoreError("The local Bitcoin Core command did not complete.")
+
+    monkeypatch.setattr(BitcoinCore, "_rpc", down)
+    with pytest.raises(BitcoinCoreError, match="Confirm in Bitcoin Core that the wallet is locked"):
+        wallet_setup.relock(core, "fresh")
 
 
 def test_identity_mismatch_is_refused_before_unlock(monkeypatch: pytest.MonkeyPatch) -> None:

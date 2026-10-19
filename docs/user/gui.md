@@ -175,7 +175,10 @@ blank to search all history. If the node has already pruned blocks the search
 would need, the window says so before it changes anything in Bitcoin Core; a
 date after the pruned blocks works, and otherwise the node must download the
 blockchain again. A node started from an AssumeUTXO snapshot lacks older blocks
-until it finishes checking them, so the window asks you to restore after that.
+until it finishes checking them, so the window asks you to restore after that. In
+the rare case Bitcoin Core finds missing blocks only while it searches, the
+window says so and asks Bitcoin Core to close that wallet. Do not use it, close
+it if it opens again, and restore again into a new wallet.
 A new wallet has no history to search, so it is made and loaded at once;
 Bitcoin Core itself shows that it is still catching up.
 New wallets made here are loaded each time Bitcoin Core
