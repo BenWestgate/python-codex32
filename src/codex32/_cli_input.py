@@ -330,13 +330,14 @@ def _corrections(
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
     byte_length: int | Literal["?"] | None = None,
+    length: int | None = None,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
     """Run the library search, then the CLI's Hamming, CRC, and fingerprint tie breakers."""
     separator = value.rfind("1")
     hrp = value[: max(separator, 0)].lower()
     if separator <= 0 or required_hrp not in (None, hrp):
         return (), True
-    target = len(accepted[0].s) if accepted else None
+    target = len(accepted[0].s) if accepted else length
     if isinstance(byte_length, int):
         target = _text_length(byte_length)
     immutable = prefix if prefix and value.lower().startswith(prefix.lower()) else value[: separator + 1]
