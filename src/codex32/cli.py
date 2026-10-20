@@ -45,8 +45,10 @@ from codex32.bip93 import (
     recover_secret,
 )
 from codex32.correction import (
+    CorrectionContext,
     _best,
     _residue_low_discrimination,
+    _validate_context,
     correct_worksheet_residue,
 )
 from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
@@ -520,6 +522,8 @@ def _correct(
     residue: bool,
     erasures: tuple[int, ...],
     byte_length: int | Literal["?"] | None,
+    length: int | None,
+    prefix: str,
     plain: bool,
     context: _CliContext,
     core: BitcoinCore | None = None,
@@ -528,12 +532,12 @@ def _correct(
     value = _text(
         prompt,
         preserve_groups=not residue,
-        prefill=context.initial_prefix if not residue else "",
+        prefill="" if residue else prefix or context.initial_prefix,
         prompt_end=":\n> ",
     )
     if residue:
-        if byte_length is not None:
-            raise _UsageError("--bytes cannot be used with --residue.")
+        if byte_length is not None or length is not None or prefix:
+            raise _UsageError("--bytes, --length and --prefix cannot be used with --residue.")
         try:
             result = correct_worksheet_residue(
                 value, erasure_indices=tuple(position - 1 for position in erasures)
@@ -565,6 +569,19 @@ def _correct(
     hrp = raw_hrp.lower()
     if context.master_seed and hrp != MS:
         raise _UsageError("This command accepts only Bitcoin master-seed input beginning with ms1.")
+    if prefix and not normalized.lower().startswith(prefix.lower()):
+        raise _UsageError("The damaged string must begin with the --prefix text.")
+    for option, option_context in (
+        ("--length must be a valid codex32 length for this prefix.", CorrectionContext(hrp, length)),
+        (
+            f"--prefix must be {hrp}1, optionally followed by the threshold and identifier, as in {hrp}12name.",
+            CorrectionContext(hrp, None, prefix.lower() or None),
+        ),
+    ):
+        try:
+            _validate_context(option_context)
+        except InvalidCorrectionInput as error:
+            raise _UsageError(option) from error
     try:
         parse_codex32(normalized)
     except CodexError:
@@ -572,9 +589,13 @@ def _correct(
     else:
         if isinstance(byte_length, int) and len(normalized) != _text_length(byte_length):
             raise _UsageError("--bytes does not match the valid master-seed backup length.")
+        if length is not None and len(normalized) != length:
+            raise _UsageError("--length does not match the valid string's length.")
         _print("The codex32 string is already valid.")
         return 0
-    candidates, complete = _corrections(normalized, "", context.hrp, [], byte_length=byte_length)
+    candidates, complete = _corrections(
+        normalized, prefix, context.hrp, [], byte_length=byte_length, length=length
+    )
     if not complete and not candidates:
         raise _CommandError("The correction search did not complete within ten seconds.")
     if not candidates:
@@ -667,6 +688,8 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
             bool(arguments.residue),
             tuple(cast(list[int], arguments.erasures)),
             cast(int | Literal["?"] | None, getattr(arguments, "byte_length", None)),
+            cast(int | None, getattr(arguments, "length", None)),
+            cast(str, arguments.prefix or ""),
             plain,
             context,
             fingerprint_core,

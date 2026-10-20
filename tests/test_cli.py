@@ -1842,9 +1842,30 @@ def test_correction_infers_prefix_and_marks_invalid_data_as_erasures() -> None:
     damaged_prefix = _invoke(["correct"], "?" + original[1:])
     bip39 = _invoke(["correct"], SHARING_VECTORS["bip39_12w"]["S"])
     assert removed.exit_code == 2
-    assert "Remove or correct these arguments: --prefix" in removed.stderr
+    assert "--prefix must be ms1, optionally followed by" in removed.stderr
     assert damaged_prefix.exit_code == 3
     assert bip39.exit_code == 0 and "already valid" in bip39.stdout
+
+
+def test_correct_takes_a_known_length_and_prefix() -> None:
+    original = VECTOR_1["secret_s"]
+    deleted = original[:20] + original[21:]
+
+    for args in (["--length", "48"], ["--prefix", "ms10test"], ["--prefix", "MS1"]):
+        result = _invoke(["correct", *args], deleted)
+        assert result.exit_code == 1 and original in result.stderr
+    wrong_length = _invoke(["correct", "--length", "54"], deleted)
+    assert wrong_length.exit_code == 3 and original not in wrong_length.stderr
+
+    for args, text, message in (
+        (["--length", "50"], deleted, "--length must be a valid codex32 length"),
+        (["--length", "54"], original, "--length does not match the valid string's length."),
+        (["--prefix", "ms10fake"], deleted, "must begin with the --prefix text."),
+        (["--prefix", "ms10te"], deleted, "--prefix must be ms1, optionally followed by"),
+        (["--residue", "--prefix", "ms1"], deleted, "cannot be used with --residue."),
+    ):
+        result = _invoke(["correct", *args], text)
+        assert result.exit_code == 2 and message in result.stderr
 
 
 def test_correct_suggests_the_majority_case_for_mixed_case_damage() -> None:
