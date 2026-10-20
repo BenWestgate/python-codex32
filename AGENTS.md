@@ -86,11 +86,16 @@ Resolve scope questions from the changed code and the invariants first. Ask only
 if a material security decision remains unclear; identify the decision rather
 than stopping on general uncertainty. Ask before running a recommended security review.
 
-Follow `docs/developer/AI_POLICY.md` for contributions and `SECURITY.md` for
-private vulnerability reporting. Local edits, checks, and atomic commits are
-allowed; do not automatically push, open pull requests, write replies, contact
-maintainers, or claim authorship. A human publishes contributions. Never commit
-to master or push to an open pull request branch without explicit user direction.
+Before acting on a pull request, read `CONTRIBUTING.md` and
+`docs/developer/AI_POLICY.md` from its current target branch. Follow that merged
+contribution policy when the topic branch contains an older version. AI may
+write PR descriptions and review replies under the tool-neutral policy.
+
+Follow `SECURITY.md` for private vulnerability reporting. Local edits, checks,
+and atomic commits are allowed. Publish only within the user's authorized scope;
+permission to use AI does not itself authorize contacting others. Never claim
+independent human authorship, commit to master, or push to an open pull request
+branch without explicit user direction.
 
 When asked to commit, keep commits focused and independently passing unless the
 user explicitly requests a combined commit. Use an imperative subject of at
