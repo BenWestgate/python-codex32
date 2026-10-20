@@ -34,6 +34,10 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+codex32 = "codex32.cli:main"
+ms32 = "codex32.cli:ms_main"
+
 [project.optional-dependencies]
 dev = [
   "hypothesis>=6,<7",
