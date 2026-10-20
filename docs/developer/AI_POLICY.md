@@ -6,12 +6,16 @@ which tools you may use for what.
 The expectations are the same for every contribution, however it was made:
 
 - Do your best.
-- Understand what you submit. You must be able to explain and defend every
-  change in your own pull request, commits and replies to review. If you
-  can't, don't submit it.
-- A human is responsible. The person who opens an issue or pull request is
-  its author and answers for it. Don't list tools, AI or otherwise, as authors
-  or co-authors.
+- If you open an issue, you should be able to describe the problem in your
+  own words.
+- If you open a pull request, you must be able to explain the changes in your
+  own words when asked.
+- A human author must choose the work, understand the change, and be
+  responsible for the contribution. Understanding means knowing what the
+  change does, why, and what it affects well enough to defend it in review,
+  not memorizing every implementation detail. If you can't defend it, don't
+  submit it.
+- Do not include agents as authors or co-authors of your commits.
 - Respect reviewers' time. Review is the bottleneck. Unverified or low-effort
   issues, pull requests and comments may be closed without detailed review.
 
