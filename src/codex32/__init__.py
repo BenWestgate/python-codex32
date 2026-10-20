@@ -8,6 +8,14 @@ from .bip93 import (
     parse_codex32,
     recover_secret,
 )
+from .correction import (
+    CorrectionCandidate,
+    CorrectionContext,
+    CorrectionEdit,
+    WorksheetCorrection,
+    correct,
+    correct_worksheet_residue,
+)
 from .errors import CodexError, InvalidCorrectionInput
 from .generation import (
     ConfirmationResult,
@@ -25,6 +33,9 @@ __all__ = [
     "CodexError",
     "ConfirmationResult",
     "CoreLightningSecret",
+    "CorrectionCandidate",
+    "CorrectionContext",
+    "CorrectionEdit",
     "CreationCeremony",
     "Header",
     "InvalidCorrectionInput",
@@ -32,6 +43,9 @@ __all__ = [
     "Profile",
     "Secret",
     "Share",
+    "WorksheetCorrection",
+    "correct",
+    "correct_worksheet_residue",
     "derive_share",
     "generate_master_seed",
     "master_xprv",

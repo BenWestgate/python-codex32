@@ -1,0 +1,410 @@
+{
+  "cases": [
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxx?xxxxxxxxxxxx4nzvca9cmczlw",
+      "erasures": 1,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxxxxxxx?xxxxxx?4nzvca9cmczlw",
+      "erasures": 2,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxxxxxxxxxxxx?xx4nzv?a9cmcz?w",
+      "erasures": 3,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10te?tsxxxx?xxxxxxxxxxxxxxxxxxxxx4n?vca9cm?zlw",
+      "erasures": 4,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10?estsxx?xxxxxx?xxxxxx?xxxxxxxxx4nzvca9?mczlw",
+      "erasures": 5,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tests?xxxxxx?xxxxxx?xxxxxx?xxxx4n?vca9cmczl?",
+      "erasures": 6,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10?es?sxxxxx?xxxxxx?xxxxxx?xxxxxx?nzvca9?mczlw",
+      "erasures": 7,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tests?xx?xxx?xx?xxxxxx?xxxxxx?x4nzvc?9cmczl?",
+      "erasures": 8,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxx8xxxxxxxxxxxxxx4nzvca9cmczlw",
+      "erasures": 0,
+      "errors": 1,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxxxxx8xxxxxx?xx4nzvca9cmczlw",
+      "erasures": 1,
+      "errors": 1,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxxxxxxxxxx8xxxx4n?vca9cm?zlw",
+      "erasures": 2,
+      "errors": 1,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10?estsxx?xxxxxxxxxxxxxxxxxxxxxxx5nzvca9?mczlw",
+      "erasures": 3,
+      "errors": 1,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tests?xxxxxx?xxxxxx?xxxxxxxxxxx4nzvcu9cmczl?",
+      "erasures": 4,
+      "errors": 1,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tes?sxxxxx?xxxxxx?xxxxxx?xxxxxx?nzvca9cmcrlw",
+      "erasures": 5,
+      "errors": 1,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tcstsxxx?xxxxxx?xxxxxx?xxxxxx?x4nzvc?9cmczl?",
+      "erasures": 6,
+      "errors": 1,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxxx8xxxxxxyxxxx4nzvca9cmczlw",
+      "erasures": 0,
+      "errors": 2,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxxxxxxxx8xxxxxxhnzvca9?mczlw",
+      "erasures": 1,
+      "errors": 2,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tests?xxxxxxxxxxxxxxxxxxxxxxx8x4nzvcl9cmczl?",
+      "erasures": 2,
+      "errors": 2,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tes?sxxxxx?xxxxxx?xxxxxxxxxxxxx4nzdca9cmcqlw",
+      "erasures": 3,
+      "errors": 2,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tmstsxxx?xxxxxx?xxxxxx?xxxxxx?x4nzvca9c6czlw",
+      "erasures": 4,
+      "errors": 2,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxxxxxx8xxxxxxyx4nzvc79cmczlw",
+      "erasures": 0,
+      "errors": 3,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tes?sxxxxxxxxxxxxxxxxxxxxxx8xxx4nzwca9cmcplw",
+      "erasures": 1,
+      "errors": 3,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10t6stsxxx?xxxxxx?xxxxxxxxxxxxxxx4jzvca9ceczlw",
+      "erasures": 2,
+      "errors": 3,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10tastsxxxxxxxxxxxxxxxxxxxx8xxxxx43zvca9ccczlw",
+      "erasures": 0,
+      "errors": 4,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms1?????????????xxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "erasures": 13,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxx?????????????xxx4nzvca9cmczlw",
+      "erasures": 13,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx?????????????",
+      "erasures": 13,
+      "errors": 0,
+      "expected": "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw",
+      "kind": "short"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpcht?upzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 1,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzr?9x8gf2?vdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 2,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8g?2tvdw0?3jn54k?ce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 3,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvd?0s3jn5?khce6m?a7lqpz?gsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 4,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3j?54khce?mua7lq?zygsfj?6an074?xvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 5,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54kh?e6mua7?qpzygs?jd6an0?4rxvce?lh8wu3?k925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 6,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mu?7lqpzy?sfjd6a?074rxv?emlh8w?3tk925?cdefgh?klmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 7,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqp?ygsfjd?an074r?vcemlh?wu3tk9?5acdef?hjklmn?qrstuv?xy06fhpv80undvarhrak",
+      "erasures": 8,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpcktlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 0,
+      "errors": 1,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtluprry9x8g?2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 1,
+      "errors": 1,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9xxgf2tvd?0s3jn5?khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 2,
+      "errors": 1,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tddw0s3j?54khce?mua7lq?zygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 3,
+      "errors": 1,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0ssjn54kh?e6mua7?qpzygs?jd6an0?4rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 4,
+      "errors": 1,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54hhce6mu?7lqpzy?sfjd6a?074rxv?emlh8w?3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 5,
+      "errors": 1,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce66ua7lqp?ygsfjd?an074r?vcemlh?wu3tk9?5acdef?hjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 6,
+      "errors": 1,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlapzry9x9gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 0,
+      "errors": 2,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzryyx8gf2twdw0s3j?54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 1,
+      "errors": 2,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gfttvdw0snjn54kh?e6mua7?qpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 2,
+      "errors": 2,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdwws3jn545hce6mu?7lqpzy?sfjd6a?074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 3,
+      "errors": 2,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn44khce6eua7lqp?ygsfjd?an074r?vcemlh?wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 4,
+      "errors": 2,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzzy9x8gfgtvdw0sjjn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 0,
+      "errors": 3,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8ff2tvdwds3jn544hce6mu?7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 1,
+      "errors": 3,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvvw0s3jnk4khce6cua7lqp?ygsfjd?an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 2,
+      "errors": 3,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry988gf2tv0w0s3jnh4khce6lua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 0,
+      "errors": 4,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms1???????????????pchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 15,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqp???????????????vcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 15,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06f???????????????",
+      "erasures": 15,
+      "errors": 0,
+      "expected": "ms100c8vsm32zxfguhpchtlupzry9x8gf2tvdw0s3jn54khce6mua7lqpzygsfjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "kind": "long"
+    },
+    {
+      "damaged": "ms10test5xxxxxxrxxxxxxxxxxxxxxxx8xx4nzv6a9cmczuw",
+      "erasures": 0,
+      "errors": 5,
+      "expected": null,
+      "kind": "short"
+    },
+    {
+      "damaged": "ms100c8vsm32zxfguhpchtlupzry9x8gg2tvdw0j3jn54k5ce6mua6lqpzyg4fjd6an074rxvcemlh8wu3tk925acdefghjklmnpqrstuvwxy06fhpv80undvarhrak",
+      "erasures": 0,
+      "errors": 5,
+      "expected": null,
+      "kind": "long"
+    },
+    {
+      "damaged": "ms10?est?xx?xxx?xx?xxx?xx?xxx?xx?xx4?zv?a9??cz?w",
+      "erasures": 14,
+      "errors": 0,
+      "expected": null,
+      "kind": "short"
+    }
+  ],
+  "source": {
+    "derivation": "Deterministic instances of haskell/test/Tests.hs correctableBCHErrorVector and correctableLinearErrorVector; expected values use its correctable property.",
+    "head": "610cbad30258c80cd862b3773a20f8099d25e36e",
+    "patch_sha256": "11ef7d8a857d38b496068db4e44382825f0209ee7895d335daba122cfb1b77b8",
+    "pull_request": 70,
+    "repository": "BlockstreamResearch/codex32"
+  }
+}
