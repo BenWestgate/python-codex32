@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>codex32 wallet-verification record</title>
+  <style>
+    @page { size: letter; margin: 0.45in; }
+    * { box-sizing: border-box; }
+    body { color: #111; font: 10.5pt/1.25 sans-serif; margin: 0 auto; max-width: 7.6in; }
+    h1 { font-size: 18pt; margin: 0 0 0.08in; }
+    h2 { font-size: 12pt; margin: 0.13in 0 0.04in; }
+    p { margin: 0.05in 0; }
+    .warning { border: 2px solid #111; font-weight: bold; padding: 0.08in; }
+    .fields { display: grid; gap: 0.08in 0.18in; grid-template-columns: 1fr 1fr; }
+    .field { border-bottom: 1px solid #111; min-height: 0.3in; }
+    .wide { grid-column: 1 / -1; }
+    .check { border: 1px solid #111; display: inline-block; height: 0.14in; width: 0.14in; }
+    .small { font-size: 8.5pt; }
+    @media print { body { max-width: none; } }
+  </style>
+</head>
+<body>
+  <h1>Wallet-verification record</h1>
+  <p class="warning">
+    PUBLIC WALLET METADATA — store separately from every share. Never write a seed, share,
+    xprv, private descriptor, wallet passphrase, device PIN, or recovery text here.
+  </p>
+
+  <h2>Wallet identity</h2>
+  <div class="fields">
+    <div class="field">Backup identifier:</div>
+    <div class="field">Bitcoin Core wallet name:</div>
+    <div class="field">Bitcoin Core version:</div>
+    <div class="field">Approximate creation / earliest-use date:</div>
+    <div class="field">Master fingerprint:</div>
+    <div class="field">Derivation standards:</div>
+    <div class="field">Account number:</div>
+    <div class="field wide">Descriptor or policy archive location:</div>
+  </div>
+
+  <h2>Multisig, if applicable</h2>
+  <div class="fields">
+    <div class="field">Required signatures:</div>
+    <div class="field">Total cosigners:</div>
+    <div class="field">Coordinator and version:</div>
+    <div class="field">This cosigner label:</div>
+    <div class="field wide">Cosigner origins / fingerprints:</div>
+    <div class="field wide">Cosigner trusted contacts:</div>
+  </div>
+
+  <h2>Initial wallet setup</h2>
+  <p><span class="check"></span> Confirmed every recovery card before wallet initialization.</p>
+  <p><span class="check"></span> codex32 verified the descriptors accepted by the private Core wallet.</p>
+  <p><span class="check"></span> Copied the displayed wallet identity and policy above.</p>
+  <p><span class="check"></span> Received and found a small test payment before relying on the wallet.</p>
+
+  <h2>Later wallet verification for recovery</h2>
+  <p><span class="check"></span> Followed the documented Bitcoin Core recovery workflow.</p>
+  <p><span class="check"></span> Matched the expected master fingerprint.</p>
+  <p><span class="check"></span> Matched account, complete policy, history, and balance.</p>
+  <p><span class="check"></span> If available, a trusted person reviewed the wallet setup and recovery plan.</p>
+
+  <h2>Private restoration record</h2>
+  <div class="fields">
+    <div class="field">Date performed:</div>
+    <div class="field">Reviewed by:</div>
+    <div class="field wide">Offline device and destination wallet notes:</div>
+  </div>
+  <p class="small">
+    This record cannot authenticate a replaced backup by itself. Treat it as privacy-sensitive:
+    it can reveal wallet structure, balances, and transaction history even though it cannot spend.
+  </p>
+</body>
+</html>

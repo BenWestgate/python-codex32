@@ -2,60 +2,126 @@
 
 # python-codex32
 
-Reference implementation of BIP-0093 (codex32): checksummed, SSSS-aware BIP32 seed strings.
+[codex32](https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki) is a
+checksummed, secret-sharing-aware Base32 format for Bitcoin master seeds. A
+master seed is the private recovery secret from which a Bitcoin wallet derives
+its keys.
 
-This repository implements the codex32 string format described by BIP-0093.
-It provides parsing and validation, regular/long codex32 checksums, and Shamir secret sharing
-scheme (SSSS) recovery and share derivation.
+This project provides a command-line tool and Python library that can:
+- create an unshared master-seed backup or an M-of-N shared backup;
+- check backup text and suggest possible repairs after damage;
+- recover a master seed from the required shares;
+- add or replace shares for an existing backup;
+- set up a user-created blank Bitcoin Core wallet from a new or existing
+  codex32 backup.
 
-## Features
-- Parse and validate codex32 strings with `parse_codex32`.
-- Regular checksum (13 chars) and long checksum (15 chars) support.
-- Recover a secret from `k` shares with `recover_secret`.
-- Derive a share at a fresh index with `derive_share`.
-- Typed, immutable `Header`, `Share` and `Secret` values.
-- Profiles for BIP32 master seeds (`ms`), Core Lightning secrets (`cl`) and
-  BIP39 entropy (`bip39_12w`, `bip39_24w`).
-- No third-party runtime dependencies.
+With an M-of-N backup, any M of the N paper shares can recover the master seed.
+A set with fewer than M shares cannot recover it.
 
-## Security
-Caution: This is reference code. Verify carefully before using with real funds.
+This is not a Bitcoin wallet. It has no graphical interface, cannot show
+balances or send bitcoin, and does not produce BIP39 mnemonic words. codex32
+makes no network connection; it communicates with a local Bitcoin Core
+instance through `bitcoin-cli`.
 
-## Installation
-**Compatibility:** Python 3.10–3.15
+This is security-critical reference software. Use it on a trusted computer and
+obtain an independent review before relying on it with funds. See
+[SECURITY.md](SECURITY.md).
 
-**Recommended:** use a virtual environment
-### Linux / macOS
+## Install
+
+Python 3.10 through 3.15 is supported. The installed package has no third-party
+runtime dependencies. To install it with the pinned build backend, run these
+commands from the project folder:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install codex32
-```
-### Windows
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install codex32
+
+python -m pip install --require-hashes \
+  -r requirements/cli-build-dependencies.txt
+python -m pip install --no-build-isolation --no-deps .
+python -m pip check
 ```
 
+On Windows, activate the environment with `.venv\Scripts\activate` instead.
 
-## Quick usage
-```python
-from codex32 import derive_share, parse_codex32, recover_secret
+The installed commands are `codex32` and `ms32`.
 
-a = parse_codex32("MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM")
-c = parse_codex32("MS12NAMECACDEFGHJKLMNPQRSTUVWXYZ023FTR2GDZMPY6PN")
-print(a.header)  # Header(threshold=2, identifier='name', index='a')
+`codex32` checks, corrects, recovers, and derives shares for registered or opaque
+application prefixes. `ms32` additionally creates Bitcoin master-seed backups
+and provides key and wallet setup.
 
-secret = recover_secret([a, c])
-print(secret.text)  # MS12NAMES6XQGUZTTXKEQNJSJZV4JV3NZ5K3KWGSPHUH6EVW
-print(secret.seed_bytes.hex())  # d1808e096b35b209ca12132b264662a5
+BIP39 worksheet profiles are supported for existing-backup recovery but are
+[not recommended for creating backups](https://secretcodex32.com/docs/index.html).
+Powerful correction searches, including recovery of genuinely unreadable
+characters, require interactive confirmation.
 
-print(derive_share([a, c], "d").text)  # a new share at index d
-```
+## Start here
 
-## Tests
+Start Bitcoin Core 32 or newer with local RPC enabled. codex32 detects and
+reports the local Bitcoin Core network. To practice with Bitcoin-Qt on signet,
+start it with:
+
 ```bash
-pip install -e '.[dev]'
-python -m pytest
+bitcoin-qt -signet -server
 ```
+
+Then run:
+
+```bash
+ms32 create 2
+```
+
+This creates three shares with a random identifier. Any two recover the seed, so
+one can be lost. Once the shares are confirmed, codex32 initializes the
+user-created blank Bitcoin Core wallet you select.
+
+For a 3-of-7 backup with the identifier `yete`, run:
+
+```bash
+ms32 create 3yete --shares 7
+```
+
+Any three shares recover the seed, so four can be lost. Each additional share
+is another recovery card to protect.
+
+Follow the [user guide](docs/user/guide.md) for the complete setup, shared
+backups, recovery, inheritance, offline signing, and Bitcoin Core instructions.
+
+## Recovery and maintenance
+
+Run the command first. Enter the master seed or shares only when prompted;
+never put recovery text on the command line.
+
+```bash
+ms32 check    # check one secret or share
+ms32 secret   # recover a secret from shares
+ms32 share d  # add share d to an existing set of shares
+ms32 correct  # suggest repairs for damaged text
+```
+
+Use the corresponding `codex32` commands for generic human-readable part
+codex32 strings.
+
+Printable forms:
+
+- [codex32 recovery card](docs/user/recovery-card.html)
+- [wallet-verification record](docs/user/wallet-verification-record.html)
+
+## For developers and reviewers
+
+The public Python API is documented in the
+[API and architecture guide](docs/developer/api.md). The detailed threat model
+and security properties are in the [security model](docs/security/model.md).
+
+To work on the project:
+
+```bash
+python -m pip install -e '.[dev]'
+python -m pytest -q
+python -m mypy src/codex32
+python -m ruff check .
+python -m ruff format --check .
+```
+
+Read [SECURITY.md](SECURITY.md) before reporting a vulnerability.
