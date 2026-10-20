@@ -36,6 +36,8 @@ jobs:
       - run: python -m ruff check .
       - run: python -m ruff format --check .
       - run: python tools/differential_correction.py --verify
+      - run: python -m build --no-isolation
+      - run: python tools/verify_wheel_environment.py
 
   compatibility:
     runs-on: ubuntu-latest
