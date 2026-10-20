@@ -555,6 +555,7 @@ def _search_many(
     reduced: frozenset[int] = frozenset(),
     deadline: float | None = None,
     max_character_depth: int = 4,
+    competitors: bool = False,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     capture_layers: list[tuple[int, int]] | None = None,
     observed_text: str | None = None,
@@ -602,6 +603,18 @@ def _search_many(
             annotated.append(replace(candidate, cumulative_capture_volume=volume, capture_space_bits=bits))
         return tuple(annotated), complete
 
+    if competitors:
+        from codex32._competitors import _search_competitors
+
+        result = _search_competitors(
+            states,
+            frontier,
+            deadline,
+            allowed,
+            seed_candidates=seed_candidates,
+            optional_only=optional_only,
+        )
+        return finish(*result)
     results = {candidate.artifact.text.lower(): candidate for candidate in seed_candidates}
     # One global admission ledger, then fixed, required, and optional work.
     # The minimum supported public sphere is A<=2 / G<=2; deeper cutoffs
