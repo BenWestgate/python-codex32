@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=80", "setuptools-scm>=8"]
+requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,8 +11,8 @@ authors = [
 description = "Python reference implementation for codex32 (BIP93) and codex32-encoded master seeds."
 readme = "README.md"
 requires-python = ">=3.10,<3.16"
-license = "MIT"
-license-files = ["LICENSE*"]
+license = "MIT AND BSD-3-Clause"
+license-files = ["LICENSE*", "LICENSES/*"]
 maintainers = [
   { name = "Ben Westgate", email = "benwestgate@protonmail.com" },
 ]
@@ -35,21 +35,27 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "flake8", "mypy", "black", "isort", "ruff"]
-
+dev = [
+  "hypothesis>=6,<7",
+  "mypy",
+  "pytest",
+  "ruff==0.16.2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.flake8]
-max-line-length = 80
-exclude = ".git,__pycache__,build,dist"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.ruff]
+line-length = 110
 
 [project.urls]
 Homepage = "https://github.com/benwestgate/python-codex32"
 Repository = "https://github.com/benwestgate/python-codex32"
 Issues = "https://github.com/benwestgate/python-codex32/issues"
-Changelog = "https://github.com/benwestgate/python-codex32/tree/master/CHANGELOG.md"

@@ -1,12 +1,17 @@
-# .gitignore
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 .env/
+.venv/
+.vscode/
 build/
 dist/
 .eggs/
 *.egg-info/
-.venv/
-.vscode/*
+
+# Local plans, release gates, and unfinished review reports
+docs/planning/
+docs/developer/provenance.md
