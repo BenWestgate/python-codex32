@@ -203,11 +203,25 @@ def test_yes_still_requires_independent_whole_card_acceptance(monkeypatch):
     answers = iter(("YES", "n"))
     monkeypatch.setattr(_cli_input, "_editable_input", lambda prompt: prompts.append(prompt) or next(answers))
     with patch.object(sys, "stdin", _TTYInput()), contextlib.redirect_stderr(_TTYOutput()):
-        assert _cli_input._confirm_correction(candidate, [], False) is False
+        assert _cli_input._confirm_correction(candidate, [], False, reason="") is False
     assert prompts == [
         "If you understand this, type YES to attempt to correct the data: ",
         "Does this entire string exactly match your recovery card? [y/N]: ",
     ]
+
+
+def test_declined_yes_gate_prints_no_invalid_reason(monkeypatch):
+    candidate = _candidate()
+    monkeypatch.setattr(_cli_input, "_editable_input", lambda prompt: "no")
+    stderr = _TTYOutput()
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        contextlib.redirect_stderr(stderr),
+        pytest.raises(_cli_input.CorrectionDeclined),
+    ):
+        _cli_input._confirm_correction(candidate, [], False, reason="The checksum does not match.")
+    assert "Invalid:" not in stderr.getvalue()
+    assert "Possible correction" not in stderr.getvalue()
 
 
 def test_redirected_correct_uses_terminal_gate_without_second_confirmation(monkeypatch):

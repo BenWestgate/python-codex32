@@ -27,6 +27,7 @@ from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
     ExistingTargetIndex,
+    InvalidCase,
     InvalidChecksum,
     InvalidLength,
     InvalidThreshold,
@@ -205,6 +206,8 @@ def _confirm_correction(
     accepted: list[Artifact],
     basis: bool,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    *,
+    reason: str,
 ) -> bool | None:
     _require_correction_confirmation(candidate.low_checksum_discrimination)
     artifact = candidate.artifact
@@ -226,6 +229,7 @@ def _confirm_correction(
     except CodexError:
         _stderr("Rejected: Could not recover a valid Bitcoin master seed using this correction.")
         return None
+    _stderr(f"Invalid: {reason}")
     _stderr(f"Possible correction:\n\n{fingerprint_text}{_card_text(artifact.text, sys.stderr.isatty())}\n")
     return _confirmation_input(
         "Does this entire string exactly match your recovery card? [y/N]: "
@@ -644,7 +648,7 @@ def _redirected(
     for token in tokens:
         try:
             artifact = _parse(token, profiles)
-        except InputError:
+        except InputError as error:
             if one:
                 raise
 
@@ -671,7 +675,7 @@ def _redirected(
             )
             if len(candidates) != 1:
                 raise
-            if not _confirm_correction(candidates[0], accepted, basis, fingerprint):
+            if not _confirm_correction(candidates[0], accepted, basis, fingerprint, reason=str(error)):
                 raise CorrectionDeclined
             artifact = candidates[0].artifact
         _validate_operational_artifact(
@@ -686,6 +690,10 @@ def _redirected(
 
 
 _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
+    InvalidCase: (
+        "A codex32 string must be all uppercase or all lowercase. Case alone doesn't change the "
+        "encoded data; check any other difference against your recovery card."
+    ),
     InvalidChecksum: "The checksum does not match.",
     MismatchedProfile: "These strings are for different applications.",
     MismatchedThreshold: "These strings require different numbers of shares.",
@@ -786,7 +794,7 @@ def _interactive(
                 )
             )
             confirmation = (
-                _confirm_correction(candidates[0], accepted, basis, fingerprint)
+                _confirm_correction(candidates[0], accepted, basis, fingerprint, reason=str(error))
                 if len(candidates) == 1
                 else None
             )
