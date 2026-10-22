@@ -114,6 +114,31 @@ complete explicit `ms1` string.
 
 ## Creation, sharing, and recovery controls
 
+`ms32 checksum` generates a checksum only for new Codex32 Book worksheet
+data. It is separate from `check` and `correct` and refuses input of any complete
+`ms` string length, so a damaged complete string of a valid length is not taken
+for a longer unchecksummed payload. This narrows the ambiguity without removing
+it: a complete string that has lost or gained characters can still reach the
+accepted length, and nothing can tell it from new data. The non-pink worksheet
+data is entered twice, with the terminal cleared before the second entry, and
+the entries must match before anything is displayed. Each entry must be ASCII
+and entirely uppercase or lowercase. The full completed string is then displayed so the
+operator can copy its checksum into the pink squares. After the operator presses Enter,
+the terminal and scrollback are cleared where supported and only the pink
+checksum squares must be re-entered, without editable prefill. These entries
+catch typing errors; they cannot detect an error already written on the
+worksheet. A mismatch, EOF, or interruption releases no completed string to
+stdout, although the preview has already been displayed on stderr. Format errors
+give no detail. `--plain` preserves the first entry's case; default terminal
+output uses the normal card formatting. Plain or redirected output does not skip
+checksum confirmation; noninteractive input is rejected before it is read.
+Agreement cannot establish how the worksheet data was generated or detect an
+error already present in its non-pink data. Terminal clearing remains best effort.
+The private `_from_unchecksummed_string()` helper in `bip93.py` is the only
+checksum construction from worksheet data. It applies the same parsing rules
+for any HRP, plus the `ms` payload rules for `ms`, but has none of these
+interactive safeguards, so every façade that uses it must provide them.
+
 Fresh shared creation generates *k* random initial shares. Each uses a separate
 full-payload OS-CSPRNG request. The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
@@ -174,10 +199,10 @@ cancelled operations are removed only with a coverage proof. Pruning does not
 reallocate the ledger's mass to additional hypotheses.
 
 `codex32` checks, corrects, recovers, and derives shares for any HRP. `ms32`
-applies an `ms` input filter and alone owns Bitcoin creation, xprv, and wallet
-commands. Both façades offer worksheet-residue correction and a known
-`--prefix`; only `ms32 correct` offers `--bytes`, and only `codex32 correct`
-offers `--length`.
+applies an `ms` input filter and alone owns Bitcoin creation, checksum
+generation, xprv, and wallet commands. Both façades offer worksheet-residue
+correction and a known `--prefix`; only `ms32 correct` offers `--bytes`, and
+only `codex32 correct` offers `--length`.
 
 ### Low-discrimination correction disclosure
 

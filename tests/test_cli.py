@@ -145,7 +145,9 @@ def _invoke(args: list[str], *lines: str) -> _Result:
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        entrypoint = ms_main if args[0] in {"create", "xprv", "wallet"} or "--bytes" in args else main
+        entrypoint = (
+            ms_main if args[0] in {"create", "checksum", "xprv", "wallet"} or "--bytes" in args else main
+        )
         status = entrypoint(args)
     return _Result(status, stdout.getvalue(), stderr.getvalue())
 
@@ -2958,3 +2960,177 @@ def test_create_existing_checks_the_record_before_import(monkeypatch: pytest.Mon
     assert emitted_fingerprints and all(fingerprint is None for fingerprint in emitted_fingerprints)
     assert checked == [secret.seed_bytes]
     assert core.expected == core.fingerprint(secret)
+
+
+def _invoke_checksum(*entries: str, args: tuple[str, ...] = ()) -> tuple[_Result, list[str]]:
+    prompts: list[str] = []
+    answers = iter(entries)
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("builtins.input", answer),
+        patch("codex32._cli_input._line_editor", None),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        status = ms_main(["checksum", *args])
+    return _Result(status, stdout.getvalue(), stderr.getvalue()), prompts
+
+
+@pytest.mark.parametrize("plain", [False, True])
+def test_checksum_rejects_noninteractive_input_before_reading(plain: bool) -> None:
+    with patch("codex32.cli._text") as read:
+        result = _invoke(["checksum", *(["--plain"] if plain else [])], VECTOR_1["secret_s"][:-13])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert result.stderr == "ms32 checksum: Checksum generation requires an interactive terminal.\n"
+    read.assert_not_called()
+
+
+@pytest.mark.parametrize("uppercase", [False, True])
+@pytest.mark.parametrize("include_prefix", [False, True])
+def test_checksum_completes_the_book_worksheet_after_checksum_confirmation(
+    uppercase: bool, include_prefix: bool
+) -> None:
+    expected = VECTOR_1["secret_s"].upper() if uppercase else VECTOR_1["secret_s"]
+    entered = expected[:-13] if include_prefix else expected[3:-13]
+    result, prompts = _invoke_checksum(entered, entered, "", expected[-13:], args=("--plain",))
+    assert result.exit_code == 0
+    assert result.stdout == expected + "\n"
+    assert result.stderr.startswith("DANGER: Incorrect input can cause permanent loss of funds.")
+    assert "Never use it to replace the checksum of an existing backup." in result.stderr
+    assert prompts == [
+        "Checksum worksheet non-pink bold squares:\n\n> MS1",
+        "Re-enter the worksheet non-pink bold squares:\n\n> MS1",
+        "Copy the checksum into the worksheet's pink squares, then press Enter. ",
+        "Re-enter only the pink checksum squares:\n> ",
+    ]
+
+
+@pytest.mark.parametrize(
+    "entered",
+    [
+        VECTOR_1["secret_s"][3:-14],  # one square short
+        VECTOR_1["secret_s"][3:-13] + "x",  # one square extra
+        "0tests" + "x" * 32,  # a 20-byte secret does not fit the Book worksheet
+        "Ms10tests" + "x" * 26,  # mixed case
+        "ms10testsxxxxbxxxxxxxxxxxxxxxxx",  # b is not a bech32 character
+        "cl10tests" + "x" * 26,  # only ms
+        "ms10tests10tests" + "x" * 19,  # a later 1 makes the HRP ms10tests
+        "xtests" + "x" * 26,  # invalid threshold
+    ],
+)
+def test_checksum_rejects_other_input_without_hints(entered: str) -> None:
+    result, prompts = _invoke_checksum(entered)
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert result.stderr.endswith(
+        "ms32 checksum: The worksheet input is not in the expected format.\n"
+        "Consult the Codex32 Book and check the non-pink bold squares.\n"
+    )
+    assert len(prompts) == 1
+
+
+@pytest.mark.parametrize(
+    "entered",
+    [
+        VECTOR_1["secret_s"],
+        VECTOR_1["secret_s"][3:],
+        # A damaged 16-byte string is as long as an unchecksummed 24-byte one.
+        VECTOR_1["secret_s"][:-1] + "q",
+        VECTOR_2["share_A"],
+    ],
+)
+def test_checksum_refuses_complete_strings(entered: str) -> None:
+    result, prompts = _invoke_checksum(entered)
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert result.stderr.endswith(
+        "ms32 checksum: This command does not accept complete strings. Use 'ms32 check' to check one.\n"
+    )
+    assert len(prompts) == 1
+
+
+@pytest.mark.parametrize("ending", ["match", "retyped", "mismatch", "eof", "interrupt"])
+def test_checksum_confirms_both_entries_before_stdout(monkeypatch, ending):
+    cli = importlib.import_module("codex32.cli")
+    original = VECTOR_1["secret_s"]
+    calls = []
+    stdout, stderr = io.StringIO(), _TTYOutput()
+
+    def read(prompt, *, prompt_end, optional=False):
+        assert stdout.getvalue() == ""
+        calls.append((prompt, prompt_end))
+        if len(calls) == 1:
+            return original[3:-13]
+        if len(calls) == 2:
+            assert prompt == "\x1b[3J\x1b[2J\x1b[HRe-enter the worksheet non-pink bold squares"
+            assert original not in stderr.getvalue()
+            return original[3:-14] + ("q" if ending == "retyped" else original[-14])
+        if len(calls) == 3:
+            assert optional
+            assert original in stderr.getvalue()
+            return ""
+        assert prompt == "\x1b[3J\x1b[2J\x1b[HRe-enter only the pink checksum squares"
+        if ending == "eof":
+            raise EOFError
+        if ending == "interrupt":
+            raise KeyboardInterrupt
+        return "q" * 13 if ending == "mismatch" else original[-13:].upper()
+
+    monkeypatch.setattr(cli.sys, "stdin", _TTYInput())
+    monkeypatch.setattr(cli, "_text", read)
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        status = ms_main(["checksum", "--plain"])
+    assert len(calls) == (2 if ending == "retyped" else 4)
+    assert status == {"match": 0, "retyped": 1, "mismatch": 1, "eof": 2, "interrupt": 130}[ending]
+    assert stdout.getvalue() == (original + "\n" if ending == "match" else "")
+
+
+def test_checksum_rejects_positional_input_before_reading() -> None:
+    with patch("codex32.cli._text") as read:
+        result = _invoke(["checksum", "2testa"])
+    assert result.exit_code == 2
+    assert "Remove or correct these arguments: 2testa" in result.stderr
+    read.assert_not_called()
+
+
+@pytest.mark.parametrize("entered", ["xrpp870hKkqrm", "xrpp870hKkqrm", "XRPP870HKKQRM", "xrpp870hkkqrmx", ""])
+def test_checksum_confirmation_rejects_invalid_pink_squares(entered: str) -> None:
+    original = VECTOR_2["share_A"]
+    result, prompts = _invoke_checksum(original[:-13], original[:-13], "", entered, args=("--plain",))
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert len(prompts) == 4
+
+
+@pytest.mark.parametrize("uppercase", [False, True])
+@pytest.mark.parametrize("plain", [False, True])
+def test_checksum_terminal_output_preserves_plain_case_and_pretty_default(
+    uppercase: bool, plain: bool
+) -> None:
+    original = VECTOR_2["share_A"] if uppercase else VECTOR_2["share_A"].lower()
+    stdout, stderr = _TTYOutput(), io.StringIO()
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch(
+            "builtins.input",
+            side_effect=[original[:-13], original[:-13].swapcase(), "", original[-13:].swapcase()],
+        ),
+        patch("codex32._cli_input._line_editor", None),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
+        status = ms_main(["checksum", *(["--plain"] if plain else [])])
+    assert status == 0
+    if plain:
+        assert stdout.getvalue() == original + "\n"
+    else:
+        assert " ".join(original.upper()[i : i + 4] for i in range(0, len(original), 4)) in " ".join(
+            re.sub(r"\x1b\[[0-9;]*m", "", stdout.getvalue()).split()
+        )

@@ -31,6 +31,7 @@ from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
+from codex32.bech32 import _validate_single_case_ascii
 from codex32.bip93 import (
     IDX_SORT,
     MS,
@@ -38,11 +39,15 @@ from codex32.bip93 import (
     MasterSeed,
     Secret,
     Share,
+    _from_unchecksummed_string,
     _normalize_target,
     _text_length,
     derive_share,
     parse_codex32,
     recover_secret,
+)
+from codex32.bip93 import (
+    TEXT_LENGTHS as _MS_TEXT_LENGTHS,
 )
 from codex32.correction import (
     CorrectionContext,
@@ -518,6 +523,63 @@ def _create(
     )
 
 
+def _worksheet_text(prompt: str) -> str:
+    value = _text(prompt, prompt_end=":\n\n> MS1")
+    return value if "1" in value else ("MS1" if value.isupper() else "ms1") + value
+
+
+def _same_entry(entered: str, expected: str) -> bool:
+    try:
+        _validate_single_case_ascii(entered)
+    except CodexError:
+        return False
+    return entered.lower() == expected.lower()
+
+
+def _checksum(plain: bool) -> int:
+    # Generation only: complete strings belong to check and correct (codex32 discussion #78).
+    if not sys.stdin.isatty():
+        raise _UsageError("Checksum generation requires an interactive terminal.")
+    warning = (
+        "DANGER: Incorrect input can cause permanent loss of funds.\n"
+        "Use this only for new data from the Codex32 Book and its Dice De-biasing Worksheet.\n"
+        "Never use it to replace the checksum of an existing backup. Use 'ms32 check' or 'ms32 correct'.\n"
+        "Check every non-pink square on the worksheet; errors written there cannot be detected here.\n"
+        "This command cannot verify how your data was generated.\n"
+        "Do not enter raw dice rolls, seed words, hexadecimal seeds, or passwords.\n"
+    )
+    _print(warning, err=True, danger=True)
+    text = _worksheet_text("Checksum worksheet non-pink bold squares")
+    if len(text) in _MS_TEXT_LENGTHS:
+        raise _UsageError("This command does not accept complete strings. Use 'ms32 check' to check one.")
+    try:
+        # The Book's checksum worksheet has 32 non-pink squares after the ms prefix.
+        if len(text) != 35:
+            raise ValueError
+        artifact = _from_unchecksummed_string(text)
+        if artifact.hrp != MS:
+            raise ValueError
+    except (CodexError, ValueError) as error:
+        raise _UsageError(
+            "The worksheet input is not in the expected format.\n"
+            "Consult the Codex32 Book and check the non-pink bold squares."
+        ) from error
+    clear = "\x1b[3J\x1b[2J\x1b[H" if sys.stderr.isatty() else ""
+    if not _same_entry(_worksheet_text(clear + "Re-enter the worksheet non-pink bold squares"), text):
+        raise _CommandError("Entries do not match. Restart and re-enter the worksheet.")
+    _emit(artifact, plain, err=True)
+    _text(
+        "Copy the checksum into the worksheet's pink squares, then press Enter",
+        optional=True,
+        prompt_end=". ",
+    )
+    entered = _text(clear + "Re-enter only the pink checksum squares", prompt_end=":\n> ")
+    if not _same_entry(entered, artifact.text[-13:]):
+        raise _CommandError("Checksum not confirmed. Check the pink squares before using this backup.")
+    _emit(artifact, plain)
+    return 0
+
+
 def _correct(
     residue: bool,
     erasures: tuple[int, ...],
@@ -683,6 +745,8 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
             cast(str | None, arguments.indices),
             bool(arguments.existing),
         )
+    if command == "checksum":
+        return _checksum(plain)
     if command == "correct":
         return _correct(
             bool(arguments.residue),
