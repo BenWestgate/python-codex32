@@ -26,10 +26,11 @@ from codex32 import (
     generate_master_seed,
     recover_secret,
 )
+from codex32._confirmation import _compact, _entered_groups
 from codex32.errors import CodexError
 from codex32.generation import ORDINARY_INDICES
 from codex32_gui import ARTWORK, reading, wallet_setup, work
-from codex32_gui.entry import Codex32Entry, EntryMode
+from codex32_gui.entry import Codex32Entry, EntryMode, GroupEntry, navigate_groups
 from codex32_gui.wallet_setup import BitcoinCore
 
 Artifact = Share | Secret
@@ -328,7 +329,7 @@ def _describe(artifact: Artifact) -> str:
 
 def _compare(expected: str, entered: str) -> ConfirmationResult:
     """Report which four-character groups do not match, by the library's own rule."""
-    observed, wanted = "".join(entered.split()).lower(), expected.lower()
+    observed, wanted = _compact(entered), expected.lower()
     span = (max(len(observed), len(wanted)) + reading.GROUP - 1) // reading.GROUP
     mismatched = tuple(
         group + 1
@@ -504,68 +505,91 @@ def _read_back_page(
     confirm: Callable[[str], ConfirmationResult],
     after: Callable[[], None],
 ) -> Adw.NavigationPage:
-    """Read the card back from the paper, with the original off the screen."""
+    """Read from paper; compare with the CLI's library alignment."""
     field = Codex32Entry(length=len(card.text), mode="readback")
-    status = _note("")
-    comparison = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-    accept = _button("Confirm card", lambda: None, style="suggested-action")
+    boxes: list[Gtk.Label | GroupEntry] = []
+    status, comparison = _note(""), Adw.Bin()
+    accept = _button("Confirm card", lambda: check(), style="suggested-action")
 
-    def clear_comparison() -> None:
-        while (child := comparison.get_first_child()) is not None:
-            comparison.remove(child)
+    def clear_boxes() -> None:
+        previous = boxes.copy()
+        boxes.clear()
+        comparison.set_child(None)
+        field.set_visible(True)
+        for box in previous:
+            box.clear() if isinstance(box, GroupEntry) else box.set_text("")
+
+    def entered() -> str:
+        return "".join(box.get_text() for box in boxes) if boxes else field.get_text()
 
     def update(*_arguments: object) -> None:
-        clear_comparison()
-        state = field.reading()
-        accept.set_sensitive(state.complete)
-        _say(status, state.message, state.level)
+        if field._rewriting:
+            return
+        if not field.get_text():
+            clear_boxes()
+        text = reading.normalize_readback(entered())
+        accept.set_sensitive(0 < len(text) <= 1024)
+        message = f"{len(text)} of {len(card.text)} characters"
+        _say(status, "Compare at most 1,024 characters at a time." if len(text) > 1024 else message)
 
     def check() -> None:
-        try:
-            state = field.reading()
-            result = confirm(state.text)
-        except CodexError as error:
-            _failure(view, error, CARDS_SAFE)
-            return
-        if not result.accepted:
-            groups = frozenset(group - 1 for group in result.mismatched_groups)
-            clear_comparison()
-            comparison.append(_card(state.text, groups, highlight_class="mismatch"))
-            plural = "s" if len(groups) != 1 else ""
-            message = f"Highlighted group{plural} {'do' if plural else 'does'} not match. Re-read the card."
-            _say(status, message, "error")
-            return
-        field.clear()
-        after()
+        text = reading.normalize_readback(entered())
+        if text == card.text.upper():
+            try:
+                result = confirm(text)
+            except CodexError as error:
+                _failure(view, error, CARDS_SAFE)
+                return
+            if result.accepted:
+                field.clear()
+                after()
+                return
+        if boxes:
+            pieces = [reading.normalize_readback(box.get_text()) for box in boxes]
+            changed = {
+                index
+                for index, piece in enumerate(pieces)
+                if piece != card.text[index * 4 : index * 4 + 4].upper()
+            }
+        else:
+            pieces, changed = _entered_groups(text, card.text)
+        clear_boxes()
+        grid = Gtk.Grid(column_spacing=8, row_spacing=8, halign=Gtk.Align.CENTER)
+        for index, piece in enumerate(pieces):
+            piece = reading.normalize_readback(piece)
+            box = GroupEntry(piece) if index in changed else Gtk.Label(label=piece)
+            box.add_css_class("card-group")
+            if isinstance(box, GroupEntry):
+                box.add_css_class("mismatch")
+                box.connect("changed", update)
+                box.connect("activate", lambda _box: check() if accept.get_sensitive() else None)
+            boxes.append(box)
+            grid.attach(box, index % 4, index // 4, 1, 1)
+        editable = [box for box in boxes if isinstance(box, GroupEntry)]
+        navigate_groups(editable)
+        comparison.set_child(grid)
+        field.set_visible(False)
+        if editable:
+            editable[0].grab_focus()
+        _say(status, "Re-read the highlighted groups from your card.", "error")
 
-    accept.connect("clicked", lambda _button: check())
     field.connect("activate", lambda _entry: check() if accept.get_sensitive() else None)
     field.connect("changed", update)
-    content = _column(
-        _title("Now type it back from the card", _counted(card.header.index.upper(), position, count)),
-        _note(
-            "The original is no longer on screen. Read from the card you just wrote, so a slip of the "
-            "pen is caught now rather than years from now."
-        ),
-        field,
-        status,
-        comparison,
-        _note(
-            "Spaces and capitals do not matter. After a mismatch, only what you typed is shown; the "
-            "original stays hidden. Re-read the highlighted groups from your card and try again."
-        ),
-    )
     page = _page(
         _counted(card.header.index.upper(), position, count),
-        content,
+        _column(
+            _title("Now type it back from the card", _counted(card.header.index.upper(), position, count)),
+            _note("Read every character from your paper card, including MS1. Pasting is turned off."),
+            field,
+            status,
+            comparison,
+            _note(
+                "Only highlighted groups can be changed. Use arrows, Ctrl+arrows, Tab, Home or End to move."
+            ),
+        ),
         actions=_actions(_button("Show the card again", view.pop), accept),
     )
-
-    def clear_page() -> None:
-        field.clear()
-        clear_comparison()
-
-    _forget_when_gone(view, page, clear_page)
+    _forget_when_gone(view, page, field.clear)
     update()
     return page
 
