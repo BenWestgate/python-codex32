@@ -312,11 +312,11 @@ class BitcoinCore:
         ask: Callable[[str], str],
         tell: Callable[[str], None],
     ) -> str:
+        def use(name: str) -> bool:
+            return ask(f"Use blank wallet {json.dumps(name)}? [y/N]").lower() in ("y", "yes")
+
         choices = tuple(name for name in sorted(self._names()) if self._target(name) is not None)
-        if len(choices) == 1 and ask(f"Use blank wallet {json.dumps(choices[0])}? [y/N]").lower() in (
-            "y",
-            "yes",
-        ):
+        if len(choices) == 1 and use(choices[0]):
             return choices[0]
         while True:
             if choices:
@@ -327,10 +327,7 @@ class BitcoinCore:
                 answer = ask("Choose a wallet number")
                 if answer.isdecimal() and 1 <= int(answer) <= len(choices):
                     name = choices[int(answer) - 1]
-                    if ask(f"Use blank wallet {json.dumps(name)}? [y/N]").lower() in (
-                        "y",
-                        "yes",
-                    ):
+                    if use(name):
                         return name
                     continue
                 if answer != str(len(choices) + 1):
@@ -350,10 +347,7 @@ class BitcoinCore:
                 if appeared:
                     break
             choices = tuple(name for name in sorted(names) if self._target(name) is not None)
-            if len(appeared) == 1 and ask(f"Use blank wallet {json.dumps(appeared[0])}? [y/N]").lower() in (
-                "y",
-                "yes",
-            ):
+            if len(appeared) == 1 and use(appeared[0]):
                 return appeared[0]
 
     def initialize(

@@ -50,7 +50,7 @@ from codex32.correction import (
     _residue_low_discrimination,
     correct_worksheet_residue,
 )
-from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
+from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.generation import (
     ConfirmationResult,
     CreationCeremony,
@@ -108,12 +108,11 @@ def _secret(artifacts: list[Artifact]) -> Secret:
 
 
 def _master_seed(fingerprint: Callable[[MasterSeed], bytes] | None = None) -> MasterSeed:
-    if isinstance(
-        value := _secret(_artifacts(profiles=(Profile.MS,), initial_prefix="MS1", fingerprint=fingerprint)),
+    # Only ms input is accepted, and an ms secret is always a MasterSeed.
+    return cast(
         MasterSeed,
-    ):
-        return value
-    raise _UsageError("Wallet commands accept only Bitcoin master-seed secrets.")
+        _secret(_artifacts(profiles=(Profile.MS,), initial_prefix="MS1", fingerprint=fingerprint)),
+    )
 
 
 def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
@@ -470,8 +469,6 @@ def _create(
 ) -> int:
     profile, selected_threshold, identifier = _creation_header(header)
     threshold = 0 if selected_threshold is None else selected_threshold
-    if profile is not Profile.MS:
-        raise _UsageError("Only Bitcoin master-seed backups can be created.")
     if shares is not None and indices is not None:
         raise _UsageError("Choose either --shares or --indices, not both.")
     if byte_length is not None and existing:
@@ -485,8 +482,6 @@ def _create(
             raise _UsageError("For thresholds 4 through 9, choose --shares or --indices.")
     core = _connected_core()
     source = _creation_source(profile) if existing else None
-    if not existing and not sys.stdin.isatty() and _text("", optional=True):
-        raise _UsageError("Use --existing when supplying a seed or secret.")
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
     try:
@@ -534,8 +529,6 @@ def _create(
                 share_count=shares,
                 indices=indices,
             )
-    except HeaderCollision as error:
-        raise _CommandError(f"{error}; choose another set header") from error
     except CodexError as error:
         raise _CommandError(str(error)) from error
     output_count = shares if shares is not None else len(indices or "")
