@@ -341,9 +341,13 @@ def _corrections(
     if isinstance(byte_length, int):
         target = _text_length(byte_length)
     immutable = prefix if prefix and value.lower().startswith(prefix.lower()) else value[: separator + 1]
-    excluded = tuple(artifact.share_idx for artifact in accepted)
-    context = CorrectionContext(hrp, target, _prefix_for_suffix(immutable, value), excluded)
     try:
+        context = CorrectionContext.from_shares(
+            accepted,
+            hrp=hrp,
+            expected_length=target,
+            immutable_prefix=_prefix_for_suffix(immutable, value),
+        )
         candidates, complete = _correct_complete(context, value, allowed=allowed, competitors=True)
     except InvalidCorrectionInput:
         return (), True
