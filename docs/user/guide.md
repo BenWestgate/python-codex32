@@ -74,13 +74,15 @@ Run Bitcoin Core before starting. If practical, disconnect the computer from
 external networks while recovery text is on screen. codex32 talks only to the
 local Core instance at `127.0.0.1` during setup.
 
-codex32 uses the network `bitcoin-cli` is configured for and reports it before
-it does anything else. For graphical practice on signet, add `signet=1` to
-`bitcoin.conf`, then start Bitcoin-Qt with:
+For graphical practice on signet, start Bitcoin-Qt with:
 
 ```bash
-bitcoin-qt -server
+bitcoin-qt -signet -server
 ```
+
+codex32 detects and reports the local Bitcoin Core network. You do not need to
+change `bitcoin.conf` when using the standard local data directory and RPC
+port.
 
 Use a computer you believe is malware-free and whose other software you trust.
 Only codex32 and Bitcoin Core should perform recovery, derivation, wallet
@@ -109,7 +111,8 @@ Choose one command:
   copies, but any copy can recover the seed.
 - **Custom:** thresholds 4 through 9 require `--shares` or `--indices`. For
   example, `ms32 create 4cash --shares 7` produces seven `cash` shares; any
-  four recover the seed.
+  four recover the seed. The identifier tells backups apart, so choose one
+  that no other backup you keep uses.
 
 More required shares make theft harder; fewer required shares make recovery
 easier.

@@ -813,7 +813,10 @@ def _correct_complete(
     *,
     deadline: float | None = None,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
+    competitors: bool = False,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
+    # The public API fails closed on incomplete required work; only the CLI's
+    # competitor scheduler (competitors=True) may return a best-so-far candidate.
     if not isinstance(context, CorrectionContext):
         raise TypeError("context must be CorrectionContext")
     if not isinstance(damaged_text, str):
@@ -881,7 +884,7 @@ def _correct_complete(
                     c.expected_length for c in preflight_contexts if c.expected_length is not None
                 ),
                 deadline=deadline,
-                competitors=True,
+                competitors=competitors,
                 allowed=allowed,
                 observed_text=damaged_text,
                 seed_candidates=candidates,
@@ -910,7 +913,7 @@ def _correct_complete(
             value,
             primary=frozenset(c.expected_length for c in contexts if c.expected_length is not None),
             deadline=deadline,
-            competitors=True,
+            competitors=competitors,
             allowed=allowed,
             capture_layers=capture_layers,
             observed_text=damaged_text,

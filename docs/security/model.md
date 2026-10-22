@@ -88,8 +88,8 @@ then verifies the codex32 checksum. Only after checksum verification does an
 `ms` human-readable part (HRP) add the master-seed length rule and seed-byte
 meaning.
 
-Only the parser and `MasterSeed.from_seed` construct immutable validated
-artifacts. A share has symbol semantics and cannot be converted to bytes.
+Artifacts are immutable and store only their validated string; the header,
+HRP and payload are decoded from it, so they cannot disagree. A share has symbol semantics and cannot be converted to bytes.
 Default `str()` and `repr()` rendering of artifacts is redacted; callers must
 use `.text` explicitly when they intentionally need the serialized recovery
 string. This reduces accidental disclosure through logs and interpolation but

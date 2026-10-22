@@ -58,7 +58,7 @@ def main() -> None:
         wrapper_directory.mkdir()
         wrapper = wrapper_directory / "bitcoin-cli"
         wrapper.write_text(
-            f'#!/bin/sh\nexec {shlex.quote(real_cli)} -regtest {shlex.quote(f"-datadir={datadir}")} "$@"\n'
+            f'#!/bin/sh\nexec {shlex.quote(real_cli)} {shlex.quote(f"-datadir={datadir}")} "$@"\n'
         )
         wrapper.chmod(0o700)
         os.environ["PATH"] = str(wrapper_directory) + os.pathsep + os.environ.get("PATH", "")

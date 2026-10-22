@@ -333,7 +333,9 @@ def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
         # New unshared codex32 backups take their identifier from the fingerprint.
         if secret.header.identifier == _fingerprint_identifier(fingerprint):
             _print(
-                "The backup identifier matches this fingerprint, so this is not a mixed-up card.", err=True
+                "The backup identifier matches this fingerprint, so the card is consistent with itself. "
+                "That does not show it is the wallet you expect.",
+                err=True,
             )
         else:
             _print(
@@ -425,7 +427,10 @@ def _initialize_wallet(
 
 def _connected_core(fallback: str | None = None) -> BitcoinCore:
     try:
-        core = BitcoinCore.connect(lambda message: _print(message, err=True))
+        core = BitcoinCore.connect(
+            lambda prompt: _text(prompt, optional=True),
+            lambda message: _print(message, err=True),
+        )
         _print("", err=True)
         return core
     except KeyboardInterrupt as error:

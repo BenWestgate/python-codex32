@@ -56,12 +56,12 @@ characters, require interactive confirmation.
 
 ## Start here
 
-Start Bitcoin Core 32 or newer with local RPC enabled. codex32 uses the
-network `bitcoin-cli` is configured for and reports it. To practice on signet,
-add `signet=1` to `bitcoin.conf`, then start Bitcoin-Qt with:
+Start Bitcoin Core 32 or newer with local RPC enabled. codex32 detects and
+reports the local Bitcoin Core network. To practice with Bitcoin-Qt on signet,
+start it with:
 
 ```bash
-bitcoin-qt -server
+bitcoin-qt -signet -server
 ```
 
 Then run:

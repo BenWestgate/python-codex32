@@ -92,9 +92,15 @@ def _empty_info(**changes: object) -> dict[str, object]:
 
 @pytest.mark.parametrize(
     ("selected", "label"),
-    (("main", "mainnet"), ("test", "testnet3"), ("testnet4", "testnet4"), ("signet", "signet")),
+    (
+        ("main", "mainnet"),
+        ("test", "testnet3"),
+        ("testnet4", "testnet4"),
+        ("signet", "signet"),
+        ("regtest", "regtest"),
+    ),
 )
-def test_preflight_uses_and_names_the_configured_chain(
+def test_preflight_discovers_each_supported_chain(
     monkeypatch: pytest.MonkeyPatch, selected: str, label: str
 ) -> None:
     commands: list[list[str]] = []
@@ -102,18 +108,48 @@ def test_preflight_uses_and_names_the_configured_chain(
 
     def run(command: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
         commands.append(command)
+        if f"-chain={selected}" not in command:
+            return subprocess.CompletedProcess(command, 1, "ignored", "ignored")
         response = {"version": 320100} if command[-1] == "getnetworkinfo" else {"chain": selected}
         return subprocess.CompletedProcess(command, 0, json.dumps(response) + "\n", "")
 
     monkeypatch.setattr("codex32._bitcoin_core.shutil.which", lambda _name: "/reviewed/bitcoin-cli")
     monkeypatch.setattr(subprocess, "run", run)
 
-    client = BitcoinCore.connect(messages.append)
+    client = BitcoinCore.connect(tell=messages.append)
 
     assert (client.executable, client.chain, client.version) == ("/reviewed/bitcoin-cli", selected, 320100)
     assert messages == [f"Using Bitcoin Core on {label}."]
-    assert [command[:2] for command in commands] == [["/reviewed/bitcoin-cli", "-rpcconnect=127.0.0.1"]] * 2
-    assert not any(argument.startswith("-chain") for command in commands for argument in command)
+    assert all(command[1].startswith("-chain=") for command in commands)
+    assert all(command[2] == "-rpcconnect=127.0.0.1" for command in commands)
+
+
+def test_preflight_requires_selection_when_multiple_chains_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    messages: list[str] = []
+    answers = iter(("0", "2"))
+
+    def run(command: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
+        chain = command[1].removeprefix("-chain=")
+        if chain not in ("main", "signet"):
+            return subprocess.CompletedProcess(command, 1, "", "")
+        response = {"version": 320000} if command[-1] == "getnetworkinfo" else {"chain": chain}
+        return subprocess.CompletedProcess(command, 0, json.dumps(response), "")
+
+    monkeypatch.setattr("codex32._bitcoin_core.shutil.which", lambda _name: "/reviewed/bitcoin-cli")
+    monkeypatch.setattr(subprocess, "run", run)
+
+    client = BitcoinCore.connect(lambda _prompt: next(answers), messages.append)
+
+    assert client.chain == "signet"
+    assert messages == [
+        "Local Bitcoin Core networks:",
+        "  1. mainnet",
+        "  2. signet",
+        "Enter one of the displayed numbers.",
+        "Using Bitcoin Core on signet.",
+    ]
 
 
 def test_preflight_rejection_is_helpful_without_echoing_core_output(
@@ -131,30 +167,31 @@ def test_preflight_rejection_is_helpful_without_echoing_core_output(
         BitcoinCore.connect()
 
     message = str(failure.value)
-    assert message.startswith("No local Bitcoin Core RPC server found.")
-    assert "signet=1" in message
+    assert message == (
+        "No local Bitcoin Core RPC server found.\n"
+        "Start Bitcoin Core with local RPC enabled.\n"
+        "For signet practice: bitcoin-qt -signet -server"
+    )
     assert marker not in message
 
 
-@pytest.mark.parametrize(
-    ("network", "blockchain", "message"),
-    (
-        ({"version": 319999}, {"chain": "main"}, "32.0 or newer"),
-        ({"version": True}, {"chain": "main"}, "unexpected"),
-        ({"version": 320000}, {}, "unexpected"),
-    ),
-)
-def test_preflight_rejects_old_and_malformed_core_responses(
-    monkeypatch: pytest.MonkeyPatch, network: object, blockchain: object, message: str
+def test_preflight_rejects_old_and_mismatched_core_responses(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def run(command: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
-        response = network if command[-1] == "getnetworkinfo" else blockchain
+        chain = command[1].removeprefix("-chain=")
+        if chain not in ("main", "signet"):
+            return subprocess.CompletedProcess(command, 1, "", "")
+        if command[-1] == "getnetworkinfo":
+            response: dict[str, object] = {"version": 319999 if chain == "main" else 320000}
+        else:
+            response = {"chain": chain if chain == "main" else "main"}
         return subprocess.CompletedProcess(command, 0, json.dumps(response), "")
 
     monkeypatch.setattr("codex32._bitcoin_core.shutil.which", lambda _name: "/reviewed/bitcoin-cli")
     monkeypatch.setattr(subprocess, "run", run)
 
-    with pytest.raises(BitcoinCoreError, match=message):
+    with pytest.raises(BitcoinCoreError, match="No local Bitcoin Core RPC server"):
         BitcoinCore.connect()
 
 
@@ -727,7 +764,7 @@ def test_subprocess_adapter_uses_loopback_and_never_repeats_raw_core_errors(
 
     def run(command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
         assert marker not in command
-        assert command[1] == "-rpcconnect=127.0.0.1"
+        assert command[1:3] == ["-chain=main", "-rpcconnect=127.0.0.1"]
         assert command[-2:] == ["-stdin", "addhdkey"]
         assert options["input"] == marker + "\n"
         return subprocess.CompletedProcess(command, 1, marker, marker)
