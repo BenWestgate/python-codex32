@@ -588,7 +588,7 @@ def test_xprv_groups_the_next_prefix_after_spaced_correction(monkeypatch, capsys
     assert captured.out.strip() == VECTOR_2["xprv"]
 
 
-def test_xprv_explains_prefilled_threshold_and_uncorrectable_length(monkeypatch, capsys) -> None:
+def test_xprv_rejects_unreadable_entries_without_edit_hints(monkeypatch, capsys) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     short = "2 NAME DLL4 F8JL H4E5 VDVU LDLF XU2J HDNL SM9"
     answers = iter(("NAME DLL4 F8JL H4E5 VDVU LDLF XU2J HDNL SM97", short, VECTOR_1["secret_s"]))
@@ -599,16 +599,13 @@ def test_xprv_explains_prefilled_threshold_and_uncorrectable_length(monkeypatch,
 
     assert ms_main(["xprv"]) == 0
     rejected = [line for line in capsys.readouterr().err.splitlines() if line.startswith("Rejected:")]
-    assert rejected == [
-        "Rejected: After the prefilled MS1, enter a threshold of 0 or 2 through 9; found 'n'.",
-        (
-            "Rejected: The string has 39 characters; valid Bitcoin master-seed codex32 lengths are "
-            "48, 54, 61, 67, 74, or 127 characters."
-        ),
-    ]
+    # A hint about what is wrong invites a guess, and a wrong guess can make a wrong correction findable.
+    assert (
+        rejected == ["Rejected: No unique correction found. Check your backup and re-enter it carefully."] * 2
+    )
 
 
-def test_xprv_reports_every_uncorrectable_prefixed_ms_length(monkeypatch, capsys) -> None:
+def test_xprv_rejects_every_uncorrectable_prefixed_ms_length(monkeypatch, capsys) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     lengths = (39, 100, 136)
     invalid = tuple(("MS10TESTS" + "Q" * length)[3:length] for length in lengths)
@@ -620,13 +617,13 @@ def test_xprv_reports_every_uncorrectable_prefixed_ms_length(monkeypatch, capsys
 
     assert ms_main(["xprv"]) == 0
     output = capsys.readouterr().err
-    for length in lengths:
-        assert f"The string has {length} characters; valid Bitcoin master-seed codex32 lengths are" in output
+    assert output.count(
+        "Rejected: No unique correction found. Check your backup and re-enter it carefully."
+    ) == len(lengths)
+    assert "characters" not in output
 
 
-def test_prefixed_ms_lengths_at_correction_boundary_explain_length_and_still_search(
-    monkeypatch, capsys
-) -> None:
+def test_prefixed_ms_lengths_at_correction_boundary_still_search(monkeypatch, capsys) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     lengths = (40, 135)
     invalid = tuple(("MS10TESTS" + "Q" * length)[3:length] for length in lengths)
@@ -645,13 +642,12 @@ def test_prefixed_ms_lengths_at_correction_boundary_explain_length_and_still_sea
     assert ms_main(["xprv"]) == 0
     output = capsys.readouterr().err
     assert [len(value) for value in searched] == list(lengths)
-    for length in lengths:
-        assert f"Rejected: This input has {length} characters." in output
-    assert "The checksum does not match." not in output
-    assert "valid Bitcoin master-seed codex32 lengths" not in output
+    assert output.count(
+        "Rejected: No unique correction found. Check your backup and re-enter it carefully."
+    ) == len(lengths)
 
 
-def test_complete_paste_keeps_ordinary_threshold_error(monkeypatch, capsys) -> None:
+def test_complete_paste_with_bad_threshold_gets_no_hint(monkeypatch, capsys) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     answers = iter(("MS1NAME DLL4 F8JL H4E5 VDVU LDLF XU2J HDNL SM97", VECTOR_1["secret_s"]))
 
@@ -662,12 +658,37 @@ def test_complete_paste_keeps_ordinary_threshold_error(monkeypatch, capsys) -> N
 
     assert ms_main(["xprv"]) == 0
     output = capsys.readouterr().err
-    assert "Rejected: The threshold must be 0 or a number from 2 through 9; found 'n'." in output
-    assert "After the prefilled" not in output
+    assert "Rejected: No unique correction found. Check your backup and re-enter it carefully." in output
+    assert "threshold" not in output
+
+
+def test_redirected_uncorrectable_input_gets_no_hint(monkeypatch) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+    monkeypatch.setattr(input_module, "_suggestions", lambda *_args, **_kwargs: ())
+
+    result = _invoke(["secret"], VECTOR_1["secret_s"][:-1] + "b")
+
+    assert result.exit_code != 0
+    assert "No unique correction found. Check your backup and re-enter it carefully." in result.stderr
+    assert "character" not in result.stderr
+
+
+def test_existing_seed_without_unique_correction_gets_no_hint(monkeypatch, capsys) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+    answers = iter((VECTOR_1["secret_s"][:-1] + "b", "00" * 16))
+    monkeypatch.setattr(cli_module.sys, "stdin", _TTYInput())
+    monkeypatch.setattr(cli_module, "_text", lambda *_args, **_kwargs: next(answers))
+    monkeypatch.setattr(cli_module, "_suggestions", lambda *_args, **_kwargs: ())
+
+    assert cli_module._creation_source(Profile.MS) == bytes(16)
+    assert capsys.readouterr().err == (
+        "Rejected: No unique correction found. Check your backup and re-enter the existing secret "
+        "or hexadecimal seed carefully.\n"
+    )
 
 
 @pytest.mark.parametrize(("difference", "word"), ((-9, "short of"), (9, "too long for")))
-def test_subsequent_prefixed_ms_input_reports_required_set_length(
+def test_subsequent_prefixed_ms_input_with_wrong_length_gets_no_hint(
     monkeypatch, capsys, difference, word
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
@@ -683,10 +704,8 @@ def test_subsequent_prefixed_ms_input_reports_required_set_length(
     assert main(["secret", "--plain"]) == 0
     output = capsys.readouterr()
     assert output.out.strip() == VECTOR_2["secret_S"]
-    assert (
-        f"Rejected: The string is 9 characters {word} the required {len(VECTOR_2['share_C'])}-character "
-        "length."
-    ) in output.err
+    assert "Rejected: No unique correction found. Check your backup and re-enter it carefully." in output.err
+    assert word not in output.err
 
 
 @pytest.mark.parametrize(

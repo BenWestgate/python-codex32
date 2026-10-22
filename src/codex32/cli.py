@@ -272,7 +272,8 @@ def _creation_source(
                     prefill = value
                     continue
             _print(
-                f"Rejected: {error} Re-enter the existing secret or hexadecimal seed.",
+                "Rejected: No unique correction found. Check your backup and re-enter the existing secret "
+                "or hexadecimal seed carefully.",
                 err=True,
             )
 

@@ -29,7 +29,6 @@ from codex32.errors import (
     ExistingTargetIndex,
     InvalidChecksum,
     InvalidLength,
-    InvalidThreshold,
     MismatchedIdentifier,
     MismatchedPayloadLength,
     MismatchedProfile,
@@ -45,13 +44,15 @@ from codex32.profiles.ms32 import (
 
 Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
-_MAX_CORRECTION_LENGTH_DELTA = 8
 
 _line_editor: Any
 try:
     import readline as _line_editor
 except ImportError:
     _line_editor = None
+
+
+NO_CORRECTION = "No unique correction found. Check your backup and re-enter it carefully."
 
 
 class InputError(Exception):
@@ -644,7 +645,7 @@ def _redirected(
     for token in tokens:
         try:
             artifact = _parse(token, profiles)
-        except InputError:
+        except InputError as error:
             if one:
                 raise
 
@@ -670,6 +671,8 @@ def _redirected(
                 fingerprint=fingerprint,
             )
             if len(candidates) != 1:
+                if isinstance(error.__cause__, CodexError):
+                    raise InputError(NO_CORRECTION) from error
                 raise
             if not _confirm_correction(candidates[0], accepted, basis, fingerprint):
                 raise CorrectionDeclined
@@ -694,41 +697,6 @@ _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
     DuplicateShareIndex: "That share index was already entered.",
     SecretInRecoverySet: "Enter ordinary shares rather than the shared secret.",
 }
-
-
-def _prefixed_input_error(
-    error: InputError,
-    value: str,
-    prefix: str,
-    accepted: list[Artifact],
-) -> str:
-    cause = error.__cause__
-    if isinstance(cause, InvalidThreshold) and prefix.lower() == "ms1":
-        found = value[len(prefix) : len(prefix) + 1].lower()
-        if found:
-            return f"After the prefilled {prefix}, enter a threshold of 0 or 2 through 9; found {found!r}."
-    if not isinstance(cause, InvalidChecksum):
-        return str(error)
-    if accepted:
-        if accepted[0].profile is not Profile.MS:
-            return str(error)
-        target = len(accepted[0].text)
-        difference = len(value) - target
-        if abs(difference) <= _MAX_CORRECTION_LENGTH_DELTA:
-            return str(error)
-        direction = "too long for" if difference > 0 else "short of"
-        return (
-            f"The string is {abs(difference)} characters {direction} the required {target}-character length."
-        )
-    if prefix.lower() != "ms1":
-        return str(error)
-    if min(abs(len(value) - target) for target in TEXT_LENGTHS) <= _MAX_CORRECTION_LENGTH_DELTA:
-        return str(error)
-    lengths = ", ".join(str(length) for length in TEXT_LENGTHS[:-1]) + f", or {TEXT_LENGTHS[-1]}"
-    return (
-        f"The string has {len(value)} characters; valid Bitcoin master-seed codex32 lengths are "
-        f"{lengths} characters."
-    )
 
 
 def _interactive(
@@ -798,11 +766,7 @@ def _interactive(
             if confirmation is True:
                 artifact = candidates[0].artifact
             else:
-                message = (
-                    _prefixed_input_error(error, complete_value, prefix, accepted)
-                    if supplied_prefix
-                    else str(error)
-                )
+                message = NO_CORRECTION if not one and isinstance(error.__cause__, CodexError) else str(error)
                 _stderr(f"Rejected: {message}\n")
                 prefill = _retry_text(entered, prefix)
                 prefix = _prefix_for_suffix(prefix, prefill)
