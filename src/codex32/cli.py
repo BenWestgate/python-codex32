@@ -422,7 +422,10 @@ def _initialize_wallet(
 
 def _connected_core(fallback: str | None = None) -> BitcoinCore:
     try:
-        core = BitcoinCore.connect(lambda message: _print(message, err=True))
+        core = BitcoinCore.connect(
+            lambda prompt: _text(prompt, optional=True),
+            lambda message: _print(message, err=True),
+        )
         _print("", err=True)
         return core
     except KeyboardInterrupt as error:
