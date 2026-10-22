@@ -154,7 +154,7 @@ output is an untrusted proposal, never authenticated recovery material.
 |---|---|
 | Context | The syntactically present HRP, separator, and program-supplied context are immutable and outside the correction domain. Unknown HRPs are never corrected or ranked toward registered namespaces. |
 | Target lengths | `ms` searches only 48, 54, 61, 67, 74, or 127 characters; an accepted first string fixes the length of later strings in that recovery set. |
-| Character alignment | `A = I + O + AT + 2*T <= 4`; the public API retains its `A<=2` required baseline. CLI scheduling prioritizes single structural mistakes, paired indels, then other combinations. |
+| Character alignment | `A = I + O + AT + 2*T <= 4`; the public API retains its `A<=2` required baseline. CLI scheduling prioritizes single structural mistakes and bounded two-group erasure probes, then paired indels and other combinations. |
 | Group alignment | `G = GI + GO + GS + GAT + 2*GT <= 2`; only complete displayed four-character groups participate, and character/group families never mix. |
 | Fixed erasures | BCH repairs substitutions and explicit/generated erasures after alignment, with `E + 2S <= 8`; fixed consecutive erasures retain the 13/15-symbol linear path. |
 | False reconstruction | All target lengths and all admitted fixed/character/group layers share cumulative mass at or below `1`, including fixed consecutive erasures. |
