@@ -346,7 +346,7 @@ def _corrections(
     excluded = tuple(artifact.header.index for artifact in accepted)
     context = CorrectionContext(hrp, target, _prefix_for_suffix(immutable, value), excluded)
     try:
-        candidates, complete = _correct_complete(context, value, allowed=allowed)
+        candidates, complete = _correct_complete(context, value, allowed=allowed, competitors=True)
     except InvalidCorrectionInput:
         return (), True
     best = _best(

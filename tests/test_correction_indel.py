@@ -554,3 +554,31 @@ def test_full_checksum_burst_is_admitted_at_the_shared_mass_ceiling():
     damaged = SOURCE[:8] + "?" * 13 + SOURCE[21:]
     assert _correct_fixed(damaged, hrp="ms").artifact.text == SOURCE
     assert correct(CONTEXT, damaged)[0].artifact.text == SOURCE
+
+
+def test_public_correction_fails_closed_when_required_work_expires() -> None:
+    import codex32._competitors as competitors_module
+    import codex32.indel as indel_module
+    from codex32.correction import _correct_complete
+
+    source = VECTOR_1["secret_s"]
+    swapped = source[:40] + source[41] + source[40] + source[42:]
+    assert swapped != source
+    context = CorrectionContext("ms")
+    real = indel_module._search_target
+
+    def expire_after_fixed(state, *args, **kwargs):  # type: ignore[no-untyped-def]
+        # Run the fixed (BCH) pass, then expire every required or optional layer.
+        if set(state.counts) == {indel_module._FIXED}:
+            return real(state, *args, **kwargs)
+        return False
+
+    assert any(candidate.artifact.text == source for candidate in correct(context, swapped))
+    with (
+        patch.object(indel_module, "_search_target", expire_after_fixed),
+        patch.object(competitors_module, "_search_target", expire_after_fixed),
+    ):
+        assert correct(context, swapped) == ()
+        cli_candidates, complete = _correct_complete(context, swapped, competitors=True)
+    assert not complete
+    assert [(c.artifact.text, c.search_complete) for c in cli_candidates] == [(source, False)]
