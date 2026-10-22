@@ -103,7 +103,7 @@ def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ..
     body = tuple(encoded[: -checksum.length])
     Header._from_symbols(body[:6])
     if not bech32_verify_checksum(hrp, encoded, checksum):
-        raise InvalidChecksum(f"invalid {checksum.kind} checksum")
+        raise InvalidChecksum("The checksum does not match.")
     profile_rules = _optional_profile_rules(hrp)
     if profile_rules is not None:
         profile_rules.validate_text_length(len(text))
@@ -278,19 +278,20 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     first = copied[0]
     threshold = first.header.threshold
     if threshold not in range(2, 10):
-        raise MismatchedThreshold("linear sharing requires threshold 2 through 9")
+        raise MismatchedThreshold("An unshared secret (threshold 0) was never split into shares.")
     if len(copied) > threshold or (require_exact and len(copied) != threshold):
         raise WrongShareCount(f"threshold is {threshold}, but {len(copied)} artifacts were supplied")
     first_tail, checksum_length, encoded_length = _artifact_tail(first)
+    noun = "strings" if any(isinstance(item, Secret) for item in copied) else "shares"
     tails = [first_tail]
     indices = [first.header.index]
     for item in copied[1:]:
         if item.hrp != first.hrp:
             raise MismatchedHrp(f"{first.hrp} and {item.hrp} cannot be combined")
         if item.header.threshold != threshold:
-            raise MismatchedThreshold("share thresholds do not match")
+            raise MismatchedThreshold(f"These {noun} have different thresholds.")
         if item.header.identifier != first.header.identifier:
-            raise MismatchedIdentifier("share identifiers do not match")
+            raise MismatchedIdentifier(f"These {noun} have different identifiers.")
         tail, item_checksum_length, item_encoded_length = _artifact_tail(item)
         item_shape = (
             len(item.payload_symbols),
@@ -298,11 +299,11 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
             item_encoded_length,
         )
         if item_shape != (len(first.payload_symbols), checksum_length, encoded_length):
-            raise MismatchedPayloadLength("share payload/checksum lengths do not match")
+            raise MismatchedPayloadLength(f"These {noun} have different lengths.")
         tails.append(tail)
         indices.append(item.header.index)
     if len(set(indices)) != len(indices):
-        raise DuplicateShareIndex("share indices must be distinct")
+        raise DuplicateShareIndex("That share index was already entered.")
     return _ShareSet(
         copied,
         first.hrp,
@@ -314,10 +315,11 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     )
 
 
-def _validate_recovery_prefix(shares: Sequence[Share | Secret]) -> None:
-    share_set = _validate_share_set(shares, require_exact=False)
+def _validate_recovery_prefix(shares: Sequence[Share | Secret], *, require_exact: bool = False) -> _ShareSet:
+    share_set = _validate_share_set(shares, require_exact=require_exact)
     if any(isinstance(item, Secret) for item in share_set.artifacts):
-        raise SecretInRecoverySet("recovery accepts ordinary shares only")
+        raise SecretInRecoverySet("Enter ordinary shares rather than the shared secret.")
+    return share_set
 
 
 def _validate_basis_prefix(basis: Sequence[Share | Secret]) -> None:
@@ -340,9 +342,7 @@ def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
 
 def recover_secret(shares: Sequence[Share]) -> Secret:
     """Recover S from exactly k compatible, distinct ordinary shares."""
-    share_set = _validate_share_set(shares)
-    if any(isinstance(item, Secret) for item in share_set.artifacts):
-        raise SecretInRecoverySet("recovery accepts ordinary shares only")
+    share_set = _validate_recovery_prefix(shares, require_exact=True)
     recovered = _interpolate_tail(share_set, "s")
     if not isinstance(recovered, Secret):
         raise InvalidShareSet("interpolation did not produce a secret")

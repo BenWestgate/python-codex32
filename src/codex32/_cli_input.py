@@ -29,11 +29,6 @@ from codex32.errors import (
     ExistingTargetIndex,
     InvalidChecksum,
     InvalidLength,
-    MismatchedIdentifier,
-    MismatchedPayloadLength,
-    MismatchedProfile,
-    MismatchedThreshold,
-    SecretInRecoverySet,
 )
 from codex32.profiles import Profile, _optional_profile_rules, _profile_rules
 from codex32.profiles.ms32 import (
@@ -318,7 +313,7 @@ def _parse(value: str, profiles: tuple[Profile, ...] | None) -> Artifact:
     try:
         artifact = parse_codex32(value)
     except CodexError as error:
-        message = _FRIENDLY_SET_ERRORS.get(type(error), str(error))
+        message = str(error)
         if isinstance(error, InvalidChecksum):
             # Parsing has already checked the container and generic length.
             # Explain an unsupported profile length without validating input
@@ -688,17 +683,6 @@ def _redirected(
     return accepted
 
 
-_FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
-    InvalidChecksum: "The checksum does not match.",
-    MismatchedProfile: "These strings are for different applications.",
-    MismatchedThreshold: "These strings require different numbers of shares.",
-    MismatchedIdentifier: "These strings have different identifiers.",
-    MismatchedPayloadLength: "These strings have different lengths.",
-    DuplicateShareIndex: "That share index was already entered.",
-    SecretInRecoverySet: "Enter ordinary shares rather than the shared secret.",
-}
-
-
 def _interactive(
     *,
     basis: bool,
@@ -774,7 +758,7 @@ def _interactive(
         try:
             validate(artifact)
         except CodexError as error:
-            _stderr(f"Rejected: {_FRIENDLY_SET_ERRORS.get(type(error), str(error))}\n")
+            _stderr(f"Rejected: {error}\n")
             duplicate = isinstance(error, (DuplicateShareIndex, ExistingTargetIndex))
             prefill = "" if duplicate else _retry_text(entered, prefix)
             continue

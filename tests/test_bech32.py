@@ -46,10 +46,10 @@ def test_decoder_optionally_verifies_and_removes_checksum() -> None:
     assert bech32_decode(encoded, _CODEX32) == ("ms", data)
 
     damaged = encoded[:-1] + ("q" if encoded[-1] != "q" else "p")
-    with pytest.raises(InvalidChecksum, match="invalid codex32 checksum"):
+    with pytest.raises(InvalidChecksum, match="The checksum does not match"):
         bech32_decode(damaged, _CODEX32)
 
-    with pytest.raises(InvalidChecksum, match="invalid codex32 checksum"):
+    with pytest.raises(InvalidChecksum, match="The checksum does not match"):
         bech32_decode("ms1q", _CODEX32)
 
 

@@ -119,7 +119,7 @@ def bech32_decode(value: str, spec: _Checksum | None = None) -> tuple[str, list[
     if spec is None:
         return hrp, data
     if len(data) < spec.length or not bech32_verify_checksum(hrp, data, spec):
-        raise InvalidChecksum(f"invalid {spec.kind} checksum")
+        raise InvalidChecksum("The checksum does not match.")
     return hrp, data[: -spec.length]
 
 
