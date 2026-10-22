@@ -171,7 +171,7 @@ class BitcoinCore:
         """Return the BIP32 master fingerprint for a validated master seed."""
         if not isinstance(secret, MasterSeed):
             raise TypeError("wallet operations accept only MasterSeed")
-        return self.fingerprint_seed(secret.seed_bytes)
+        return self.fingerprint_seed(secret.data)
 
     def verify_identity(self, secret: MasterSeed, expected_fingerprint: bytes | None) -> None:
         """Refuse a recovered seed that is not the recorded wallet before any wallet is touched."""
@@ -200,7 +200,7 @@ class BitcoinCore:
         return (unlocked is not None, unlocked == 0) if eligible else None
 
     def _create_account_zero(self, secret: MasterSeed, wallet: str) -> None:
-        root = _master_xprv_from_seed(secret.seed_bytes, testnet=self.chain != "main")
+        root = _master_xprv_from_seed(secret.data, testnet=self.chain != "main")
         added = self._rpc("addhdkey", wallet=wallet, stdin=root + "\n")
         xpub = added.get("xpub") if isinstance(added, dict) else None
         if not isinstance(xpub, str) or not xpub.startswith("xpub" if self.chain == "main" else "tpub"):

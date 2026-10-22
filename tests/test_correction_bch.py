@@ -79,7 +79,7 @@ def test_frozen_p70_differential_corpus() -> None:
             assert result is None
         else:
             assert isinstance(result, CorrectionCandidate)
-            assert result.artifact.text == case["expected"]
+            assert result.artifact.s == case["expected"]
 
 
 _DISTRIBUTIONS = tuple(
@@ -101,7 +101,7 @@ def test_every_bch_error_erasure_distribution(
     positions = [3 + ((index * 11 + errors * 3 + erasures) % (len(source) - 3)) for index in range(count)]
     assert len(set(positions)) == count
     result = _success(_change(source, positions, erasures=erasures))
-    assert result.artifact.text == source
+    assert result.artifact.s == source
 
 
 @given(
@@ -126,7 +126,7 @@ def test_bch_positions_and_addends_property(
         )
     )
     result = _success(_change(source, positions, erasures=erasures))
-    assert result.artifact.text == source
+    assert result.artifact.s == source
 
 
 @pytest.mark.parametrize(
@@ -141,7 +141,7 @@ def test_every_consecutive_erasure_burst(
     for start in range(prefix_length, len(source) - degree + 1):
         positions = list(range(start, start + degree))
         result = _success(_change(source, positions, erasures=degree))
-        assert result.artifact.text == source
+        assert result.artifact.s == source
 
 
 @pytest.mark.parametrize(
@@ -161,7 +161,7 @@ def test_ms_and_generic_hrps_use_public_correction_api(
     prefix_length = len(hrp) + 1
     positions = [prefix_length + offset for offset in (2, 7, 12, 17)]
     result = correct(CorrectionContext(hrp, len(source)), _change(source, positions))
-    assert len(result) == 1 and result[0].artifact.text == source
+    assert len(result) == 1 and result[0].artifact.s == source
 
 
 def test_public_candidate_reports_fixed_edits_and_ranking_inputs() -> None:
@@ -200,7 +200,7 @@ def test_public_context_constrains_length_prefix_and_used_indices() -> None:
     )
     candidate = correct(valid, source)
 
-    assert len(candidate) == 1 and candidate[0].artifact.text == source
+    assert len(candidate) == 1 and candidate[0].artifact.s == source
     assert correct(CorrectionContext("ms", expected_length=74), source) == ()
     assert correct(CorrectionContext("ms", immutable_prefix="ms12cash"), source) == ()
     assert correct(CorrectionContext("ms", excluded_indices=("A",)), source) == ()
@@ -250,7 +250,7 @@ def test_uppercase_input_preserves_case_and_reverse_addends() -> None:
     position = 10
     damaged = _change(source, [position])
     result = _success(damaged)
-    assert result.artifact.text == source
+    assert result.artifact.s == source
     assert result.edits == (
         CorrectionEdit(
             "substitution",
@@ -274,7 +274,7 @@ def test_public_correction_interprets_mixed_case_by_majority(uppercase: bool) ->
     result = correct(CorrectionContext("ms", expected_length=len(source)), mixed)
 
     assert len(result) == 1
-    assert result[0].artifact.text == source
+    assert result[0].artifact.s == source
 
 
 def test_grouped_mixed_case_keeps_the_recorded_header_immutable() -> None:
@@ -290,7 +290,7 @@ def test_grouped_mixed_case_keeps_the_recorded_header_immutable() -> None:
     result = correct(context, grouped)
 
     assert len(result) == 1
-    assert result[0].artifact.text == source
+    assert result[0].artifact.s == source
     assert {edit.observed for edit in result[0].edits} == {"p"}
 
 
@@ -310,7 +310,7 @@ def test_public_correction_searches_identical_case_interpretation_once() -> None
     result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert len(result) == 1
-    assert result[0].artifact.text == source
+    assert result[0].artifact.s == source
     assert result[0].cumulative_capture_volume == 1
 
 
@@ -372,7 +372,7 @@ def test_mixed_case_required_work_is_not_starved_by_erasure_alignment() -> None:
     result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert len(result) == 1
-    assert result[0].artifact.text == source
+    assert result[0].artifact.s == source
 
 
 def test_post_preflight_optional_expiry_preserves_seed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -418,7 +418,7 @@ def test_mixed_case_correction_edits_preserve_the_entered_character(
     result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert len(result) == 1
-    assert result[0].artifact.text == source
+    assert result[0].artifact.s == source
     assert tuple(
         (edit.kind, edit.reverse_index, edit.observed, edit.replacement) for edit in result[0].edits
     ) == ((kind, len(source) - position - 1, observed, source[position]),)
@@ -433,7 +433,7 @@ def test_mixed_case_does_not_reclassify_unrelated_structural_erasures() -> None:
     result = correct(CorrectionContext("ms", expected_length=len(source)), mixed)
 
     assert len(plain) == len(result) == 1
-    assert result[0].artifact.text == source
+    assert result[0].artifact.s == source
     assert tuple(edit.kind for edit in plain[0].edits) == ("erasure",) * 4
     assert tuple(edit.kind for edit in result[0].edits) == ("erasure",) * 4
     assert tuple((edit.reverse_index, edit.observed, edit.replacement) for edit in result[0].edits) == tuple(
@@ -448,7 +448,7 @@ def test_mixed_case_structural_edits_preserve_the_entered_character() -> None:
     result = correct(CorrectionContext("ms", expected_length=len(source)), damaged)
 
     assert len(result) == 1
-    assert result[0].artifact.text == source
+    assert result[0].artifact.s == source
     assert {edit.kind for edit in result[0].edits} == {"insertion", "substitution"}
     assert next(edit for edit in result[0].edits if edit.kind == "substitution").observed == "P"
 

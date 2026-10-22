@@ -34,10 +34,9 @@ from codex32._cli_parser import parser as _parser
 from codex32.bip93 import (
     IDX_SORT,
     MS,
-    Header,
+    Codex32String,
     MasterSeed,
-    Secret,
-    Share,
+    _header,
     _normalize_target,
     _text_length,
     derive_share,
@@ -60,8 +59,6 @@ from codex32.generation import (
     generate_master_seed,
 )
 from codex32.wallet import master_xprv
-
-Artifact = Share | Secret
 
 
 class _CliContext(NamedTuple):
@@ -94,13 +91,13 @@ def _print(text: str, *, err: bool = False, danger: bool = False) -> None:
     print(text, file=sys.stderr if err else sys.stdout)
 
 
-def _secret(artifacts: list[Artifact]) -> Secret:
-    if len(artifacts) == 1 and isinstance(artifacts[0], Secret):
+def _secret(artifacts: list[Codex32String]) -> Codex32String:
+    if len(artifacts) == 1 and artifacts[0].share_idx == "s":
         return artifacts[0]
-    if not all(isinstance(artifact, Share) for artifact in artifacts):
+    if any(artifact.share_idx == "s" for artifact in artifacts):
         raise _UsageError("Recovery accepts ordinary shares or one complete secret.")
     try:
-        return recover_secret([artifact for artifact in artifacts if isinstance(artifact, Share)])
+        return recover_secret(artifacts)
     except CodexError as error:
         raise _UsageError(str(error)) from error
 
@@ -114,49 +111,49 @@ def _master_seed(fingerprint: Callable[[MasterSeed], bytes] | None = None) -> Ma
     raise _UsageError("Wallet commands accept only Bitcoin master-seed secrets.")
 
 
-def _summary(artifact: Artifact, *, valid: bool = False) -> list[str]:
-    header = artifact.header
+def _summary(artifact: Codex32String, *, valid: bool = False) -> list[str]:
+    k, secret = int(artifact.k), artifact.share_idx == "s"
     if artifact.hrp != MS:
         heading = (
-            f"codex32 share {header.index.upper()}"
-            if isinstance(artifact, Share)
-            else f"{'Unshared' if header.threshold == 0 else 'Shared'} codex32 secret"
+            f"codex32 share {artifact.share_idx.upper()}"
+            if not secret
+            else f"{'Unshared' if k == 0 else 'Shared'} codex32 secret"
         )
-        if valid and isinstance(artifact, Secret):
+        if valid and secret:
             heading = heading[0].lower() + heading[1:]
         lines = [f"{'Valid ' if valid else ''}{heading}.", f"HRP: {artifact.hrp.upper()}"]
     else:
         name = "Bitcoin master seed"
-        if isinstance(artifact, Share):
+        if not secret:
             name = name.replace("master seed", "master-seed")
-            heading = f"{name} share {header.index.upper()}"
+            heading = f"{name} share {artifact.share_idx.upper()}"
         else:
-            heading = f"{'Unshared' if header.threshold == 0 else 'Shared'} {name}"
-        if valid and isinstance(artifact, Secret):
+            heading = f"{'Unshared' if k == 0 else 'Shared'} {name}"
+        if valid and secret:
             heading = heading[0].lower() + heading[1:]
         lines = [f"{'Valid ' if valid else ''}{heading}."]
-    lines.append(f"Backup identifier: {header.identifier.upper()}")
-    if header.threshold:
-        lines.append(f"Shares needed for recovery: {header.threshold}")
+    lines.append(f"Backup identifier: {artifact.ident.upper()}")
+    if k:
+        lines.append(f"Shares needed for recovery: {k}")
     return lines
 
 
 def _render(
-    artifact: Artifact,
+    artifact: Codex32String,
     pretty: bool,
     observed: str = "",
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
 ) -> str:
     if not pretty:
-        return artifact.text
+        return artifact.s
     lines = _summary(artifact)
     if isinstance(artifact, MasterSeed) and fingerprint is not None:
         lines.append(f"Master fingerprint: {fingerprint(artifact).hex().upper()}")
-    return "\n".join((*lines, "", _card_text(artifact.text, observed=observed)))
+    return "\n".join((*lines, "", _card_text(artifact.s, observed=observed)))
 
 
 def _emit(
-    artifact: Artifact,
+    artifact: Codex32String,
     plain: bool,
     *,
     err: bool = False,
@@ -216,13 +213,13 @@ def _creation_header(value: str | None) -> tuple[int | None, str | None]:
     if len(header) == 1:
         return threshold, None
     try:
-        identifier = Header(threshold, header[1:], "s").identifier
+        identifier = _header(threshold, header[1:], "s")[1:5]
     except CodexError as error:
         raise _UsageError(f"Invalid backup header: {error}") from error
     return threshold, identifier
 
 
-def _creation_source() -> bytes | Artifact:
+def _creation_source() -> bytes | Codex32String:
     prefill = ""
     while True:
         value = _text(
@@ -261,8 +258,10 @@ def _creation_source() -> bytes | Artifact:
             )
 
 
-def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResult] | None = None) -> None:
-    kind = "share" if isinstance(artifact, Share) else "secret"
+def _confirm_card(
+    artifact: Codex32String, confirm: Callable[[str], ConfirmationResult] | None = None
+) -> None:
+    kind = "secret" if artifact.share_idx == "s" else "share"
     _print("", err=True)
     _text(
         f"Write this {kind} on a new recovery card, then press Enter",
@@ -275,7 +274,7 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
         prompt_end=":\n> ",
         preserve_groups=True,
     )
-    expected = artifact.text
+    expected = artifact.s
     confirm = confirm or partial(_confirmation, expected=expected)
     result = confirm(entered)
     groups, changed = list(result.entered_groups), {group - 1 for group in result.mismatched_groups}
@@ -324,9 +323,9 @@ def _show_fingerprint(core: BitcoinCore, secret: MasterSeed, action: str) -> Non
 def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
     fingerprint = core.fingerprint(secret)
     _print(f"\nMaster fingerprint: {fingerprint.hex().upper()}", err=True)
-    if secret.header.threshold == 0:
+    if secret.k == "0":
         # New unshared codex32 backups take their identifier from the fingerprint.
-        if secret.header.identifier == _fingerprint_identifier(fingerprint):
+        if secret.ident == _fingerprint_identifier(fingerprint):
             _print(
                 "The backup identifier matches this fingerprint, so the card is consistent with itself. "
                 "That does not show it is the wallet you expect.",
@@ -395,7 +394,7 @@ def _initialize_wallet(
             f"\n{'Record these wallet details' if fresh else 'Wallet details'}:",
             err=True,
         )
-        _print(f"Backup identifier: {secret.header.identifier.upper()}", err=True)
+        _print(f"Backup identifier: {secret.ident.upper()}", err=True)
         _print(
             f"Wallet name: {json.dumps(name)}; Bitcoin Core version: {version}",
             err=True,
@@ -461,12 +460,12 @@ def _create(
             raise _UsageError("For thresholds 4 through 9, choose --shares or --indices.")
     core = _connected_core()
     source = _creation_source() if existing else None
-    if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
+    if isinstance(source, Codex32String) and not isinstance(source, MasterSeed):
         raise _UsageError("Enter one Bitcoin master seed, not a share or another backup type.")
     try:
         if threshold == 0:
             if isinstance(source, MasterSeed):
-                if identifier is not None and identifier != source.header.identifier:
+                if identifier is not None and identifier != source.ident:
                     raise _UsageError(
                         "To change the existing secret's identifier, choose a sharing threshold from 2 through 9."
                     )

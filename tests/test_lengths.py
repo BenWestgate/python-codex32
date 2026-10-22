@@ -47,24 +47,24 @@ def test_every_supported_ms_size_and_legal_parsed_padding() -> None:
             text = _oracle_encode("ms", "0tests" + _payload(data, padding))
             secret = parse_codex32(text)
             assert isinstance(secret, MasterSeed)
-            assert secret.seed_bytes == data
+            assert secret.data == data
 
 
 def test_supported_factories_use_exact_bip93_lengths() -> None:
     artifacts = tuple(MasterSeed.from_seed(bytes(size), identifier="test") for size in SEED_BYTE_LENGTHS)
-    assert tuple(len(artifact.text) for artifact in artifacts) == TEXT_LENGTHS
+    assert tuple(len(artifact.s) for artifact in artifacts) == TEXT_LENGTHS
     assert all(
-        _checksum_for_encoded_length("ms", len(bech32_decode(artifact.text)[1])) is _CODEX32
+        _checksum_for_encoded_length("ms", len(bech32_decode(artifact.s)[1])) is _CODEX32
         for artifact in artifacts[:-1]
     )
-    assert _checksum_for_encoded_length("ms", len(bech32_decode(artifacts[-1].text)[1])) is _CODEX32_LONG
+    assert _checksum_for_encoded_length("ms", len(bech32_decode(artifacts[-1].s)[1])) is _CODEX32_LONG
 
 
 @pytest.mark.parametrize(("seed_hex", "text"), BIP93_ADDITIONAL_MASTER_SEEDS)
 def test_pr2258_supported_size_vectors(seed_hex: str, text: str) -> None:
     artifact = parse_codex32(text)
     assert isinstance(artifact, MasterSeed)
-    assert artifact.seed_bytes == bytes.fromhex(seed_hex)
+    assert artifact.data == bytes.fromhex(seed_hex)
 
 
 @pytest.mark.parametrize("text", FORMERLY_VALID_UNSUPPORTED_MS)

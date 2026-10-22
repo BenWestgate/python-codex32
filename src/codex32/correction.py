@@ -38,12 +38,11 @@ from codex32.bech32 import (
 )
 from codex32.bip93 import (
     IDX_SORT,
-    Header,
+    Codex32String,
     MasterSeed,
-    Secret,
-    Share,
     _checksum_for_encoded_length,
     _has_generation_padding,
+    _header,
     _validate_ms_length,
     parse_codex32,
 )
@@ -92,7 +91,7 @@ class CorrectionEdit:
 
 @dataclass(frozen=True, slots=True)
 class CorrectionCandidate:
-    artifact: Share | Secret
+    artifact: Codex32String
     edits: tuple[CorrectionEdit, ...]
     capture_volume: int
     erasures_filled: int
@@ -589,7 +588,7 @@ class _FixedCorrector:
                 "substitution" if values[-index - 1] >= 0 else "erasure",
                 index,
                 observed(index),
-                artifact.text[-index - 1],
+                artifact.s[-index - 1],
             )
             for index, _value in corrections
         )
@@ -720,7 +719,7 @@ def _validate_context(context: CorrectionContext) -> None:
                 raise ValueError("immutable_prefix must be the HRP prefix with an optional header")
             if len(prefix) > len(base):
                 header = prefix[len(base) :]
-                Header(int(header[0]), header[1:], "s")
+                _header(int(header[0]), header[1:], "s")
             if length is not None and len(prefix) >= length:
                 raise ValueError("immutable_prefix must be shorter than expected_length")
         indices = context.excluded_indices
@@ -736,18 +735,14 @@ def _validate_context(context: CorrectionContext) -> None:
 
 
 def _allowed(context: CorrectionContext, candidate: CorrectionCandidate) -> bool:
-    artifact = candidate.artifact
-    return not (
-        isinstance(artifact, Share)
-        and artifact.header.index in (index.lower() for index in context.excluded_indices)
-    )
+    return candidate.artifact.share_idx not in (index.lower() for index in context.excluded_indices)
 
 
 def _candidate_order(candidate: CorrectionCandidate) -> tuple[object, ...]:
     return (
         candidate.addend_hamming_weight,
         candidate.crc_padding_match is not True,
-        candidate.artifact.text.lower(),
+        candidate.artifact.s.lower(),
         tuple((edit.reverse_index, edit.kind, edit.observed, edit.replacement) for edit in candidate.edits),
     )
 
@@ -794,8 +789,8 @@ def _best(
     tied = list(_primary(candidates))
     if not tied:
         return ()
-    if prefer_common and any(len(item.artifact.text) in (48, 74) for item in tied):
-        tied = [item for item in tied if len(item.artifact.text) in (48, 74)]
+    if prefer_common and any(len(item.artifact.s) in (48, 74) for item in tied):
+        tied = [item for item in tied if len(item.artifact.s) in (48, 74)]
     hamming = min(item.addend_hamming_weight for item in tied)
     tied = [item for item in tied if item.addend_hamming_weight == hamming]
     hints: tuple[Callable[[CorrectionCandidate], bool | None], ...] = ((lambda item: item.crc_padding_match),)
