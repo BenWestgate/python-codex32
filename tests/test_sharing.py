@@ -120,8 +120,10 @@ def test_share_set_mismatches_have_distinct_errors() -> None:
         derive_share([ms_secret, threshold_three], "d")  # type: ignore[list-item]
 
     other_id = parse_codex32(oracle_encode("ms", "2namec" + "q" * len(ms_secret.payload_symbols)))
-    with pytest.raises(MismatchedIdentifier):
+    with pytest.raises(MismatchedIdentifier, match="These strings have different identifiers"):
         derive_share([ms_secret, other_id], "d")  # type: ignore[list-item]
+    with pytest.raises(MismatchedIdentifier, match="These shares have different identifiers"):
+        recover_secret([ms_masks[0], other_id])  # type: ignore[list-item]
 
     longer = MasterSeed.from_seed(bytes(20), identifier="test", threshold=2)
     longer_mask = parse_codex32(oracle_encode("ms", "2testc" + "q" * len(longer.payload_symbols)))
@@ -132,7 +134,7 @@ def test_share_set_mismatches_have_distinct_errors() -> None:
         recover_secret([ms_masks[0], ms_masks[0]])  # type: ignore[list-item]
     with pytest.raises(SecretInRecoverySet):
         recover_secret([ms_secret, ms_masks[0]])  # type: ignore[list-item]
-    with pytest.raises(MismatchedThreshold):
+    with pytest.raises(MismatchedThreshold, match=r"unshared secret \(threshold 0\) was never split"):
         recover_secret([MasterSeed.from_seed(bytes(16), identifier="test")])  # type: ignore[list-item]
     with pytest.raises(TypeError):
         recover_secret([VECTOR_2["share_A"], VECTOR_2["share_C"]])  # type: ignore[list-item]

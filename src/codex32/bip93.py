@@ -282,15 +282,16 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     if len(copied) > threshold or (require_exact and len(copied) != threshold):
         raise WrongShareCount(f"threshold is {threshold}, but {len(copied)} artifacts were supplied")
     first_tail, checksum_length, encoded_length = _artifact_tail(first)
+    noun = "strings" if any(isinstance(item, Secret) for item in copied) else "shares"
     tails = [first_tail]
     indices = [first.header.index]
     for item in copied[1:]:
         if item.hrp != first.hrp:
             raise MismatchedHrp(f"{first.hrp} and {item.hrp} cannot be combined")
         if item.header.threshold != threshold:
-            raise MismatchedThreshold("These strings require different numbers of shares.")
+            raise MismatchedThreshold(f"These {noun} have different thresholds.")
         if item.header.identifier != first.header.identifier:
-            raise MismatchedIdentifier("These strings have different identifiers.")
+            raise MismatchedIdentifier(f"These {noun} have different identifiers.")
         tail, item_checksum_length, item_encoded_length = _artifact_tail(item)
         item_shape = (
             len(item.payload_symbols),
@@ -298,7 +299,7 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
             item_encoded_length,
         )
         if item_shape != (len(first.payload_symbols), checksum_length, encoded_length):
-            raise MismatchedPayloadLength("These strings have different lengths.")
+            raise MismatchedPayloadLength(f"These {noun} have different lengths.")
         tails.append(tail)
         indices.append(item.header.index)
     if len(set(indices)) != len(indices):
@@ -314,10 +315,11 @@ def _validate_share_set(artifacts: Sequence[Share | Secret], *, require_exact: b
     )
 
 
-def _validate_recovery_prefix(shares: Sequence[Share | Secret]) -> None:
-    share_set = _validate_share_set(shares, require_exact=False)
+def _validate_recovery_prefix(shares: Sequence[Share | Secret], *, require_exact: bool = False) -> _ShareSet:
+    share_set = _validate_share_set(shares, require_exact=require_exact)
     if any(isinstance(item, Secret) for item in share_set.artifacts):
         raise SecretInRecoverySet("Enter ordinary shares rather than the shared secret.")
+    return share_set
 
 
 def _validate_basis_prefix(basis: Sequence[Share | Secret]) -> None:
@@ -340,9 +342,7 @@ def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
 
 def recover_secret(shares: Sequence[Share]) -> Secret:
     """Recover S from exactly k compatible, distinct ordinary shares."""
-    share_set = _validate_share_set(shares)
-    if any(isinstance(item, Secret) for item in share_set.artifacts):
-        raise SecretInRecoverySet("Enter ordinary shares rather than the shared secret.")
+    share_set = _validate_recovery_prefix(shares, require_exact=True)
     recovered = _interpolate_tail(share_set, "s")
     if not isinstance(recovered, Secret):
         raise InvalidShareSet("interpolation did not produce a secret")
