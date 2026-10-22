@@ -18,9 +18,9 @@ permissions:
   contents: read
 
 env:
-  BITCOIN_CORE_ARCHIVE: bitcoin-32.0rc2-x86_64-linux-gnu.tar.gz
-  BITCOIN_CORE_SHA256: 0255103718033e6aee15fa944717fc277e047b845bff1e7408af0ea732d8d0c1
-  BITCOIN_CORE_URL: https://bitcoincore.org/bin/bitcoin-core-32.0/test.rc2
+  BITCOIN_CORE_ARCHIVE: bitcoin-32.0-x86_64-linux-gnu.tar.gz
+  BITCOIN_CORE_SHA256: 512d95d64591ddd1a74390cbfdd41b1c1a4f5494531d78db46ec8fdacafbeb71
+  BITCOIN_CORE_URL: https://bitcoincore.org/bin/bitcoin-core-32.0
 
 jobs:
   verify:
@@ -41,7 +41,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/src
         run: |
-          core="$RUNNER_TEMP/bitcoin-32.0rc2/bin"
+          core="$RUNNER_TEMP/bitcoin-32.0/bin"
           "$core/bitcoind" --version | head -1
           python tools/bitcoin_core_regtest.py \
             --bitcoind "$core/bitcoind" \
