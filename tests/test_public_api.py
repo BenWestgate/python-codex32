@@ -8,7 +8,7 @@ from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
-from data.bip93_vectors import VECTOR_2
+from data.bip93_vectors import VECTOR_1, VECTOR_2
 
 import codex32
 from codex32 import (
@@ -21,7 +21,7 @@ from codex32 import (
     correct_worksheet_residue,
     parse_codex32,
 )
-from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshold
+from codex32.errors import CodexError, InvalidIdentifier, InvalidShareIndex, InvalidThreshold
 
 
 def test_backup_workflows_need_only_the_standard_library() -> None:
@@ -83,10 +83,16 @@ def test_share_has_symbols_but_no_byte_or_padding_api() -> None:
         assert not hasattr(share, name)
 
 
-def test_artifacts_cannot_be_directly_constructed_or_mutated() -> None:
-    with pytest.raises(TypeError):
-        Share("ms", Header(2, "test", "a"), (), ())  # type: ignore[call-arg]
+def test_artifacts_are_validated_strings_and_cannot_be_mutated() -> None:
     share = parse_codex32(VECTOR_2["share_A"])
+    secret = parse_codex32(VECTOR_1["secret_s"])
+    assert Share(share.text) == share and MasterSeed(secret.text) == secret
+    with pytest.raises(TypeError):
+        MasterSeed(share.text)
+    with pytest.raises(TypeError):
+        Share(secret.text)
+    with pytest.raises(CodexError):
+        MasterSeed(secret.text[:-1] + ("q" if secret.text[-1] != "q" else "p"))
     with pytest.raises((FrozenInstanceError, AttributeError)):
         share.text = "changed"  # type: ignore[misc]
     with pytest.raises((FrozenInstanceError, AttributeError)):
