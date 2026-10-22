@@ -88,7 +88,7 @@ def test_scheduler_annotates_from_admission_even_when_no_work_finished(monkeypat
 def test_public_api_full_checksum_erasure_completion_carries_risk(source, degree):
     hrp = source.rsplit("1", 1)[0]
     candidates = correct(CorrectionContext(hrp, len(source)), source[:-degree] + "?" * degree)
-    assert len(candidates) == 1 and candidates[0].artifact.text == source
+    assert len(candidates) == 1 and candidates[0].artifact.s == source
     assert candidates[0].capture_space_bits == 5 * degree
     assert candidates[0].cumulative_capture_volume == 1 << (5 * degree)
     assert candidates[0].low_checksum_discrimination

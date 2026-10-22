@@ -37,7 +37,7 @@ def main() -> None:
         if expected is None:
             if result is not None:
                 raise SystemExit(f"case {checked}: expected no correction")
-        elif not (isinstance(result, CorrectionCandidate) and result.artifact.text == expected):
+        elif not (isinstance(result, CorrectionCandidate) and result.artifact.s == expected):
             raise SystemExit(f"case {checked}: differential mismatch")
         checked += 1
     print(f"verified {checked} frozen PR #70 correction cases")
