@@ -6,13 +6,13 @@ from unittest.mock import patch
 
 import pytest
 
-from codex32 import CorrectionContext, MasterSeed, Share, indel
+from codex32 import CorrectionContext, MasterSeed, indel
 from codex32 import _competitors as search
 from codex32.bech32 import CHARSET
 from codex32.bip93 import TEXT_LENGTHS
 from codex32.correction import _correct_fixed
 
-SOURCE = MasterSeed.from_seed(bytes(range(16)), identifier="test").text
+SOURCE = MasterSeed.from_seed(bytes(range(16)), identifier="test").s
 REPORTED = "ms12namedll4f8jkh4e5vdvuldlfxu2jhdnlsm97xcenrxeg"
 INTENDED = "ms12namedll4f8jlh4e5vdvuldlfxu2jhdnlsm97xvenrxeg"
 
@@ -49,7 +49,7 @@ def test_reported_substitutions_exhaust_competitors_without_redundant_enumeratio
         candidates, complete = _run(REPORTED)
 
     assert complete and candidates[0].search_complete
-    assert candidates[0].artifact.text == INTENDED
+    assert candidates[0].artifact.s == INTENDED
     assert candidates[0].capture_volume == 951_390
     assert (48, ("I", "O"), 1) in searched
     assert (48, ("AT",), 4) in searched
@@ -72,7 +72,7 @@ def test_known_swap_classification_retains_the_lower_capture_explanation(pairs, 
         damaged[left], damaged[right] = damaged[right], damaged[left]
     candidates, complete = _run("".join(damaged), target=48)
     assert complete
-    assert candidates[0].artifact.text == SOURCE
+    assert candidates[0].artifact.s == SOURCE
     assert candidates[0].capture_volume == volume
     assert candidates[0].addend_hamming_weight == 0
     assert any(edit.kind == "transposition" for edit in candidates[0].edits)
@@ -84,15 +84,15 @@ def test_directed_swap_views_match_exhaustive_alignment_scoring(substitutions, s
     # A small mutable suffix permits exhaustive comparison, including duplicate
     # characters, overlapping swaps, temporary disturbances, and residual errors.
     artifact = MasterSeed.from_seed(seed, identifier="test")
-    damaged = list(artifact.text)
+    damaged = list(artifact.s)
     damaged[-6], damaged[-5] = damaged[-5], damaged[-6]
     for position in (-1, -2)[:substitutions]:
         damaged[position] = CHARSET[CHARSET.index(damaged[position]) ^ 1]
     text = "".join(damaged)
     state = replace(_state(text), immutable=len(text) - 6)
-    candidate = _correct_fixed(artifact.text, hrp="ms")
+    candidate = _correct_fixed(artifact.s, hrp="ms")
     assert candidate is not None
-    target = tuple(CHARSET.index(c) for c in artifact.text[3:])
+    target = tuple(CHARSET.index(c) for c in artifact.s[3:])
     matches = 0
     for shape in indel._CHARACTER_CLASSES:
         if shape.inserted or shape.omitted:
@@ -197,7 +197,7 @@ def test_group_duplicate_proofs_match_exhaustive_alignment_values():
 @pytest.mark.parametrize("count", (1, 2, 3, 4))
 @pytest.mark.parametrize("length", (16, 32, 64))
 def test_deadline_returns_usable_fixed_candidate_with_incomplete_metadata(count, length):
-    source = MasterSeed.from_seed(bytes(range(length)), identifier="test").text
+    source = MasterSeed.from_seed(bytes(range(length)), identifier="test").s
     damaged = _substitute(source, count)
     clock = [0.0]
     original = search._search_fixed
@@ -214,7 +214,7 @@ def test_deadline_returns_usable_fixed_candidate_with_incomplete_metadata(count,
         candidates, complete = _run(damaged, target=len(source), deadline=10.0)
     assert not complete and len(candidates) == 1
     assert not candidates[0].search_complete
-    assert candidates[0].artifact.text == source
+    assert candidates[0].artifact.s == source
 
 
 def test_ineligible_fixed_candidate_cannot_prune_other_layers():
@@ -227,7 +227,7 @@ def test_ineligible_fixed_candidate_cannot_prune_other_layers():
         return False
 
     with patch.object(search, "_search_target", side_effect=layer):
-        candidates, complete = _run(REPORTED, allowed=lambda c: not isinstance(c.artifact, Share))
+        candidates, complete = _run(REPORTED, allowed=lambda c: c.artifact.share_idx == "s")
     assert not complete and not candidates and calls
 
 
@@ -247,7 +247,7 @@ def test_structural_candidate_filter_is_applied_before_collection():
             {(48, shape, 0, 0): frontier[48, shape, 0, 0]},
             results,
             None,
-            allowed=lambda c: not isinstance(c.artifact, Share),
+            allowed=lambda c: c.artifact.share_idx == "s",
             views=views,
         )
     assert tuple(results) == (SOURCE,)
@@ -268,7 +268,7 @@ def test_alignment_discovered_candidate_matches_unpruned_search(target, change):
     candidates, complete = _run(damaged, target=target)
     assert complete and reference_complete
     assert len(candidates) == len(reference) == 1
-    assert candidates[0].artifact.text == reference[0].artifact.text == SOURCE
+    assert candidates[0].artifact.s == reference[0].artifact.s == SOURCE
     assert candidates[0].capture_volume == reference[0].capture_volume
     assert candidates[0].addend_hamming_weight == reference[0].addend_hamming_weight
 
@@ -295,15 +295,15 @@ def test_global_tiers_cross_lengths_and_deadline_does_not_restart():
 
 def test_incomplete_primary_ties_are_suppressed():
     first = _correct_fixed(SOURCE, hrp="ms")
-    second = _correct_fixed(MasterSeed.from_seed(bytes(16), identifier="test").text, hrp="ms")
+    second = _correct_fixed(MasterSeed.from_seed(bytes(16), identifier="test").s, hrp="ms")
     assert first is not None and second is not None
     calls = []
 
     def layer(state, frontier, results, deadline, **kwargs):
         volume = next(iter(frontier.values()))
         calls.append(volume)
-        results[first.artifact.text] = replace(first, capture_volume=volume)
-        results[second.artifact.text] = replace(second, capture_volume=volume)
+        results[first.artifact.s] = replace(first, capture_volume=volume)
+        results[second.artifact.s] = replace(second, capture_volume=volume)
         return False
 
     with patch.object(search, "_search_target", side_effect=layer):
@@ -322,8 +322,8 @@ def test_equal_or_better_competitor_at_another_length_is_not_pruned(later_volume
     def layer(state, frontier, results, deadline, **kwargs):
         calls.append(state.target)
         artifact = MasterSeed.from_seed(bytes(16 if state.target == 48 else 20), identifier="test")
-        candidate = _correct_fixed(artifact.text, hrp="ms")
-        results[artifact.text] = replace(candidate, capture_volume=next(iter(frontier.values())))
+        candidate = _correct_fixed(artifact.s, hrp="ms")
+        results[artifact.s] = replace(candidate, capture_volume=next(iter(frontier.values())))
         return True
 
     with patch.object(search, "_search_target", side_effect=layer):

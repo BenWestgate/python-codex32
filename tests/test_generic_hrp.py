@@ -9,10 +9,9 @@ import pytest
 from _codex32_oracle import oracle_encode
 
 from codex32 import (
+    Codex32String,
     CorrectionContext,
     MasterSeed,
-    Secret,
-    Share,
     correct,
     derive_share,
     parse_codex32,
@@ -43,13 +42,13 @@ def test_opaque_hrp_parse_complete_recover_and_derive(vector: dict[str, str]) ->
     secret = parse_codex32(vector["S"].upper())
     a = parse_codex32(vector["A"].upper())
     c = parse_codex32(vector["C"].upper())
-    assert isinstance(secret, Secret) and type(secret) is Secret
-    assert isinstance(a, Share) and isinstance(c, Share)
+    assert type(secret) is Codex32String and secret.share_idx == "s"
+    assert a.share_idx != "s" and c.share_idx != "s"
     assert secret.hrp == a.hrp == c.hrp == "zz"
     assert not isinstance(secret, MasterSeed)
-    assert secret.text.isupper()
-    assert recover_secret([a, c]).text == vector["S"].upper()
-    assert derive_share([secret, a], "d").text == vector["D"].upper()
+    assert secret.s.isupper()
+    assert recover_secret([a, c]).s == vector["S"].upper()
+    assert derive_share([secret, a], "d").s == vector["D"].upper()
 
 
 def test_sharing_compares_normalized_hrp() -> None:
@@ -69,7 +68,7 @@ def test_unknown_hrp_correction_freezes_namespace_and_repairs_structure() -> Non
     group_extra = source[:20] + "qpzr" + source[20:]
     for damaged in (substituted, omitted, erased, group_omitted, extra, group_extra):
         candidates = correct(CorrectionContext("ZZ"), damaged)
-        assert candidates and candidates[0].artifact.text == source
+        assert candidates and candidates[0].artifact.s == source
     assert correct(CorrectionContext("zz"), "yy1" + source[3:]) == ()
 
 
@@ -103,7 +102,7 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
     assert _invoke(main, ["create"])[0] == 2
     assert _invoke(ms_main, ["check"], UNKNOWN["short"]["C"])[0] == 2
     unshared = parse_codex32(oracle_encode("zz", "0tests" + "q" * 26))
-    assert _invoke(main, ["check"], unshared.text)[1] == (
+    assert _invoke(main, ["check"], unshared.s)[1] == (
         "Valid unshared codex32 secret.\nHRP: ZZ\nBackup identifier: TEST\n"
     )
 
