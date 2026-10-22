@@ -29,6 +29,7 @@ from codex32 import (
     recover_secret,
 )
 from codex32.bech32 import convertbits
+from codex32.bip93 import _from_unchecksummed_string
 from codex32.errors import CodexError, InvalidChecksum
 
 
@@ -144,3 +145,18 @@ def test_generic_parser_accepts_checksum_valid_non_ms_hrps(value: str) -> None:
     artifact = parse_codex32(value)
     assert artifact.hrp in {"m", "s"}
     assert not isinstance(artifact, MasterSeed)
+
+
+@pytest.mark.parametrize(
+    ("text", "checksum_length"),
+    [
+        (VECTOR_1["secret_s"], 13),
+        (VECTOR_2["share_A"], 13),
+        (VECTOR_3["share_a"], 13),
+        (VECTOR_4["secret_s"], 13),
+        (VECTOR_5["secret_s"], 15),
+        (VECTOR_6["codex32_luea"], 13),
+    ],
+)
+def test_from_unchecksummed_string_restores_vector_checksums(text: str, checksum_length: int) -> None:
+    assert _from_unchecksummed_string(text[:-checksum_length]).text == text

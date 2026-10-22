@@ -7,7 +7,7 @@
   than `ms`.
 - `p70_correction_vectors.json` is the frozen PR #70 correction corpus.
 - `malformed_inputs.json` freezes independent rejection cases for parsing,
-  interpolation, correction, and CLI tokenization.
+  checksum completion, interpolation, correction, and CLI tokenization.
 - `wallet_fingerprints.json` freezes BIP32 master fingerprints derived by real
   Bitcoin Core. `tools/_wallet_test_vectors.py` owns lookup/stub behavior, while
   `tools/bitcoin_core_regtest.py` independently verifies every frozen value.

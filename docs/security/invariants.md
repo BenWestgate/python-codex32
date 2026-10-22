@@ -3,9 +3,10 @@
 These rules are mandatory. The [security model](model.md) defines their limits
 and evidence.
 
-1. Only the parser and `MasterSeed.from_seed` validate text. Generic container
-   and header checks precede the checksum; the `ms` length rule follows it.
-   Other HRPs remain generic and never gain invented application semantics.
+1. Only the parser, the private `_from_unchecksummed_string()` worksheet
+   helper, and `MasterSeed.from_seed` validate text. Generic container and
+   header checks precede the checksum; the `ms` length rule follows it. Other
+   HRPs remain generic and never gain invented application semantics.
 2. APIs accept only immutable validated artifacts. Outputs are reparsed;
    recovery and derivation reject sets with mismatched normalized HRPs or shapes.
 3. Shared creation uses a separate OS-CSPRNG call for each random initial share,

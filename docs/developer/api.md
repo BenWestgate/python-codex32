@@ -51,8 +51,9 @@ generic parse-length failure.
 
 ### Boundaries
 
-- Parsing and `MasterSeed.from_seed` construct artifacts. Direct construction
-  skips validation and is unsupported; nothing blocks it.
+- Parsing, the private `_from_unchecksummed_string()` worksheet helper, and
+  `MasterSeed.from_seed` construct artifacts. Direct construction skips
+  validation and is unsupported; nothing blocks it.
 - `bech32.py` keeps the recognizable BIP173 reference names and accumulator
   structure. Encoding takes an explicit checksum specification. Decoding
   without one returns the HRP and complete data part after checking only the
