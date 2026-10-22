@@ -111,7 +111,10 @@ Choose one command:
   copies, but any copy can recover the seed.
 - **Custom:** thresholds 4 through 9 require `--shares` or `--indices`. For
   example, `ms32 create 4cash --shares 7` produces seven `cash` shares; any
-  four recover the seed.
+  four recover the seed. An identifier you choose must not be used by any
+  other backup, including an earlier set of shares of the same seed, because
+  mixing cards from two sets with one identifier recovers a wrong seed. Give
+  only the threshold to get a random identifier.
 
 More required shares make theft harder; fewer required shares make recovery
 easier.
