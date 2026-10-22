@@ -903,25 +903,40 @@ class _EntropyRPC:
         return keys if method == "gethdkeys" else None
 
 
+@pytest.mark.parametrize("typed", ("", "qwer tyui"))
 def test_core_entropy_hashes_fresh_keys_from_a_wallet_removed_after_each_draw(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, typed: str
 ) -> None:
-    rpc, told = _EntropyRPC(), list[str]()
+    rpc, told, stretched = _EntropyRPC(), list[str](), list[bytes]()
     monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
-    entropy = CoreEntropy(BitcoinCore("bitcoin-cli", "main", 320000), told.append, typed="qwer tyui")
+    entropy = CoreEntropy(BitcoinCore("bitcoin-cli", "main", 320000), told.append, typed=typed)
 
     drawn = list[bytes]()  # every OS draw stays random; macOS volume names use them too
     monkeypatch.setattr(
         "codex32._bitcoin_core.secrets.token_bytes",
         lambda length: drawn.append(os.urandom(length)) or drawn[-1],
     )
+    scrypt = hashlib.scrypt
+    monkeypatch.setattr(
+        hashlib,
+        "scrypt",
+        lambda *args, **options: stretched.append(scrypt(*args, **options)) or stretched[-1],
+    )
     data = entropy(40), entropy(4)
     mixed = [value for value in drawn if len(value) == 32]
+
+    def stretch(key: bytes, os_bytes: bytes) -> bytes:
+        salt = b"codex32 keystrokes\0" + key + os_bytes
+        return scrypt(typed.encode(), salt=salt, n=2**17, r=8, p=1, maxmem=2**28, dklen=32) if typed else b""
+
+    # Typed keys are stretched once per draw, salted by its first key; without them nothing is stretched.
+    first, last = stretch(b"xprv1", mixed[0]), stretch(b"xprv3", mixed[2])
     digests = [
-        hashlib.sha256(f"xprv{number}".encode() + os_bytes + b"qwer tyui").digest()
-        for number, os_bytes in zip((1, 2, 3), mixed)
+        hashlib.sha256(f"xprv{number}".encode() + os_bytes + extra).digest()
+        for number, os_bytes, extra in zip((1, 2, 3), mixed, (first, first, last))
     ]
     assert len(mixed) == 3 and data == (digests[0] + digests[1][:8], digests[2][:4])
+    assert stretched == ([first, last] if typed else [])
     draw = ["createwallet", "walletpassphrase", "addhdkey", "gethdkeys"]
     methods = [arguments[arguments[0] == "-named"] for arguments, _wallet, _stdin in rpc.calls]
     assert methods == [
