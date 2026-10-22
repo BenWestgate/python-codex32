@@ -112,28 +112,35 @@ def test_every_threshold_recovers_exactly_k_shares(threshold: int) -> None:
 def test_share_set_mismatches_have_distinct_errors() -> None:
     ms_secret, ms_masks = _ms_basis()
     opaque = parse_codex32(oracle_encode("xy", "2testa" + "q" * len(ms_secret.payload_symbols)))
-    with pytest.raises(MismatchedProfile):
+    with pytest.raises(MismatchedProfile) as error:
         derive_share([ms_secret, opaque], "c")  # type: ignore[list-item]
+    assert str(error.value) == "These strings are for different applications."
 
     threshold_three = parse_codex32(oracle_encode("ms", "3testc" + "q" * len(ms_secret.payload_symbols)))
-    with pytest.raises(MismatchedThreshold):
+    with pytest.raises(MismatchedThreshold) as error:
         derive_share([ms_secret, threshold_three], "d")  # type: ignore[list-item]
+    assert str(error.value) == "These strings require different numbers of shares."
 
     other_id = parse_codex32(oracle_encode("ms", "2namec" + "q" * len(ms_secret.payload_symbols)))
-    with pytest.raises(MismatchedIdentifier):
+    with pytest.raises(MismatchedIdentifier) as error:
         derive_share([ms_secret, other_id], "d")  # type: ignore[list-item]
+    assert str(error.value) == "These strings have different identifiers."
 
     longer = MasterSeed.from_seed(bytes(20), identifier="test", threshold=2)
     longer_mask = parse_codex32(oracle_encode("ms", "2testc" + "q" * len(longer.payload_symbols)))
-    with pytest.raises(MismatchedPayloadLength):
+    with pytest.raises(MismatchedPayloadLength) as error:
         derive_share([ms_secret, longer_mask], "d")  # type: ignore[list-item]
+    assert str(error.value) == "These strings have different lengths."
 
-    with pytest.raises(DuplicateShareIndex):
+    with pytest.raises(DuplicateShareIndex) as error:
         recover_secret([ms_masks[0], ms_masks[0]])  # type: ignore[list-item]
-    with pytest.raises(SecretInRecoverySet):
+    assert str(error.value) == "That share index was already entered."
+    with pytest.raises(SecretInRecoverySet) as error:
         recover_secret([ms_secret, ms_masks[0]])  # type: ignore[list-item]
-    with pytest.raises(MismatchedThreshold):
+    assert str(error.value) == "Enter ordinary shares rather than the shared secret."
+    with pytest.raises(MismatchedThreshold) as error:
         recover_secret([MasterSeed.from_seed(bytes(16), identifier="test")])  # type: ignore[list-item]
+    assert str(error.value) == "Only strings with a threshold of 2 through 9 can be combined."
     with pytest.raises(TypeError):
         recover_secret([VECTOR_2["share_A"], VECTOR_2["share_C"]])  # type: ignore[list-item]
     with pytest.raises(TypeError):

@@ -106,8 +106,9 @@ def test_vector_6_core_lightning_examples_are_immutable() -> None:
 
 @pytest.mark.parametrize("value", BAD_CHECKSUMS)
 def test_bad_checksums_are_rejected(value: str) -> None:
-    with pytest.raises(InvalidChecksum):
+    with pytest.raises(InvalidChecksum) as error:
         parse_codex32(value)
+    assert str(error.value) == "The checksum does not match."
 
 
 @pytest.mark.parametrize("value", BAD_CASES)
