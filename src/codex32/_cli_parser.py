@@ -172,7 +172,7 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         "header",
         nargs="?",
         metavar="HEADER",
-        help="sharing threshold, such as 3, or a header with an identifier no other backup uses, such as 3cash; omit for a single recovery card",
+        help="sharing threshold, such as 3, or a header with an identifier that should be unique, such as 3cash; omit for a single recovery card",
     )
     create.add_argument(
         "--bytes",
