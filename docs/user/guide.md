@@ -123,6 +123,11 @@ Choose one command:
 More required shares make theft harder; fewer required shares make recovery
 easier.
 
+Add `--keystrokes` to type some random keys before the cards are made. They
+are not shown, are mixed into every card's randomness, and are never saved, so
+they help only if this computer's random generator is broken and Core's
+temporary wallet file leaks.
+
 Already have a complete codex32 `ms` secret? Run `ms32 create --existing` to
 write and confirm its recovery card and initialize a Bitcoin Core wallet.
 The existing secret is preserved unchanged. To split it into three cards

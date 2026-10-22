@@ -662,10 +662,12 @@ guesses of a share. The OS bytes stop a leaked file's xpubs from capping each
 key at about 128-bit security, Bitcoin's own ECDLP bound, so a working OS
 generator alone keeps full strength and a broken one leaves Core's. If the OS
 generator is broken and the file leaks, the passphrase is weak too, and only
-RAM keeps the file safe. Each draw removes its wallet even when it fails or is
-interrupted by Ctrl-C, SIGHUP, or SIGTERM, so callers have nothing to close.
-If the wallet can't be removed, creation stops before the next card. These
-extra calls are `createwallet`, `walletpassphrase`, `gethdkeys`, and
+RAM keeps the file safe, unless `--keystrokes` was used: the typed text is
+hashed in last and never reaches the wallet, so that case then rests on how
+unpredictable the typing was. Each draw removes its wallet even when it fails
+or is interrupted by Ctrl-C, SIGHUP, or SIGTERM, so callers have nothing to
+close. If the wallet can't be removed, creation stops before the next card.
+These extra calls are `createwallet`, `walletpassphrase`, `gethdkeys`, and
 `unloadwallet`.
 
 The temporary wallet only works around Core having no call that returns

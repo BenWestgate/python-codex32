@@ -131,8 +131,10 @@ _REAL_CONNECT = BitcoinCore.connect
 class _FakeEntropy:
     """Stand in for Bitcoin Core's randomness, which fails after ``draws`` draws if given a failure."""
 
-    def __init__(self, _core: object = None, _tell: object = None, failure: str = "", draws: int = 0) -> None:
-        self.failure, self.draws, self.guarded = failure, draws, True
+    def __init__(
+        self, _core: object = None, _tell: object = None, failure: str = "", draws: int = 0, typed: str = ""
+    ) -> None:
+        self.failure, self.draws, self.guarded, self.typed = failure, draws, True, typed
 
     def __call__(self, length: int) -> bytes:
         self.guarded &= signal.getsignal(signal.SIGTERM) is signal.default_int_handler
@@ -1416,6 +1418,35 @@ def test_fresh_cli_generation_rejects_every_other_16_through_64_byte_size() -> N
         assert result.exit_code == 2
         assert result.stdout == ""
         assert "--bytes" in result.stderr and "invalid choice" in result.stderr
+
+
+def test_create_mixes_typed_keystrokes_only_when_new_cards_are_drawn() -> None:
+    created = list[_FakeEntropy]()
+
+    def entropy(*arguments: object, typed: str = "") -> _FakeEntropy:
+        created.append(_FakeEntropy(*arguments, typed=typed))
+        return created[-1]
+
+    with (
+        patch("codex32.cli.CoreEntropy", side_effect=entropy),
+        patch("codex32._cli_input.getpass.getpass", return_value="asdf jkl;"),
+    ):
+        drawn = _invoke_confirmed_create(["create", "2", "--indices", "ac", "--keystrokes"])
+        kept = _invoke_confirmed_create(["create", "--existing", "--keystrokes"], bytes(16).hex())
+
+    assert drawn.exit_code == 0 and [entropy.typed for entropy in created] == ["asdf jkl;"]
+    assert kept.exit_code == 2 and "--keystrokes applies only when new cards are drawn." in kept.stderr
+
+
+def test_hidden_text_is_read_without_echo_or_line_history(monkeypatch) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+    prompts = list[str]()
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
+    monkeypatch.setattr(input_module, "_editable_input", lambda *_: pytest.fail("hidden text was echoed"))
+    monkeypatch.setattr(input_module.getpass, "getpass", lambda prompt: prompts.append(prompt) or "qwer tyui")
+
+    assert input_module.read_text("Type random keys", preserve_groups=True, hidden=True) == "qwer tyui"
+    assert prompts == ["Type random keys: "]
 
 
 @pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)

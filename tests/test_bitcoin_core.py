@@ -908,7 +908,7 @@ def test_core_entropy_hashes_fresh_keys_from_a_wallet_removed_after_each_draw(
 ) -> None:
     rpc, told = _EntropyRPC(), list[str]()
     monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
-    entropy = CoreEntropy(BitcoinCore("bitcoin-cli", "main", 320000), told.append)
+    entropy = CoreEntropy(BitcoinCore("bitcoin-cli", "main", 320000), told.append, typed="qwer tyui")
 
     drawn = list[bytes]()  # every OS draw stays random; macOS volume names use them too
     monkeypatch.setattr(
@@ -918,7 +918,7 @@ def test_core_entropy_hashes_fresh_keys_from_a_wallet_removed_after_each_draw(
     data = entropy(40), entropy(4)
     mixed = [value for value in drawn if len(value) == 32]
     digests = [
-        hashlib.sha256(f"xprv{number}".encode() + os_bytes).digest()
+        hashlib.sha256(f"xprv{number}".encode() + os_bytes + b"qwer tyui").digest()
         for number, os_bytes in zip((1, 2, 3), mixed)
     ]
     assert len(mixed) == 3 and data == (digests[0] + digests[1][:8], digests[2][:4])
