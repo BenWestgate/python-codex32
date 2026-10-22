@@ -81,8 +81,9 @@ ms32 create 3yete --shares 7
 ```
 
 Any three shares recover the seed, so four can be lost. Each additional share
-is another recovery card to protect. An identifier you choose should be unique
-to this backup; give only the threshold to get a random one.
+is another recovery card to protect. An identifier you choose should differ from
+those of your other backups and share sets; give only the threshold to get a
+random one.
 
 Follow the [user guide](docs/user/guide.md) for the complete setup, shared
 backups, recovery, inheritance, offline signing, and Bitcoin Core instructions.
