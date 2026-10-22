@@ -1438,6 +1438,17 @@ def test_create_mixes_typed_keystrokes_only_when_new_cards_are_drawn() -> None:
     assert kept.exit_code == 2 and "--keystrokes applies only when new cards are drawn." in kept.stderr
 
 
+def test_create_refuses_piped_keystrokes_before_asking_for_them() -> None:
+    # Piped or file-supplied keys could be saved elsewhere, so only a terminal may type them.
+    with (
+        patch("codex32._cli_input.getpass.getpass", side_effect=AssertionError("keys were requested")),
+        patch("codex32.cli.CoreEntropy", side_effect=AssertionError("randomness was drawn")),
+    ):
+        result = _invoke_terminal(["create", "2", "--indices", "ac", "--keystrokes"], "asdf jkl;")
+
+    assert result.exit_code == 2 and "requires an interactive terminal" in result.stderr
+
+
 def test_hidden_text_is_read_without_echo_or_line_history(monkeypatch) -> None:
     input_module = importlib.import_module("codex32._cli_input")
     prompts = list[str]()
