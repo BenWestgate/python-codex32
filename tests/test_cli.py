@@ -2876,7 +2876,8 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
     _record_answers(monkeypatch, "", "yes")
     assert _RECORDED_FINGERPRINT(core, derived) is None
-    assert "matches this fingerprint" in capsys.readouterr().err
+    shown = capsys.readouterr().err
+    assert "matches this fingerprint" in shown and "does not show it is the wallet you expect" in shown
 
 
 def test_wallet_restore_hides_fingerprint_until_the_record_gate(monkeypatch: pytest.MonkeyPatch) -> None:

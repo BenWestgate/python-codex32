@@ -328,7 +328,9 @@ def _without_record(core: BitcoinCore, secret: MasterSeed) -> bool:
         # New unshared codex32 backups take their identifier from the fingerprint.
         if secret.header.identifier == _fingerprint_identifier(fingerprint):
             _print(
-                "The backup identifier matches this fingerprint, so this is not a mixed-up card.", err=True
+                "The backup identifier matches this fingerprint, so the card is consistent with itself. "
+                "That does not show it is the wallet you expect.",
+                err=True,
             )
         else:
             _print(
