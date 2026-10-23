@@ -89,7 +89,16 @@ port.
 
 Use a computer you believe is malware-free and whose other software you trust.
 Only codex32 and Bitcoin Core should perform recovery, derivation, wallet
-initialization, or signing.
+initialization, or signing. Temporarily disconnecting does not make a
+compromised computer safe: malware can save secrets and send them after you
+reconnect.
+
+On a laptop, consider disconnecting the charging cable while handling recovery
+secrets. If the battery is low, charge it first, then unplug before starting.
+A power connection is a potential physical side channel. Battery operation
+removes that connection, not every side channel, and is a recommendation rather
+than a requirement. You can also keep the cable disconnected during offline
+signing. codex32 does not change networking or power settings for you.
 
 Bitcoin Core wallet encryption is strongly recommended. Bitcoin Core owns the
 passphrase and its prompts; codex32 never asks for, reads, or forwards it.
