@@ -6,11 +6,11 @@ from unittest.mock import patch
 
 import pytest
 
-from codex32 import CorrectionContext, MasterSeed, Profile, Share, indel
+from codex32 import CorrectionContext, MasterSeed, Share, indel
 from codex32 import _competitors as search
 from codex32.bech32 import CHARSET
+from codex32.bip93 import TEXT_LENGTHS
 from codex32.correction import _correct_fixed
-from codex32.profiles.ms32 import TEXT_LENGTHS
 
 SOURCE = MasterSeed.from_seed(bytes(range(16)), identifier="test").text
 REPORTED = "ms12namedll4f8jkh4e5vdvuldlfxu2jhdnlsm97xcenrxeg"
@@ -18,7 +18,7 @@ INTENDED = "ms12namedll4f8jlh4e5vdvuldlfxu2jhdnlsm97xvenrxeg"
 
 
 def _state(text, target=48):
-    result = indel._prepare(CorrectionContext(Profile.MS, target, text[:3]), text, indel._CLASSES)
+    result = indel._prepare(CorrectionContext("ms", target, text[:3]), text, indel._CLASSES)
     assert result is not None
     return result
 
@@ -32,7 +32,7 @@ def _substitute(text, count):
 
 def _run(text, *, target=None, **kwargs):
     lengths = TEXT_LENGTHS if target is None else (target,)
-    contexts = tuple(CorrectionContext(Profile.MS, length, text[:3]) for length in lengths)
+    contexts = tuple(CorrectionContext("ms", length, text[:3]) for length in lengths)
     return indel._search_many(contexts, text, primary=frozenset(lengths), competitors=True, **kwargs)
 
 
@@ -90,7 +90,7 @@ def test_directed_swap_views_match_exhaustive_alignment_scoring(substitutions, s
         damaged[position] = CHARSET[CHARSET.index(damaged[position]) ^ 1]
     text = "".join(damaged)
     state = replace(_state(text), immutable=len(text) - 6)
-    candidate = _correct_fixed(artifact.text, suspected_profile=Profile.MS)
+    candidate = _correct_fixed(artifact.text, hrp="ms")
     assert candidate is not None
     target = tuple(CHARSET.index(c) for c in artifact.text[3:])
     matches = 0
@@ -115,7 +115,7 @@ def test_minimum_distance_pruning_stops_at_the_proven_boundary():
     shape = indel._StructuralClass(0, 0, adjacent=3)
     for substitutions, covered in ((2, True), (3, False)):
         text = _substitute(SOURCE, substitutions)
-        fixed = _correct_fixed(text, suspected_profile=Profile.MS)
+        fixed = _correct_fixed(text, hrp="ms")
         assert fixed is not None
         result = search._covered_candidates(_state(text), shape, 0, 0, fixed, (fixed,))
         assert (result == (fixed,)) is covered
@@ -134,7 +134,7 @@ def test_fixed_coverage_accounts_for_explicit_erasures_and_residual_substitution
 
 def test_cancelled_indel_layer_is_distinct_from_retained_erasure_and_relocation():
     state = _state(REPORTED)
-    fixed = _correct_fixed(REPORTED, suspected_profile=Profile.MS)
+    fixed = _correct_fixed(REPORTED, hrp="ms")
     assert fixed is not None
     adjacent = indel._StructuralClass(1, 1, adjacent=1)
     distant = indel._StructuralClass(1, 1, distant=1)
@@ -223,7 +223,7 @@ def test_ineligible_fixed_candidate_cannot_prune_other_layers():
     def layer(state, frontier, results, deadline, *, allowed, views):
         calls.append(next(iter(frontier.values())))
         assert not results
-        assert not allowed(_correct_fixed(REPORTED, suspected_profile=Profile.MS))
+        assert not allowed(_correct_fixed(REPORTED, hrp="ms"))
         return False
 
     with patch.object(search, "_search_target", side_effect=layer):
@@ -235,8 +235,8 @@ def test_structural_candidate_filter_is_applied_before_collection():
     state = _state(REPORTED)
     shape = indel._StructuralClass(0, 0, unit=4, adjacent=1)
     frontier = indel._frontier((state,), frozenset((48,)))
-    share = _correct_fixed(REPORTED, suspected_profile=Profile.MS)
-    secret = _correct_fixed(SOURCE, suspected_profile=Profile.MS)
+    share = _correct_fixed(REPORTED, hrp="ms")
+    secret = _correct_fixed(SOURCE, hrp="ms")
     assert share is not None and secret is not None
     outputs = iter((replace(share, edits=(), capture_volume=1), secret))
     views = iter(tuple(indel._views(REPORTED, 48, shape, 3, 3))[:2])
@@ -263,7 +263,7 @@ def test_alignment_discovered_candidate_matches_unpruned_search(target, change):
         "insert_group": SOURCE[:20] + "qpzr" + SOURCE[20:],
     }[change]
     lengths = TEXT_LENGTHS if target is None else (target,)
-    contexts = tuple(CorrectionContext(Profile.MS, length, damaged[:3]) for length in lengths)
+    contexts = tuple(CorrectionContext("ms", length, damaged[:3]) for length in lengths)
     reference, reference_complete = indel._search_many(contexts, damaged, primary=frozenset(lengths))
     candidates, complete = _run(damaged, target=target)
     assert complete and reference_complete
@@ -294,10 +294,8 @@ def test_global_tiers_cross_lengths_and_deadline_does_not_restart():
 
 
 def test_incomplete_primary_ties_are_suppressed():
-    first = _correct_fixed(SOURCE, suspected_profile=Profile.MS)
-    second = _correct_fixed(
-        MasterSeed.from_seed(bytes(16), identifier="test").text, suspected_profile=Profile.MS
-    )
+    first = _correct_fixed(SOURCE, hrp="ms")
+    second = _correct_fixed(MasterSeed.from_seed(bytes(16), identifier="test").text, hrp="ms")
     assert first is not None and second is not None
     calls = []
 
@@ -324,7 +322,7 @@ def test_equal_or_better_competitor_at_another_length_is_not_pruned(later_volume
     def layer(state, frontier, results, deadline, **kwargs):
         calls.append(state.target)
         artifact = MasterSeed.from_seed(bytes(16 if state.target == 48 else 20), identifier="test")
-        candidate = _correct_fixed(artifact.text, suspected_profile=Profile.MS)
+        candidate = _correct_fixed(artifact.text, hrp="ms")
         results[artifact.text] = replace(candidate, capture_volume=next(iter(frontier.values())))
         return True
 

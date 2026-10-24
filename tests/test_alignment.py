@@ -187,7 +187,7 @@ def test_raw_admission_bounds_cover_generated_erasure_strata():
 def test_structural_alignment_leaves_bch_capacity_for_substitutions(shape_args, swaps, masked_groups):
     from dataclasses import replace
 
-    from codex32 import CorrectionContext, MasterSeed, Profile
+    from codex32 import CorrectionContext, MasterSeed
     from codex32.bech32 import CHARSET
     from codex32.indel import _CLASSES, _frontier, _prepare, _search_target, _StructuralClass
 
@@ -200,7 +200,7 @@ def test_structural_alignment_leaves_bch_capacity_for_substitutions(shape_args, 
         chars[p : p + 4] = [CHARSET[CHARSET.index(c) ^ 1] for c in chars[p : p + 4]]
     for p in (10, 38, 42)[: 2 if masked_groups else 3]:
         chars[p] = CHARSET[CHARSET.index(chars[p]) ^ 1]
-    context = CorrectionContext(Profile.MS, len(source))
+    context = CorrectionContext("ms", len(source))
     state = _prepare(context, "".join(chars), _CLASSES)
     assert state is not None
     shape = _StructuralClass(0, 0, **shape_args)
@@ -214,7 +214,7 @@ def test_structural_alignment_leaves_bch_capacity_for_substitutions(shape_args, 
 def test_only_unique_optional_timeout_candidate_can_be_surfaced(interrupt_required, tie):
     from unittest.mock import patch
 
-    from codex32 import CorrectionContext, MasterSeed, Profile
+    from codex32 import CorrectionContext, MasterSeed
     from codex32.correction import CorrectionCandidate
     from codex32.indel import _FIXED, _search_many
 
@@ -233,7 +233,7 @@ def test_only_unique_optional_timeout_candidate_can_be_surfaced(interrupt_requir
 
     with patch("codex32.indel._search_target", side_effect=search):
         candidates, complete = _search_many(
-            (CorrectionContext(Profile.MS, 48),), "ms1" + "q" * 45, primary=frozenset((48,))
+            (CorrectionContext("ms", 48),), "ms1" + "q" * 45, primary=frozenset((48,))
         )
     assert not complete
     if interrupt_required or tie:
@@ -271,11 +271,11 @@ def test_global_frontier_admits_exact_ceiling_but_rejects_larger_batch():
 @pytest.mark.parametrize(("byte_length", "erasures"), ((16, 13), (64, 15)))
 @pytest.mark.parametrize("known", (False, True))
 def test_full_consecutive_erasure_capacity_at_inclusive_shared_ceiling(byte_length, erasures, known):
-    from codex32 import CorrectionContext, MasterSeed, Profile, correct
+    from codex32 import CorrectionContext, MasterSeed, correct
 
     source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
     damaged = source[:10] + "?" * erasures + source[10 + erasures :]
-    result = correct(CorrectionContext(Profile.MS, len(source) if known else None), damaged)
+    result = correct(CorrectionContext("ms", len(source) if known else None), damaged)
     assert len(result) == 1 and result[0].artifact.text == source
     assert result[0].search_complete
     assert result[0].capture_volume == 32**erasures
@@ -285,11 +285,10 @@ def test_failed_alignment_does_not_scan_or_materialize_the_body():
     from unittest.mock import patch
 
     from codex32.correction import _FixedCorrector
-    from codex32.profiles import Profile
 
     source = tuple(i % 32 for i in range(45))
     view = _View(source, ((0, 45),), 45).swap(8, 30, 1)
-    solver = _FixedCorrector(Profile.MS, 45, False, 0)
+    solver = _FixedCorrector("ms", 45, False, 0)
     packed = _IncrementalSyndromes(solver.alignment, source).packed(view)
     with (
         patch("codex32.correction._aligned_syndromes", side_effect=AssertionError("full syndrome scan")),
@@ -299,10 +298,10 @@ def test_failed_alignment_does_not_scan_or_materialize_the_body():
 
 
 def test_unknown_length_input_is_bounded_before_normalization():
-    from codex32 import CorrectionContext, Profile, correct
+    from codex32 import CorrectionContext, correct
 
     class Oversized(str):
         def replace(self, *args, **kwargs):
             pytest.fail("oversized input was normalized")
 
-    assert correct(CorrectionContext(Profile.MS), Oversized("ms1" + "q" * 4096)) == ()
+    assert correct(CorrectionContext("ms"), Oversized("ms1" + "q" * 4096)) == ()

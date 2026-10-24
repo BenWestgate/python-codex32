@@ -431,7 +431,7 @@ def _search_fixed(
 ) -> CorrectionCandidate | None:
     fixed = _correct_fixed(
         state.text,
-        suspected_profile=state.context.hrp,
+        hrp=state.context.hrp,
         immutable_prefix=state.context.immutable_prefix,
     )
     if fixed is not None:

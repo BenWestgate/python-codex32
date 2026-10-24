@@ -12,8 +12,8 @@ from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
 from codex32.bech32 import _u5_to_chars, convertbits
+from codex32.bip93 import MasterSeed
 from codex32.generation import _fingerprint_identifier
-from codex32.profiles.ms32 import MasterSeed
 
 
 class BitcoinCoreError(Exception):

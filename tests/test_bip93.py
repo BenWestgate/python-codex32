@@ -21,25 +21,20 @@ from data.bip93_vectors import (
 )
 
 from codex32 import (
-    CoreLightningSecret,
     MasterSeed,
-    Profile,
+    Secret,
     Share,
     derive_share,
     parse_codex32,
     recover_secret,
 )
+from codex32.bech32 import convertbits
 from codex32.errors import CodexError, InvalidChecksum
-
-
-def test_profile_string_matches_its_value() -> None:
-    assert str(Profile.MS) == "ms"
 
 
 def test_vector_1_parts_and_seed() -> None:
     secret = parse_codex32(VECTOR_1["secret_s"])
     assert isinstance(secret, MasterSeed)
-    assert secret.profile is Profile.MS
     assert secret.header.threshold == 0
     assert secret.header.identifier == VECTOR_1["identifier"]
     assert secret.header.index == "s"
@@ -93,13 +88,18 @@ def test_vector_5_long_uppercase_and_completion() -> None:
     assert parse_codex32(secret.text).text.isupper()
 
 
-def test_vector_6_core_lightning_examples_are_immutable() -> None:
+def test_vector_6_core_lightning_examples_are_generic_immutable_secrets() -> None:
     luea = parse_codex32(VECTOR_6["codex32_luea"])
     cln2 = parse_codex32(VECTOR_6["codex32_cln2"])
     peev = parse_codex32(VECTOR_6["codex32_peev"])
-    assert all(isinstance(value, CoreLightningSecret) for value in (luea, cln2, peev))
-    assert luea.secret_bytes.hex() == ("6c696768746e696e672d31330000000000000000000000000000000000000000")
-    assert peev.secret_bytes.hex() == ("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1")
+    for value in (luea, cln2, peev):
+        assert type(value) is Secret and value.hrp == "cl"
+
+    def payload(secret: Secret) -> str:
+        return bytes(convertbits(secret.payload_symbols, 5, 8, pad=False, accept_any_padding=True)).hex()
+
+    assert payload(luea) == "6c696768746e696e672d31330000000000000000000000000000000000000000"
+    assert payload(peev) == "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1"
     with pytest.raises((FrozenInstanceError, AttributeError)):
         luea.header = cln2.header  # type: ignore[misc]
 
@@ -132,14 +132,15 @@ def test_all_official_invalid_ms_examples_are_rejected(value: str) -> None:
         parse_codex32(value)
 
 
-def test_registered_profile_reinterprets_official_wrong_application_example() -> None:
+def test_official_wrong_application_example_is_a_generic_secret() -> None:
     # BIP93 lists this as invalid when an ms decoder was explicitly expected;
-    # the fixed registry recognizes that it is instead a valid CL secret.
-    assert isinstance(parse_codex32(INVALID_MASTER_SEED[0]), CoreLightningSecret)
+    # without an ms prefix it is an ordinary codex32 secret.
+    artifact = parse_codex32(INVALID_MASTER_SEED[0])
+    assert type(artifact) is Secret and artifact.hrp != "ms"
 
 
 @pytest.mark.parametrize("value", INVALID_PREFIX_OR_SEPARATOR[-2:])
 def test_generic_parser_accepts_checksum_valid_non_ms_hrps(value: str) -> None:
     artifact = parse_codex32(value)
     assert artifact.hrp in {"m", "s"}
-    assert artifact.profile is None
+    assert not isinstance(artifact, MasterSeed)

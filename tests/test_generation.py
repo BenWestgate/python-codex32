@@ -19,6 +19,7 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
+from codex32.bip93 import SEED_BYTE_LENGTHS, _has_generation_padding
 from codex32.errors import (
     CeremonyStateError,
     CodexError,
@@ -28,7 +29,6 @@ from codex32.errors import (
     InvalidThreshold,
 )
 from codex32.generation import ORDINARY_INDICES, _fingerprint_identifier
-from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding
 from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint, stub_fingerprint
 
 
