@@ -156,9 +156,16 @@ above.
 ### Size budget
 
 V1 keeps the installed package below 5,200 logical review lines, excluding
-blank and comment-only lines while counting subpackages recursively. Changing
+blank and comment-only lines while counting subpackages recursively, including
+docstrings. The enforcement is
+`tests/test_cli.py::test_production_size_budgets_are_enforced`. Changing
 the budget requires explicit review and authorization together with the matching
 documentation and enforcement update.
+
+Public input checks use explicit exceptions. Remaining production `assert`
+statements narrow internal types or check state already established by validation;
+they are not input or wallet-identity gates. CI runs the suite under `python -O`
+as well as normally, so input rejection must continue to work with asserts removed.
 
 ## Profile and opaque-HRP capabilities
 
@@ -732,6 +739,7 @@ These choices are not presented as BIP93 requirements.
 
 | Decision | Reason |
 |---|---|
+| reject threshold digit `1`, including for S | follows the container's `0` or `2`–`9` header grammar; deliberately stricter than the reference decoder's ignored-threshold rule for unshared secrets |
 | `ms` accepts only six seed sizes | follows the frozen PR #2258 profile with no legacy decoder |
 | random electronic output indices | reduces canonical index disclosure; explicit indices preserve requested order |
 | generation-only CRC padding | small recovery hint; not validity or share semantics |
