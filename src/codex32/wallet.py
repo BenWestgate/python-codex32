@@ -3,7 +3,7 @@
 from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
-from codex32.bech32 import _u5_to_chars
+from codex32.bech32 import u5_to_chars
 from codex32.checksums import DESCSUM
 from codex32.profiles.ms32 import MasterSeed
 
@@ -48,7 +48,7 @@ def _descriptor_symbols(text: str) -> list[int]:
 
 
 def _with_checksum(descriptor: str) -> str:
-    return descriptor + "#" + _u5_to_chars(DESCSUM.create(_descriptor_symbols(descriptor)))
+    return descriptor + "#" + u5_to_chars(DESCSUM.create(_descriptor_symbols(descriptor)))
 
 
 def _descriptor_records(
