@@ -697,7 +697,11 @@ and timestamp handling, Core-created public descriptors, balance discovery,
 sign/broadcast behavior on regtest, relocking, and mainnet/test-network root
 serialization. `tools/bitcoin_core_main_smoke.py` repeats the descriptor,
 account-0, timestamp, and relocking checks against an isolated main-chain Core
-instance without connecting to peers.
+instance without connecting to peers. `tools/bitcoin_core_entropy.py` checks
+`CoreEntropy` against regtest Core on Linux: repeated draws, real Ctrl-C,
+SIGTERM, and SIGHUP while each Core call is in flight (also through
+`ms32 create` in a terminal), the warning when no RAM folder exists, and that
+no temporary wallet, key, or passphrase is left behind.
 
 ## Deliberate divergences and non-goals
 
