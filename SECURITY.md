@@ -1,20 +1,21 @@
 # Security
 
-codex32 handles wallet recovery material. Use a trusted computer and have the
-software and recovery plan reviewed before relying on it with funds. For
-stronger isolation, use codex32 and the Bitcoin Core signing wallet only on a
-computer kept permanently offline.
+codex32 handles wallet backup and recovery secrets. Use a computer you control
+and whose software you trust. Malware can steal secrets even when the wallet is
+encrypted. Have the software and recovery plan reviewed before using real funds.
+For stronger isolation, keep the computer offline until you shut it down.
 
 A valid checksum detects many copying mistakes. It does not prove that a backup
 belongs to your wallet. A correction is only a suggestion; compare it with the
 physical backup and wallet information kept elsewhere.
 
-Python, your terminal, and your operating system may retain secret text in
-memory or scrollback. codex32 does not intentionally save secrets and keeps
-them out of command arguments and normal machine output, but it cannot
-guarantee that every copy is erased from swap, hibernation data, or crash
-dumps. Using Tails and shutting down when finished helps mitigate this Python
-limitation.
+codex32 does not intentionally save secrets or put them in command arguments,
+logs, or unrelated output. Commands that create or recover backups may display
+the recovery text on purpose. Python and the operating system may retain copies
+in memory, terminal scrollback, or disk. Tails and shutdown reduce this risk.
+
+Run a command first, then enter your recovery text when prompted. Do not put it
+in the command itself: your shell may save it in its history.
 
 ## Report a security problem
 
