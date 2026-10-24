@@ -21,7 +21,7 @@ fingerprints, and wallet history cannot spend funds but remain privacy-sensitive
 
 | Boundary | Security requirement |
 |---|---|
-| Untrusted text | Text remains untrusted until the parser or `MasterSeed.from_seed` returns a validated artifact. |
+| Untrusted text | Text remains untrusted until a `Codex32String` or `MasterSeed` constructor accepts it. |
 | Package API | Recovery, derivation, sharing, and wallet operations accept validated artifacts, not unchecked text. |
 | Python process | Secret objects remain in process memory; normal output must not reveal them unintentionally. |
 | Operator and paper | The operator controls transcription, physical recovery cards, wallet records, and acceptance of correction suggestions. |
@@ -91,9 +91,9 @@ meaning.
 Artifacts are immutable and store only their validated string; the header,
 HRP and payload are decoded from it, so they cannot disagree. A share has symbol semantics and cannot be converted to bytes.
 Default `str()` and `repr()` rendering of artifacts is redacted; callers must
-use `.text` explicitly when they intentionally need the serialized recovery
+use `.s` explicitly when they intentionally need the serialized recovery
 string. This reduces accidental disclosure through logs and interpolation but
-does not make `.text` safe to expose.
+does not make `.s` safe to expose.
 Generic parsing, recovery, derivation, and correction work for any HRP.
 Wallet and generation APIs accept only `MasterSeed`, never other HRPs'
 artifacts or raw strings.

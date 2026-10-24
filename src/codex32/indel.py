@@ -413,7 +413,7 @@ def _normalize(context: CorrectionContext, damaged_text: str) -> tuple[str, int]
 
 
 def _keep(results: dict[str, CorrectionCandidate], candidate: CorrectionCandidate) -> None:
-    key = candidate.artifact.text.lower()
+    key = candidate.artifact.s.lower()
     current = results.get(key)
     rank = candidate.capture_volume, candidate.addend_hamming_weight
     if current is None or rank < (
@@ -537,7 +537,7 @@ def _search_target(
                                         "transposition",
                                         len(view) - offset - i - 1,
                                         state.observed_text[state.base + observed_position],
-                                        candidate.artifact.text[state.base + offset + i],
+                                        candidate.artifact.s[state.base + offset + i],
                                     )
                                 )
                     offset += size
@@ -614,7 +614,7 @@ def _search_many(
             optional_only=optional_only,
         )
         return finish(*result)
-    results = {candidate.artifact.text.lower(): candidate for candidate in seed_candidates}
+    results = {candidate.artifact.s.lower(): candidate for candidate in seed_candidates}
     # One global admission ledger, then fixed, required, and optional work.
     # The minimum supported public sphere is A<=2 / G<=2; deeper cutoffs
     # require completed worst-case public-profile benchmark evidence.

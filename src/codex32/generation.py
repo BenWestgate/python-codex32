@@ -6,21 +6,20 @@ import secrets
 from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from typing import NoReturn, SupportsIndex, cast
+from typing import NoReturn, SupportsIndex
 
 from codex32._bip32 import _valid_root
-from codex32.bech32 import _u5_to_chars, convertbits
+from codex32.bech32 import _chars_to_u5, _u5_to_chars, convertbits
 from codex32.bip93 import (
     DEFAULT_SEED_BYTES,
     IDX_SORT,
     MS,
     SEED_BYTE_LENGTHS,
-    Header,
+    Codex32String,
     MasterSeed,
-    Secret,
-    Share,
     _from_parts,
     _has_generation_padding,
+    _header,
     _payload_length,
     derive_share,
     recover_secret,
@@ -117,11 +116,11 @@ def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
     return groups, changed
 
 
-def _shared_header(threshold: int, identifier: str) -> Header:
-    """Validate a new share set's header fields once, through Header."""
+def _shared_header(threshold: int, identifier: str) -> tuple[int, str]:
+    """Validate a new share set's threshold and identifier once."""
     if threshold == 0:
         raise InvalidThreshold("A shared backup needs a threshold of 2 through 9.")
-    return Header(threshold, identifier, "a")
+    return threshold, _header(threshold, identifier, "a")[1:5]
 
 
 def _index(value: object) -> str:
@@ -173,11 +172,9 @@ def _fingerprint_identifier(fingerprint: bytes) -> str:
     return _u5_to_chars(tuple(convertbits(fingerprint, 8, 5, pad=True)[:4]))
 
 
-def _random_share(threshold: int, identifier: str, index: str, length: int) -> Share:
+def _random_share(threshold: int, identifier: str, index: str, length: int) -> Codex32String:
     symbols = tuple(value & 31 for value in secrets.token_bytes(length))
-    artifact = _from_parts(MS, Header(threshold, identifier, index), symbols)
-    assert isinstance(artifact, Share)
-    return artifact
+    return _from_parts(MS, _header(threshold, identifier, index), symbols)
 
 
 def _seed_input(seed_bytes: bytes | None, byte_length: int | None) -> tuple[bytes | None, int]:
@@ -213,7 +210,7 @@ def generate_master_seed(
         raise ValueError(
             "fresh unshared master-seed generation requires a fingerprint provider or identifier"
         )
-    selected_identifier = Header(0, identifier, "s").identifier if identifier is not None else None
+    selected_identifier = _header(0, identifier, "s")[1:5] if identifier is not None else None
     while True:
         fresh = secrets.token_bytes(length)
         if not _valid_root(fresh):
@@ -227,12 +224,12 @@ def generate_master_seed(
 class CreationCeremony:
     """Generate and confirm one shared-backup card at a time."""
 
-    _basis: list[Secret | Share]
+    _basis: list[Codex32String]
     _direct_count: int
     _finished: bool
     _indices: tuple[str, ...]
     _payload_length: int
-    _pending: Share | None
+    _pending: Codex32String | None
     _position: int
     _secret: MasterSeed | None
     _set_identifier: str
@@ -262,8 +259,9 @@ class CreationCeremony:
         if secret is None:
             self._secret, self._basis, self._direct_count = None, [], threshold
         else:
-            reheadered = _from_parts(MS, Header(threshold, identifier, "s"), secret.payload_symbols)
-            assert isinstance(reheadered, MasterSeed)
+            reheadered = MasterSeed(
+                _from_parts(MS, _header(threshold, identifier, "s"), _chars_to_u5(secret.payload)).s
+            )
             self._secret, self._basis, self._direct_count = (
                 reheadered,
                 [reheadered],
@@ -282,16 +280,11 @@ class CreationCeremony:
         identifier: str | None = None,
     ) -> CreationCeremony:
         """Start a ceremony for a fresh shared Bitcoin master seed."""
-        header = _shared_header(threshold, _random_identifier() if identifier is None else identifier)
-        _supplied, byte_length = _seed_input(None, byte_length)
-        return cls._start(
-            _payload_length(byte_length),
-            header.threshold,
-            share_count,
-            indices,
-            header.identifier,
-            None,
+        threshold, identifier = _shared_header(
+            threshold, _random_identifier() if identifier is None else identifier
         )
+        _supplied, byte_length = _seed_input(None, byte_length)
+        return cls._start(_payload_length(byte_length), threshold, share_count, indices, identifier, None)
 
     @classmethod
     def from_secret(
@@ -307,28 +300,19 @@ class CreationCeremony:
         if not isinstance(secret, MasterSeed):
             raise TypeError("from_secret accepts only MasterSeed")
         random_identifier = identifier is None
-        header = _shared_header(threshold, _random_identifier() if identifier is None else identifier)
-        threshold, identifier = header.threshold, header.identifier
-        while (threshold, identifier) == (
-            secret.header.threshold,
-            secret.header.identifier,
-        ):
+        threshold, identifier = _shared_header(
+            threshold, _random_identifier() if identifier is None else identifier
+        )
+        while (str(threshold), identifier) == (secret.k, secret.ident):
             if not random_identifier:
                 raise HeaderCollision("new share set must use a different set header")
             identifier = _random_identifier()
-        return cls._start(
-            len(secret.payload_symbols),
-            threshold,
-            share_count,
-            indices,
-            identifier,
-            secret,
-        )
+        return cls._start(len(secret.payload), threshold, share_count, indices, identifier, secret)
 
     def _candidate_is_accepted(self, secret: MasterSeed) -> bool:
-        return _valid_root(secret.seed_bytes) and _has_generation_padding(secret)
+        return _valid_root(secret.data) and _has_generation_padding(secret)
 
-    def next_share(self) -> Share:
+    def next_share(self) -> Codex32String:
         """Generate or derive the next card after the previous card is confirmed."""
         if self._finished:
             raise CeremonyStateError("this creation ceremony is finished")
@@ -347,7 +331,7 @@ class CreationCeremony:
                 )
                 if self._position + 1 < self._direct_count or self._secret is not None:
                     break
-                candidate = recover_secret((*cast(list[Share], self._basis), pending))
+                candidate = recover_secret((*self._basis, pending))
                 assert isinstance(candidate, MasterSeed)
                 if self._candidate_is_accepted(candidate):
                     self._secret = candidate
@@ -365,7 +349,7 @@ class CreationCeremony:
             raise CeremonyStateError("request a card before confirming it")
         if not isinstance(text, str):
             raise TypeError("confirmation text must be str")
-        result = _confirmation(text, self._pending.text)
+        result = _confirmation(text, self._pending.s)
         if not result.accepted:
             return result
         if self._position < self._direct_count:

@@ -1,10 +1,8 @@
 """Small, typed BIP93 and codex32 reference API."""
 
 from .bip93 import (
-    Header,
+    Codex32String,
     MasterSeed,
-    Secret,
-    Share,
     derive_share,
     parse_codex32,
     recover_secret,
@@ -26,17 +24,15 @@ from .generation import (
 from .wallet import master_xprv
 
 __all__ = [
+    "Codex32String",
     "CodexError",
     "ConfirmationResult",
     "CorrectionCandidate",
     "CorrectionContext",
     "CorrectionEdit",
     "CreationCeremony",
-    "Header",
     "InvalidCorrectionInput",
     "MasterSeed",
-    "Secret",
-    "Share",
     "WorksheetCorrection",
     "correct",
     "correct_worksheet_residue",

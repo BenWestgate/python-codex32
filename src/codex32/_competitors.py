@@ -56,11 +56,10 @@ def _covered_candidates(
         # Fixed BCH was completed first, including a failed/ineligible result.
         return () if fixed is None else (fixed,)
     for candidate in results:
-        if candidate.artifact.hrp != state.context.hrp or len(candidate.artifact.text) != state.target:
+        if candidate.artifact.hrp != state.context.hrp or len(candidate.artifact.s) != state.target:
             continue
         known_distance = sum(
-            a in CHARSET and a != b
-            for a, b in zip(observed, candidate.artifact.text[state.immutable :].lower())
+            a in CHARSET and a != b for a, b in zip(observed, candidate.artifact.s[state.immutable :].lower())
         )
         if explicit + known_distance + changed < 9:
             return (candidate,)
@@ -76,7 +75,7 @@ def _known_swaps(
 ) -> Iterator[_View]:
     """Enumerate only swap scripts that could explain this known artifact."""
     source = tuple(CHARSET.index(c.lower()) for c in state.text[state.base :])
-    target = tuple(CHARSET.index(c.lower()) for c in candidate.artifact.text[state.base :])
+    target = tuple(CHARSET.index(c.lower()) for c in candidate.artifact.s[state.base :])
     boundary = state.immutable - state.base
     initial = _View(source, ((0, len(source)),), len(source))
     seen: set[tuple[tuple[int, ...], tuple[str, ...]]] = set()
@@ -138,14 +137,14 @@ def _competitor_views(
     distance = sum(
         a in CHARSET and a != b
         for a, b in zip(
-            state.text[state.immutable :].lower(), candidate.artifact.text[state.immutable :].lower()
+            state.text[state.immutable :].lower(), candidate.artifact.s[state.immutable :].lower()
         )
     )
     if distance > shape.unit * (2 * (shape.adjacent + shape.distant) + shape.corrupted) + substitutions:
         return iter(())
     if not shape.corrupted:
         observed = Counter(c for c in state.text[state.immutable :].lower() if c in CHARSET)
-        target = Counter(candidate.artifact.text[state.immutable :].lower())
+        target = Counter(candidate.artifact.s[state.immutable :].lower())
         if sum((observed - target).values()) > substitutions:
             return iter(())
     if shape.unit == 1 and not (shape.inserted or shape.omitted) and erasures == 0:
@@ -177,7 +176,7 @@ def _search_competitors(
     seed_candidates: Sequence[CorrectionCandidate] = (),
     optional_only: bool = False,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
-    results = {candidate.artifact.text.lower(): candidate for candidate in seed_candidates}
+    results = {candidate.artifact.s.lower(): candidate for candidate in seed_candidates}
     fixed: dict[int, CorrectionCandidate | None] = {}
     completed: set[_Layer] = set()
     try:

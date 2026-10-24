@@ -131,7 +131,7 @@ def main() -> None:
             for seed, expected_fingerprint in CORE_FINGERPRINTS.items():
                 if client.fingerprint_seed(seed) != expected_fingerprint:
                     raise RuntimeError("Bitcoin Core fingerprint fixture mismatch")
-            expected_fingerprint = CORE_FINGERPRINTS[secret.seed_bytes]
+            expected_fingerprint = CORE_FINGERPRINTS[secret.data]
             answers = iter(("yes",))
             if (
                 client.initialize(

@@ -6,7 +6,7 @@ import pytest
 from data.bip93_vectors import VECTOR_2, VECTOR_4
 
 import codex32
-from codex32 import MasterSeed, Share, parse_codex32
+from codex32 import MasterSeed, parse_codex32
 from codex32.bip93 import SEED_BYTE_LENGTHS, _has_generation_padding
 from codex32.checksums import _CRC, _crc_pad
 from codex32.gf32 import _multiply as _gf32_multiply
@@ -51,9 +51,9 @@ def test_parsed_master_seed_validity_is_independent_of_crc() -> None:
     generated = MasterSeed.from_seed(bytes.fromhex(VECTOR_4["secret_hex"]), identifier="leet")
     parsed = [parse_codex32(VECTOR_4[f"secret_s_alternate_{padding}"]) for padding in range(16)]
     assert all(isinstance(secret, MasterSeed) for secret in parsed)
-    assert len({secret.payload_symbols for secret in parsed}) == 16
+    assert len({secret.payload for secret in parsed}) == 16
     assert sum(_has_generation_padding(secret) for secret in parsed) == 1
-    assert generated.payload_symbols in {secret.payload_symbols for secret in parsed}
+    assert generated.payload in {secret.payload for secret in parsed}
 
 
 def test_padding_acceptance_is_balanced_for_every_nonzero_lagrange_weight() -> None:
@@ -72,7 +72,7 @@ def test_padding_acceptance_is_balanced_for_every_nonzero_lagrange_weight() -> N
 
 def test_crc_never_becomes_share_or_public_api_semantics() -> None:
     share = parse_codex32(VECTOR_2["share_A"])
-    assert isinstance(share, Share)
+    assert share.share_idx != "s"
     assert not hasattr(share, "seed_bytes")
     assert not hasattr(share, "padding")
     assert not hasattr(share, "crc")

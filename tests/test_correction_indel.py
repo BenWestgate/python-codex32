@@ -80,7 +80,7 @@ def _group_damage(source: str, inserted: int, omitted: int) -> str:
 def test_complete_character_family_recovers_source(inserted: int, omitted: int) -> None:
     damaged = _character_damage(SOURCE, inserted, omitted)
 
-    assert [candidate.artifact.text for candidate in correct(CONTEXT, damaged)] == [SOURCE]
+    assert [candidate.artifact.s for candidate in correct(CONTEXT, damaged)] == [SOURCE]
 
 
 def test_character_class_set_is_exact() -> None:
@@ -110,7 +110,7 @@ def test_complete_group_family_recovers_ungrouped_source(
 ) -> None:
     damaged = _group_damage(SOURCE, inserted, omitted)
 
-    assert [candidate.artifact.text for candidate in correct(CONTEXT, damaged)] == [SOURCE]
+    assert [candidate.artifact.s for candidate in correct(CONTEXT, damaged)] == [SOURCE]
 
 
 # Exercise each family across intermediate lengths; the frontier arithmetic
@@ -124,7 +124,7 @@ def test_optional_three_character_indels_recover_intermediate_lengths(
     inserted: int,
     omitted: int,
 ) -> None:
-    source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
+    source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").s
     damaged = _character_damage(source, inserted, omitted)
     states = tuple(
         state
@@ -152,7 +152,7 @@ def test_automatic_secondary_search_recovers_two_group_indels(
     inserted: int,
     omitted: int,
 ) -> None:
-    source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
+    source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").s
     damaged = _group_damage(source, inserted, omitted)
     contexts = tuple(CorrectionContext("ms", target, "ms1") for target in TEXT_LENGTHS)
 
@@ -164,7 +164,7 @@ def test_automatic_secondary_search_recovers_two_group_indels(
     )
 
     assert complete
-    assert [candidate.artifact.text for candidate in candidates] == [source]
+    assert [candidate.artifact.s for candidate in candidates] == [source]
 
 
 def test_group_class_set_and_first_share_counts_are_exact() -> None:
@@ -205,8 +205,8 @@ def test_group_search_does_not_depend_on_spaces() -> None:
     plain = correct(CONTEXT, ungrouped)
     presented = correct(CONTEXT, grouped)
 
-    assert [candidate.artifact.text for candidate in plain] == [SOURCE]
-    assert [candidate.artifact.text for candidate in presented] == [SOURCE]
+    assert [candidate.artifact.s for candidate in plain] == [SOURCE]
+    assert [candidate.artifact.s for candidate in presented] == [SOURCE]
     assert plain[0].capture_volume == presented[0].capture_volume == 11 * 32**4
 
 
@@ -218,7 +218,7 @@ def test_immutable_confirmed_header_reduces_domains_and_cannot_be_repaired() -> 
 
     assert _alignment_count(character, 48, 48, len(prefix)) == comb(40, 2) ** 2
     assert _alignment_count(two_groups, 40, 48, len(prefix)) == 45
-    assert correct(context, _character_damage(SOURCE, 1, 1))[0].artifact.text == SOURCE
+    assert correct(context, _character_damage(SOURCE, 1, 1))[0].artifact.s == SOURCE
 
     changed = ("2" if prefix[3] != "2" else "3") + SOURCE[4:]
     assert correct(context, SOURCE[:3] + changed) == ()
@@ -242,7 +242,7 @@ def test_explicit_unknown_can_be_retained_or_deleted() -> None:
     retained_candidate = correct(CONTEXT, retained)[0]
     deleted_candidate = correct(CONTEXT, extra)[0]
 
-    assert retained_candidate.artifact.text == deleted_candidate.artifact.text == SOURCE
+    assert retained_candidate.artifact.s == deleted_candidate.artifact.s == SOURCE
     assert [edit.kind for edit in retained_candidate.edits] == ["erasure"]
     assert [edit.kind for edit in deleted_candidate.edits] == ["deletion"]
 
@@ -265,7 +265,7 @@ def test_structural_erasure_preserves_the_observed_character() -> None:
 
     candidate = correct(CONTEXT, damaged)[0]
 
-    assert candidate.artifact.text == SOURCE
+    assert candidate.artifact.s == SOURCE
     assert {(edit.kind, edit.observed) for edit in candidate.edits} == {
         ("insertion", ""),
         ("erasure", "!"),
@@ -295,7 +295,7 @@ def test_structural_capacity_does_not_borrow_linear_erasure_recovery() -> None:
     consecutive_text = "".join("?" if index in consecutive else value for index, value in enumerate(SOURCE))
     separated_text = "".join("?" if index in separated else value for index, value in enumerate(SOURCE))
 
-    assert correct(CONTEXT, consecutive_text)[0].artifact.text == SOURCE
+    assert correct(CONTEXT, consecutive_text)[0].artifact.s == SOURCE
     assert correct(CONTEXT, separated_text) == ()
 
 
@@ -306,7 +306,7 @@ def test_expected_length_search_admits_safe_consecutive_erasure_recovery(count: 
 
     candidate = correct(CONTEXT, damaged)[0]
 
-    assert candidate.artifact.text == source
+    assert candidate.artifact.s == source
     assert candidate.erasures_filled == count
 
 
@@ -323,8 +323,8 @@ def test_fixed_volume_retains_every_bch_substitution_layer() -> None:
 def test_unknown_target_search_recovers_reachable_valid_length() -> None:
     damaged = SOURCE[:19] + SOURCE[20:]
 
-    assert correct(CorrectionContext("ms"), damaged)[0].artifact.text == SOURCE
-    assert correct(CONTEXT, damaged)[0].artifact.text == SOURCE
+    assert correct(CorrectionContext("ms"), damaged)[0].artifact.s == SOURCE
+    assert correct(CONTEXT, damaged)[0].artifact.s == SOURCE
 
 
 @pytest.mark.parametrize(
@@ -336,11 +336,11 @@ def test_structural_search_supports_ms_and_generic_hrps(hrp: str, source: str) -
 
     result = correct(CorrectionContext(hrp, expected_length=len(source)), damaged)
 
-    assert [candidate.artifact.text for candidate in result] == [source]
+    assert [candidate.artifact.s for candidate in result] == [source]
 
 
 def test_two_each_with_two_substitutions_is_admitted_by_shared_bound() -> None:
-    source = MasterSeed.from_seed(bytes(range(16)), identifier="test").text
+    source = MasterSeed.from_seed(bytes(range(16)), identifier="test").s
     damaged = list(source)
     damaged.pop(34)
     damaged.pop(16)
@@ -358,7 +358,7 @@ def test_two_each_with_two_substitutions_is_admitted_by_shared_bound() -> None:
 
 
 def test_two_each_with_one_substitution_uses_the_generic_fixed_core() -> None:
-    source = MasterSeed.from_seed(bytes(range(16)), identifier="test").text
+    source = MasterSeed.from_seed(bytes(range(16)), identifier="test").s
     damaged = list(source)
     for position in reversed((18, 32)):
         damaged.pop(position)
@@ -406,7 +406,7 @@ def test_cli_tie_breaks_follow_hamming_crc_then_fingerprint() -> None:
     fingerprint_match = CorrectionCandidate(fingerprint, (), 10, 0, 2, True)
 
     assert len(_primary((high_hamming, crc, fingerprint_match))) == 3
-    matcher = _fingerprint_matcher(lambda secret: core_fingerprint(secret.seed_bytes))
+    matcher = _fingerprint_matcher(lambda secret: core_fingerprint(secret.data))
     assert _best((high_hamming, crc, fingerprint_match), fingerprint_match=matcher) == (fingerprint_match,)
 
 
@@ -429,12 +429,12 @@ def test_unknown_length_preference_is_secondary_to_capture_volume() -> None:
 
     assert _best((common, uncommon), prefer_common=True) == (uncommon,)
     assert {
-        item.artifact.text
+        item.artifact.s
         for item in _best(
             (common, other_common, tied_uncommon),
             prefer_common=True,
         )
-    } == {short.text, medium.text}
+    } == {short.s, medium.s}
 
 
 def test_production_cross_length_frontier_matches_independent_arithmetic() -> None:
@@ -489,7 +489,7 @@ def test_primary_target_runs_first_and_secondary_search_is_proof_driven() -> Non
         def search(state, _frontier, results, _deadline):  # type: ignore[no-untyped-def]
             calls.append(state.target)
             if state.target == 48:
-                results[artifact.text] = CorrectionCandidate(artifact, (), rank, 0, 0, None)
+                results[artifact.s] = CorrectionCandidate(artifact, (), rank, 0, 0, None)
             return True
 
         with patch("codex32.indel._search_target", side_effect=search):
@@ -551,8 +551,8 @@ def test_full_checksum_burst_is_admitted_at_the_shared_mass_ceiling():
     from codex32.correction import _correct_fixed
 
     damaged = SOURCE[:8] + "?" * 13 + SOURCE[21:]
-    assert _correct_fixed(damaged, hrp="ms").artifact.text == SOURCE
-    assert correct(CONTEXT, damaged)[0].artifact.text == SOURCE
+    assert _correct_fixed(damaged, hrp="ms").artifact.s == SOURCE
+    assert correct(CONTEXT, damaged)[0].artifact.s == SOURCE
 
 
 def test_public_correction_fails_closed_when_required_work_expires() -> None:
@@ -572,7 +572,7 @@ def test_public_correction_fails_closed_when_required_work_expires() -> None:
             return real(state, *args, **kwargs)
         return False
 
-    assert any(candidate.artifact.text == source for candidate in correct(context, swapped))
+    assert any(candidate.artifact.s == source for candidate in correct(context, swapped))
     with (
         patch.object(indel_module, "_search_target", expire_after_fixed),
         patch.object(competitors_module, "_search_target", expire_after_fixed),
@@ -580,4 +580,4 @@ def test_public_correction_fails_closed_when_required_work_expires() -> None:
         assert correct(context, swapped) == ()
         cli_candidates, complete = _correct_complete(context, swapped, competitors=True)
     assert not complete
-    assert [(c.artifact.text, c.search_complete) for c in cli_candidates] == [(source, False)]
+    assert [(c.artifact.s, c.search_complete) for c in cli_candidates] == [(source, False)]
