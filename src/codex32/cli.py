@@ -189,6 +189,10 @@ def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinC
         derived = derive_share(artifacts, index)
     except CodexError as error:
         raise _CommandError(str(error)) from error
+    if core is not None and sys.stdout.isatty() and not plain:
+        given = [artifact for artifact in artifacts if isinstance(artifact, Secret)]
+        seed = cast(MasterSeed, given[0] if given else _secret(artifacts))
+        _print(f"Master fingerprint: {core.fingerprint(seed).hex().upper()}\n")
     _emit(derived, plain)
     if sys.stdin.isatty() and sys.stdout.isatty() and not plain:
         try:
