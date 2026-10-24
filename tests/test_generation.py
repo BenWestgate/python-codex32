@@ -50,9 +50,7 @@ def _indices(shares: tuple[Share, ...]) -> str:
 
 
 def test_repeated_indices_copy_only_confirmed_cards() -> None:
-    secret, shares = _complete(
-        CreationCeremony.master_seed(threshold=2, indices="aacd", identifier="test")
-    )
+    secret, shares = _complete(CreationCeremony.master_seed(threshold=2, indices="aacd", identifier="test"))
     assert isinstance(secret, MasterSeed)
     assert _indices(shares) == "acda"
     assert shares[0].text == shares[3].text
