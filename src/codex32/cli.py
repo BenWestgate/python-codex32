@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable, Sequence
+from secrets import token_bytes
 from typing import Literal, NamedTuple, cast
 
 from codex32._bitcoin_core import (
@@ -344,6 +345,7 @@ def _generated_secret(
         byte_length=byte_length,
         identifier=identifier,
         fingerprint=fingerprint,
+        entropy=token_bytes,
     )
 
 
@@ -518,6 +520,7 @@ def _create(
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
+                entropy=token_bytes,
             )
         elif source is not None:
             source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
@@ -527,6 +530,7 @@ def _create(
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
+                entropy=token_bytes,
             )
         else:
             ceremony = CreationCeremony.master_seed(
@@ -535,6 +539,7 @@ def _create(
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
+                entropy=token_bytes,
             )
     except HeaderCollision as error:
         raise _CommandError(f"{error}; choose another set header") from error
