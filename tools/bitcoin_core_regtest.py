@@ -12,11 +12,13 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from _wallet_test_vectors import CORE_FINGERPRINTS
 
-from codex32._bitcoin_core import BitcoinCore
-from codex32.bip93 import parse_codex32
+from codex32._bitcoin_core import BitcoinCore, CoreEntropy
+from codex32.bip93 import parse_codex32, recover_secret
+from codex32.generation import CreationCeremony
 from codex32.profiles.ms32 import MasterSeed
 from codex32.wallet import master_xprv
 
@@ -132,6 +134,29 @@ def main() -> None:
             for seed, expected_fingerprint in CORE_FINGERPRINTS.items():
                 if client.fingerprint_seed(seed) != expected_fingerprint:
                     raise RuntimeError("Bitcoin Core fingerprint fixture mismatch")
+
+            unloaded, core_rpc = list[tuple[str, bool]](), BitcoinCore._rpc
+
+            def watched(core: BitcoinCore, *arguments: str, **options: Any) -> Any:
+                if arguments[:1] == ("unloadwallet",):
+                    locked = rpc("getwalletinfo", wallet=arguments[1])["unlocked_until"] == 0
+                    unloaded.append((arguments[1], locked and bool(rpc("gethdkeys", wallet=arguments[1]))))
+                return core_rpc(core, *arguments, **options)
+
+            entropy, shares = CoreEntropy(client, print), []
+            with patch.object(BitcoinCore, "_rpc", watched):
+                ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", entropy=entropy)
+                for _ in range(2):
+                    shares.append(ceremony.next_share())
+                    ceremony.confirm(shares[-1].text)
+            if len(unloaded) < 3 or not all(locked for _wallet, locked in unloaded):
+                raise RuntimeError("each draw did not take fresh keys from a relocked encrypted wallet")
+            if (
+                any(os.path.exists(wallet) or wallet in rpc("listwallets") for wallet, _locked in unloaded)
+                or entropy._folder
+                or recover_secret(shares) != ceremony.finish()
+            ):
+                raise RuntimeError("a temporary wallet survived or the Core-random shares did not recover")
             expected_fingerprint = CORE_FINGERPRINTS[secret.seed_bytes]
             answers = iter(("yes",))
             if (

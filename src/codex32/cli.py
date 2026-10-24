@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
 import sys
 from collections.abc import Callable, Sequence
-from secrets import token_bytes
 from typing import Literal, NamedTuple, cast
 
 from codex32._bitcoin_core import (
     NO_RECORD_WARNING,
     BitcoinCore,
     BitcoinCoreError,
+    CoreEntropy,
     FingerprintMismatch,
     identifier_note,
     identifier_origin,
@@ -339,13 +340,14 @@ def _generated_secret(
     byte_length: int | None,
     identifier: str | None,
     fingerprint: Callable[[bytes], bytes] | None = None,
+    entropy: Callable[[int], bytes] | None = None,
 ) -> MasterSeed:
     return generate_master_seed(
         source,
         byte_length=byte_length,
         identifier=identifier,
         fingerprint=fingerprint,
-        entropy=token_bytes,
+        entropy=entropy,
     )
 
 
@@ -493,6 +495,10 @@ def _create(
         raise _UsageError("Use --existing when supplying a seed or secret.")
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
+    entropy = CoreEntropy(core, lambda message: _print(message, err=True))
+    # Closing the terminal or a plain kill becomes Ctrl-C, so a draw under way still removes its wallet.
+    hangups = [getattr(signal, name) for name in ("SIGHUP", "SIGTERM", "SIGBREAK") if hasattr(signal, name)]
+    previous = {number: signal.signal(number, signal.default_int_handler) for number in hangups}
     try:
         if threshold == 0:
             if isinstance(source, MasterSeed):
@@ -500,37 +506,27 @@ def _create(
                     raise _UsageError(
                         "To change the existing secret's identifier, choose a sharing threshold from 2 through 9."
                     )
-                secret = source
+                finished = source
             else:
-                secret = _generated_secret(source, byte_length, identifier, core.fingerprint_seed)
-            _emit(secret, False, fingerprint=None if existing else core.fingerprint)
-            if sys.stdin.isatty():
-                _confirm_card(secret)
-            return (
-                _initialize_wallet(
-                    core, secret, timestamp=0 if existing else "now", fresh=not existing, restore=existing
-                )
-                if core is not None
-                else 0
-            )
-        if isinstance(source, MasterSeed):
+                finished = _generated_secret(source, byte_length, identifier, core.fingerprint_seed, entropy)
+        elif isinstance(source, MasterSeed):
             ceremony = CreationCeremony.from_secret(
                 source,
                 threshold=threshold,
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
-                entropy=token_bytes,
+                entropy=entropy,
             )
         elif source is not None:
-            source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
+            source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed, entropy)
             ceremony = CreationCeremony.from_secret(
                 source_secret,
                 threshold=threshold,
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
-                entropy=token_bytes,
+                entropy=entropy,
             )
         else:
             ceremony = CreationCeremony.master_seed(
@@ -539,20 +535,28 @@ def _create(
                 identifier=identifier,
                 share_count=shares,
                 indices=indices,
-                entropy=token_bytes,
+                entropy=entropy,
             )
+        if threshold:
+            output_count = shares if shares is not None else len(indices or "")
+            for position in range(output_count):
+                artifact = ceremony.next_share()
+                _emit(artifact, False, gap=position > 0)
+                _confirm_card(artifact, ceremony.confirm)
+                _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
+            finished = ceremony.finish()
     except HeaderCollision as error:
         raise _CommandError(f"{error}; choose another set header") from error
     except CodexError as error:
         raise _CommandError(str(error)) from error
-    output_count = shares if shares is not None else len(indices or "")
-    for position in range(output_count):
-        artifact = ceremony.next_share()
-        _emit(artifact, False, gap=position > 0)
-        _confirm_card(artifact, ceremony.confirm)
-        _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
-    finished = ceremony.finish()
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
     assert isinstance(finished, MasterSeed)
+    if threshold == 0:
+        _emit(finished, False, fingerprint=None if existing else core.fingerprint)
+        if sys.stdin.isatty():
+            _confirm_card(finished)
     if core is not None:
         return _initialize_wallet(
             core, finished, timestamp=0 if existing else "now", fresh=not existing, restore=existing
