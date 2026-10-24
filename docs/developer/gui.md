@@ -20,7 +20,8 @@ cryptography, entropy source, socket, or file storage.
 Review `reading.py`, `wallet_setup.py`, and `work.py` first. Their behavior is
 covered without a display. `tools/gui_walkthrough.py` exercises the real GTK
 screens under Xvfb. `tests/test_gui_boundaries.py` enforces a separate 2,250
-logical-line GUI budget.
+logical-line GUI budget, including the Bails restore-identity checks and fixed
+read-back boxes. The library retains its existing budget.
 
 ## Security boundaries
 
@@ -53,6 +54,16 @@ The entry widget has three internal modes:
   correction input.
 - **Read-back:** starts empty, normalizes only spacing and ASCII case, and never
   reveals expected text after a mismatch.
+
+Read-back uses `codex32._confirmation._entered_groups`, shared with the CLI.
+After a mismatch, matching groups lock; only the entered text is shown. Arrows
+cross editable-group boundaries, Ctrl+arrows skip groups, Tab cycles, and
+Home/End reach the first/last editable group. Paste and drop are disabled.
+Invalid characters and missing groups are compared directly. The former
+eight-character tolerance is gone; comparison accepts up to 1,024 characters
+and preserves longer input with an explicit size message.
+`tests/test_gui_read_back.py` exercises these behaviors under GTK. Review
+`entry.py` for keyboard and clipboard handling.
 
 Enter activates the enabled primary action. Card displays use four
 four-character groups per row, matching `docs/user/recovery-card.html`.
