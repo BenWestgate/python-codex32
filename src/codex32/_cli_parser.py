@@ -141,6 +141,18 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         metavar="POSITION",
         help="one-based position counted backward from the end; repeat as needed",
     )
+    correct.add_argument(
+        "--prefix",
+        metavar="PREFIX",
+        help="known start that correction keeps, such as ms1 or the ms12name header shared by a set",
+    )
+    if not master_seed:
+        correct.add_argument(
+            "--length",
+            type=_integer("length", 21),
+            metavar="LENGTH",
+            help="known total length of the damaged string's original",
+        )
     if master_seed:
         correct.add_argument(
             "--bytes",

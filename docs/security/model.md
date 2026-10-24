@@ -175,8 +175,9 @@ reallocate the ledger's mass to additional hypotheses.
 
 `codex32` checks, corrects, recovers, and derives shares for any HRP. `ms32`
 applies an `ms` input filter and alone owns Bitcoin creation, xprv, and wallet
-commands. Both façades offer worksheet-residue correction; only `ms32 correct`
-offers `--bytes`.
+commands. Both façades offer worksheet-residue correction and a known
+`--prefix`; only `ms32 correct` offers `--bytes`, and only `codex32 correct`
+offers `--length`.
 
 ### Low-discrimination correction disclosure
 
