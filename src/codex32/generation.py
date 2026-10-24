@@ -44,6 +44,78 @@ class ConfirmationResult:
 
     accepted: bool
     mismatched_groups: tuple[int, ...] = ()
+    entered_groups: tuple[str, ...] = ()
+
+
+def _confirmation(text: str, expected: str) -> ConfirmationResult:
+    """Compare re-entered text with a card, group by group, allowing shifts."""
+    count = -(-len("".join(expected.split())) // 4)
+    if len("".join(text.split())) > 4 * count + 16:
+        # Alignment is quadratic in the entry, so refuse text far longer than the card.
+        return ConfirmationResult(False, tuple(range(1, count + 1)), (text,) + ("",) * (count - 1))
+    groups, changed = _entered_groups(text, expected)
+    return ConfirmationResult(not changed, tuple(index + 1 for index in sorted(changed)), tuple(groups))
+
+
+def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
+    # Keep entered tokens whole unless they exactly span complete groups.
+    # Unspaced input retains edit/group minimization and edit-order ties.
+    positions = [i for i, char in enumerate(observed) if not char.isspace()]
+    compact = "".join(observed.split())
+    expected = "".join(expected.split()).lower()
+    tokens = observed.split()
+    grouped = len(tokens) > 1 and compact.lower() != expected
+    boundaries = {0}
+    splits: set[tuple[int, int]] = set()
+    position = 0
+    for token in tokens:
+        for offset in range(0, len(expected), 4):
+            if expected[offset : offset + len(token)] == token.lower() and (
+                len(token) % 4 == 0 or offset + len(token) == len(expected)
+            ):
+                splits.update((position + i, offset + i) for i in range(4, len(token), 4))
+        position += len(token)
+        boundaries.add(position)
+    scores = {0: (0, 0, b"", ())}  # type: dict[int, tuple[int, int, bytes, tuple[int, ...]]]
+    for offset in range(0, len(expected), 4):
+        canonical = expected[offset : offset + 4]
+        following: dict[int, tuple[int, int, bytes, tuple[int, ...]]] = {}
+        for start, (edits, disturbed, trace, ends) in scores.items():
+            row = [(j, b"\x03" * j) for j in range(len(canonical) + 1)]
+            for end in range(start, len(compact) + 1):
+                if end > start:
+                    current = [(end - start, b"\x02" * (end - start))]
+                    for j, char in enumerate(canonical, 1):
+                        edit = compact[end - 1].lower() != char
+                        current.append(
+                            min(
+                                (row[j - 1][0] + edit, row[j - 1][1] + bytes([edit])),
+                                (row[j][0] + 1, row[j][1] + b"\x02"),
+                                (current[j - 1][0] + 1, current[j - 1][1] + b"\x03"),
+                            )
+                        )
+                    row = current
+                if grouped and end not in boundaries and (end, offset + len(canonical)) not in splits:
+                    continue
+                score = (
+                    edits + row[-1][0],
+                    disturbed + (not grouped and compact[start:end].lower() != canonical),
+                    trace + row[-1][1],
+                    (*ends, end),
+                )
+                if end not in following or score < following[end]:
+                    following[end] = score
+        scores = following
+    groups = []
+    start = 0
+    for end in scores[len(compact)][3]:
+        stop = positions[end] if end < len(positions) else len(observed)
+        groups.append(observed[start:stop])
+        start = stop
+    changed = {
+        i for i, value in enumerate(groups) if "".join(value.split()).lower() != expected[i * 4 : i * 4 + 4]
+    }
+    return groups, changed
 
 
 def _threshold(value: object, *, allow_zero: bool = True) -> int:
@@ -305,20 +377,14 @@ class CreationCeremony:
             raise CeremonyStateError("request a card before confirming it")
         if not isinstance(text, str):
             raise TypeError("confirmation text must be str")
-        observed = "".join(text.split()).lower()
-        expected = self._pending.text.lower()
-        mismatched = tuple(
-            group + 1
-            for group in range((max(len(observed), len(expected)) + 3) // 4)
-            if observed[group * 4 : group * 4 + 4] != expected[group * 4 : group * 4 + 4]
-        )
-        if mismatched:
-            return ConfirmationResult(False, mismatched)
+        result = _confirmation(text, self._pending.text)
+        if not result.accepted:
+            return result
         if self._position < self._direct_count:
             self._basis.append(self._pending)
         self._position += 1
         self._pending = None
-        return ConfirmationResult(True)
+        return result
 
     def finish(self) -> MasterSeed:
         """Return the secret after every requested card is confirmed."""

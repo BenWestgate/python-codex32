@@ -34,7 +34,7 @@ from codex32.bech32 import _chars_to_u5, bech32_encode
 from codex32.bip93 import SEED_BYTE_LENGTHS
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
-from codex32.generation import _fingerprint_identifier
+from codex32.generation import _confirmation, _fingerprint_identifier
 from tools._wallet_test_vectors import stub_fingerprint
 
 
@@ -1457,7 +1457,7 @@ def test_confirmation_alignment_shows_only_entered_text(
     expected = "abcdefghWXYZijklmnop" if observed == "abcdefghijklmnop" else "abcdefghijklmnop"
     if observed == "aaaaaaa":
         expected = "aaaaaaaa"
-    groups, changed = input_module._entered_groups(observed, expected)
+    groups, changed = importlib.import_module("codex32.generation")._entered_groups(observed, expected)
     actual = input_module._render_groups(groups, changed, len(expected))
     plain = re.sub(r"\x1b\[[0-9;]*m", "", actual)
 
@@ -1465,6 +1465,16 @@ def test_confirmation_alignment_shows_only_entered_text(
     assert len(re.findall(r"\x1b\[(?:1|22);31m", actual)) == red
     assert len(changed) == red
     assert "".join(plain.replace("_", "").split()).lower() == observed.lower()
+
+
+def test_confirmation_refuses_text_far_longer_than_the_card() -> None:
+    expected = VECTOR_1["secret_s"]
+
+    result = _confirmation(expected * 50, expected)
+
+    assert not result.accepted and result.mismatched_groups == tuple(range(1, 13))
+    assert "".join(result.entered_groups) == expected * 50
+    assert _confirmation(expected + "q" * 16, expected).mismatched_groups == (12,)
 
 
 def test_interrupted_creation_marks_partial_cards_void() -> None:
@@ -2098,7 +2108,7 @@ def test_production_size_budgets_are_enforced() -> None:
 def test_confirmation_alignment_assigns_complete_canonical_groups(
     observed: str, expected: str, groups: list[str], changed: set[int]
 ) -> None:
-    from codex32._cli_input import _entered_groups
+    from codex32.generation import _entered_groups
 
     assert _entered_groups(observed, expected) == (groups, changed)
     assert "".join(groups) == observed
@@ -2139,7 +2149,7 @@ def test_confirmation_region_splits_and_confines_retries(
 
     def confirm(text: str) -> ConfirmationResult:
         confirmed.append(text)
-        return ConfirmationResult("".join(text.split()).lower() == artifact.text.lower())
+        return _confirmation(text, artifact.text)
 
     with contextlib.redirect_stderr(output):
         cli_module._confirm_card(artifact, confirm)
@@ -2152,8 +2162,7 @@ def test_confirmation_region_splits_and_confines_retries(
         assert artifact.text[16:20] in shown
         assert len(re.findall(r"\x1b\[(?:1|22);7;31m", shown)) == 1
     assert snapshots[1] == snapshots[2] == snapshots[3]
-    assert len(confirmed) == 1
-    assert "".join(confirmed[0].split()).lower() == artifact.text.lower()
+    assert "".join(confirmed[-1].split()).lower() == artifact.text.lower()
     if readline:
         assert editor.inserted == prefills
 
@@ -2255,7 +2264,7 @@ def test_confirmation_placeholders_only_replace_wholly_omitted_groups(
 def test_confirmation_grouped_alignment_preserves_token_ownership(
     observed: str, expected: str, groups: list[str], changed: set[int]
 ) -> None:
-    from codex32._cli_input import _entered_groups
+    from codex32.generation import _entered_groups
 
     assert _entered_groups(observed, expected) == (groups, changed)
     assert "".join(groups) == observed
@@ -2294,7 +2303,7 @@ def test_confirmation_full_string_retry_preserves_progress(
 
     def confirm(value: str) -> ConfirmationResult:
         confirmed.append(value)
-        return ConfirmationResult("".join(value.split()).upper() == Card.text)
+        return _confirmation(value, Card.text)
 
     monkeypatch.setattr(cli_module, "_text", read)
     monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
@@ -2308,9 +2317,8 @@ def test_confirmation_full_string_retry_preserves_progress(
     assert "\x1b[1mEFGH\x1b[0m" in snapshots[4]
     assert "\x1b[1;7;31mABC\x1b[0m" in snapshots[4]
     assert "Please re-enter only the highlighted region that remains incorrect." in output.getvalue()
-    assert len(confirmed) == 1
     if full_retry:
-        assert confirmed == [final]
+        assert confirmed[-1] == final
     if readline:
         assert editor.inserted == prefills
 
