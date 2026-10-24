@@ -1,5 +1,3 @@
-"""The window: one navigation view, one stylesheet, and no command arguments."""
-
 from __future__ import annotations
 
 import sys
@@ -15,8 +13,6 @@ APP_ID = "io.github.benwestgate.codex32"
 
 
 class Application(Adw.Application):
-    """One non-unique window with a stable desktop identity and no recent list or files."""
-
     def __init__(self) -> None:
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
 
@@ -31,17 +27,12 @@ class Application(Adw.Application):
         view = Adw.NavigationView()
         view.push(pages.home(view))
         window = Adw.ApplicationWindow(
-            application=self,
-            title="codex32",
-            default_width=880,
-            default_height=620,
-            content=view,
+            application=self, title="codex32", default_width=880, default_height=620, content=view
         )
         window.present()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Open the window. Arguments are refused so that no secret can be passed in one."""
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments == ["--version"]:
         print(__version__)
