@@ -53,7 +53,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-codex32_gui = ["artwork/*.png", "artwork/LICENSE"]
+codex32_gui = ["artwork/*.png", "artwork/LICENSE", "forms/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

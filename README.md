@@ -122,8 +122,8 @@ codex32 strings.
 
 Printable forms:
 
-- [codex32 recovery card](docs/user/recovery-card.html)
-- [wallet-verification record](docs/user/wallet-verification-record.html)
+- [codex32 recovery card](src/codex32_gui/forms/recovery-card.html)
+- [wallet-verification record](src/codex32_gui/forms/wallet-verification-record.html)
 
 ## For developers and reviewers
 

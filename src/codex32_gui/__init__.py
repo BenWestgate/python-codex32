@@ -20,6 +20,7 @@ __all__ = ["__version__"]
 
 __version__ = "1.0.0rc1"
 ARTWORK = files("codex32_gui").joinpath("artwork")
+FORMS = files("codex32_gui").joinpath("forms")
 
 if find_spec("gi") is not None:
     import gi

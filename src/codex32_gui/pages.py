@@ -12,7 +12,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from codex32 import (
     ConfirmationResult,
@@ -28,7 +28,7 @@ from codex32 import (
 )
 from codex32.errors import CodexError
 from codex32.generation import ORDINARY_INDICES
-from codex32_gui import ARTWORK, reading, wallet_setup, work
+from codex32_gui import ARTWORK, FORMS, reading, wallet_setup, work
 from codex32_gui.entry import Codex32Entry
 from codex32_gui.wallet_setup import BitcoinCore
 
@@ -46,6 +46,10 @@ PRESETS = (
     (0, 1, "One card"),
 )
 CREATE_WALLET = "Create a new wallet"
+HANDWRITING = (
+    "Mark the look-alikes as you write: slash every 0, cross 7 and Z, write S like $, close the loops of 6 "
+    "and 9, and give G an open, obvious bar. Then 5 and S, 6 and G, and 2 and Z stay apart."
+)
 NO_CAMERA = (
     "Do not photograph this and do not type it into any website, chat or password manager. "
     "Paper and pen only."
@@ -56,8 +60,8 @@ NOT_PROOF = (
 )
 GUESSWORK = (
     "This was worked out from what you could still read. It was not read off the card, and codex32 "
-    "cannot tell you it is right. Copy it onto a fresh card, then prove it by restoring your wallet "
-    "and checking the master fingerprint against your wallet record."
+    "cannot tell you it is right. Copy it onto a fresh card, then check it by restoring your wallet "
+    "and comparing the master fingerprint with your wallet record."
 )
 _CREATED = (
     "Your wallet is ready",
@@ -456,6 +460,7 @@ def _write_page(
     content = _column(
         _title("Write it down", where),
         _note("Use pen on a card you can keep dry. Copy each shaded group exactly, left to right."),
+        _note(HANDWRITING),
         shown,
         _note(f"Label this card {letter}. The letter after {name} is the card's name."),
         _note(NO_CAMERA, "warning"),
@@ -603,13 +608,13 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
         chosen = list(details)[_selected(buttons)]
         if chosen != "Something else":
             threshold, count = next((t, c) for t, c, label in PRESETS if label == chosen)
-            _begin_cards(view, core, threshold, count, SEED_SIZES[0][0])
+            view.push(_ready_page(view, core, threshold, count, SEED_SIZES[0][0]))
             return
         threshold, count = int(needed.get_value()), int(total.get_value())
         if count < threshold:
             _failure(view, "A backup cannot need more cards than it has.")
             return
-        _begin_cards(view, core, threshold, count, SEED_SIZES[size.get_selected()][0])
+        view.push(_ready_page(view, core, threshold, count, SEED_SIZES[size.get_selected()][0]))
 
     content = _column(
         _title(
@@ -623,6 +628,56 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
     return _page(
         "New wallet", content, actions=_actions(_button("Continue", begin, style="suggested-action"))
     )
+
+
+def _ready_page(
+    view: Adw.NavigationView, core: BitcoinCore, threshold: int, count: int, byte_length: int
+) -> Adw.NavigationPage:
+    """Ask for the cards and the wallet record before any card is shown.
+
+    The last page asks for the wallet record, so it is asked for here, while
+    there is still time to fetch or print one.
+    """
+    cards = "one blank recovery card" if count == 1 else f"{count} blank recovery cards"
+    status = _note(
+        "Each form opens in your browser. Print it blank, then fill it in by hand in archival ink. "
+        "Never print a filled-in card: a printer can keep a copy."
+    )
+
+    def show(name: str) -> None:
+        # A confined browser (Tor Browser on Tails) may not read the package, so a
+        # launcher can copy the forms somewhere it can and name that folder here.
+        folder = GLib.getenv("CODEX32_FORMS_DIR")
+        path = f"{folder}/{name}" if folder else str(FORMS.joinpath(name))
+
+        def opened(launcher: Gtk.FileLauncher, result: Gio.AsyncResult) -> None:
+            try:
+                launcher.launch_finish(result)
+            except GLib.Error:
+                _say(status, f"That form did not open. It is at {path}", "warning")
+
+        if Gtk.check_version(4, 10, 0) is not None:  # FileLauncher arrived in GTK 4.10.
+            _say(status, f"Open this form in a browser to print it: {path}", "warning")
+            return
+        Gtk.FileLauncher(file=Gio.File.new_for_path(path)).launch(view.get_root(), None, opened)
+
+    content = _column(
+        _title("Before you start", f"Have {cards}, a pen, and one wallet record ready."),
+        _note(
+            "The wallet record is a separate sheet for the master fingerprint and the other wallet "
+            "details shown at the end. It cannot spend your bitcoin, but it helps confirm later that "
+            "restored cards match your recorded wallet before import. Keep it apart from every card."
+        ),
+        _button("Open the recovery card form", lambda: show("recovery-card.html")),
+        _button("Open the wallet record form", lambda: show("wallet-verification-record.html")),
+        status,
+    )
+    begin = _button(
+        "I have them ready",
+        lambda: _begin_cards(view, core, threshold, count, byte_length),
+        style="suggested-action",
+    )
+    return _page("New wallet", content, actions=_actions(begin))
 
 
 def _begin_cards(
@@ -1084,8 +1139,8 @@ def _finished_page(view: Adw.NavigationView, record: Record, restoring: bool = F
     """Show the wallet-identity fields.
 
     A new wallet's are copied onto the wallet record. A restored wallet's are the
-    only proof the cards just entered belong to that wallet, so they are checked
-    against the record instead, and no creation date is offered: the one this
+    final accident-safety checks that the cards just entered match the recorded
+    wallet, so they are checked against the record instead, and no creation date is offered: the one this
     wallet was born with is on the record already, and today's would replace it.
     """
     heading, asked, closing = _RESTORED if restoring else _CREATED
