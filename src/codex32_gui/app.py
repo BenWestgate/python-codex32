@@ -26,9 +26,7 @@ class Application(Adw.Application):
             )
         view = Adw.NavigationView()
         view.push(pages.home(view))
-        window = Adw.ApplicationWindow(
-            application=self, title="codex32", default_width=880, default_height=620, content=view
-        )
+        window = Adw.ApplicationWindow(application=self, title="codex32", default_width=880, content=view)
         window.present()
 
 
