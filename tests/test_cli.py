@@ -1518,7 +1518,9 @@ def test_confirmation_alignment_shows_only_entered_text(
     expected = "abcdefghWXYZijklmnop" if observed == "abcdefghijklmnop" else "abcdefghijklmnop"
     if observed == "aaaaaaa":
         expected = "aaaaaaaa"
-    groups, changed = input_module._entered_groups(observed, expected)
+    from codex32._confirmation import _entered_groups
+
+    groups, changed = _entered_groups(observed, expected)
     actual = input_module._render_groups(groups, changed, len(expected))
     plain = re.sub(r"\x1b\[[0-9;]*m", "", actual)
 
@@ -2251,7 +2253,7 @@ def test_production_size_budgets_are_enforced() -> None:
 def test_confirmation_alignment_assigns_complete_canonical_groups(
     observed: str, expected: str, groups: list[str], changed: set[int]
 ) -> None:
-    from codex32._cli_input import _entered_groups
+    from codex32._confirmation import _entered_groups
 
     assert _entered_groups(observed, expected) == (groups, changed)
     assert "".join(groups) == observed
@@ -2408,7 +2410,7 @@ def test_confirmation_placeholders_only_replace_wholly_omitted_groups(
 def test_confirmation_grouped_alignment_preserves_token_ownership(
     observed: str, expected: str, groups: list[str], changed: set[int]
 ) -> None:
-    from codex32._cli_input import _entered_groups
+    from codex32._confirmation import _entered_groups
 
     assert _entered_groups(observed, expected) == (groups, changed)
     assert "".join(groups) == observed

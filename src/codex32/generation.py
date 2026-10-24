@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import NoReturn, SupportsIndex, cast
 
 from codex32._bip32 import _valid_root
+from codex32._confirmation import _compact
 from codex32.bech32 import CHARSET, _u5_to_chars, convertbits
 from codex32.bip93 import (
     IDX_SORT,
@@ -359,8 +360,7 @@ class CreationCeremony:
             raise CeremonyStateError("request a card before confirming it")
         if not isinstance(text, str):
             raise TypeError("confirmation text must be str")
-        observed = "".join(text.split())
-        observed = "".join(char.lower() if char.isascii() else char for char in observed)
+        observed = _compact(text)
         expected = self._pending.text.lower()
         mismatched = tuple(
             group + 1
