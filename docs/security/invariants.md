@@ -3,9 +3,11 @@
 These rules are mandatory. The [security model](model.md) defines their limits
 and evidence.
 
-1. Constructing a `Codex32String` or `MasterSeed` validates its text. Generic container
-   and header checks precede the checksum; the `ms` length rule follows it.
-   Other HRPs remain generic and never gain invented application semantics.
+1. Constructing a `Codex32String` or `MasterSeed` validates its text;
+   `MasterSeed.from_seed` and the private `_from_unchecksummed_string()`
+   worksheet helper build text only to construct one. Generic container and
+   header checks precede the checksum; the `ms` length rule follows it. Other
+   HRPs remain generic and never gain invented application semantics.
 2. APIs accept only immutable validated artifacts. Outputs are reparsed;
    recovery and derivation reject sets with mismatched normalized HRPs or shapes.
 3. Shared creation uses a separate OS-CSPRNG call for each random initial share,

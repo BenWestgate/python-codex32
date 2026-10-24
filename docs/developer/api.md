@@ -322,15 +322,6 @@ other HRP. `hrp` is a case-insensitive string stored in lowercase. The context f
 - `immutable_prefix`, program-supplied text outside the correction domain; and
 - `excluded_indices`, ordinary share indices already accepted in a recovery.
 
-Applications restoring a share set can call
-`CorrectionContext.from_shares(accepted, hrp=None, expected_length=None, immutable_prefix=None)`.
-It derives the fixed length, complete header prefix, and excluded indices from
-compatible, validated ordinary shares. An explicit length, prefix, or HRP may
-only agree with those shares. With no accepted shares, `hrp` is required and
-optional length and prefix hints have the same meaning as the direct constructor.
-The CLI uses this factory for interactive recovery and standalone correction;
-graphical and other clients can share that constraint logic.
-
 With or without `expected_length`, `ms` correction searches only valid
 master-seed lengths reachable by a supported structural family. Another HRP
 considers character offsets -4 through +4 and group offsets -8/-4/0/+4/+8,

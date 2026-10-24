@@ -24,7 +24,6 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cache, lru_cache
-from itertools import islice
 from math import comb
 from time import monotonic
 from typing import Literal
@@ -45,7 +44,6 @@ from codex32.bip93 import (
     _has_generation_padding,
     _header,
     _validate_ms_length,
-    _validate_recovery_prefix,
     parse_codex32,
 )
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
@@ -81,47 +79,6 @@ class CorrectionContext:
         object.__setattr__(self, "expected_length", expected_length)
         object.__setattr__(self, "immutable_prefix", immutable_prefix)
         object.__setattr__(self, "excluded_indices", excluded_indices)
-
-    @classmethod
-    def from_shares(
-        cls,
-        accepted: Sequence[Codex32String],
-        *,
-        hrp: str | None = None,
-        expected_length: int | None = None,
-        immutable_prefix: str | None = None,
-    ) -> "CorrectionContext":
-        """Constrain a correction using compatible, previously accepted ordinary shares.
-
-        When no shares have been accepted, ``hrp`` identifies the application.
-        Supplied length and prefix hints may narrow, but never contradict, a set.
-        """
-        shares = tuple(islice(accepted, 10))
-        if shares:
-            try:
-                _validate_recovery_prefix(shares)
-            except (CodexError, TypeError, ValueError) as error:
-                raise InvalidCorrectionInput("accepted shares must be compatible ordinary shares") from error
-            first = shares[0]
-            if hrp is not None and (not isinstance(hrp, str) or hrp.lower() != first.hrp):
-                raise InvalidCorrectionInput("hrp conflicts with accepted shares")
-            if expected_length is not None and expected_length != len(first.s):
-                raise InvalidCorrectionInput("expected_length conflicts with accepted shares")
-            header_prefix = f"{first.hrp}1{first.k}{first.ident}"
-            if immutable_prefix is not None and (
-                not isinstance(immutable_prefix, str)
-                or not header_prefix.startswith(immutable_prefix.lower())
-            ):
-                raise InvalidCorrectionInput("immutable_prefix conflicts with accepted shares")
-            if immutable_prefix is not None and immutable_prefix.isupper():
-                header_prefix = header_prefix.upper()
-            context = cls(first.hrp, len(first.s), header_prefix, tuple(share.share_idx for share in shares))
-        else:
-            if hrp is None:
-                raise InvalidCorrectionInput("hrp is required without accepted shares")
-            context = cls(hrp, expected_length, immutable_prefix)
-        _validate_context(context)
-        return context
 
 
 @dataclass(frozen=True, slots=True)
