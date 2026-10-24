@@ -16,8 +16,7 @@ and evidence.
    the wallet record, or by an explicit no-record choice made after seeing the
    recovered fingerprint and whether the backup identifier matches this
    project's fingerprint-derived default. This check is not authentication. Fresh
-   `ms32 create` ceremonies do not authenticate against a pre-existing wallet;
-   they require the operator to record the new fingerprint.
+   `ms32 create` ceremonies require the operator to record the new fingerprint.
 5. Correction shares one mass bound and deadline across target lengths. The
    public API fails closed on incomplete required work; CLI searches may return
    one primary-best-so-far eligible candidate at the deadline. Incomplete
