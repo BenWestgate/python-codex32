@@ -13,6 +13,7 @@ no wallet is opened, created, or changed.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from itertools import pairwise
 from typing import Any
 
 import gi
@@ -305,7 +306,7 @@ class Walkthrough(app.Application):
         def reading_order(points: list[tuple[float, float]]) -> bool:
             return all(
                 before_y <= y and (before_y < y or before_x < x)
-                for (before_x, before_y), (x, y) in zip(points, points[1:])
+                for (before_x, before_y), (x, y) in pairwise(points)
             )
 
         points = positions()
