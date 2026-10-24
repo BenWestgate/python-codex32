@@ -14,8 +14,8 @@ and evidence.
    Restore authenticates the recovered seed before any wallet is listed,
    unlocked, or imported into: normally with the master fingerprint typed from
    the wallet record, or by an explicit no-record choice made after seeing the
-   recovered fingerprint and whether the backup identifier matched a
-   seed-derived rule or its standard Bails check was unavailable. Fresh
+   recovered fingerprint and whether the backup identifier matches this
+   project's fingerprint-derived default. This check is not authentication. Fresh
    `ms32 create` ceremonies do not authenticate against a pre-existing wallet;
    they require the operator to record the new fingerprint.
 5. Correction shares one mass bound and deadline across target lengths. The
