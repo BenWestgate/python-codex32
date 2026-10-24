@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import secrets
 import shutil
 import string
 import subprocess
+import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from time import sleep
@@ -433,3 +437,139 @@ class BitcoinCore:
             if waited:
                 tell("")
             return name
+
+
+class CoreEntropy:
+    """Draw randomness from fresh Bitcoin Core HD keys, in a new temporary encrypted wallet per draw."""
+
+    def __init__(self, core: BitcoinCore, tell: Callable[[str], None]) -> None:
+        self._core, self._tell, self._folder, self._disk, self._loaded = core, tell, "", "", ""
+        self._passphrase, self._warned = secrets.token_hex(32), False
+
+    def __call__(self, length: int) -> bytes:
+        """Return ``length`` bytes; the draw's wallet is gone before they are used, even if it fails."""
+        try:
+            try:
+                data = self._draw(length)
+            except BaseException:
+                try:
+                    self._close()
+                except BitcoinCoreError as left:
+                    self._tell(str(left))  # the error already on its way says what the cards are worth
+                raise
+            self._close()  # A stuck wallet stops creation here, before the next card.
+            return data
+        except BitcoinCoreError as error:
+            raise BitcoinCoreError(
+                f"{error} New cards need Bitcoin Core's randomness, so creation stopped. "
+                "Mark any cards from it void."
+            ) from error
+
+    def _draw(self, length: int) -> bytes:
+        wallet = self._wallet()
+        self._core._rpc("walletpassphrase", wallet=wallet, stdin=f"{self._passphrase}\n60\n")
+        data = b""
+        try:
+            while len(data) < length:
+                added = self._core._rpc("addhdkey", wallet=wallet)
+                keys = self._core._rpc("-named", "gethdkeys", "private=true", wallet=wallet)
+                xpub = added.get("xpub") if isinstance(added, dict) else None
+                listed = keys if isinstance(keys, list) else []
+                xprvs = [
+                    key.get("xprv") for key in listed if isinstance(key, dict) and key.get("xpub") == xpub
+                ]
+                if not isinstance(xpub, str) or len(xprvs) != 1 or not isinstance(xprvs[0], str):
+                    raise BitcoinCoreError("Bitcoin Core did not return a fresh HD key.")
+                # Hashing keeps the plaintext xpub in the wallet file from checking guesses of a share. The
+                # OS bytes keep that xpub from capping the key near 128 bits while the OS generator works.
+                data += hashlib.sha256(xprvs[0].encode() + secrets.token_bytes(32)).digest()
+        finally:
+            self._core._rpc("walletlock", wallet=wallet)
+        return data[:length]
+
+    def _wallet(self) -> str:
+        if not self._folder:
+            self._folder = self._ram_folder()
+            # Track the wallet first: Core may load it even if its answer never arrives.
+            wallet = self._loaded = os.path.join(self._folder, "w")
+            try:
+                self._core._rpc(
+                    "-named",
+                    "createwallet",
+                    f"wallet_name={wallet}",
+                    "blank=true",
+                    "load_on_startup=false",
+                    stdin=f"passphrase={self._passphrase}\n",
+                )
+            except BitcoinCoreError as error:
+                raise BitcoinCoreError(
+                    f"Bitcoin Core could not create a wallet in {self._folder}. "
+                    "Run Core as your own user, outside any sandbox."
+                ) from error
+        return os.path.join(self._folder, "w")
+
+    def _ram_folder(self) -> str:
+        if os.path.isdir("/dev/shm"):
+            return tempfile.mkdtemp(prefix="codex32-", dir="/dev/shm")
+        if sys.platform == "darwin":
+            # A RAM disk needs no admin rights on macOS. Bitcoin Core's test guide uses the same commands:
+            # https://github.com/bitcoin/bitcoin/blob/v29.0/test/README.md#speed-up-test-runs-with-a-ram-disk
+            volume = f"/Volumes/codex32-{secrets.token_hex(4)}"
+            attach = ("/usr/bin/hdiutil", "attach", "-nomount", "ram://32768")
+            self._disk = subprocess.run(attach, capture_output=True, text=True, check=False).stdout.strip()
+            erase = ("/usr/sbin/diskutil", "erasevolume", "HFS+", os.path.basename(volume), self._disk)
+            erased = self._disk and not subprocess.run(erase, capture_output=True, check=False).returncode
+            if erased and os.path.ismount(volume):
+                return volume
+        folder = tempfile.mkdtemp(prefix="codex32-")
+        if self._warned:
+            return folder
+        self._warned = True
+        self._tell(
+            f"No RAM folder was found, so Bitcoin Core's temporary encrypted wallets will be on disk in "
+            f"{os.path.dirname(folder)} while they draw. If this computer's own random generator is "
+            "broken, anyone who later recovers those deleted files could recover the new cards. To avoid "
+            "that, press Ctrl-C and use Tails, or point TMPDIR at a RAM drive and run create again. On "
+            r"Windows with WinFsp's Developer files, `net use R: \\memfs64\codex32` and `set TMPDIR=R:\` do "
+            "that without admin rights; `net use R: /delete` removes the drive afterwards."
+        )
+        return folder
+
+    def _close(self) -> None:
+        """Unload and delete the temporary wallet and any RAM disk made for it, or raise.
+
+        Every step is tried, even after Ctrl-C, which is raised again once they have all run.
+        """
+        interrupted = False
+        if self._loaded:
+            # A call that fails or is interrupted may still have reached Core, so ask what it has loaded.
+            try:
+                self._core._rpc("unloadwallet", self._loaded)
+                self._loaded = ""
+            except BitcoinCoreError:
+                pass
+            except KeyboardInterrupt:
+                interrupted = True
+            try:
+                if self._loaded and self._loaded not in self._core._names():
+                    self._loaded = ""
+            except BitcoinCoreError:
+                pass
+            except KeyboardInterrupt:
+                interrupted = True
+        if self._folder:
+            shutil.rmtree(self._folder, ignore_errors=True)
+        detach = ("/usr/bin/hdiutil", "detach", "-force", self._disk)
+        if self._disk and not subprocess.run(detach, capture_output=True, check=False).returncode:
+            self._disk = ""
+        if not os.path.exists(self._folder):
+            self._folder = ""
+        left = self._folder or self._disk
+        if self._loaded or left:
+            raise BitcoinCoreError(
+                "Bitcoin Core's temporary wallet was not removed."
+                + (" Restart Core to unload it." if self._loaded else "")
+                + (f" Delete or eject {left}." if left else "")
+            )
+        if interrupted:
+            raise KeyboardInterrupt

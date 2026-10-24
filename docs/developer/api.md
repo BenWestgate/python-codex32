@@ -37,7 +37,7 @@ generic parse-length failure.
 | checksum and CRC arithmetic | `checksums.py` | official vectors, `test_crc.py` |
 | optional application rules and S types | `profiles/ms32.py`, `cl32.py`, `bip39.py` | profile and BIP39 tests |
 | immutable base artifacts and interpolation | `bip93.py` | BIP93 vectors, `test_sharing.py` |
-| entropy, masks, identifiers, output indices | `generation.py` | `test_generation.py` |
+| entropy, masks, identifiers, output indices | `generation.py`, `CoreEntropy` | `test_generation.py`, `test_bitcoin_core.py` |
 | shared GF(32) arithmetic | `gf32.py` | sharing vectors and correction corpus |
 | fixed BCH and worksheet correction | `correction.py` | `test_correction_bch.py` |
 | structural alignment and admission | `indel.py` | `test_correction_indel.py`, `test_correction_capture.py` |
@@ -67,7 +67,9 @@ generic parse-length failure.
   `.text` attribute.
 - Sharing interpolates payload and checksum together, explicitly constructs the
   target header, and reparses the result.
-- `generation.py` is the only entropy owner; it generates and shares only `ms`.
+- `generation.py` is the only entropy owner; it draws every byte from its
+  caller's `entropy` source (Bitcoin Core in the CLI) and generates and shares
+  only `ms`.
 - Correction never edits the HRP or separator and reparses every candidate.
 - `_bip32.py` stops at HMAC-SHA512 root derivation, scalar validity, and root
   xprv/tprv Base58Check serialization. It performs no child derivation or
@@ -152,9 +154,10 @@ accepts only `ms` artifacts.
 
 ## Secret generation
 
-`generation.py` is the only module that draws entropy. It draws every random
-byte from its caller's `entropy(length)` source, which must return exactly the
-requested number of bytes, and generates and splits BIP93 master seeds only.
+`generation.py` is the only module that draws entropy, always by calling the
+caller's `entropy(length)`, which must return exactly `length` bytes. The CLI
+passes [Bitcoin Core's](#bitcoin-core-randomness). It generates and splits
+BIP93 master seeds only.
 
 Fresh unshared seeds default to 16 bytes and use the first 20 bits of their
 BIP32 fingerprint as public identifier metadata. Fresh shared sets use four
@@ -177,7 +180,7 @@ A fresh seed with no `identifier` needs `fingerprint`: a callable that takes
 the seed bytes and returns their four-byte BIP32 master fingerprint. This
 package has no secp256k1 arithmetic, so the CLI asks Bitcoin Core. Without
 either argument, fresh generation raises `ValueError`, as does any draw without
-an entropy source.
+`entropy`.
 
 Shared creation uses `CreationCeremony.master_seed(...)` or
 `CreationCeremony.from_secret(...)`; both require `entropy`. Exactly one of
@@ -210,9 +213,10 @@ The ceremony follows the two BIP93 constructions:
 
 Each direct share uses a separate `entropy` request and cannot be followed by
 another draw until its string is confirmed. The pause gives the source an
-opportunity to mix fresh noise; nothing guarantees new physical entropy between
-calls. User input is never used as share bytes. Symbols are the drawn bytes
-regrouped five bits at a time, so `n` symbols take `ceil(5n/8)` bytes.
+opportunity to mix fresh noise; nothing guarantees that new physical entropy
+arrives between calls. User input is never used as share bytes. Symbols are
+the drawn bytes regrouped five bits at a time, so `n` symbols take
+`ceil(5n/8)` bytes: 17 for a 128-bit share, 65 for a 512-bit one.
 
 Creation confirmation preserves whitespace-separated entered groups as units,
 even when moving characters between groups would reduce edits or red groups.
@@ -259,9 +263,9 @@ remain fixed. That padding rule is not BIP93 validity: parsed S strings may use
 any application-valid discarded bits, which re-sharing preserves exactly. CRC
 never applies to shares.
 
-Explicit output indices preserve caller order. A share count picks from the 31
-ordinary indices by rejection sampling `entropy` bytes, in draw order. There is
-no sorting, caller-supplied partial-basis
+Explicit output indices preserve caller order. A share count picks
+from the 31 ordinary indices by rejection sampling of `entropy` bytes, in draw
+order. There is no sorting, caller-supplied partial-basis
 completion, or BIP39 generation. Ceremonies reject copying and serialization;
 the CLI does not resume an interrupted ceremony.
 
@@ -641,6 +645,32 @@ The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
 `createwalletdescriptor`, `importdescriptors`, and `walletlock`.
 Bitcoin Core alone creates wallets, selects encryption, handles
 passphrases, stores keys, and provides normal wallet behavior.
+
+### Bitcoin Core randomness
+
+`ms32 create` draws every random byte from `CoreEntropy`, so it stops if Core
+cannot supply them. Core's `GetStrongRandBytes` mixes the OS generator with
+RDRAND/RDSEED where available, timestamps, and accumulated state. Each draw
+creates a blank temporary wallet in RAM: `/dev/shm` on Linux, a RAM disk from
+`hdiutil` on macOS, otherwise the temp folder on disk with one warning. It is
+encrypted from birth with a 256-bit `secrets` passphrase sent only on stdin.
+The draw unlocks it, runs `addhdkey` once per 32 bytes, takes the SHA-256 of
+the xprv from `gethdkeys private=true` followed by 32 bytes from `secrets`,
+relocks it, and unloads and deletes it before returning any bytes. Hashing
+stops the xpub, which the wallet file stores unencrypted, from checking
+guesses of a share. The OS bytes stop a leaked file's xpubs from capping each
+key at about 128-bit security, Bitcoin's own ECDLP bound, so a working OS
+generator alone keeps full strength and a broken one leaves Core's. If the OS
+generator is broken and the file leaks, the passphrase is weak too, and only
+RAM keeps the file safe. Each draw removes its wallet even when it fails or is
+interrupted by Ctrl-C, SIGHUP, or SIGTERM, so callers have nothing to close.
+If the wallet can't be removed, creation stops before the next card. These
+extra calls are `createwallet`, `walletpassphrase`, `gethdkeys`, and
+`unloadwallet`.
+
+The temporary wallet only works around Core having no call that returns
+random bytes. If Core gains one, or can export a seed, only `CoreEntropy`
+changes: `generation.py` and both front ends keep calling `entropy(length)`.
 
 The wallet CLI is one leaf command:
 

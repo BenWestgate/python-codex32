@@ -73,8 +73,12 @@ Before running `create` for a real wallet, have your blank cards, a pen, and
 wallet record ready, and choose separate trusted places for shared cards.
 If you want to try the process first, use the signet practice setup below.
 
-Run Bitcoin Core before starting. If practical, disconnect the computer from
-external networks while recovery text is on screen. codex32 talks only to the
+Run Bitcoin Core before starting: `create` needs Core for its randomness.
+For each card's randomness, Core makes a temporary encrypted wallet in RAM
+(macOS briefly shows a small `codex32-` disk) and deletes it before the card
+is shown. If
+practical, disconnect the computer from external networks while recovery text
+is on screen. codex32 talks only to the
 local Core instance at `127.0.0.1` during setup.
 
 For graphical practice on signet, start Bitcoin-Qt with:
@@ -156,7 +160,7 @@ the selected encrypted wallet is locked, open **Window > Console** in
 Bitcoin-Qt, select the named wallet, and enter
 `walletpassphrase "YOUR PASSPHRASE" 5`. codex32 waits and continues
 automatically. It imports account 0, verifies the public descriptors Core
-accepted, and relocks the wallet. It does not create wallets or choose
+accepted, and relocks the wallet. It does not create your wallet or choose its
 encryption.
 
 You are done with this step when the terminal says:

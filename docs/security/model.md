@@ -26,7 +26,7 @@ fingerprints, and wallet history cannot spend funds but remain privacy-sensitive
 | Package API | Recovery, derivation, sharing, and wallet operations accept validated artifacts, not unchecked text. |
 | Python process | Secret objects remain in process memory; normal output must not reveal them unintentionally. |
 | Operator and paper | The operator controls transcription, physical recovery cards, wallet records, and acceptance of correction suggestions. |
-| Entropy and root keys | The operating-system cryptographically secure random-number generator (OS-CSPRNG) and Python stdlib HMAC/SHA-512 primitives are trusted. codex32 performs only BIP32 root validation and root xprv/tprv serialization in process. |
+| Entropy and root keys | Every random byte of `ms32 create` hashes a fresh Bitcoin Core HD key, from a generator that mixes in the operating-system cryptographically secure random-number generator (OS-CSPRNG), with 32 more OS-CSPRNG bytes; either source alone keeps the bytes unpredictable. Python stdlib HMAC/SHA-512 primitives are trusted. codex32 performs only BIP32 root validation and root xprv/tprv serialization in process. |
 | Bitcoin Core | The selected `bitcoin-cli`, its configuration, the selected local Core instance, and the destination computer are trusted for fingerprints, hardened/public-key derivation, and wallet initialization. |
 
 ## Operator assumptions
@@ -64,8 +64,11 @@ The operator must:
   implementation. Elliptic-curve public-key derivation used for fingerprints,
   xpubs, and public descriptors is delegated to the separately running Bitcoin
   Core process.
-- Separate OS-CSPRNG calls provide opportunities to mix fresh noise but cannot
+- Separate Core draws provide opportunities to mix fresh noise but cannot
   guarantee new physical entropy between calls.
+- The temporary randomness wallet's passphrase comes from the OS-CSPRNG. Where
+  no RAM folder exists, as on Windows, the encrypted wallet briefly sits on
+  disk. Swap, RAM disks and tmpfs can page memory, including secrets, to disk.
 - A checksum, generation-padding hint, fingerprint, or correction candidate
   does not authenticate a backup or prove the operator's intent.
 - Creation feedback identifies correct groups but does not prove the recovery card was corrected.
@@ -116,9 +119,9 @@ complete explicit `ms1` string.
 ## Creation, sharing, and recovery controls
 
 Fresh shared creation generates *k* random initial shares. Each uses a separate
-full-payload OS-CSPRNG request. The current share string must be re-entered
+full-payload request to Bitcoin Core. The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
-text is never reparsed as the source secret and contributes no entropy. Existing
+text is never reparsed as the source secret or used as share bytes. Existing
 complete Bitcoin master seeds are confirmed unchanged and initialize the wallet
 without new entropy. The `ms32` façade rejects CL. The generic API parses,
 inspects, and corrects unshared CL secrets only: Core Lightning rejects shares
@@ -132,8 +135,8 @@ Progressive group-level correctness feedback is explicitly accepted and does not
 
 Confirmation shows that the operator can produce the correct recovery string during setup. It cannot prove that the physical backup was corrected rather than reconstructed using confirmation feedback.
 
-The API accepts neither caller-provided entropy nor padding values, partial
-bases, or resumable ceremony state. Fresh creation rejects final-share
+The API draws randomness only from its caller's `entropy` source and accepts no
+padding values, partial bases, or resumable ceremony state. Fresh creation rejects final-share
 candidates whose generation padding is invalid. Master-seed creation also
 rejects candidates that cannot form a valid BIP32 root. This check uses only
 stdlib HMAC-SHA512 plus the secp256k1 scalar-order bound; it performs no point
@@ -234,10 +237,10 @@ signing setup belong to Bitcoin Core's maintained v32 workflow.
 |---|---|
 | Preflight | Before entropy or recovery input, explicit chain arguments probe the five standard local networks for Bitcoin Core 32 or newer. One response is selected automatically; multiple responses require operator selection. |
 | Recovery identity | `ms32 wallet` and `ms32 create --existing` authenticate a recovered seed before any wallet is listed. Core derives the recovered fingerprint statelessly, and a mismatch raises `FingerprintMismatch` before any wallet RPC. The restore prompt does not show the recovered value, so the operator compares by typing the fingerprint from the wallet record. Without a record, the operator is shown the recovered fingerprint, whether the backup identifier was derived from the seed (the codex32 fingerprint rule, Bails' RIPEMD-160 rule, or its mid-2023 alpha's SHA-256 rule), and a warning, and then chooses. Fresh `ms32 create` has no pre-existing wallet to authenticate: it shows the newly created seed's fingerprint and requires the operator to acknowledge recording it. These checks catch mistakes such as wrong or mixed cards; anyone able to replace a threshold of cards could already read them. |
-| Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, wallet database, or wallet-creation operation. Every call uses loopback and the selected chain. |
+| Process boundary | codex32 invokes the reviewed `bitcoin-cli` from `PATH` as a child without a shell, direct RPC socket, or wallet database; its only wallet creation is the temporary randomness wallet. Every call uses loopback and the selected chain. |
 | Destination | Only an empty descriptor wallet with private keys enabled, no external signer, transactions, descriptors, keypool entries, or active scan is eligible. One eligible wallet is offered directly; multiple wallets are selected by number. New wallets are detected by polling, and rejection returns to every eligible wallet. The escaped name is confirmed exactly. |
 | Seed source | The original ceremony result or validated recovered master seed supplies a root xprv for Core's reported chain. Core v32 creates BIP44, BIP49, BIP84, and BIP86 account-0 descriptors from that key. |
-| Secret channel | The master xprv is sent only through the child's standard input. A timestamped rescan obtains one private descriptor from Core's captured stdout and returns it through stdin; neither value is printed or passed in arguments or diagnostics. codex32 has no passphrase channel and suppresses raw Core errors. |
+| Secret channel | The master xprv is sent only through the child's standard input. A timestamped rescan obtains one private descriptor from Core's captured stdout and returns it through stdin; neither value is printed or passed in arguments or diagnostics. codex32 never handles the operator's wallet passphrase and suppresses raw Core errors. |
 | Revalidation | Every destination property is checked again immediately before adding the key. `addhdkey` must accept it and `createwalletdescriptor` must return two public descriptors for each requested address type. Numeric recovery timestamps trigger Core's time-based rescan (genesis for `0`), with no guessed block height. Core is trusted to derive and store the wallet policy. |
 | Relocking | Once Core reports an encrypted private-key wallet unlocked, a `finally`-protected obligation requests `walletlock` and verifies the locked state after success, failure, state change, or interruption. |
 
