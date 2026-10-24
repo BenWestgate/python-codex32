@@ -31,21 +31,18 @@ fingerprints, and wallet history cannot spend funds but remain privacy-sensitive
 
 ## Operator assumptions
 
-A **trusted computer** is under the operator's exclusive control, is not known
-or suspected to be compromised, and runs an operating system and other software
-the operator trusts for the operation. For codex32 wallet work, that trusted
-software includes the Python environment, codex32, the terminal, `bitcoin-cli`,
-Bitcoin Core, and their relevant configuration. An offline trusted computer
-remains disconnected from every network before, while, and after it handles
-private recovery or signing material. Wallet encryption, application
-permissions, and RPC authentication do not make a compromised computer trusted.
+A **trusted computer** is one the operator controls and has no reason to suspect
+is compromised, with trusted software and configuration, including Python,
+codex32, the terminal, `bitcoin-cli`, and Bitcoin Core. Wallet encryption cannot
+protect secrets from malware. A dedicated offline signer stays disconnected
+from every network, including after use.
 
 The operator must:
 
 - use only Bitcoin Core descriptor wallets to sign with keys derived from a
   codex32 master seed;
-- use only trusted computers as defined above for codex32 operations, wallet
-  initialization, and signing with Bitcoin Core;
+- use a trusted computer for operations involving recovery material, wallet
+  initialization, or signing with Bitcoin Core;
 - disconnect every computer used for offline codex32 or signing work from all
   network paths, including Ethernet, internet, Tor, Wi-Fi, Bluetooth, and
   cellular;
@@ -61,13 +58,10 @@ The operator must:
 - never put recovery text in command arguments or transfer a master seed,
   share, xprv, or private descriptor through QR or a network service.
 
-`create`, `secret`, `share`, `correct`, and `xprv` can intentionally display
-secret-bearing recovery material because producing or exporting that material is
-their purpose. This is distinct from accidental disclosure: unrelated status,
-diagnostic, logging, and wallet-integration output must not reveal secrets.
-Prompted input and standard-input redirection keep recovery text out of process
-arguments, but the operator must also keep the text out of shell command text;
-shell history, terminal logging, wrappers, or process tooling may retain it.
+`create`, `secret`, `share`, `correct`, and `xprv` intentionally display recovery
+material. Unrelated output and diagnostics must not disclose it. Enter recovery
+text only when prompted or through stdin; putting it in a shell command can
+expose it through history or process arguments.
 
 ## Security limitations
 
