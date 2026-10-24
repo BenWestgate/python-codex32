@@ -87,24 +87,18 @@ codex32 detects and reports the local Bitcoin Core network. You do not need to
 change `bitcoin.conf` when using the standard local data directory and RPC
 port.
 
-Use a trusted computer: one under your exclusive control, not known or suspected
-to be compromised, with its operating system, Python environment, terminal,
-codex32, `bitcoin-cli`, Bitcoin Core, and relevant configuration trusted for the
-operation. Wallet encryption or RPC authentication does not make a compromised
-computer safe. An offline trusted computer stays disconnected from every network
-before, while, and after it handles private recovery or signing material. Only
-codex32 and Bitcoin Core should perform recovery, derivation, wallet
-initialization, or signing. The QR tools below transport only public descriptors
-or PSBTs.
+Use a computer you control and whose software you trust. Malware can steal
+recovery material even from an encrypted wallet. For more protection, disconnect
+from all networks before entering secrets and stay offline until shutdown.
+Use codex32 to create or recover backups, and Bitcoin Core to manage your wallet,
+review transactions, and sign them. QR codes below carry only public wallet
+details or partially signed transactions.
 
-Bitcoin Core wallet encryption is strongly recommended. Bitcoin Core owns the
-passphrase and its prompts; codex32 never asks for, reads, or forwards it.
+Bitcoin Core wallet encryption is strongly recommended. Keep its passphrase
+safe; codex32 never asks for it.
 
-Do not type recovery text on the same line as a command: shell history, terminal
-logging, wrappers, or process tooling may retain the command text. Run the
-command first, then enter a master seed or shares on the separate `>` line when
-prompted. Standard-input redirection also keeps recovery text out of process
-arguments, but protect the redirected source separately.
+Run the command first, then type your seed or shares at the `>` prompt. Never
+put recovery text in the command itself: your shell may save that text.
 This keeps a 48-character string grouped in fours within an 80-column terminal.
 Later share prompts may show a fixed common header after `>`. Never photograph
 recovery text or put it in a website, chat, cloud clipboard, or online QR
