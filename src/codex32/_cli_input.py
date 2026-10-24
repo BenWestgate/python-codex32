@@ -17,8 +17,8 @@ from codex32.bip93 import (
     Secret,
     Share,
     _checksum_for_encoded_length,
-    _validate_basis_prefix,
     _validate_recovery_prefix,
+    _validate_share_set,
     parse_codex32,
     recover_secret,
 )
@@ -30,9 +30,9 @@ from codex32.errors import (
     InvalidChecksum,
     InvalidLength,
     InvalidThreshold,
+    MismatchedHrp,
     MismatchedIdentifier,
     MismatchedPayloadLength,
-    MismatchedProfile,
     MismatchedThreshold,
     SecretInRecoverySet,
 )
@@ -597,8 +597,10 @@ def _validate_operational_artifact(
         raise ExistingTargetIndex("That index was requested for the additional share.")
     if not one and (accepted or isinstance(artifact, Share) or basis):
         recovering = not basis and isinstance(artifact, Share)
-        validator = _validate_recovery_prefix if recovering else _validate_basis_prefix
-        validator([*accepted, artifact])
+        if recovering:
+            _validate_recovery_prefix([*accepted, artifact])
+        else:
+            _validate_share_set([*accepted, artifact], require_exact=False)
 
 
 def _redirected(
@@ -661,7 +663,7 @@ def _redirected(
 
 _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
     InvalidChecksum: "The checksum does not match.",
-    MismatchedProfile: "These strings are for different applications.",
+    MismatchedHrp: "These strings are for different applications.",
     MismatchedThreshold: "These strings require different numbers of shares.",
     MismatchedIdentifier: "These strings have different identifiers.",
     MismatchedPayloadLength: "These strings have different lengths.",
