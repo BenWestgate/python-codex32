@@ -104,8 +104,10 @@ def _page(
     *,
     actions: Gtk.Widget | None = None,
     can_pop: bool = True,
+    natural_height: bool = False,
 ) -> Adw.NavigationPage:
     scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
+    scroller.set_propagate_natural_height(natural_height)
     scroller.set_child(Adw.Clamp(maximum_size=700, child=content, margin_start=18, margin_end=18))
     bars = Adw.ToolbarView()
     bars.add_top_bar(Adw.HeaderBar())
@@ -400,7 +402,7 @@ def home(view: Adw.NavigationView) -> Adw.NavigationPage:
         group,
         _note("Everything happens on this computer. codex32 never connects to the internet."),
     )
-    return _page("codex32", content)
+    return _page("codex32", content, natural_height=True)
 
 
 # --- Bitcoin Core preflight ------------------------------------------------
