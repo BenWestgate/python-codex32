@@ -49,6 +49,44 @@ def _indices(shares: tuple[Share, ...]) -> str:
     return "".join(share.header.index for share in shares)
 
 
+def test_repeated_indices_copy_only_confirmed_cards() -> None:
+    secret, shares = _complete(CreationCeremony.master_seed(threshold=2, indices="aacd", identifier="test"))
+    assert isinstance(secret, MasterSeed)
+    assert _indices(shares) == "acda"
+    assert shares[0].text == shares[3].text
+
+
+def test_repeated_indices_do_not_count_toward_threshold() -> None:
+    with pytest.raises(InvalidShareSelection, match="distinct"):
+        CreationCeremony.master_seed(threshold=3, indices="aaac", identifier="test")
+
+
+def test_repeated_cards_require_independent_confirmation() -> None:
+    ceremony = CreationCeremony.master_seed(threshold=2, indices="aac", identifier="test")
+    first = ceremony.next_share()
+    assert ceremony.confirm(first.text).accepted
+    second = ceremony.next_share()
+    assert ceremony.confirm(second.text).accepted
+    repeated = ceremony.next_share()
+    assert repeated.text == first.text
+    assert not ceremony.confirm("incorrect").accepted
+    with pytest.raises(CeremonyStateError, match="confirm the pending"):
+        ceremony.next_share()
+    assert ceremony.confirm(repeated.text).accepted
+    secret = ceremony.finish()
+    assert recover_secret((first, second)) == secret
+
+
+def test_repeated_indices_reuse_existing_secret_shares() -> None:
+    source = generate_master_seed(bytes(range(16)), identifier="test")
+    secret, shares = _complete(
+        CreationCeremony.from_secret(source, threshold=2, indices="aac", identifier="name")
+    )
+    assert _indices(shares) == "aca"
+    assert shares[0].text == shares[2].text
+    assert secret.seed_bytes == source.seed_bytes
+
+
 def _seed(byte_length: int) -> bytes:
     return bytes((position * 109 + byte_length) % 256 for position in range(byte_length))
 
