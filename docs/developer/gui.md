@@ -54,8 +54,9 @@ The entry widget has three internal modes:
 - **Read-back:** starts empty, normalizes only spacing and ASCII case, and never
   reveals expected text after a mismatch.
 
-Enter activates the enabled primary action. Card displays use four
-four-character groups per row, matching `docs/user/recovery-card.html`.
+Enter activates the enabled primary action. Card displays use uppercase
+four-character groups in reading order, on one line when space permits and
+wrapping when needed; the paper layout remains in `docs/user/recovery-card.html`.
 Ordinary repair suggestions are unmarked; explicit correction may mark changed
 groups, which are described as changes rather than known error locations.
 

@@ -13,6 +13,7 @@ no wallet is opened, created, or changed.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from itertools import pairwise
 from typing import Any
 
 import gi
@@ -294,38 +295,35 @@ class Walkthrough(app.Application):
         groups = [item for item in walk(page) if "card-group" in item.get_css_classes()]
         flow = next(item for item in walk(page) if isinstance(item, Gtk.FlowBox))
 
-        def row_positions() -> list[float]:
+        def group_positions() -> list[tuple[float, float]]:
             children = [flow.get_child_at_index(index) for index in range(len(groups))]
-            return [child.compute_bounds(flow)[1].origin.y for child in children]
+            positions = []
+            for child in children:
+                valid, bounds = child.compute_bounds(flow)
+                if not valid:
+                    return []
+                positions.append((bounds.origin.x, bounds.origin.y))
+            return positions
 
-        def four_columns(rows_y: list[float]) -> bool:
-            return len(set(rows_y)) == (len(groups) + 3) // 4 and all(
-                rows_y[index] == rows_y[(index // 4) * 4] for index in range(len(rows_y))
+        def aligned_rows(positions: list[tuple[float, float]]) -> bool:
+            return len(positions) == len(groups) and all(
+                next_y > this_y or (next_y == this_y and next_x > this_x)
+                for (this_x, this_y), (next_x, next_y) in pairwise(positions)
             )
 
-        rows_y = row_positions()
+        positions = group_positions()
         check("Enter invokes repair for short input", "".join(item.get_label() for item in groups) == SHARE_C)
         check(
             "ordinary repair does not claim where the error was",
             not any("guessed" in item.get_css_classes() for item in groups),
         )
         check(
-            "card display uses four aligned groups per row",
-            flow.get_min_children_per_line() == 4
-            and flow.get_max_children_per_line() == 4
-            and four_columns(rows_y),
-            rows_y,
-        )
-        window = self.get_active_window()
-        window.set_default_size(640, 620)
-        settle()
-        narrow = row_positions()
-        window.set_default_size(1100, 620)
-        settle()
-        wide = row_positions()
-        check(
-            "card columns stay aligned when the window is resized",
-            four_columns(narrow) and four_columns(wide),
+            "card display wraps groups in reading order",
+            flow.get_min_children_per_line() == 1
+            and flow.get_max_children_per_line() == len(groups)
+            and aligned_rows(positions)
+            and len({y for _, y in positions}) > 1,
+            positions,
         )
         press(page, "It does not match my card")
         settle()
