@@ -182,6 +182,11 @@ def parser(prog: str = "codex32", *, master_seed: bool = False) -> argparse.Argu
         action="store_true",
         help="use an existing Bitcoin codex32 secret or hexadecimal seed",
     )
+    create.add_argument(
+        "--keystrokes",
+        action="store_true",
+        help="also mix random keys you type into the randomness of new cards",
+    )
 
     wallet = _command(commands, "wallet", "restore a Bitcoin Core wallet")
     _wallet_options(wallet)

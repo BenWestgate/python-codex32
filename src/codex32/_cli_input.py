@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+import getpass
 import os
 import sys
 from collections.abc import Callable, Iterator, Sequence
@@ -163,9 +164,13 @@ def read_text(
     preserve_groups: bool = False,
     prefill: str = "",
     prompt_end: str = ": ",
+    hidden: bool = False,
 ) -> str:
     if sys.stdin.isatty():
-        value = _editable_input(prompt + prompt_end, prefill)
+        # Hidden text is neither shown nor kept in the line editor's history.
+        value = (
+            getpass.getpass(prompt + prompt_end) if hidden else _editable_input(prompt + prompt_end, prefill)
+        )
         _stderr("")
     else:
         value = _stdin().strip()

@@ -442,9 +442,9 @@ class BitcoinCore:
 class CoreEntropy:
     """Draw randomness from fresh Bitcoin Core HD keys, in a new temporary encrypted wallet per draw."""
 
-    def __init__(self, core: BitcoinCore, tell: Callable[[str], None]) -> None:
+    def __init__(self, core: BitcoinCore, tell: Callable[[str], None], typed: str = "") -> None:
         self._core, self._tell, self._folder, self._disk, self._loaded = core, tell, "", "", ""
-        self._passphrase, self._warned = secrets.token_hex(32), False
+        self._passphrase, self._warned, self._typed = secrets.token_hex(32), False, typed.encode()
 
     def __call__(self, length: int) -> bytes:
         """Return ``length`` bytes; the draw's wallet is gone before they are used, even if it fails."""
@@ -468,7 +468,7 @@ class CoreEntropy:
     def _draw(self, length: int) -> bytes:
         wallet = self._wallet()
         self._core._rpc("walletpassphrase", wallet=wallet, stdin=f"{self._passphrase}\n60\n")
-        data = b""
+        data = stretched = b""
         try:
             while len(data) < length:
                 added = self._core._rpc("addhdkey", wallet=wallet)
@@ -481,8 +481,17 @@ class CoreEntropy:
                 if not isinstance(xpub, str) or len(xprvs) != 1 or not isinstance(xprvs[0], str):
                     raise BitcoinCoreError("Bitcoin Core did not return a fresh HD key.")
                 # Hashing keeps the plaintext xpub in the wallet file from checking guesses of a share. The
-                # OS bytes keep that xpub from capping the key near 128 bits while the OS generator works.
-                data += hashlib.sha256(xprvs[0].encode() + secrets.token_bytes(32)).digest()
+                # OS bytes keep that xpub from capping the key near 128 bits while the OS generator works,
+                # and typed keys, which never reach the wallet, cover a broken OS generator and a leaked file.
+                key, os_bytes = xprvs[0].encode(), secrets.token_bytes(32)
+                if self._typed and not stretched:
+                    # Typed keys hold fewer bits than they seem, so each guess costs OWASP's minimum scrypt
+                    # (128 MiB, about a second), salted once per draw.
+                    salt = b"codex32 keystrokes\0" + key + os_bytes
+                    stretched = hashlib.scrypt(
+                        self._typed, salt=salt, n=2**17, r=8, p=1, maxmem=2**28, dklen=32
+                    )
+                data += hashlib.sha256(key + os_bytes + stretched).digest()
         finally:
             self._core._rpc("walletlock", wallet=wallet)
         return data[:length]
