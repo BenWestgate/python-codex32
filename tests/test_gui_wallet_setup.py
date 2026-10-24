@@ -37,6 +37,7 @@ class _Core:
 
     wallets: dict[str, _Wallet]
     runs: list[tuple[tuple[str, ...], str | None]] = field(default_factory=list)
+    created_warnings: list[str] = field(default_factory=list)
 
     def run(self, command: list[str], **keywords: Any) -> subprocess.CompletedProcess[str]:
         supplied = keywords.get("input")
@@ -57,6 +58,10 @@ class _Core:
             return json.dumps(sorted(self.wallets))
         if method == "listdescriptors":
             return json.dumps({"descriptors": []})
+        if method == "getblockchaininfo":
+            return json.dumps({"pruned": False, "mediantime": 1700000000})
+        if method == "getchainstates":
+            return json.dumps({"chainstates": [{"validated": True}]})
         if method == "getwalletinfo":
             assert name is not None
             wallet = self.wallets[name]
@@ -75,7 +80,7 @@ class _Core:
         if method == "createwallet":
             fields = dict(item.split("=", 1) for item in arguments)
             self.wallets[fields["wallet_name"]] = _Wallet("passphrase" in fields, "passphrase" in fields)
-            return json.dumps({"name": fields["wallet_name"]})
+            return json.dumps({"name": fields["wallet_name"], "warnings": self.created_warnings})
         if method == "walletpassphrase":
             assert name is not None
             self.wallets[name].locked = False
@@ -170,9 +175,40 @@ def test_wallet_creation_uses_one_fixed_set_of_flags(monkeypatch: pytest.MonkeyP
     command, supplied = fake.runs[0]
     assert "-named" in command and "createwallet" in command
     assert supplied is not None
-    assert _lines(supplied)[:3] == ["wallet_name=fresh", "disable_private_keys=false", "blank=true"]
-    assert _lines(supplied)[3] == f"passphrase={PASSPHRASE}"
-    assert len(_lines(supplied)) == 4
+    assert _lines(supplied)[:4] == [
+        "wallet_name=fresh",
+        "disable_private_keys=false",
+        "blank=true",
+        "load_on_startup=true",
+    ]
+    assert _lines(supplied)[4] == f"passphrase={PASSPHRASE}"
+    assert len(_lines(supplied)) == 5
+
+
+def test_core_startup_persistence_warnings_are_returned_to_the_operator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core, fake = _client(monkeypatch, {})
+    fake.created_warnings.append(
+        "Wallet load on startup setting could not be updated, so wallet may not be loaded next node startup."
+    )
+    assert wallet_setup.create(core, "fresh", "") == tuple(fake.created_warnings)
+
+
+@pytest.mark.parametrize("warnings", ("could not be saved", None, [None], [1], {"a": 1}))
+def test_an_unexpected_createwallet_result_is_refused(
+    monkeypatch: pytest.MonkeyPatch, warnings: object
+) -> None:
+    core, fake = _client(monkeypatch, {})
+    fake.created_warnings = warnings  # type: ignore[assignment]
+    with pytest.raises(wallet_setup.BitcoinCoreError, match="empty wallet and its warnings"):
+        wallet_setup.create(core, "fresh", "")
+
+
+def test_only_the_warnings_are_searched_for_the_failed_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    core, fake = _client(monkeypatch, {})
+    wallet_setup.create(core, "could not be updated", "")
+    assert "could not be updated" in fake.wallets
 
 
 def test_a_wallet_created_without_a_passphrase_carries_no_passphrase_line(
@@ -181,7 +217,7 @@ def test_a_wallet_created_without_a_passphrase_carries_no_passphrase_line(
     core, fake = _client(monkeypatch, {})
     wallet_setup.create(core, "fresh", "")
     assert fake.runs[0][1] is not None
-    assert len(_lines(fake.runs[0][1])) == 3
+    assert len(_lines(fake.runs[0][1])) == 4
 
 
 @pytest.mark.parametrize("name", ["", " leading", "trailing ", "two\nlines", "bell\x07"])
@@ -261,7 +297,7 @@ def test_an_import_that_fails_before_the_library_arms_its_own_relock_still_locks
 def test_identity_mismatch_is_refused_before_unlock(monkeypatch: pytest.MonkeyPatch) -> None:
     core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
 
-    def mismatch(_core: BitcoinCore, _secret: object, _expected: bytes | None) -> None:
+    def mismatch(_core: BitcoinCore, _secret: object, _expected: bytes | None, _start: object) -> None:
         raise FingerprintMismatch("wrong wallet")
 
     monkeypatch.setattr(wallet_setup, "verify", mismatch)
