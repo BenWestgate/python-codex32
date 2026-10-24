@@ -682,9 +682,33 @@ def test_existing_seed_without_unique_correction_gets_no_hint(monkeypatch, capsy
 
     assert cli_module._creation_source(Profile.MS) == bytes(16)
     assert capsys.readouterr().err == (
-        "Rejected: No unique correction found. Check your backup and re-enter the existing secret "
-        "or hexadecimal seed carefully.\n"
+        "Rejected: No unique correction found. Check your codex32 backup and re-enter it carefully.\n"
     )
+
+
+@pytest.mark.parametrize("bad_hex", ("ab" * 15, "ab" * 17, "a" * 33, "ab" * 33))
+def test_creation_source_reprompts_on_invalid_hex_length(monkeypatch, capsys, bad_hex):
+    cli_module = importlib.import_module("codex32.cli")
+    answers = iter((bad_hex, "00" * 16))
+    seen_prefills = []
+    monkeypatch.setattr(cli_module.sys, "stdin", _TTYInput())
+
+    def answer(*_args, **kwargs):
+        seen_prefills.append(kwargs.get("prefill", None))
+        return next(answers)
+
+    monkeypatch.setattr(cli_module, "_text", answer)
+    monkeypatch.setattr(
+        cli_module,
+        "_suggestions",
+        lambda *_args, **_kwargs: pytest.fail("Hexadecimal seed must not be error-corrected"),
+    )
+
+    assert cli_module._creation_source(Profile.MS) == bytes(16)
+    assert seen_prefills == ["", ""]
+    output = capsys.readouterr().err
+    assert "Hexadecimal seeds must contain 16, 20, 24, 28, 32, or 64 bytes" in output
+    assert "No unique correction" not in output
 
 
 @pytest.mark.parametrize(("difference", "word"), ((-9, "short of"), (9, "too long for")))
@@ -1375,7 +1399,7 @@ def test_cli_import_preserves_all_bip93_master_seed_sizes(byte_length: int) -> N
 def test_cli_import_rejects_every_other_16_through_64_byte_size() -> None:
     for byte_length in set(range(16, 65)) - set(SEED_BYTE_LENGTHS):
         result = _invoke_confirmed_create(["create", "--existing"], bytes(byte_length).hex())
-        assert result.exit_code == 1
+        assert result.exit_code == 2  # Invalid length clears the field; EOF ends the retry.
         assert result.stdout == ""
         assert "16, 20, 24, 28, 32, or 64" in result.stderr
 

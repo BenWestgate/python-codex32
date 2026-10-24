@@ -57,10 +57,11 @@ from codex32.generation import (
     generate_master_seed,
 )
 from codex32.profiles import Profile, _profile_rules
-from codex32.profiles.ms32 import MasterSeed
 from codex32.profiles.ms32 import (
-    _text_length as _ms_text_length,
+    SEED_BYTE_LENGTHS,
+    MasterSeed,
 )
+from codex32.profiles.ms32 import _text_length as _ms_text_length
 from codex32.wallet import master_xprv
 
 Artifact = Share | Secret
@@ -241,11 +242,17 @@ def _creation_source(
             prompt_end=":\n> ",
         )
         prefill = ""
-        try:
-            if value:
-                return bytes.fromhex(value)
-        except ValueError:
-            pass
+        if value and all(character in "0123456789abcdefABCDEF" for character in value):
+            if len(value) not in {2 * size for size in SEED_BYTE_LENGTHS}:
+                message = (
+                    "Hexadecimal seeds must contain 16, 20, 24, 28, 32, or 64 bytes. "
+                    "Re-enter the entire seed carefully."
+                )
+                if not sys.stdin.isatty():
+                    raise _UsageError(message)
+                _print(f"Rejected: {message}", err=True)
+                continue
+            return bytes.fromhex(value)
         try:
             return parse_codex32(value)
         except CodexError as error:
@@ -272,8 +279,7 @@ def _creation_source(
                     prefill = value
                     continue
             _print(
-                "Rejected: No unique correction found. Check your backup and re-enter the existing secret "
-                "or hexadecimal seed carefully.",
+                "Rejected: No unique correction found. Check your codex32 backup and re-enter it carefully.",
                 err=True,
             )
 
