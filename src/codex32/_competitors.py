@@ -23,7 +23,8 @@ def _check_deadline(deadline: float) -> None:
 
 
 def _tier(shape: _StructuralClass) -> int:
-    if len(shape.operations) == 1:
+    # Two complete groups take only a bounded set of eight-erasure BCH probes.
+    if len(shape.operations) == 1 or (shape.unit == 4 and shape.corrupted == 2):
         return 0
     return 1 if shape.inserted == shape.omitted == 1 and len(shape.operations) == 2 else 2
 
