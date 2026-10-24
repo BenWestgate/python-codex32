@@ -359,9 +359,9 @@ class CreationCeremony:
             raise CeremonyStateError("request a card before confirming it")
         if not isinstance(text, str):
             raise TypeError("confirmation text must be str")
-        # Strip only ASCII whitespace; Unicode whitespace must never vanish before comparison.
-        observed = "".join(char for char in text if char not in " \t\n\r\v\f")
-        observed = "".join(char.lower() if char.isascii() else char for char in observed)
+        if not text.isascii():
+            raise CodexError("Only ASCII characters are allowed.")
+        observed = "".join(text.split()).lower()
         expected = self._pending.text.lower()
         mismatched = tuple(
             group + 1

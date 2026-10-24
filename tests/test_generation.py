@@ -151,27 +151,12 @@ def test_raw_bytes_accept_random_or_explicit_identifiers() -> None:
         generate_master_seed(raw, identifier="tesK")
 
 
-def test_confirmation_rejects_unicode_that_lowercases_to_bech32(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    value = bytes([generation_module.CHARSET.index("k")]) * 26
-    monkeypatch.setattr(generation_module.secrets, "token_bytes", lambda _length: value)
+@pytest.mark.parametrize("character", ("K", "\u00a0"))
+def test_confirmation_rejects_non_ascii(character: str) -> None:
     ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
     pending = ceremony.next_share()
-    invalid = pending.text.replace("k", "K", 1)
-    assert invalid != pending.text
-    assert not ceremony.confirm(invalid).accepted
-
-
-def test_confirmation_keeps_unicode_whitespace_visible_as_mismatch() -> None:
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
-    pending = ceremony.next_share()
-    # ASCII case and grouping remain tolerant; a non-ASCII space must not vanish.
-    position = 8
-    invalid = pending.text[:position].upper() + "\u00a0" + pending.text[position:].upper()
-    result = ceremony.confirm(invalid)
-    assert not result.accepted
-    assert result.mismatched_groups
+    with pytest.raises(CodexError, match="Only ASCII"):
+        ceremony.confirm(pending.text + character)
     assert ceremony.confirm(" \n".join(pending.text.upper())).accepted
 
 

@@ -20,7 +20,6 @@ from codex32._bitcoin_core import (
 from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
-    _ascii_lower,
     _card_text,
     _case_interpretation,
     _confirm_correction,
@@ -312,14 +311,11 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
             optional=True,
             prefill=prefill,
         )
-        if not replacement.isascii():
-            _print("Only ASCII characters are allowed. Re-enter the highlighted region.", err=True)
-            continue
         compact = "".join(replacement.split())
-        if _ascii_lower(compact) == expected.lower():
+        if compact.lower() == expected.lower():
             groups = [replacement]
             break
-        if len(compact) > len(expected[start * 4 : end * 4]) and _ascii_lower(compact).startswith(
+        if len(compact) > len(expected[start * 4 : end * 4]) and compact.lower().startswith(
             (expected.split("1", 1)[0] + "1").lower()
         ):
             _print(
@@ -333,7 +329,7 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
         changed.difference_update(range(start, end))
         changed.update(start + i for i in remaining)
     entered = "".join(groups)
-    if _ascii_lower("".join(entered.split())) != expected.lower():
+    if "".join(entered.split()).lower() != expected.lower():
         raise RuntimeError("Confirmation mismatch.")
     if confirm is not None and not confirm(entered).accepted:
         raise RuntimeError("Confirmation rejected.")

@@ -1467,47 +1467,24 @@ def test_creation_confirmation_highlights_groups_without_correction(
     assert "\x1b[3J\x1b[2J\x1b[H" in prompts[1][0]
 
 
-def test_creation_confirmation_retries_unicode_aliases_before_accepting(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cli_module = importlib.import_module("codex32.cli")
-
-    class Card:
-        text = "MS10TESK"
-
-    answers = iter(("", "MS10TESK", "TESK"))
-    prefills: list[str] = []
-    confirmed: list[str] = []
-
-    def answer(_prompt: str, **options: object) -> str:
-        if "prefill" in options:
-            prefills.append(str(options["prefill"]))
-        return next(answers)
-
-    def confirm(value: str) -> ConfirmationResult:
-        confirmed.append(value)
-        return ConfirmationResult(True)
-
-    monkeypatch.setattr(cli_module, "_text", answer)
-    cli_module._confirm_card(Card(), confirm)
-
-    assert prefills == ["TESK"]
-    assert confirmed == [Card.text]
-
-
 @pytest.mark.parametrize("interactive", (False, True))
-def test_text_input_rejects_unicode_whitespace_before_normalization(
-    monkeypatch: pytest.MonkeyPatch, interactive: bool
+@pytest.mark.parametrize("character", ("K", "\u00a0"))
+@pytest.mark.parametrize("artifacts", (False, True))
+def test_input_rejects_unicode_before_normalization(
+    monkeypatch: pytest.MonkeyPatch, interactive: bool, character: str, artifacts: bool
 ) -> None:
     input_module = importlib.import_module("codex32._cli_input")
-    value = "ms10 test\u00a0abcd"
+    value = "ms10 test" + character + "abcd"
     if interactive:
         monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
         monkeypatch.setattr(input_module, "_editable_input", lambda *_args: value)
     else:
         monkeypatch.setattr(input_module.sys, "stdin", io.StringIO(value))
     with pytest.raises(input_module.InputError, match="Only ASCII"):
-        input_module.read_text("Enter a card", preserve_groups=True)
+        if artifacts:
+            input_module.read_artifacts()
+        else:
+            input_module.read_text("Enter a card", preserve_groups=True)
 
 
 @pytest.mark.parametrize(
@@ -1817,7 +1794,8 @@ def test_correct_rejects_malformed_immutable_hrp_as_usage() -> None:
     result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 2
-    assert "application prefix" in result.stderr
+    assert "Only ASCII" in result.stderr
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize(
