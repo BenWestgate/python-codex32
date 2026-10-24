@@ -653,10 +653,10 @@ xprv through `bitcoin-cli -stdin`, asks Core to create account-0 descriptors,
 and relocks an encrypted destination after success, failure, or
 interruption. It never handles a passphrase.
 
-For offline signing/watch-only and multisig workflows, use Bitcoin Core v32's
-maintained procedures. Until the final v32 release, see the versioned
-[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/offline-signing-tutorial.md)
-and [multisig tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/multisig-tutorial.md).
+For offline signing/watch-only and multisig workflows, use Bitcoin Core v32.0's
+maintained, versioned procedures:
+[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0/doc/offline-signing-tutorial.md)
+and [multisig tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0/doc/multisig-tutorial.md).
 The direct `ms32 xprv` primitive remains top-level and carries an explicit
 secret-root warning.
 

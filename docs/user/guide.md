@@ -207,7 +207,7 @@ keys enabled and run `ms32 wallet`. Keep that computer disconnected from every
 network while recovery text or signing keys are present.
 
 After the signer is restored, follow Bitcoin Core v32's maintained
-[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md).
+[offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0/doc/offline-signing-tutorial.md).
 That workflow owns the watch-only export/import and PSBT transport steps. In
 Bitcoin Core v32, `exportwatchonlywallet` creates the watch-only wallet file and
 `restorewallet` loads it on the online node. Do not improvise a codex32-specific
@@ -245,7 +245,7 @@ its public wallet data with the separate wallet record.
    account-0 descriptors, scans history, and relocks an encrypted wallet.
 6. If you need an online watch-only counterpart, keep the restored signer
    offline and follow Bitcoin Core v32's
-   [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md)
+   [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0/doc/offline-signing-tutorial.md)
    to export and restore the watch-only wallet. Let the online node synchronize,
    then compare the account, policy, addresses, balance, and transaction
    history with the wallet record.
@@ -264,7 +264,7 @@ results disagree, or the wallet is multisig or nonstandard.
 
 Restore the cosigner's private Bitcoin Core wallet with `ms32 wallet`, then
 follow Bitcoin Core v32's maintained
-[multisig tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/multisig-tutorial.md).
+[multisig tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0/doc/multisig-tutorial.md).
 
 ### Card maintenance and damaged writing
 
