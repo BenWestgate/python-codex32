@@ -3010,7 +3010,7 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     assert prompts[1] == "Restore without a wallet record? [y/N]"
     shown = capsys.readouterr().err
     assert shown.count(f"Master fingerprint: {fingerprint.hex().upper()}") == 1
-    assert "was not made from this seed" in shown and "nothing can prove" in shown
+    assert "does not match the fingerprint-derived default" in shown and "nothing can prove" in shown
 
     prompts = _record_answers(monkeypatch, "", "y")
     assert _RECORDED_FINGERPRINT(core, secret) is None
@@ -3019,7 +3019,7 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
     _record_answers(monkeypatch, "", "yes")
     assert _RECORDED_FINGERPRINT(core, derived) is None
-    assert "matches this seed (codex32 rule)" in capsys.readouterr().err
+    assert "matches the fingerprint-derived default (20 bits)" in capsys.readouterr().err
 
 
 def test_wallet_restore_hides_fingerprint_until_the_record_gate(monkeypatch: pytest.MonkeyPatch) -> None:
