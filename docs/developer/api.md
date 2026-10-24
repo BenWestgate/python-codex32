@@ -7,7 +7,7 @@ The package uses one narrow dependency direction:
 ```text
 text -> format/header/checksum -> optional profile module -> immutable artifact
                                                    |-> BIP93 sharing
-                                                   |-> ms/cl generation
+                                                   |-> ms generation
                                                    |-> bounded correction
                                                    `-> MasterSeed wallet adapter
 
@@ -44,8 +44,8 @@ generic parse-length failure.
 | CLI competitor scheduling and pruning | `_competitors.py` | `test_competitors.py` |
 | incremental alignment syndromes | `_alignment.py` | `test_alignment.py` |
 | stdlib-only BIP32 root validation and serialization | `_bip32.py`, `profiles/ms32.py` | BIP32 and wallet vectors |
-| fixed wallet derivation and descriptors | `wallet.py` | `test_wallet.py` |
-| Core target selection and subprocess state | `_bitcoin_core.py` | Core adapter and regtest |
+| root xprv handoff | `wallet.py` | `test_wallet.py` |
+| Core target selection, descriptor requests, and subprocess state | `_bitcoin_core.py` | `test_bitcoin_core.py`, regtest |
 | bounded stdin, fixed-prefix TTY entry, and whole-card confirmation | `_cli_input.py` | `test_cli.py` |
 | command grammar, dispatch, and presentation | `_cli_parser.py`, `cli.py` | `test_cli.py` |
 
@@ -67,13 +67,12 @@ generic parse-length failure.
   `.text` attribute.
 - Sharing interpolates payload and checksum together, explicitly constructs the
   target header, and reparses the result.
-- `generation.py` is the only entropy owner and generates only `ms` and `cl`.
+- `generation.py` is the only entropy owner; it generates and shares only `ms`.
 - Correction never edits the HRP or separator and reparses every candidate.
 - `_bip32.py` stops at HMAC-SHA512 root derivation, scalar validity, and root
   xprv/tprv Base58Check serialization. It performs no child derivation or
-  secp256k1 point arithmetic. `wallet.py` accepts only `MasterSeed`; EC-dependent
-  public derivation is supplied through an explicit wallet integration and the
-  CLI uses Bitcoin Core for that boundary.
+  secp256k1 point arithmetic. `wallet.py` accepts only `MasterSeed`; Bitcoin
+  Core performs all EC-dependent derivation.
 - `_cli_input.py` retains at most nine artifacts and delegates partial-set
   compatibility to `bip93.py`. Card confirmation clears the terminal and saved
   scrollback where supported, then displays only entered text after a mismatch.
@@ -100,7 +99,7 @@ generic parse-length failure.
   hidden state.
 
 Private Python names are convention rather than access control. The supported
-surface is the 25-name package `__all__`; direct use of private helpers is
+surface is the 22-name package `__all__`; direct use of private helpers is
 unsupported but remains in the review scope.
 
 ### Size budget
@@ -117,13 +116,13 @@ base artifact types rather than falling back to a registered application.
 
 | Capability | opaque HRP | `ms` | `cl` | `bip39_12w/24w` |
 |---|---:|---:|---:|---:|
-| parse S/share | yes | yes | yes | yes |
+| parse S/share | yes | yes | unshared S only | yes |
 | semantic S bytes | no | 16, 20, 24, 28, 32, or 64 | exactly 32 | no |
-| recovery and API share derivation | yes | yes | yes | yes |
-| `codex32` recovery/share/correction | yes | yes | yes | yes |
-| unshared generation / shared ceremony API | no | six supported sizes | exactly 32 bytes | no |
+| recovery and API share derivation | yes | yes | no | yes |
+| `codex32` recovery/share/correction | yes | yes | correction only | yes |
+| unshared generation / shared ceremony API | no | six supported sizes | no | no |
 | fresh generation CLI (`ms32`) | no | six supported sizes | no | no |
-| existing-S splitting | no | yes | yes | no |
+| existing-S splitting | no | yes | no | no |
 | wallet API | no | S only | no | no |
 
 Registered application semantics remain:
@@ -136,32 +135,30 @@ Registered application semantics remain:
 
 `ms` payloads encode exactly 16, 20, 24, 28, 32, or 64 seed bytes and may have
 any legal parsed trailing bits. Parsing, generation, ceremonies, raw-seed
-import, and CLI `--bytes` enforce the same six sizes. `cl` has 52 payload symbols; parsed
-discarded bits remain application data. BIP39 profiles have exactly 27/53
-payload symbols; S requires zero outer padding and a valid embedded SHA-256
-checksum. Ordinary BIP39 shares are random masks and receive structural
-validation only.
+import, and CLI `--bytes` enforce the same six sizes. `cl` has 52 payload
+symbols and threshold 0; parsed discarded bits remain application data. BIP39
+profiles have exactly 27/53 payload symbols; S requires zero outer padding and
+a valid embedded SHA-256 checksum. Ordinary BIP39 shares are random masks and
+receive structural validation only.
 
-CL generation is explicit and uses a random identifier unless one is supplied.
 Current Core Lightning defaults to mnemonic recovery, but its recovery command
-retains an import path for codex32 HSM secrets. Generated CL S strings use the
-zero-padding convention emitted by CLN; parsed nonzero discarded bits remain
-valid and are preserved when re-sharing.
+retains an import path for unshared codex32 HSM secrets. It rejects shares and
+any S with a nonzero threshold, so the `cl` profile rejects them too and there
+is no CL recovery, share derivation, or splitting.
 
-The generic `codex32` façade supports CL and BIP39 inspection, correction,
-recovery, and share derivation. The `ms32` façade accepts only `ms` artifacts.
+The generic `codex32` façade supports CL inspection and correction, and BIP39
+inspection, correction, recovery, and share derivation. The `ms32` façade
+accepts only `ms` artifacts.
 
 ## Secret generation
 
-`generation.py` is the only module that draws entropy. It generates BIP93
-master seeds and Core Lightning HSM secrets, and splits either validated S type.
-Core Lightning now defaults to mnemonic recovery, but retains a codex32 HSM
-secret import path for recovery on an unused node.
+`generation.py` is the only module that draws entropy. It generates and
+splits BIP93 master seeds only.
 
 Fresh unshared seeds default to 16 bytes and use the first 20 bits of their
 BIP32 fingerprint as public identifier metadata. Fresh shared sets use four
-independent random u5 identifier symbols. Raw bytes, re-shared secrets, and CL
-generation also use an independent random identifier unless one is supplied.
+independent random u5 identifier symbols. Raw bytes and re-shared secrets also
+use an independent random identifier unless one is supplied.
 Random re-sharing never repeats the source set header; an explicitly repeated
 source header is rejected.
 
@@ -169,15 +166,18 @@ The Python API and CLI accept the six PR #2258 `ms` sizes: 16, 20, 24, 28, 32,
 and 64 bytes. Other byte lengths are rejected at every public construction
 boundary; there is no legacy decoder.
 
-One-shot functions create only unshared secrets:
+The one-shot function creates only unshared secrets:
 
 ```python
-generate_master_seed(seed_bytes=None, *, byte_length=None, identifier=None)
-generate_core_lightning_secret(secret_bytes=None, *, identifier=None)
+generate_master_seed(seed_bytes=None, *, byte_length=None, identifier=None, fingerprint=None)
 ```
 
-Shared creation uses `CreationCeremony.master_seed(...)`,
-`CreationCeremony.core_lightning(...)`, or
+A fresh seed with no `identifier` needs `fingerprint`: a callable that takes
+the seed bytes and returns their four-byte BIP32 master fingerprint. This
+package has no secp256k1 arithmetic, so the CLI asks Bitcoin Core. Without
+either argument, fresh generation raises `ValueError`.
+
+Shared creation uses `CreationCeremony.master_seed(...)` or
 `CreationCeremony.from_secret(...)`. Exactly one of `share_count` and `indices`
 is required. `next_share()` returns one pending share, `confirm(text)` must
 accept its independently re-entered string, and `finish()` returns the secret
@@ -185,8 +185,7 @@ only after every requested share is confirmed. There is no public one-shot
 sharing or `split_secret` function. Fresh and existing Bitcoin CLI creation
 requires interactive input and output, preflights local Bitcoin Core before
 entropy or recovery input, and initializes a user-selected wallet after every
-share is confirmed. CLI creation does not accept Core Lightning profiles; CL
-generation and sharing remain API-only.
+share is confirmed.
 Without `--existing`, omitting the Bitcoin header creates an unshared master
 seed. With `--existing` and no sharing threshold, a supplied codex32 secret is
 emitted and confirmed unchanged, and the original validated artifact initializes
@@ -254,12 +253,15 @@ string during setup. It cannot prove that the physical backup was
 corrected rather than reconstructed using confirmation feedback.
 
 For a fresh set, the final direct share is rejection-sampled until the recovered
-S has the private CRC padding convention (`ms`) or zero discarded bits (CL).
-The already confirmed `k-1` masks remain fixed. Neither padding rule is BIP93
-validity: parsed S strings may use any application-valid discarded bits, which
-re-sharing preserves exactly. CRC never applies to shares.
+S has the private CRC padding convention. The already confirmed `k-1` masks
+remain fixed. That padding rule is not BIP93 validity: parsed S strings may use
+any application-valid discarded bits, which re-sharing preserves exactly. CRC
+never applies to shares.
 
-Explicit output indices preserve caller order. A share count uses
+Explicit output indices preserve first-occurrence order. Repeated indices
+request identical copies, scheduled after the first occurrence of every index:
+`aacd` produces `acda`. The first `threshold` indices must be distinct,
+and every copy must be independently confirmed. A share count uses
 `SystemRandom.sample` over the 31 ordinary indices and preserves sample order.
 There is no entropy injection, sorting, caller-supplied partial-basis
 completion, or BIP39 generation. Ceremonies reject copying and serialization;
@@ -316,7 +318,7 @@ applies registered S semantics when the HRP has a profile.
 
 `tests/test_sharing.py` proves that recovery and derivation still work after
 checksum creation is disabled. Official BIP93 vectors anchor the GF(32)
-arithmetic. CL and BIP39 use compact frozen string/result fixtures rather than
+arithmetic. BIP39 uses compact frozen string/result fixtures rather than
 a duplicate test implementation of interpolation or checksumming.
 
 ### BIP39 migration profiles
@@ -580,27 +582,17 @@ Public wallet operations accept only a validated `MasterSeed`. `wallet.py` is
 stateless and never accepts shares, Core Lightning secrets, BIP39 migration
 artifacts, or raw bytes.
 
-The public adapter has two functions:
-
-- `master_xprv(secret, testnet=False)` returns the BIP32 root extended private
-  key.
-- `core_descriptors(...)` returns fixed BIP44, BIP49, BIP84, and BIP86 Bitcoin
-  Core `importdescriptors` records. Private records use stdlib-only root xprv
-  serialization; public records require an explicit wallet integration and the
-  Core wallet whose imported root key will perform hardened derivation.
+The public adapter has one function: `master_xprv(secret, testnet=False)`
+returns the BIP32 root extended private key, using stdlib-only serialization.
+It grants authority over every key derived from the seed, and the CLI warns
+before printing it.
 
 No installed Python dependency performs secp256k1 operations. The private
 Bitcoin Core adapter gives Core the root xprv over stdin and asks Core to
-create the four standard account-0 descriptor types. Public descriptor
-derivation remains available through the explicit integration API.
+create the four standard account-0 descriptor types. Core's own wallet
+commands provide public descriptors and watch-only exports.
 
-Public descriptors contain account xpubs. Private descriptors intentionally
-follow Bitcoin Core's root-key form: they contain the root xprv followed by the
-complete derivation path. They therefore grant authority over the entire root,
-not only the selected account. The CLI warns before printing them.
-
-Account, private/public mode, network serialization, and timestamp are explicit
-API inputs. The `ms32 wallet` CLI takes `--account 0` and `--timestamp`; the
+The `ms32 wallet` CLI takes `--account 0` and `--timestamp`; the
 selected Bitcoin Core chain is authoritative and there is no wallet
 `--testnet` flag. `ms32 xprv --testnet` remains explicit because it directly
 selects xprv versus tprv serialization. The timestamp defaults to `0` so
@@ -647,7 +639,7 @@ the BIP32 fingerprint.
 
 The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`, `listwallets`,
 `getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `deriveaddresses`,
-`validateaddress`, `gethdkeys`, `derivehdkey`, `addhdkey`,
+`validateaddress`, `addhdkey`,
 `createwalletdescriptor`, `importdescriptors`, and `walletlock`.
 Bitcoin Core alone creates wallets, selects encryption, handles
 passphrases, stores keys, and provides normal wallet behavior.
@@ -688,11 +680,10 @@ These choices are not presented as BIP93 requirements.
 | `ms` accepts only six seed sizes | follows the frozen PR #2258 profile with no legacy decoder |
 | random electronic output indices | reduces canonical index disclosure; explicit indices preserve requested order |
 | generation-only CRC padding | small recovery hint; not validity or share semantics |
-| fingerprint identifier only for fresh k=0 | shared sets, raw seeds, re-sharing, and CL generation use random IDs unless explicitly overridden |
+| fingerprint identifier only for fresh k=0 | shared sets, raw seeds, and re-sharing use random IDs unless explicitly overridden |
 | BIP39 profiles have no construction or wallet CLI | migration artifacts may still be checked, corrected, recovered, and re-shared generically |
 | reject existing derivation targets | enforces BIP93's fresh-index wording |
 | bounded structural correction is deliberately finite | exact capture safety, complete global rank layers, the 48-character ten-second target, and the package audit budget exclude a general recovery engine; longer valid strings keep the same bounded classes |
-| private descriptors contain root xprv | matches Bitcoin Core behavior and carries an explicit authority warning |
 | no caller-supplied partial-basis completion | unauthenticated points can create incompatible same-header polynomials |
 
 Unknown-HRP application interpretation, GUI, direct sockets, a general RPC
@@ -712,9 +703,8 @@ The four-character identifier is public metadata, not authentication.
   offline 20-bit predicate against candidate seeds.
 - A fresh shared set uses four independent random u5 symbols and leaks no
   seed-derived fingerprint bits.
-- Raw seed bytes, re-sharing, and CL generation use an independent random
-  identifier unless the caller supplies all four symbols. A random identifier
-  does not make a weak supplied seed safe.
+- Raw seed bytes and re-sharing use an independent random identifier unless the
+  caller supplies all four symbols.
 - Random re-sharing rejects the source set header and draws another identifier.
   An explicitly repeated source header remains an error.
 

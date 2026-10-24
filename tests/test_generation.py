@@ -1,11 +1,10 @@
-"""Security invariants for incremental ``ms`` and CL creation ceremonies."""
+"""Security invariants for incremental ``ms`` creation ceremonies."""
 
 import copy
 import pickle
 from itertools import combinations
 
 import pytest
-from _codex32_oracle import oracle_encode
 from data.bip93_vectors import VECTOR_2, VECTOR_4, VECTOR_6
 from data.sharing_vectors import SHARING_VECTORS
 from hypothesis import given, settings
@@ -13,21 +12,17 @@ from hypothesis import strategies as st
 
 import codex32.generation as generation_module
 from codex32 import (
-    CoreLightningSecret,
     CreationCeremony,
     MasterSeed,
     Share,
-    generate_core_lightning_secret,
     generate_master_seed,
     parse_codex32,
     recover_secret,
 )
-from codex32.bech32 import _u5_to_chars
 from codex32.errors import (
     CeremonyStateError,
     CodexError,
     HeaderCollision,
-    InvalidIdentifier,
     InvalidLength,
     InvalidShareSelection,
     InvalidThreshold,
@@ -37,7 +32,7 @@ from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding
 from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint, stub_fingerprint
 
 
-def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed | CoreLightningSecret, tuple[Share, ...]]:
+def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed, tuple[Share, ...]]:
     shares = []
     while True:
         try:
@@ -52,6 +47,44 @@ def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed | CoreLightningSec
 
 def _indices(shares: tuple[Share, ...]) -> str:
     return "".join(share.header.index for share in shares)
+
+
+def test_repeated_indices_copy_only_confirmed_cards() -> None:
+    secret, shares = _complete(CreationCeremony.master_seed(threshold=2, indices="aacd", identifier="test"))
+    assert isinstance(secret, MasterSeed)
+    assert _indices(shares) == "acda"
+    assert shares[0].text == shares[3].text
+
+
+def test_repeated_indices_do_not_count_toward_threshold() -> None:
+    with pytest.raises(InvalidShareSelection, match="distinct"):
+        CreationCeremony.master_seed(threshold=3, indices="aaac", identifier="test")
+
+
+def test_repeated_cards_require_independent_confirmation() -> None:
+    ceremony = CreationCeremony.master_seed(threshold=2, indices="aac", identifier="test")
+    first = ceremony.next_share()
+    assert ceremony.confirm(first.text).accepted
+    second = ceremony.next_share()
+    assert ceremony.confirm(second.text).accepted
+    repeated = ceremony.next_share()
+    assert repeated.text == first.text
+    assert not ceremony.confirm("incorrect").accepted
+    with pytest.raises(CeremonyStateError, match="confirm the pending"):
+        ceremony.next_share()
+    assert ceremony.confirm(repeated.text).accepted
+    secret = ceremony.finish()
+    assert recover_secret((first, second)) == secret
+
+
+def test_repeated_indices_reuse_existing_secret_shares() -> None:
+    source = generate_master_seed(bytes(range(16)), identifier="test")
+    secret, shares = _complete(
+        CreationCeremony.from_secret(source, threshold=2, indices="aac", identifier="name")
+    )
+    assert _indices(shares) == "aca"
+    assert shares[0].text == shares[2].text
+    assert secret.seed_bytes == source.seed_bytes
 
 
 def _seed(byte_length: int) -> bytes:
@@ -95,18 +128,12 @@ def test_fresh_generation_recovers_at_every_threshold(threshold: int) -> None:
     assert recover_secret(shares) == secret
 
 
-@pytest.mark.parametrize(("threshold", "kind"), ((2, 16), (3, "cl"), (9, 64)))
-def test_generated_subsets_recover_across_profiles_and_threshold_boundaries(
-    threshold: int, kind: int | str
+@pytest.mark.parametrize(("threshold", "byte_length"), ((2, 16), (3, 32), (9, 64)))
+def test_generated_subsets_recover_across_sizes_and_threshold_boundaries(
+    threshold: int, byte_length: int
 ) -> None:
-    ceremony = (
-        CreationCeremony.core_lightning(threshold=threshold, share_count=threshold + 2)
-        if kind == "cl"
-        else CreationCeremony.master_seed(
-            byte_length=kind,
-            threshold=threshold,
-            share_count=threshold + 2,  # type: ignore[arg-type]
-        )
+    ceremony = CreationCeremony.master_seed(
+        byte_length=byte_length, threshold=threshold, share_count=threshold + 2
     )
     secret, shares = _complete(ceremony)
 
@@ -197,7 +224,6 @@ def test_oversized_index_strings_are_bounded_before_normalization(
     source = generate_master_seed(bytes(range(16)), identifier="test")
     operations = (
         lambda: CreationCeremony.master_seed(threshold=2, indices="a" * 32, identifier="test"),
-        lambda: CreationCeremony.core_lightning(threshold=2, indices="a" * 32, identifier="test"),
         lambda: CreationCeremony.from_secret(source, threshold=2, indices="a" * 32, identifier="name"),
     )
     for operation in operations:
@@ -353,52 +379,9 @@ def test_resharing_preserves_padding_and_requires_a_new_header() -> None:
     assert randomized.next_share().header.identifier != secret.header.identifier
 
 
-@pytest.mark.parametrize("threshold", range(2, 10))
-def test_core_lightning_generation_and_splitting_target_zero_padding(threshold: int) -> None:
-    fresh, shares = _complete(
-        CreationCeremony.core_lightning(
-            identifier="peev", threshold=threshold, indices=ORDINARY_INDICES[:threshold]
-        )
-    )
-    assert isinstance(fresh, CoreLightningSecret)
-    assert fresh.payload_symbols[-1] & 15 == 0
-    assert recover_secret(shares) == fresh
-
-    if threshold == 2:
-        raw = generate_core_lightning_secret(bytes(range(32)), identifier="name")
-        split, split_shares = _complete(
-            CreationCeremony.from_secret(raw, threshold=2, indices="ac", identifier="test")
-        )
-        assert split.payload_symbols == raw.payload_symbols
-        assert recover_secret(split_shares).secret_bytes == bytes(range(32))
-
-
-def test_resharing_preserves_nonzero_core_lightning_padding() -> None:
-    source = parse_codex32(VECTOR_6["codex32_peev"])
-    assert isinstance(source, CoreLightningSecret)
-    payload = (*source.payload_symbols[:-1], source.payload_symbols[-1] | 15)
-    nonzero = parse_codex32(oracle_encode("cl", "0peevs" + _u5_to_chars(payload)))
-    assert isinstance(nonzero, CoreLightningSecret)
-    secret, shares = _complete(
-        CreationCeremony.from_secret(nonzero, threshold=2, indices="ac", identifier="name")
-    )
-    assert secret.payload_symbols == nonzero.payload_symbols
-    assert recover_secret(shares).payload_symbols == nonzero.payload_symbols
-
-
-def test_core_lightning_generation_validates_size_and_identifier() -> None:
-    for value in (b"x" * 31, b"x" * 33):
-        with pytest.raises(InvalidLength):
-            generate_core_lightning_secret(value, identifier="test")
-    with pytest.raises(TypeError):
-        generate_core_lightning_secret("x" * 32, identifier="test")  # type: ignore[arg-type]
-    assert len(generate_core_lightning_secret().header.identifier) == 4
-    with pytest.raises(InvalidIdentifier):
-        generate_core_lightning_secret(identifier="bad")
-
-
 def test_from_secret_rejects_non_secret_artifacts() -> None:
     artifacts = (
+        parse_codex32(VECTOR_6["codex32_peev"]),
         parse_codex32(SHARING_VECTORS["bip39_12w"]["S"]),
         parse_codex32(VECTOR_2["share_A"]),
         VECTOR_2["secret_S"],
