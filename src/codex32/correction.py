@@ -808,8 +808,15 @@ def _best(
 
 
 def _correct_complete(
-    context: CorrectionContext, damaged_text: str, *, deadline: float | None = None
+    context: CorrectionContext,
+    damaged_text: str,
+    *,
+    deadline: float | None = None,
+    allowed: Callable[[CorrectionCandidate], bool] | None = None,
+    competitors: bool = False,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
+    # The public API fails closed on incomplete required work; only the CLI's
+    # competitor scheduler (competitors=True) may return a best-so-far candidate.
     if not isinstance(context, CorrectionContext):
         raise TypeError("context must be CorrectionContext")
     if not isinstance(damaged_text, str):
@@ -877,6 +884,8 @@ def _correct_complete(
                     c.expected_length for c in preflight_contexts if c.expected_length is not None
                 ),
                 deadline=deadline,
+                competitors=competitors,
+                allowed=allowed,
                 observed_text=damaged_text,
                 seed_candidates=candidates,
                 required_only=True,
@@ -904,6 +913,8 @@ def _correct_complete(
             value,
             primary=frozenset(c.expected_length for c in contexts if c.expected_length is not None),
             deadline=deadline,
+            competitors=competitors,
+            allowed=allowed,
             capture_layers=capture_layers,
             observed_text=damaged_text,
             seed_candidates=candidates,
@@ -912,9 +923,13 @@ def _correct_complete(
         complete &= current_complete
         if not current_complete and not candidates:
             return (), False
-    candidates = (
-        _restore_case_edits(candidates, uppercase=uppercase) if interpretation is not None else candidates
-    )
+    if interpretation is not None:
+        candidates = _restore_case_edits(candidates, uppercase=uppercase)
+    if allowed is not None:
+        candidates = tuple(candidate for candidate in candidates if allowed(candidate))
+    if not complete:
+        # A candidate from a completed pass must not hide a later truncation.
+        candidates = tuple(replace(candidate, search_complete=False) for candidate in candidates)
     return candidates, complete
 
 
