@@ -2365,6 +2365,22 @@ def test_an_unusable_first_use_date_is_asked_again(monkeypatch: pytest.MonkeyPat
     assert "YYYY-MM-DD" in errors.getvalue()
 
 
+def test_interrupting_the_first_use_date_does_not_void_existing_cards() -> None:
+    core = _FakeBitcoinCore()
+    errors = _TTYOutput()
+    with (
+        patch.object(sys, "stdin", _TTYInput()),
+        patch("codex32.cli._creation_source", return_value=parse_codex32(VECTOR_1["secret_s"])),
+        patch("codex32.cli._text", side_effect=KeyboardInterrupt),
+        patch("codex32.cli.BitcoinCore.connect", return_value=core),
+        contextlib.redirect_stdout(_TTYOutput()),
+        contextlib.redirect_stderr(errors),
+    ):
+        assert ms_main(["create", "--existing"]) == 130
+    assert "void" not in errors.getvalue() and "Interrupted." in errors.getvalue()
+    assert core.imported is None
+
+
 def test_create_existing_secret_does_not_silently_change_identifier() -> None:
     result = _invoke_confirmed_create(["create", "0test", "--existing"], VECTOR_4["secret_s"])
     assert result.exit_code == 2 and result.stdout == ""
