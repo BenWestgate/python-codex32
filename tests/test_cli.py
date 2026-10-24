@@ -1645,6 +1645,15 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
     assert recover_secret(basis).header.identifier == "cash"
 
 
+@pytest.mark.parametrize("header", ("10", "12", "13cash"))
+def test_create_rejects_separator_without_ms_prefix(header: str) -> None:
+    result = _invoke_confirmed_create(["create", header])
+
+    assert result.exit_code == 2
+    assert "must begin with ms1" in result.stderr
+    assert result.stdout == ""
+
+
 @pytest.mark.parametrize(("threshold", "count"), ((2, 3), (3, 5)))
 def test_create_has_reviewed_share_count_presets(threshold: int, count: int) -> None:
     result = _invoke_confirmed_create(["create", f"{threshold}test"])
