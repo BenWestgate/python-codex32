@@ -207,7 +207,7 @@ def _creation_header(value: str | None) -> tuple[int | None, str | None]:
     if lowered != value and value.upper() != value:
         raise _UsageError("The set header must use either uppercase or lowercase.")
     hrp, _separator, header = lowered.rpartition("1")
-    if hrp not in ("", Profile.MS.value):
+    if _separator and hrp != Profile.MS.value:
         raise _UsageError("The set header must begin with ms1.")
     if len(header) not in (1, 5) or header[0] not in "023456789":
         raise _UsageError(
