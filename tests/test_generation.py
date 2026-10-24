@@ -49,6 +49,20 @@ def _indices(shares: tuple[Share, ...]) -> str:
     return "".join(share.header.index for share in shares)
 
 
+def test_repeated_indices_copy_only_confirmed_cards() -> None:
+    secret, shares = _complete(
+        CreationCeremony.master_seed(threshold=2, indices="aacd", identifier="test")
+    )
+    assert isinstance(secret, MasterSeed)
+    assert _indices(shares) == "acda"
+    assert shares[0].text == shares[3].text
+
+
+def test_repeated_indices_do_not_count_toward_threshold() -> None:
+    with pytest.raises(InvalidShareSelection, match="distinct"):
+        CreationCeremony.master_seed(threshold=3, indices="aaac", identifier="test")
+
+
 def _seed(byte_length: int) -> bytes:
     return bytes((position * 109 + byte_length) % 256 for position in range(byte_length))
 
