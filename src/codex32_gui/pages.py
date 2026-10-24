@@ -12,7 +12,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, GLib, Gtk, Pango
 
 from codex32 import (
     ConfirmationResult,
@@ -227,12 +227,12 @@ def _compact_rows(title: str, values: Sequence[tuple[str, str]]) -> Gtk.Box:
     heading = Gtk.Label(label=title, xalign=0.0)
     heading.add_css_class("heading")
     box.append(heading)
-    grid = Gtk.Grid(column_spacing=18, row_spacing=3)
-    grid.set_hexpand(True)
+    grid = Gtk.Grid(column_spacing=18, row_spacing=3, hexpand=True)
     for position, (label, value) in enumerate(values):
         name = Gtk.Label(label=label, xalign=0.0)
         name.add_css_class("dim-label")
-        detail = Gtk.Label(label=value, xalign=1.0, selectable=True, hexpand=True)
+        detail = Gtk.Label(label=value, xalign=1, selectable=True, wrap=True, max_width_chars=28)
+        detail.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         grid.attach(name, 0, position, 1, 1)
         grid.attach(detail, 1, position, 1, 1)
     box.append(grid)
