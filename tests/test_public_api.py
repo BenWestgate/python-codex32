@@ -85,7 +85,7 @@ def test_share_has_symbols_but_no_byte_or_padding_api() -> None:
 
 def test_artifacts_cannot_be_directly_constructed_or_mutated() -> None:
     with pytest.raises(TypeError):
-        Share("ms", Header(2, "test", "a"), (), ())  # type: ignore[arg-type]
+        Share("ms", Header(2, "test", "a"), (), ())  # type: ignore[call-arg]
     share = parse_codex32(VECTOR_2["share_A"])
     with pytest.raises((FrozenInstanceError, AttributeError)):
         share.text = "changed"  # type: ignore[misc]
