@@ -153,7 +153,7 @@ def test_oversized_sequence_is_rejected_before_items_are_read() -> None:
         recover_secret(OversizedSequence())  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("target", ("s", "i", "b", "?", "aa", "", 3))
+@pytest.mark.parametrize("target", ("s", "i", "b", "?", "aa", "", "K", 3))
 def test_invalid_targets_are_rejected(target: object) -> None:
     secret, masks = _ms_basis()
     with pytest.raises(InvalidTargetIndex):

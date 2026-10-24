@@ -164,11 +164,16 @@ def read_text(
     prefill: str = "",
     prompt_end: str = ": ",
 ) -> str:
-    if sys.stdin.isatty():
+    interactive = sys.stdin.isatty()
+    if interactive:
         value = _editable_input(prompt + prompt_end, prefill)
         _stderr("")
     else:
-        value = _stdin().strip()
+        value = _stdin()
+    if not value.isascii():
+        raise InputError("Only ASCII characters are allowed.")
+    if not interactive:
+        value = value.strip()
     if not preserve_groups:
         value = "".join(value.split())
     if not "".join(value.split()) and not optional:
@@ -622,7 +627,10 @@ def _redirected(
     excluded_index: str | None,
     fingerprint: Callable[[MasterSeed], bytes] | None,
 ) -> list[Artifact]:
-    tokens = _stdin().split()
+    raw = _stdin()
+    if not raw.isascii():
+        raise InputError("Only ASCII characters are allowed.")
+    tokens = raw.split()
     if not tokens:
         raise InputError("No input was provided.")
     if len(tokens) > 9:
@@ -754,6 +762,8 @@ def _interactive(
             else (f"Enter {'string' if basis else 'share'} {len(accepted) + 1} of {required}")
         )
         entered = _editable_input(f"{label}:\n> {_display_prefix(prefix, grouped_prefix)}", prefill)
+        if not entered.isascii():
+            raise InputError("Only ASCII characters are allowed.")
         value = "".join(entered.split())
         supplied_prefix = bool(prefix) and "1" not in value
         complete_value = value if not supplied_prefix else _prefix_for_suffix(prefix, value) + value

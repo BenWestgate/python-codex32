@@ -1467,6 +1467,26 @@ def test_creation_confirmation_highlights_groups_without_correction(
     assert "\x1b[3J\x1b[2J\x1b[H" in prompts[1][0]
 
 
+@pytest.mark.parametrize("interactive", (False, True))
+@pytest.mark.parametrize("character", ("K", "\u00a0"))
+@pytest.mark.parametrize("artifacts", (False, True))
+def test_input_rejects_unicode_before_normalization(
+    monkeypatch: pytest.MonkeyPatch, interactive: bool, character: str, artifacts: bool
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+    value = "ms10 test" + character + "abcd"
+    if interactive:
+        monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
+        monkeypatch.setattr(input_module, "_editable_input", lambda *_args: value)
+    else:
+        monkeypatch.setattr(input_module.sys, "stdin", io.StringIO(value))
+    with pytest.raises(input_module.InputError, match="Only ASCII"):
+        if artifacts:
+            input_module.read_artifacts()
+        else:
+            input_module.read_text("Enter a card", preserve_groups=True)
+
+
 @pytest.mark.parametrize(
     ("observed", "shown", "red"),
     (
@@ -1594,6 +1614,13 @@ def test_create_accepts_positional_headers_and_preserves_index_order() -> None:
     assert all(isinstance(share, Share) for share in shares)
     basis = [share for share in shares[:3] if isinstance(share, Share)]
     assert recover_secret(basis).header.identifier == "cash"
+
+
+def test_create_rejects_unicode_header_aliases_before_normalizing() -> None:
+    result = _invoke(["create", "MS12TESK"])
+
+    assert result.exit_code == 2
+    assert "ASCII" in result.stderr
 
 
 @pytest.mark.parametrize(("threshold", "count"), ((2, 3), (3, 5)))
@@ -1767,7 +1794,8 @@ def test_correct_rejects_malformed_immutable_hrp_as_usage() -> None:
     result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 2
-    assert "application prefix" in result.stderr
+    assert "Only ASCII" in result.stderr
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize(

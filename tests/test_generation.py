@@ -147,6 +147,17 @@ def test_raw_bytes_accept_random_or_explicit_identifiers() -> None:
     secret = generate_master_seed(raw, identifier="TEST")
     assert len(random_secret.header.identifier) == 4
     assert secret.header.identifier == "test"
+    with pytest.raises(InvalidIdentifier):
+        generate_master_seed(raw, identifier="tesK")
+
+
+@pytest.mark.parametrize("character", ("K", "\u00a0"))
+def test_confirmation_rejects_non_ascii(character: str) -> None:
+    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    pending = ceremony.next_share()
+    with pytest.raises(CodexError, match="Only ASCII"):
+        ceremony.confirm(pending.text + character)
+    assert ceremony.confirm(" \n".join(pending.text.upper())).accepted
 
 
 def test_supplied_seed_must_form_a_valid_bip32_root(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -178,6 +189,7 @@ def test_explicit_and_random_output_order_contracts() -> None:
         {"threshold": 2, "share_count": 32},
         {"threshold": 2, "indices": "a"},
         {"threshold": 2, "indices": "aa"},
+        {"threshold": 2, "indices": "aK"},
         {"threshold": 2, "indices": "sa"},
         {"threshold": 2, "indices": "ia"},
     ),

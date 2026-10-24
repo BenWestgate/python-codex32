@@ -69,6 +69,8 @@ def _threshold(value: object, *, allow_zero: bool = True) -> int:
 def _identifier(value: object) -> str:
     if not isinstance(value, str):
         raise InvalidIdentifier("identifier must be str")
+    if not value.isascii():
+        raise InvalidIdentifier("identifier must contain only ASCII Bech32 symbols")
     value = value.lower()
     if len(value) != 4 or any(character not in CHARSET for character in value):
         raise InvalidIdentifier("identifier must be four Bech32 symbols")
@@ -78,6 +80,8 @@ def _identifier(value: object) -> str:
 def _index(value: object) -> str:
     if not isinstance(value, str) or len(value) != 1:
         raise InvalidShareSelection("each output index must be one Bech32 symbol")
+    if not value.isascii():
+        raise InvalidShareSelection("each output index must be an ASCII Bech32 symbol")
     value = value.lower()
     if value not in ORDINARY_INDICES:
         raise InvalidShareSelection("output indices must be ordinary non-S symbols")
@@ -355,6 +359,8 @@ class CreationCeremony:
             raise CeremonyStateError("request a card before confirming it")
         if not isinstance(text, str):
             raise TypeError("confirmation text must be str")
+        if not text.isascii():
+            raise CodexError("Only ASCII characters are allowed.")
         observed = "".join(text.split()).lower()
         expected = self._pending.text.lower()
         mismatched = tuple(
