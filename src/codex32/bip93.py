@@ -36,7 +36,6 @@ from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
 
 IDX_SORT = "sacdefghjklmnpqrtuvwxyz023456789"
-_CONSTRUCTION_TOKEN = object()
 
 # BIP93 master seeds: the "ms" HRP with one of six seed sizes (bytes, payload, text).
 MS = "ms"
@@ -132,24 +131,27 @@ def _decode_codex32(text: str) -> tuple[str, tuple[int, ...], _Checksum]:
     return hrp, tuple(encoded), checksum
 
 
-@dataclass(frozen=True, slots=True, init=False)
+@dataclass(frozen=True, slots=True)
 class _Artifact:
-    """Create artifacts with parse_codex32 or the factories, which validate them."""
+    """A validated codex32 string; its other attributes are decoded from it, so they cannot disagree."""
 
     text: str
-    header: Header
-    hrp: str
-    payload_symbols: tuple[int, ...]
 
-    def __init__(
-        self, text: str, header: Header, hrp: str, payload_symbols: tuple[int, ...], *, _token: object
-    ) -> None:
-        if _token is not _CONSTRUCTION_TOKEN:
-            raise TypeError("codex32 artifacts must be created by the public factories")
-        object.__setattr__(self, "text", text)
-        object.__setattr__(self, "header", header)
-        object.__setattr__(self, "hrp", hrp)
-        object.__setattr__(self, "payload_symbols", payload_symbols)
+    def __post_init__(self) -> None:
+        if _artifact_type(self.text) is not type(self):
+            raise TypeError(f"this codex32 string is not a {type(self).__name__}")
+
+    @property
+    def hrp(self) -> str:
+        return _decode_codex32(self.text)[0]
+
+    @property
+    def header(self) -> Header:
+        return Header._from_symbols(_body(self.text)[:6])
+
+    @property
+    def payload_symbols(self) -> tuple[int, ...]:
+        return _body(self.text)[6:]
 
     def __str__(self) -> str:
         return f"<{type(self).__name__}: redacted>"
@@ -210,13 +212,19 @@ def _has_generation_padding(secret: MasterSeed) -> bool:
     return padding == _crc_pad(secret.seed_bytes)
 
 
+def _body(text: str) -> tuple[int, ...]:
+    _hrp, encoded, checksum = _decode_codex32(text)
+    return encoded[: -checksum.length]
+
+
+def _artifact_type(text: str) -> type[Share | Secret]:
+    hrp, encoded, _checksum = _decode_codex32(text)
+    return Share if encoded[5] != CHARSET.index("s") else MasterSeed if hrp == MS else Secret
+
+
 def parse_codex32(text: str) -> Share | Secret:
     """Validate one codex32 string and return an immutable artifact."""
-    hrp, encoded, checksum = _decode_codex32(text)
-    body = tuple(encoded[: -checksum.length])
-    header = Header._from_symbols(body[:6])
-    artifact_type = Share if header.index != "s" else MasterSeed if hrp == MS else Secret
-    return artifact_type(text, header, hrp, body[6:], _token=_CONSTRUCTION_TOKEN)
+    return _artifact_type(text)(text)
 
 
 def _from_parts(

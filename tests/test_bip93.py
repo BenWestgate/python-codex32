@@ -100,8 +100,10 @@ def test_vector_6_core_lightning_examples_are_generic_immutable_secrets() -> Non
 
     assert payload(luea) == "6c696768746e696e672d31330000000000000000000000000000000000000000"
     assert payload(peev) == "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1"
-    with pytest.raises((FrozenInstanceError, AttributeError)):
+    # Before Python 3.13, slotted frozen dataclasses raise TypeError here for subclasses.
+    with pytest.raises((FrozenInstanceError, AttributeError, TypeError)):
         luea.header = cln2.header  # type: ignore[misc]
+    assert luea.header.identifier == "luea"
 
 
 @pytest.mark.parametrize("value", BAD_CHECKSUMS)

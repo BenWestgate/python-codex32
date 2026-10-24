@@ -51,7 +51,7 @@ generic parse-length failure.
 
 ### Boundaries
 
-- Only parsing and `MasterSeed.from_seed` construct artifacts.
+- An artifact stores only its validated string; its header, HRP and payload are decoded from it.
 - `bech32.py` keeps the recognizable BIP173 reference names and accumulator
   structure. Encoding takes an explicit checksum specification. Decoding
   without one returns the HRP and complete data part after checking only the
