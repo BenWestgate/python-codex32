@@ -206,6 +206,22 @@ def _from_parts(hrp: str, header: str, payload: Sequence[int], *, uppercase: boo
     return parse_codex32(text.upper() if uppercase else text)
 
 
+def _from_unchecksummed_string(unchecksummed_text: str) -> Codex32String:
+    """Add the checksum to new worksheet data, such as a Codex32 Book checksum worksheet.
+
+    Never use this on an existing backup: it turns transcription errors into a
+    valid string. A valid checksum does not establish safe entropy.
+    """
+    hrp, body = bech32_decode(unchecksummed_text)
+    header = _u5_to_chars(body[:6])
+    if len(header) != 6:
+        raise InvalidLength("codex32 header must contain six symbols")
+    if header[0] not in "023456789":
+        raise InvalidThreshold(f"The threshold must be 0 or a number from 2 through 9; found {header[0]!r}.")
+    header = _header(int(header[0]), header[1:5], header[5])
+    return _from_parts(hrp, header, tuple(body[6:]), uppercase=unchecksummed_text.isupper())
+
+
 def _lagrange_weights(points: tuple[int, ...], target: int) -> tuple[int, ...]:
     weights: list[int] = []
     for position, point in enumerate(points):

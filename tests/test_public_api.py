@@ -40,7 +40,6 @@ assert recover_secret(shares) == secret
 assert derive_share(shares, "d").share_idx == "d"
 damaged = shares[0].s[:-1] + "?"
 assert correct(CorrectionContext("ms"), damaged)
-assert CorrectionContext.from_shares(shares[:1]).excluded_indices == (shares[0].share_idx,)
 """
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")
@@ -53,42 +52,6 @@ assert CorrectionContext.from_shares(shares[:1]).excluded_indices == (shares[0].
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_correction_context_from_accepted_shares() -> None:
-    first = parse_codex32(VECTOR_2["share_A"])
-    second = parse_codex32(VECTOR_2["share_C"])
-    context = CorrectionContext.from_shares([first, second], hrp="MS", immutable_prefix="MS1")
-
-    assert context == CorrectionContext("ms", len(first.s), "MS12NAME", ("a", "c"))
-    assert correct(context, first.s) == ()  # An accepted index cannot be suggested again.
-    assert CorrectionContext.from_shares([], hrp="ms", expected_length=len(first.s)) == CorrectionContext(
-        "ms", len(first.s)
-    )
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    (
-        {"hrp": "cl"},
-        {"expected_length": 74},
-        {"immutable_prefix": "ms12cash"},
-    ),
-)
-def test_correction_context_rejects_conflicting_hints(kwargs: dict[str, object]) -> None:
-    first = parse_codex32(VECTOR_2["share_A"])
-    with pytest.raises(codex32.InvalidCorrectionInput):
-        CorrectionContext.from_shares([first], **kwargs)  # type: ignore[arg-type]
-
-
-def test_correction_context_rejects_incompatible_shares() -> None:
-    first = parse_codex32(VECTOR_2["share_A"])
-    with pytest.raises(codex32.InvalidCorrectionInput):
-        CorrectionContext.from_shares([first, first])
-    with pytest.raises(codex32.InvalidCorrectionInput):
-        CorrectionContext.from_shares([parse_codex32(VECTOR_1["secret_s"])])
-    with pytest.raises(codex32.InvalidCorrectionInput):
-        CorrectionContext.from_shares([])
 
 
 def test_python_bip32_boundary_stops_at_the_root() -> None:

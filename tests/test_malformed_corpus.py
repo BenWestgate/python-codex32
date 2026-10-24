@@ -7,6 +7,7 @@ import pytest
 
 from codex32 import CorrectionContext, correct, parse_codex32, recover_secret
 from codex32._cli_parser import parser
+from codex32.bip93 import _from_unchecksummed_string
 from codex32.errors import CodexError
 
 _DOCUMENT = json.loads((Path(__file__).parent / "data" / "malformed_inputs.json").read_text())
@@ -17,6 +18,12 @@ assert _DOCUMENT["schema"] == 1
 def test_malformed_parse_corpus(case: dict[str, str]) -> None:
     with pytest.raises(CodexError):
         parse_codex32(case["text"])
+
+
+@pytest.mark.parametrize("case", _DOCUMENT["checksum_completion"], ids=lambda case: case["id"])
+def test_malformed_completion_corpus(case: dict[str, str]) -> None:
+    with pytest.raises(CodexError):
+        _from_unchecksummed_string(case["text"])
 
 
 @pytest.mark.parametrize("case", _DOCUMENT["interpolation"], ids=lambda case: case["id"])

@@ -281,14 +281,31 @@ follow Bitcoin Core v32's maintained
   confirmed.” `--plain` skips card confirmation. Redirected damaged input can
   still require an interactive correction confirmation.
 
+### Advanced: Codex32 Book checksum worksheet
+
+`ms32 checksum` computes the checksum for new data from the
+[Codex32 Book](https://secretcodex32.com) checksum worksheet, instead of
+computing it by hand. To verify a hand-computed checksum, enter the complete
+string in `ms32 check`. `ms32 checksum` is not a validation or repair tool: it refuses
+complete strings, and you must never use it to replace the checksum of an
+existing backup. A checksum cannot make weak input secure, so use only data
+from the Book's dice procedure. The command needs an interactive terminal,
+asks for the non-pink worksheet data twice, clearing the screen between
+entries, and then shows the full completed string. Copy the checksum into the
+pink squares and press Enter; the screen clears, then you type back only the
+pink checksum squares. The repeated entries catch typing errors, not errors
+already on the worksheet, so check the worksheet carefully first. Each entry
+must be entirely uppercase or lowercase. `--plain` preserves the first entry's
+case; the default terminal output uses the usual uppercase card layout.
+The completed string reaches stdout only after the checksum is confirmed.
+
 ### Advanced: completing missing trailing characters
 
 The correction command can fill trailing erasures when the final characters
 are actually unknown. For a normal codex32 string, replace the final 13 missing
 characters with `?`; a long-checksum string uses 15. Thirteen genuinely
 unreadable characters at the end of an existing backup are therefore a valid
-recovery case. The same mechanism can complete newly generated worksheet data
-whose final 13 squares have not yet been filled.
+recovery case. To checksum new Codex32 Book data instead, use `ms32 checksum`.
 
 Never intentionally delete or replace the existing final characters from a
 backup that merely fails validation. Doing so can hide a transcription or
