@@ -312,6 +312,9 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
             optional=True,
             prefill=prefill,
         )
+        if not replacement.isascii():
+            _print("Only ASCII characters are allowed. Re-enter the highlighted region.", err=True)
+            continue
         compact = "".join(replacement.split())
         if _ascii_lower(compact) == expected.lower():
             groups = [replacement]

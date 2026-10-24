@@ -163,6 +163,18 @@ def test_confirmation_rejects_unicode_that_lowercases_to_bech32(
     assert not ceremony.confirm(invalid).accepted
 
 
+def test_confirmation_keeps_unicode_whitespace_visible_as_mismatch() -> None:
+    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    pending = ceremony.next_share()
+    # ASCII case and grouping remain tolerant; a non-ASCII space must not vanish.
+    position = 8
+    invalid = pending.text[:position].upper() + "\u00a0" + pending.text[position:].upper()
+    result = ceremony.confirm(invalid)
+    assert not result.accepted
+    assert result.mismatched_groups
+    assert ceremony.confirm(" \n".join(pending.text.upper())).accepted
+
+
 def test_supplied_seed_must_form_a_valid_bip32_root(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(generation_module, "_valid_root", lambda _seed: False)
     with pytest.raises(CodexError, match="master seed does not form a valid BIP32 root"):

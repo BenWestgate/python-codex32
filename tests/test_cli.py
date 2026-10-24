@@ -1495,6 +1495,21 @@ def test_creation_confirmation_retries_unicode_aliases_before_accepting(
     assert confirmed == [Card.text]
 
 
+@pytest.mark.parametrize("interactive", (False, True))
+def test_text_input_rejects_unicode_whitespace_before_normalization(
+    monkeypatch: pytest.MonkeyPatch, interactive: bool
+) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+    value = "ms10 test\u00a0abcd"
+    if interactive:
+        monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
+        monkeypatch.setattr(input_module, "_editable_input", lambda *_args: value)
+    else:
+        monkeypatch.setattr(input_module.sys, "stdin", io.StringIO(value))
+    with pytest.raises(input_module.InputError, match="Only ASCII"):
+        input_module.read_text("Enter a card", preserve_groups=True)
+
+
 @pytest.mark.parametrize(
     ("observed", "shown", "red"),
     (
