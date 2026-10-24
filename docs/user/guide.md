@@ -272,7 +272,10 @@ follow Bitcoin Core v32's maintained
   not prove that it belongs to this wallet.
 - `ms32 correct` suggests a repair. Compare any suggestion character by
   character with the physical backup before confirming it.
-- `ms32 share d` derives a replacement at unused index `d`. Confirm and
+- `ms32 share d` derives a replacement at unused index `d`; `ms32 share cdf`
+  writes several cards after entering the existing cards once. Entered or
+  repeated indices make identical copies, which do not add distinct shares.
+  Copying only entered cards does not require a full threshold. Confirm and
   store the new card before retiring an old one. Interactive use displays the
   share, then asks you to write and re-enter it. Matching groups stay confirmed
   while you recheck highlighted regions. Success prints “Recovery card

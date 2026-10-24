@@ -39,7 +39,6 @@ from codex32.bip93 import (
     Header,
     Secret,
     Share,
-    _normalize_target,
     derive_share,
     parse_codex32,
     recover_secret,
@@ -54,6 +53,7 @@ from codex32.errors import CodexError, HeaderCollision, InvalidCorrectionInput
 from codex32.generation import (
     ConfirmationResult,
     CreationCeremony,
+    _indices,
     generate_master_seed,
 )
 from codex32.profiles import Profile, _profile_rules
@@ -173,30 +173,36 @@ def _emit(
     )
 
 
-def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinCore | None = None) -> int:
+def _share_command(indices: str, plain: bool, context: _CliContext, core: BitcoinCore | None = None) -> int:
     try:
-        index = _normalize_target(index, label="share index")
-    except CodexError as error:
-        raise _UsageError(f"Choose one share index from {IDX_SORT[1:].upper()}.") from error
+        requested = _indices(indices)
+    except CodexError:
+        requested = ()
+    if not requested:
+        raise _UsageError(f"Choose share indices from {IDX_SORT[1:].upper()}.")
     artifacts = _artifacts(
         basis=True,
-        excluded_index=index,
+        requested="".join(requested),
         profiles=context.profiles,
         initial_prefix=context.initial_prefix,
         fingerprint=core.fingerprint if core is not None else None,
     )
-    try:
-        derived = derive_share(artifacts, index)
+    entered = {artifact.header.index: artifact for artifact in artifacts}
+    try:  # Resolve every card before printing any, so a failure prints none.
+        shares = [
+            entered[index] if index in entered else derive_share(artifacts, index) for index in requested
+        ]
     except CodexError as error:
         raise _CommandError(str(error)) from error
-    _emit(derived, plain)
-    if sys.stdin.isatty() and sys.stdout.isatty() and not plain:
-        try:
-            _confirm_card(derived)
-        except (EOFError, KeyboardInterrupt) as error:
-            _print("Recovery card not confirmed.", err=True)
-            return 130 if isinstance(error, KeyboardInterrupt) else 2
-        _print("Recovery card confirmed.", err=True)
+    for share in shares:
+        _emit(share, plain)
+        if sys.stdin.isatty() and sys.stdout.isatty() and not plain:
+            try:
+                _confirm_card(share)
+            except (EOFError, KeyboardInterrupt) as error:
+                _print("Recovery card not confirmed.", err=True)
+                return 130 if isinstance(error, KeyboardInterrupt) else 2
+            _print("Recovery card confirmed.", err=True)
     return 0
 
 

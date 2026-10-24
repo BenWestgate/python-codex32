@@ -26,7 +26,6 @@ from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _c
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
-    ExistingTargetIndex,
     InvalidChecksum,
     InvalidLength,
     InvalidThreshold,
@@ -604,10 +603,7 @@ def _validate_operational_artifact(
     *,
     basis: bool,
     one: bool,
-    excluded_index: str | None,
 ) -> None:
-    if basis and artifact.header.index == excluded_index:
-        raise ExistingTargetIndex("That index was requested for the additional share.")
     if not one and (accepted or isinstance(artifact, Share) or basis):
         recovering = not basis and isinstance(artifact, Share)
         validator = _validate_recovery_prefix if recovering else _validate_basis_prefix
@@ -619,7 +615,6 @@ def _redirected(
     *,
     basis: bool,
     one: bool,
-    excluded_index: str | None,
     fingerprint: Callable[[MasterSeed], bytes] | None,
 ) -> list[Artifact]:
     tokens = _stdin().split()
@@ -642,7 +637,6 @@ def _redirected(
                         accepted,
                         basis=basis,
                         one=one,
-                        excluded_index=excluded_index,
                     )
                 except CodexError:
                     return False
@@ -666,7 +660,6 @@ def _redirected(
             accepted,
             basis=basis,
             one=one,
-            excluded_index=excluded_index,
         )
         accepted.append(artifact)
     return accepted
@@ -722,7 +715,7 @@ def _interactive(
     *,
     basis: bool,
     one: bool,
-    excluded_index: str | None,
+    requested: str,
     profiles: tuple[Profile, ...] | None,
     initial_prefix: str,
     fingerprint: Callable[[MasterSeed], bytes] | None,
@@ -737,7 +730,6 @@ def _interactive(
             accepted,
             basis=basis,
             one=one,
-            excluded_index=excluded_index,
         )
 
     def allowed(candidate: CorrectionCandidate) -> bool:
@@ -798,7 +790,7 @@ def _interactive(
             validate(artifact)
         except CodexError as error:
             _stderr(f"Rejected: {_FRIENDLY_SET_ERRORS.get(type(error), str(error))}\n")
-            duplicate = isinstance(error, (DuplicateShareIndex, ExistingTargetIndex))
+            duplicate = isinstance(error, DuplicateShareIndex)
             prefill = "" if duplicate else _retry_text(entered, prefix)
             continue
         prefill = ""
@@ -809,6 +801,8 @@ def _interactive(
         if not accepted:
             required = artifact.header.threshold
         accepted.append(artifact)
+        if requested and set(requested) <= {item.header.index for item in accepted}:
+            break  # Copying entered cards needs no threshold.
         prefix = _accepted_prefix(accepted)
         grouped_prefix = len(entered.split()) > 1
         if len(accepted) < required:
@@ -820,7 +814,7 @@ def read_artifacts(
     *,
     basis: bool = False,
     one: bool = False,
-    excluded_index: str | None = None,
+    requested: str = "",
     profiles: tuple[Profile, ...] | None = None,
     initial_prefix: str = "",
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
@@ -830,13 +824,12 @@ def read_artifacts(
             profiles,
             basis=basis,
             one=one,
-            excluded_index=excluded_index,
             fingerprint=fingerprint,
         )
     result = _interactive(
         basis=basis,
         one=one,
-        excluded_index=excluded_index,
+        requested=requested,
         profiles=profiles,
         initial_prefix=initial_prefix,
         fingerprint=fingerprint,
