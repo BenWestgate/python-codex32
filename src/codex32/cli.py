@@ -200,19 +200,15 @@ def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinC
     return 0
 
 
-def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None]:
+def _creation_header(value: str | None) -> tuple[int | None, str | None]:
     if value is None:
-        return Profile.MS, None, None
+        return None, None
     lowered = value.lower()
     if lowered != value and value.upper() != value:
         raise _UsageError("The set header must use either uppercase or lowercase.")
-    if "1" in lowered:
-        hrp, header = lowered.rsplit("1", 1)
-        if hrp != Profile.MS.value:
-            raise _UsageError("The set header must begin with ms1.")
-        profile = Profile.MS
-    else:
-        profile, header = Profile.MS, lowered
+    hrp, _separator, header = lowered.rpartition("1")
+    if _separator and hrp != Profile.MS.value:
+        raise _UsageError("The set header must begin with ms1.")
     if len(header) not in (1, 5) or header[0] not in "023456789":
         raise _UsageError(
             "Enter a threshold alone or a complete backup header containing "
@@ -220,18 +216,15 @@ def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None
         )
     threshold = int(header[0])
     if len(header) == 1:
-        return profile, threshold, None
+        return threshold, None
     try:
         identifier = Header(threshold, header[1:], "s").identifier
     except CodexError as error:
         raise _UsageError(f"Invalid backup header: {error}") from error
-    return profile, threshold, identifier
+    return threshold, identifier
 
 
-def _creation_source(
-    profile: Profile,
-    fingerprint: Callable[[MasterSeed], bytes] | None = None,
-) -> bytes | Artifact:
+def _creation_source() -> bytes | Artifact:
     prefill = ""
     while True:
         value = _text(
@@ -249,22 +242,15 @@ def _creation_source(
         try:
             return parse_codex32(value)
         except CodexError as error:
-            if not sys.stdin.isatty():
-                raise _UsageError(str(error)) from error
             candidates = _suggestions(
                 value,
                 "",
-                (profile,),
+                (Profile.MS,),
                 [],
-                allowed=lambda item: isinstance(item.artifact, Secret) and item.artifact.profile is profile,
-                fingerprint=fingerprint,
+                allowed=lambda item: isinstance(item.artifact, MasterSeed),
             )
-            if (
-                len(candidates) == 1
-                and isinstance(candidate := candidates[0].artifact, Secret)
-                and candidate.profile is profile
-            ):
-                confirmation = _confirm_correction(candidates[0], [], False, fingerprint)
+            if len(candidates) == 1 and isinstance(candidate := candidates[0].artifact, MasterSeed):
+                confirmation = _confirm_correction(candidates[0], [], False)
                 if confirmation is True:
                     return candidate
                 if confirmation is False:
@@ -331,20 +317,6 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
         raise RuntimeError("Confirmation mismatch.")
     if confirm is not None and not confirm(entered).accepted:
         raise RuntimeError("Confirmation rejected.")
-
-
-def _generated_secret(
-    source: bytes | None,
-    byte_length: int | None,
-    identifier: str | None,
-    fingerprint: Callable[[bytes], bytes] | None = None,
-) -> MasterSeed:
-    return generate_master_seed(
-        source,
-        byte_length=byte_length,
-        identifier=identifier,
-        fingerprint=fingerprint,
-    )
 
 
 def _show_fingerprint(core: BitcoinCore, secret: MasterSeed, action: str) -> None:
@@ -470,10 +442,8 @@ def _create(
     indices: str | None,
     existing: bool,
 ) -> int:
-    profile, selected_threshold, identifier = _creation_header(header)
+    selected_threshold, identifier = _creation_header(header)
     threshold = 0 if selected_threshold is None else selected_threshold
-    if profile is not Profile.MS:
-        raise _UsageError("Only Bitcoin master-seed backups can be created.")
     if shares is not None and indices is not None:
         raise _UsageError("Choose either --shares or --indices, not both.")
     if byte_length is not None and existing:
@@ -486,11 +456,9 @@ def _create(
         else:
             raise _UsageError("For thresholds 4 through 9, choose --shares or --indices.")
     core = _connected_core()
-    source = _creation_source(profile) if existing else None
-    if not existing and not sys.stdin.isatty() and _text("", optional=True):
-        raise _UsageError("Use --existing when supplying a seed or secret.")
+    source = _creation_source() if existing else None
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
-        raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
+        raise _UsageError("Enter one Bitcoin master seed, not a share or another backup type.")
     try:
         if threshold == 0:
             if isinstance(source, MasterSeed):
@@ -500,16 +468,13 @@ def _create(
                     )
                 secret = source
             else:
-                secret = _generated_secret(source, byte_length, identifier, core.fingerprint_seed)
-            _emit(secret, False, fingerprint=None if existing else core.fingerprint)
-            if sys.stdin.isatty():
-                _confirm_card(secret)
-            return (
-                _initialize_wallet(
-                    core, secret, timestamp=0 if existing else "now", fresh=not existing, restore=existing
+                secret = generate_master_seed(
+                    source, byte_length=byte_length, identifier=identifier, fingerprint=core.fingerprint_seed
                 )
-                if core is not None
-                else 0
+            _emit(secret, False, fingerprint=None if existing else core.fingerprint)
+            _confirm_card(secret)
+            return _initialize_wallet(
+                core, secret, timestamp=0 if existing else "now", fresh=not existing, restore=existing
             )
         if isinstance(source, MasterSeed):
             ceremony = CreationCeremony.from_secret(
@@ -520,7 +485,9 @@ def _create(
                 indices=indices,
             )
         elif source is not None:
-            source_secret = _generated_secret(source, None, identifier, core.fingerprint_seed)
+            source_secret = generate_master_seed(
+                source, identifier=identifier, fingerprint=core.fingerprint_seed
+            )
             ceremony = CreationCeremony.from_secret(
                 source_secret,
                 threshold=threshold,
@@ -547,13 +514,9 @@ def _create(
         _confirm_card(artifact, ceremony.confirm)
         _print(f"Recovery card {position + 1} of {output_count} confirmed.", err=True)
     finished = ceremony.finish()
-    assert isinstance(finished, MasterSeed)
-    if core is not None:
-        return _initialize_wallet(
-            core, finished, timestamp=0 if existing else "now", fresh=not existing, restore=existing
-        )
-    _print("\nEvery recovery card was confirmed from its re-entered text.", err=True)
-    return 0
+    return _initialize_wallet(
+        core, finished, timestamp=0 if existing else "now", fresh=not existing, restore=existing
+    )
 
 
 def _correct(
