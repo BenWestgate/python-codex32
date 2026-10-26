@@ -26,7 +26,7 @@ fingerprints, and wallet history cannot spend funds but remain privacy-sensitive
 | Package API | Recovery, derivation, sharing, and wallet operations accept validated artifacts, not unchecked text. |
 | Python process | Secret objects remain in process memory; normal output must not reveal them unintentionally. |
 | Operator and paper | The operator controls transcription, physical recovery cards, wallet records, and acceptance of correction suggestions. |
-| Entropy and root keys | Every random byte of `ms32 create` hashes a fresh Bitcoin Core HD key, from a generator that mixes in the operating-system cryptographically secure random-number generator (OS-CSPRNG), with 32 more OS-CSPRNG bytes; either source alone keeps the bytes unpredictable. Python stdlib HMAC/SHA-512 primitives are trusted. codex32 performs only BIP32 root validation and root xprv/tprv serialization in process. |
+| Entropy and root keys | CLI creation combines Bitcoin Core's HD-key randomness with OS-CSPRNG bytes; either source alone keeps draws unpredictable. Python API creation instead trusts the caller's `entropy(length)` source; returned type and length cannot establish entropy quality. Python stdlib HMAC/SHA-512 primitives are trusted. codex32 performs only BIP32 root validation and root xprv/tprv serialization in process. |
 | Bitcoin Core | The selected `bitcoin-cli`, its configuration, the selected local Core instance, and the destination computer are trusted for fingerprints, hardened/public-key derivation, and wallet initialization. |
 
 ## Operator assumptions
@@ -64,8 +64,9 @@ The operator must:
   implementation. Elliptic-curve public-key derivation used for fingerprints,
   xpubs, and public descriptors is delegated to the separately running Bitcoin
   Core process.
-- Separate Core draws provide opportunities to mix fresh noise but cannot
-  guarantee new physical entropy between calls.
+- Separate entropy draws offer fresh randomness but cannot guarantee new
+  physical entropy or independence between calls. CLI draws mix Core and OS
+  sources; API callers must provide a cryptographically secure source.
 - The temporary randomness wallet's passphrase comes from the OS-CSPRNG. Where
   no RAM folder exists, as on Windows, the encrypted wallet briefly sits on
   disk. Swap, RAM disks and tmpfs can page memory, including secrets, to disk.
@@ -119,7 +120,8 @@ complete explicit `ms1` string.
 ## Creation, sharing, and recovery controls
 
 Fresh shared creation generates *k* random initial shares. Each uses a separate
-full-payload request to Bitcoin Core. The current share string must be re-entered
+full-payload request to its entropy source (Core and OS in the CLI). The current
+share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
 text is never reparsed as the source secret or used as share bytes. Existing
 complete Bitcoin master seeds are confirmed unchanged and initialize the wallet
@@ -135,8 +137,9 @@ Progressive group-level correctness feedback is explicitly accepted and does not
 
 Confirmation shows that the operator can produce the correct recovery string during setup. It cannot prove that the physical backup was corrected rather than reconstructed using confirmation feedback.
 
-The API draws randomness only from its caller's `entropy` source and accepts no
-padding values, partial bases, or resumable ceremony state. Fresh creation rejects final-share
+The API draws randomness only from its caller's cryptographically secure
+`entropy` source. It accepts no padding values, partial bases, or resumable
+ceremony state. Fresh creation rejects final-share
 candidates whose generation padding is invalid. Master-seed creation also
 rejects candidates that cannot form a valid BIP32 root. This check uses only
 stdlib HMAC-SHA512 plus the secp256k1 scalar-order bound; it performs no point
