@@ -1460,6 +1460,21 @@ def test_hidden_text_is_read_without_echo_or_line_history(monkeypatch) -> None:
     assert prompts == ["Type random keys: "]
 
 
+def test_hidden_text_refuses_getpass_echo_fallback(monkeypatch) -> None:
+    import warnings
+
+    input_module = importlib.import_module("codex32._cli_input")
+    monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
+
+    def exposed_input(_prompt: str) -> str:
+        warnings.warn("terminal cannot disable echo", input_module.getpass.GetPassWarning)
+        pytest.fail("hidden keys were read with terminal echo enabled")
+
+    monkeypatch.setattr(input_module.getpass, "getpass", exposed_input)
+    with pytest.raises(input_module.InputError, match="Cannot hide typed keys"):
+        input_module.read_text("Type random keys", hidden=True)
+
+
 @pytest.mark.parametrize("byte_length", SEED_BYTE_LENGTHS)
 def test_cli_import_preserves_all_bip93_master_seed_sizes(byte_length: int) -> None:
     raw = bytes(range(byte_length))
