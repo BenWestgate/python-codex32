@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+import getpass
 import os
 import sys
+import warnings
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import replace
 from functools import partial
@@ -163,9 +165,19 @@ def read_text(
     preserve_groups: bool = False,
     prefill: str = "",
     prompt_end: str = ": ",
+    hidden: bool = False,
 ) -> str:
     if sys.stdin.isatty():
-        value = _editable_input(prompt + prompt_end, prefill)
+        # Hidden text is neither shown nor kept in the line editor's history.
+        if hidden:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", getpass.GetPassWarning)
+                try:
+                    value = getpass.getpass(prompt + prompt_end)
+                except getpass.GetPassWarning:
+                    raise InputError("Cannot hide typed keys on this terminal.") from None
+        else:
+            value = _editable_input(prompt + prompt_end, prefill)
         _stderr("")
     else:
         value = _stdin().strip()

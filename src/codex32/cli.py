@@ -473,6 +473,7 @@ def _create(
     shares: int | None,
     indices: str | None,
     existing: bool,
+    keystrokes: bool = False,
 ) -> int:
     profile, selected_threshold, identifier = _creation_header(header)
     threshold = 0 if selected_threshold is None else selected_threshold
@@ -495,7 +496,14 @@ def _create(
         raise _UsageError("Use --existing when supplying a seed or secret.")
     if isinstance(source, (Share, Secret)) and not isinstance(source, MasterSeed):
         raise _UsageError(f"Enter one {_profile_rules(profile).label}, not a share or another backup type.")
-    entropy = CoreEntropy(core, lambda message: _print(message, err=True))
+    if keystrokes and existing and threshold == 0:
+        raise _UsageError("--keystrokes applies only when new cards are drawn.")
+    typed = (
+        _text("Type random keys (not shown), then press Enter", preserve_groups=True, hidden=True)
+        if keystrokes
+        else ""
+    )
+    entropy = CoreEntropy(core, lambda message: _print(message, err=True), typed=typed)
     # Closing the terminal or a plain kill becomes Ctrl-C, so a draw under way still removes its wallet.
     hangups = [getattr(signal, name) for name in ("SIGHUP", "SIGTERM", "SIGBREAK") if hasattr(signal, name)]
     previous = {number: signal.signal(number, signal.default_int_handler) for number in hangups}
@@ -725,6 +733,7 @@ def _dispatch(arguments: argparse.Namespace, context: _CliContext) -> int:
             cast(int | None, arguments.shares),
             cast(str | None, arguments.indices),
             bool(arguments.existing),
+            bool(arguments.keystrokes),
         )
     if command == "correct":
         return _correct(
