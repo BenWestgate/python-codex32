@@ -28,11 +28,14 @@ contains offline verification utilities.
 
 ## Development and verification
 
-Before setting up an environment or choosing checks, read the setup and check
-list in `CONTRIBUTING.md`. Use the existing virtual environment when available.
+Read `CONTRIBUTING.md` for the contribution workflow. Use Python 3.10–3.15
+and an existing virtual environment where available; otherwise install
+development dependencies with `python -m pip install -e '.[dev]'`.
 Pick checks by what changed:
 
-- Runtime changes: affected pytest tests, Ruff, and mypy.
+- Runtime changes: affected pytest tests, `python -m ruff check .`,
+  `python -m ruff format --check .`, and `python -m mypy src/codex32`
+  when changing types or source.
 - Changes spanning modules or security boundaries: the full suite, also under
   `python -O`, plus the differential tools for correction or wallet derivation.
 - Packaging or release changes: the build and `twine check` steps as well.
@@ -53,9 +56,10 @@ avoid comments or tests that restate the implementation. Add or update concise
 docstrings when changing public behavior. Write codex32 in lowercase except
 when referring to the Codex32 Book.
 
-Respect the review-line budgets in `CONTRIBUTING.md`. New dependencies, public API signature or return-shape changes,
-and lint suppressions require user authorization; an explicit request can
-already provide that authorization.
+Keep the installed package below 5,200 logical review lines, enforced by
+`test_production_size_budgets_are_enforced`. New dependencies, public API
+signature or return-shape changes, and lint suppressions require user
+authorization; an explicit request can already provide that authorization.
 
 Use pytest and Hypothesis for meaningful behavioral coverage. Preserve external
 vectors, negative cases, and regressions for changed behavior. Prefer one clear
