@@ -557,11 +557,17 @@ class CoreEntropy:
                 pass
             except KeyboardInterrupt:
                 interrupted = True
-        if self._folder:
-            shutil.rmtree(self._folder, ignore_errors=True)
-        detach = ("/usr/bin/hdiutil", "detach", "-force", self._disk)
-        if self._disk and not subprocess.run(detach, capture_output=True, check=False).returncode:
-            self._disk = ""
+        try:
+            if self._folder:
+                shutil.rmtree(self._folder, ignore_errors=True)
+        except KeyboardInterrupt:
+            interrupted = True
+        try:
+            detach = ("/usr/bin/hdiutil", "detach", "-force", self._disk)
+            if self._disk and not subprocess.run(detach, capture_output=True, check=False).returncode:
+                self._disk = ""
+        except KeyboardInterrupt:
+            interrupted = True
         if not os.path.exists(self._folder):
             self._folder = ""
         left = self._folder or self._disk

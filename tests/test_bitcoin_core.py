@@ -982,6 +982,40 @@ def test_core_entropy_stops_creation_when_a_draws_wallet_stays(
     assert told == ([left] if "addhdkey" in fail else []) and (left in str(stopped.value)) == (not told)
 
 
+@pytest.mark.parametrize("step", ("rmtree", "detach"))
+def test_core_entropy_names_what_ctrl_c_left_while_deleting_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, step: str
+) -> None:
+    rpc, disk, detached = _EntropyRPC(), "/dev/disk9", list[str]()
+
+    def ram_folder(self: CoreEntropy) -> str:
+        self._disk = disk
+        return tempfile.mkdtemp(dir=tmp_path)
+
+    def run(command: tuple[str, ...], **_options: object) -> subprocess.CompletedProcess[bytes]:
+        if step == "detach":
+            raise KeyboardInterrupt
+        detached.append(command[-1])
+        return subprocess.CompletedProcess(command, 0)
+
+    def interrupted(*_arguments: object, **_options: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
+    monkeypatch.setattr(CoreEntropy, "_ram_folder", ram_folder)
+    monkeypatch.setattr("codex32._bitcoin_core.subprocess.run", run)
+    if step == "rmtree":
+        monkeypatch.setattr(shutil, "rmtree", interrupted)
+    entropy = CoreEntropy(BitcoinCore("bitcoin-cli", "main", 320000), lambda _message: None)
+
+    with pytest.raises(BitcoinCoreError, match="creation stopped") as stopped:
+        entropy(1)
+    # Ctrl-C while deleting files still runs the next step, then says what to remove by hand.
+    left = os.path.dirname(rpc.calls[0][0][2].removeprefix("wallet_name=")) if step == "rmtree" else disk
+    assert f"was not removed. Delete or eject {left}." in str(stopped.value)
+    assert detached == ([disk] if step == "rmtree" else []) and not rpc.loaded
+
+
 @pytest.mark.parametrize("lost", ("createwallet", "unloadwallet"))
 def test_core_entropy_removes_a_wallet_whose_call_never_answered_then_stops(
     monkeypatch: pytest.MonkeyPatch, lost: str
