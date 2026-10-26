@@ -117,7 +117,8 @@ complete explicit `ms1` string.
 ## Creation, sharing, and recovery controls
 
 Fresh shared creation generates *k* random initial shares. Each uses a separate
-full-payload request to the supplied entropy source (the OS-CSPRNG in the CLI). The current share string must be re-entered
+full-payload request to the supplied entropy source (the OS-CSPRNG in the
+CLI). The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
 text is never reparsed as the source secret and contributes no entropy. Existing
 complete Bitcoin master seeds are confirmed unchanged and initialize the wallet
@@ -135,8 +136,7 @@ Confirmation shows that the operator can produce the correct recovery string dur
 
 The API requires caller-provided cryptographic entropy for random draws and
 accepts no caller-supplied padding values, partial bases, or resumable ceremony
-state. Fresh creation rejects final-share
-candidates whose generation padding is invalid. Master-seed creation also
+state. Fresh creation rejects final-share candidates whose generation padding is invalid. Master-seed creation also
 rejects candidates that cannot form a valid BIP32 root. This check uses only
 stdlib HMAC-SHA512 plus the secp256k1 scalar-order bound; it performs no point
 multiplication. The original ceremony result, not re-entered text, remains the
