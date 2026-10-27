@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import subprocess
@@ -826,42 +825,22 @@ def test_no_record_is_the_operators_choice_and_checks_nothing(monkeypatch: pytes
     BitcoinCore("bitcoin-cli", "main", 300000).verify_identity(_SEED, None)
 
 
-# Frozen from Bails' own ms32.seed_identifier for this seed: master (RIPEMD-160) and the
-# June 2023 alpha (SHA-256). Bails checked three characters and kept the fourth for re-sharing.
-_BAILS_SEED = bytes(range(16))
-
-
 @pytest.mark.parametrize(
     ("identifier", "origin"),
     (
         (_fingerprint_identifier(_FINGERPRINT), "codex32"),
-        ("d9k8", "Bails"),
-        ("d9kq", "Bails"),
-        ("hezu", "Bails alpha"),
+        ("d9k8", None),
         ("test", None),
     ),
 )
-def test_identifier_origin_names_the_rule_that_made_it(identifier: str, origin: str | None) -> None:
-    secret = MasterSeed.from_seed(_BAILS_SEED, identifier=identifier)
+def test_identifier_origin_only_recognizes_the_default(identifier: str, origin: str | None) -> None:
+    secret = MasterSeed.from_seed(bytes(range(16)), identifier=identifier)
     assert identifier_origin(secret, _FINGERPRINT) == origin
-    assert ("matches this seed" in identifier_note(origin)) is (origin is not None)
-
-
-def test_identifier_origin_still_checks_alpha_without_ripemd160(monkeypatch: pytest.MonkeyPatch) -> None:
-    original_new = hashlib.new
-
-    def without_ripemd160(name: str, data: bytes = b"") -> object:
-        if name == "ripemd160":
-            raise ValueError("unsupported hash type ripemd160")
-        return original_new(name, data)
-
-    monkeypatch.setattr(hashlib, "new", without_ripemd160)
-    secret = MasterSeed.from_seed(_BAILS_SEED, identifier="hezu")
-    assert identifier_origin(secret, _FINGERPRINT) == "Bails alpha"
+    assert ("matches the fingerprint-derived default" in identifier_note(origin)) is (origin is not None)
 
 
 def test_identifier_note_allows_supported_nonderived_codex32_identifiers() -> None:
     note = identifier_note(None)
-    assert "split shares" in note
-    assert "supplied seed bytes" in note
-    assert "explicit identifier" in note
+    assert "Custom identifiers" in note
+    assert "shared backups" in note
+    assert "not proof of a mismatch" in note
