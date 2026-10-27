@@ -31,17 +31,11 @@ fingerprints, and wallet history cannot spend funds but remain privacy-sensitive
 
 ## Operator assumptions
 
-A **trusted computer** is one the operator controls and has no reason to suspect
-is compromised, with trusted software and configuration, including Python,
-codex32, the terminal, `bitcoin-cli`, and Bitcoin Core. Wallet encryption cannot
-protect secrets from malware. A dedicated offline signer stays disconnected
-from every network, including after use.
-
 The operator must:
 
 - use only Bitcoin Core descriptor wallets to sign with keys derived from a
   codex32 master seed;
-- use a trusted computer for operations involving recovery material, wallet
+- use a [trusted computer](../../SECURITY.md#trusted-computer) for recovery material, wallet
   initialization, or signing with Bitcoin Core;
 - disconnect every computer used for offline codex32 or signing work from all
   network paths, including Ethernet, internet, Tor, Wi-Fi, Bluetooth, and
@@ -57,11 +51,6 @@ The operator must:
   when recovered information and wallet records disagree; and
 - never put recovery text in command arguments or transfer a master seed,
   share, xprv, or private descriptor through QR or a network service.
-
-`create`, `secret`, `share`, `correct`, and `xprv` intentionally display recovery
-material. Unrelated output and diagnostics must not disclose it. Enter recovery
-text only when prompted or through stdin; putting it in a shell command can
-expose it through history or process arguments.
 
 ## Security limitations
 

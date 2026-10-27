@@ -87,15 +87,8 @@ codex32 detects and reports the local Bitcoin Core network. You do not need to
 change `bitcoin.conf` when using the standard local data directory and RPC
 port.
 
-Use a computer you control and whose software you trust. Malware can steal
-recovery material even from an encrypted wallet. For more protection, disconnect
-from all networks before entering secrets and stay offline until shutdown.
-Use codex32 to create or recover backups, and Bitcoin Core to manage your wallet,
-review transactions, and sign them. QR codes below carry only public wallet
-details or partially signed transactions.
-
-Bitcoin Core wallet encryption is strongly recommended. Keep its passphrase
-safe; codex32 never asks for it.
+Use a [trusted computer](../../SECURITY.md#trusted-computer) for backup,
+recovery, and signing. Follow the wallet-encryption guidance there.
 
 Run the command first, then type your seed or shares at the `>` prompt. Never
 put recovery text in the command itself: your shell may save that text.
