@@ -203,6 +203,8 @@ def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinC
 def _creation_header(value: str | None) -> tuple[Profile, int | None, str | None]:
     if value is None:
         return Profile.MS, None, None
+    if not value.isascii():
+        raise _UsageError("The set header must contain only ASCII characters.")
     lowered = value.lower()
     if lowered != value and value.upper() != value:
         raise _UsageError("The set header must use either uppercase or lowercase.")
