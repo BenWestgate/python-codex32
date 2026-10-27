@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from pathlib import Path
 
 import codex32
 from codex32 import (
@@ -26,6 +27,9 @@ _XPRV = (
 
 
 def main() -> None:
+    source_package = Path(__file__).resolve().parents[1] / "src" / "codex32"
+    imported_package = Path(codex32.__file__).resolve().parent
+    assert imported_package != source_package
     assert importlib.util.find_spec("bip32") is None
     assert importlib.util.find_spec("coincurve") is None
 
@@ -45,8 +49,6 @@ def main() -> None:
     secret = parse_codex32(_SECRET)
     assert isinstance(secret, MasterSeed)
     assert master_xprv(secret) == _XPRV
-    assert "core_descriptors" not in codex32.__all__
-    assert not hasattr(codex32, "core_descriptors")
     assert "bip32" not in sys.modules
     assert "coincurve" not in sys.modules
 

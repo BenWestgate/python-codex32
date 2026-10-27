@@ -1,29 +1,65 @@
 name: Publish release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 env:
   SOURCE_DATE_EPOCH: "1763060600"
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+      actions: read
+    outputs:
+      python_versions: ${{ steps.metadata.outputs.python_versions }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Require successful source CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            --workflow python-package.yml --status completed --limit 1 \
+            --json conclusion --jq '.[0].conclusion')" = success
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
       - run: >-
-          python -c "import os,tomllib;
-          version=tomllib.load(open('pyproject.toml','rb'))['project']['version'];
-          assert os.environ['GITHUB_REF_NAME'] == f'v{version}'"
-      - run: >-
           python -m pip install --require-hashes
           -r requirements/release-build-dependencies.txt
+      - id: metadata
+        name: Check release metadata
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import tomllib
+          from packaging.version import Version
+
+          with open("pyproject.toml", "rb") as file:
+              project = tomllib.load(file)["project"]
+          version = Version(project["version"])
+          if os.environ["GITHUB_REF_NAME"] != f"v{project['version']}":
+              raise SystemExit("release tag does not match package version")
+          prefix = "Programming Language :: Python :: "
+          versions = sorted(
+              item.removeprefix(prefix) for item in project["classifiers"]
+              if item.startswith(prefix) and item.removeprefix(prefix).count(".") == 1
+          )
+          if not versions:
+              raise SystemExit("no supported Python versions are classified")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"python_versions={json.dumps(versions)}\n")
+              output.write(f"prerelease={str(version.is_prerelease).lower()}\n")
+          PY
       - run: python -m build --no-isolation
       - name: Normalize source-archive metadata
         run: |
@@ -33,28 +69,79 @@ jobs:
           tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
             -C normalized-sdist -cf - "codex32-${GITHUB_REF_NAME#v}" | gzip -n > "$archive.new"
           mv "$archive.new" "$archive"
-      - name: Attach distributions to the GitHub release
-        run: gh release upload "$GITHUB_REF_NAME" dist/*
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Record artifact hashes and source
+        run: |
+          sha256sum dist/* > SHA256SUMS
+          git rev-parse HEAD > SOURCE_COMMIT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: distributions
-          path: dist/
+          path: |
+            dist/
+            SHA256SUMS
+            SOURCE_COMMIT
+
+  qualify:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ${{ fromJSON(needs.build.outputs.python_versions) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: distributions
+      - name: Install and smoke-test the exact wheel and sdist
+        run: |
+          sha256sum --check SHA256SUMS
+          for artifact in dist/codex32-*.whl dist/codex32-*.tar.gz; do
+            python tools/verify_wheel_environment.py --artifact "$artifact"
+          done
 
   publish:
-    needs: build
+    needs: [build, qualify]
+    # Stable publication waits for the required Core qualification job (#207).
+    if: needs.build.outputs.prerelease == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/codex32
     permissions:
-      contents: read
+      contents: write
       id-token: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      PRERELEASE: ${{ needs.build.outputs.prerelease }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: distributions
-          path: dist/
-      - name: Publish distributions to PyPI
+      - name: Verify qualified artifact bytes
+        run: sha256sum --check SHA256SUMS
+      - name: Stage draft GitHub release
+        run: |
+          if draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            [ "$draft" = true ] || { echo "release is already public" >&2; exit 1; }
+            gh release edit "$GITHUB_REF_NAME" --prerelease="$PRERELEASE"
+            gh release upload "$GITHUB_REF_NAME" dist/* SHA256SUMS SOURCE_COMMIT --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes \
+              --title "$GITHUB_REF_NAME" --prerelease="$PRERELEASE" dist/* SHA256SUMS SOURCE_COMMIT
+          fi
+      - name: Publish qualified distributions to PyPI
         uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26 # v1.14.2
+        with:
+          packages-dir: dist/
+      - name: Publish GitHub release
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
