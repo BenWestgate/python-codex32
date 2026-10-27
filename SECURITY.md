@@ -5,8 +5,8 @@ recovery plan reviewed before using real funds.
 
 ## Trusted computer
 
-A **trusted computer** is under your exclusive control, is believed free of
-malware, and runs an operating system and other software you trust. Use one for
+A **trusted computer** is one you exclusively control, believe is free of
+malware, and whose operating system and other software you trust. Use one for
 backup creation, recovery, wallet setup, and signing.
 
 Follow [Bitcoin Core's wallet-encryption guidance][core-wallet]. Encryption
