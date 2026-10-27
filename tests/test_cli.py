@@ -112,7 +112,6 @@ class _FakeBitcoinCore:
         _tell: Callable[[str], None],
         *,
         expected_fingerprint: bytes | None,
-        private: bool = True,
         account: int = 0,
         timestamp: int | str = "now",
     ) -> str:
