@@ -57,10 +57,11 @@ from codex32.generation import (
     generate_master_seed,
 )
 from codex32.profiles import Profile, _profile_rules
-from codex32.profiles.ms32 import MasterSeed
 from codex32.profiles.ms32 import (
-    _text_length as _ms_text_length,
+    SEED_BYTE_LENGTHS,
+    MasterSeed,
 )
+from codex32.profiles.ms32 import _text_length as _ms_text_length
 from codex32.wallet import master_xprv
 
 Artifact = Share | Secret
@@ -102,7 +103,7 @@ def _secret(artifacts: list[Artifact]) -> Secret:
     if not all(isinstance(artifact, Share) for artifact in artifacts):
         raise _UsageError("Recovery accepts ordinary shares or one complete secret.")
     try:
-        return recover_secret([artifact for artifact in artifacts if isinstance(artifact, Share)])
+        return recover_secret(cast(list[Share], artifacts))
     except CodexError as error:
         raise _UsageError(str(error)) from error
 
@@ -188,6 +189,10 @@ def _share_command(index: str, plain: bool, context: _CliContext, core: BitcoinC
         derived = derive_share(artifacts, index)
     except CodexError as error:
         raise _CommandError(str(error)) from error
+    if core is not None and sys.stdout.isatty() and not plain:
+        given = [artifact for artifact in artifacts if isinstance(artifact, Secret)]
+        seed = cast(MasterSeed, given[0] if given else _secret(artifacts))
+        _print(f"Master fingerprint: {core.fingerprint(seed).hex().upper()}\n")
     _emit(derived, plain)
     if sys.stdin.isatty() and sys.stdout.isatty() and not plain:
         try:
@@ -240,11 +245,17 @@ def _creation_source(
             prompt_end=":\n> ",
         )
         prefill = ""
-        try:
-            if value:
-                return bytes.fromhex(value)
-        except ValueError:
-            pass
+        if value and all(character in "0123456789abcdefABCDEF" for character in value):
+            if len(value) not in {2 * size for size in SEED_BYTE_LENGTHS}:
+                message = (
+                    "Hexadecimal seeds must contain 16, 20, 24, 28, 32, or 64 bytes. "
+                    "Re-enter the entire seed carefully."
+                )
+                if not sys.stdin.isatty():
+                    raise _UsageError(message)
+                _print(f"Rejected: {message}", err=True)
+                continue
+            return bytes.fromhex(value)
         try:
             return parse_codex32(value)
         except CodexError as error:
@@ -271,8 +282,7 @@ def _creation_source(
                     prefill = value
                     continue
             _print(
-                "Rejected: No unique correction found. Check your backup and re-enter the existing secret "
-                "or hexadecimal seed carefully.",
+                "Rejected: No unique correction found. Check your codex32 backup and re-enter it carefully.",
                 err=True,
             )
 
@@ -442,22 +452,25 @@ def _initialize_wallet(
 
 
 def _connected_core(fallback: str | None = None) -> BitcoinCore:
+    # A pipe can't choose a network, and redirected stderr keeps only the gate's error.
     try:
         core = BitcoinCore.connect(
-            lambda prompt: _text(prompt, optional=True),
-            lambda message: _print(message, err=True),
+            (lambda prompt: _text(prompt, optional=True)) if sys.stdin.isatty() else None,
+            (lambda message: _print(message, err=True)) if sys.stderr.isatty() else None,
         )
-        _print("", err=True)
+        if sys.stderr.isatty():
+            _print("", err=True)
         return core
     except KeyboardInterrupt as error:
         raise _CoreSelectionInterrupted from error
     except BitcoinCoreError as error:
-        suggestion = (
-            f" Run 'codex32 {fallback}' instead for a Core-independent operation."
+        use = (
+            "uses Bitcoin Core to show the master fingerprint and rank corrections. "
+            f"'codex32 {fallback}' works without Core but doesn't show the fingerprint."
             if fallback is not None
-            else ""
+            else "gives Bitcoin Core the master key."
         )
-        raise _CommandError(str(error) + suggestion) from error
+        raise _CommandError(f"{error}\nThis command {use}") from error
 
 
 def _create(
@@ -605,6 +618,8 @@ def _correct(
             raise _UsageError("--bytes does not match the valid master-seed backup length.")
         _print("The codex32 string is already valid.")
         return 0
+    if context.master_seed:
+        core = core or _connected_core("correct")
     search_value, erased, immutable = normalized, normalized, normalized[: separator + 1]
     interpreted = _case_interpretation(normalized, immutable, context.profiles, None)
     if interpreted is not None:
@@ -626,15 +641,12 @@ def _correct(
         raise _CommandError("The correction search did not complete within ten seconds.")
     if not candidates:
         raise _CommandError("No valid correction found. Check the original backup.")
-    if context.master_seed and len(candidates) > 1:
-        core = core or _connected_core("correct")
+    if core is not None and len(candidates) > 1:
         candidates = _best(candidates, fingerprint_match=_fingerprint_matcher(core.fingerprint))
     if len(candidates) != 1:
         raise _CommandError("Several corrections are possible. Check the original backup.")
     fixed = candidates[0]
     _require_correction_confirmation(fixed.low_checksum_discrimination)
-    if context.master_seed:
-        core = core or _connected_core("correct")
     warning = (
         "Warning: This is only a correction suggestion. Compare it with the original backup before using it."
     )

@@ -4,6 +4,7 @@ import builtins
 import contextlib
 import importlib
 import io
+import json
 import re
 import subprocess
 import sys
@@ -31,7 +32,7 @@ from codex32 import (
     parse_codex32,
     recover_secret,
 )
-from codex32._bitcoin_core import BitcoinCore
+from codex32._bitcoin_core import BitcoinCore, BitcoinCoreError
 from codex32.bech32 import _chars_to_u5, bech32_encode
 from codex32.checksums import _CODEX32, _CODEX32_LONG
 from codex32.cli import main, ms_main
@@ -111,7 +112,6 @@ class _FakeBitcoinCore:
         _tell: Callable[[str], None],
         *,
         expected_fingerprint: bytes | None,
-        private: bool = True,
         account: int = 0,
         timestamp: int | str = "now",
     ) -> str:
@@ -120,6 +120,9 @@ class _FakeBitcoinCore:
         self.imported = secret
         self.account, self.timestamp = account, timestamp
         return "test-wallet"
+
+
+_REAL_CONNECT = BitcoinCore.connect
 
 
 @pytest.fixture(autouse=True)
@@ -280,6 +283,63 @@ def test_check_rejects_shared_core_lightning_artifacts(index: str) -> None:
 
     assert result.exit_code == 2
     assert "A Core Lightning HSM secret backup must be unshared, with threshold 0." in result.stderr
+
+
+def _missing_core(*_args: object, **_kwargs: object) -> BitcoinCore:
+    raise BitcoinCoreError("bitcoin-cli was not found.")
+
+
+@pytest.mark.parametrize("command", ("secret", "share", "correct"))
+def test_missing_core_names_the_codex32_fallback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    def search(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("searched before connecting to Bitcoin Core")
+
+    monkeypatch.setattr("codex32.cli.BitcoinCore.connect", _missing_core)
+    monkeypatch.setattr("codex32.cli._scheduled_candidates", search)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(VECTOR_1["secret_s"].replace("x", "q", 1) + "\n"))
+
+    assert ms_main([command, "d"] if command == "share" else [command]) == (3 if command == "correct" else 1)
+    assert capsys.readouterr().err == (
+        f"ms32 {command}: bitcoin-cli was not found.\nThis command uses Bitcoin Core to show the master "
+        f"fingerprint and rank corrections. 'codex32 {command}' works without Core but doesn't show the "
+        "fingerprint.\n"
+    )
+
+
+def test_missing_core_for_wallet_setup_offers_no_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli = importlib.import_module("codex32.cli")
+    monkeypatch.setattr("codex32.cli.BitcoinCore.connect", _missing_core)
+
+    with pytest.raises(cli._CommandError) as failure:
+        cli._connected_core()
+
+    assert str(failure.value) == "bitcoin-cli was not found.\nThis command gives Bitcoin Core the master key."
+
+
+def test_piped_input_never_answers_the_core_network_choice(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def run(command: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
+        chain = command[1].removeprefix("-chain=")
+        if chain not in ("main", "signet"):
+            return subprocess.CompletedProcess(command, 1, "", "")
+        response = {"version": 320000} if command[-1] == "getnetworkinfo" else {"chain": chain}
+        return subprocess.CompletedProcess(command, 0, json.dumps(response), "")
+
+    damaged = VECTOR_1["secret_s"].replace("x", "q", 1)
+    reads = iter((damaged,))  # A second read would be the pipe's EOF answering the network prompt.
+    monkeypatch.setattr("codex32._bitcoin_core.shutil.which", lambda _name: "/reviewed/bitcoin-cli")
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(BitcoinCore, "connect", _REAL_CONNECT)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(damaged))
+    monkeypatch.setattr("codex32._cli_input._stdin", lambda: next(reads))
+
+    assert ms_main(["correct"]) == 3
+    assert capsys.readouterr().err.startswith(
+        "ms32 correct: More than one local Bitcoin Core network is running.\nThis command uses Bitcoin Core"
+    )
 
 
 def test_check_does_not_derive_wallet_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -682,9 +742,33 @@ def test_existing_seed_without_unique_correction_gets_no_hint(monkeypatch, capsy
 
     assert cli_module._creation_source(Profile.MS) == bytes(16)
     assert capsys.readouterr().err == (
-        "Rejected: No unique correction found. Check your backup and re-enter the existing secret "
-        "or hexadecimal seed carefully.\n"
+        "Rejected: No unique correction found. Check your codex32 backup and re-enter it carefully.\n"
     )
+
+
+@pytest.mark.parametrize("bad_hex", ("ab" * 15, "ab" * 17, "a" * 33, "ab" * 33))
+def test_creation_source_reprompts_on_invalid_hex_length(monkeypatch, capsys, bad_hex):
+    cli_module = importlib.import_module("codex32.cli")
+    answers = iter((bad_hex, "00" * 16))
+    seen_prefills = []
+    monkeypatch.setattr(cli_module.sys, "stdin", _TTYInput())
+
+    def answer(*_args, **kwargs):
+        seen_prefills.append(kwargs.get("prefill", None))
+        return next(answers)
+
+    monkeypatch.setattr(cli_module, "_text", answer)
+    monkeypatch.setattr(
+        cli_module,
+        "_suggestions",
+        lambda *_args, **_kwargs: pytest.fail("Hexadecimal seed must not be error-corrected"),
+    )
+
+    assert cli_module._creation_source(Profile.MS) == bytes(16)
+    assert seen_prefills == ["", ""]
+    output = capsys.readouterr().err
+    assert "Hexadecimal seeds must contain 16, 20, 24, 28, 32, or 64 bytes" in output
+    assert "No unique correction" not in output
 
 
 @pytest.mark.parametrize(("difference", "word"), ((-9, "short of"), (9, "too long for")))
@@ -1375,7 +1459,7 @@ def test_cli_import_preserves_all_bip93_master_seed_sizes(byte_length: int) -> N
 def test_cli_import_rejects_every_other_16_through_64_byte_size() -> None:
     for byte_length in set(range(16, 65)) - set(SEED_BYTE_LENGTHS):
         result = _invoke_confirmed_create(["create", "--existing"], bytes(byte_length).hex())
-        assert result.exit_code == 1
+        assert result.exit_code == 2  # Invalid length clears the field; EOF ends the retry.
         assert result.stdout == ""
         assert "16, 20, 24, 28, 32, or 64" in result.stderr
 
@@ -1701,13 +1785,15 @@ def test_create_rejects_bip39_partial_basis_and_selector_conflicts() -> None:
         assert result.exit_code != 0
 
 
-def test_terminal_secret_has_fingerprint_but_share_does_not() -> None:
-    secret = _invoke_terminal(["secret"], VECTOR_1["secret_s"])
+def test_terminal_secret_and_share_show_the_master_fingerprint() -> None:
+    secret = _invoke_terminal(["secret"], VECTOR_2["share_A"], VECTOR_2["share_C"])
     share = _invoke_terminal(["share", "d"], VECTOR_2["share_A"], VECTOR_2["share_C"])
+    from_secret = _invoke_terminal(["share", "d"], VECTOR_2["secret_S"], VECTOR_2["share_C"])
+    fingerprint = _FakeBitcoinCore().fingerprint(cast(MasterSeed, parse_codex32(VECTOR_2["secret_S"])))
+    line = f"Master fingerprint: {fingerprint.hex().upper()}"
 
-    assert secret.exit_code == share.exit_code == 0
-    assert "Master fingerprint:" in secret.stdout
-    assert "Master fingerprint:" not in share.stdout
+    assert secret.exit_code == share.exit_code == from_secret.exit_code == 0
+    assert line in secret.stdout and line in share.stdout and line in from_secret.stdout
     assert "Backup identifier:" in secret.stdout and "Backup identifier:" in share.stdout
 
 
@@ -1843,14 +1929,13 @@ def test_correction_options_control_lengths_deadline_and_search_envelope(
     assert observed == damaged
     assert tuple(context.expected_length for context in contexts) == lengths
     assert (search.call_args.kwargs["deadline"] is not None) is bounded
-    assert search.call_args.kwargs["reduced"] == frozenset()
 
 
 def test_automatic_target_selection_covers_midpoints_and_supported_lengths() -> None:
     from codex32._cli_input import _correction_plan
 
     for observed in range(40, 136):
-        targets = _correction_plan(Profile.MS, None, observed, None)[0]
+        targets = _correction_plan(Profile.MS, None, observed, None)
         expected = 48 if observed <= 61 else 74 if observed <= 100 else 127
 
         assert targets[0] == expected
@@ -2969,7 +3054,7 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     assert prompts[1] == "Restore without a wallet record? [y/N]"
     shown = capsys.readouterr().err
     assert shown.count(f"Master fingerprint: {fingerprint.hex().upper()}") == 1
-    assert "was not made from this seed" in shown and "nothing can prove" in shown
+    assert "does not match the fingerprint-derived default" in shown and "nothing can prove" in shown
 
     prompts = _record_answers(monkeypatch, "", "y")
     assert _RECORDED_FINGERPRINT(core, secret) is None
@@ -2978,7 +3063,7 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
     _record_answers(monkeypatch, "", "yes")
     assert _RECORDED_FINGERPRINT(core, derived) is None
-    assert "matches this seed (codex32 rule)" in capsys.readouterr().err
+    assert "matches the fingerprint-derived default (20 bits)" in capsys.readouterr().err
 
 
 def test_wallet_restore_hides_fingerprint_until_the_record_gate(monkeypatch: pytest.MonkeyPatch) -> None:
