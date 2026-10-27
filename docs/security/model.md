@@ -35,14 +35,9 @@ The operator must:
 
 - use only Bitcoin Core descriptor wallets to sign with keys derived from a
   codex32 master seed;
-- use computers believed malware-free and whose other software is trusted for
-  all codex32 operations and for wallet initialization and signing with Bitcoin
-  Core;
-- disconnect every computer used for offline codex32 or signing work from all
-  network paths, including Ethernet, internet, Tor, Wi-Fi, Bluetooth, and
-  cellular;
-- synchronize Bitcoin Core on the networked computer before trusting its
-  balances or history;
+- follow the [computer requirements](../../SECURITY.md#trusted-computer) for all
+  operations involving recovery material, including wallet initialization and
+  signing with Bitcoin Core;
 - protect recovery cards and store shared cards in different trusted places;
 - confirm every newly recorded secret or share;
 - keep wallet records separate from shares, type the master fingerprint from

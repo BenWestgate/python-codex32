@@ -1,13 +1,29 @@
 # Security
 
-codex32 handles wallet recovery material. Use a trusted computer and have the
-software and recovery plan reviewed before relying on it with funds. For
-stronger isolation, use codex32 and the Bitcoin Core signing wallet only on a
-computer kept permanently offline.
+codex32 handles wallet backup and recovery secrets. Have the software and
+recovery plan reviewed before using real funds.
+
+## Trusted computer
+
+A **trusted computer** is one you exclusively control, believe is free of
+malware, and whose operating system and other software you trust. Use one for
+backup creation, recovery, wallet setup, and signing.
+
+Follow [Bitcoin Core's wallet-encryption guidance][core-wallet]. Encryption
+[cannot fully protect your bitcoins from malware][core-dialog]. Keep your
+wallet passphrase safe.
+
+For stronger isolation, use an offline signing computer that never connects to
+any network, including Ethernet, internet, Tor, Wi-Fi, Bluetooth, or cellular,
+as in [Bitcoin Core's offline-signing tutorial][core-offline]. Online Core nodes
+must synchronize before their balances or history are trusted.
 
 A valid checksum detects many copying mistakes. It does not prove that a backup
 belongs to your wallet. A correction is only a suggestion; compare it with the
 physical backup and wallet information kept elsewhere.
+
+codex32 is designed to avoid accidental disclosure; commands display recovery
+material only when that is their purpose.
 
 Python, your terminal, and your operating system may retain secret text in
 memory or scrollback. codex32 does not intentionally save secrets and keeps
@@ -15,6 +31,10 @@ them out of command arguments and normal machine output, but it cannot
 guarantee that every copy is erased from swap, hibernation data, or crash
 dumps. Using Tails and shutting down when finished helps mitigate this Python
 limitation.
+
+[core-wallet]: https://github.com/bitcoin/bitcoin/blob/v32.0/doc/managing-wallets.md#12-encrypting-the-wallet
+[core-dialog]: https://github.com/bitcoin/bitcoin/blob/v32.0/src/qt/askpassphrasedialog.cpp
+[core-offline]: https://github.com/bitcoin/bitcoin/blob/v32.0/doc/offline-signing-tutorial.md
 
 ## Report a security problem
 

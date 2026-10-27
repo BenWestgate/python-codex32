@@ -87,16 +87,14 @@ codex32 detects and reports the local Bitcoin Core network. You do not need to
 change `bitcoin.conf` when using the standard local data directory and RPC
 port.
 
-Use a computer you believe is malware-free and whose other software you trust.
-Only codex32 and Bitcoin Core should perform recovery, derivation, wallet
-initialization, or signing. The QR tools below transport only public
-descriptors or PSBTs.
+Use a [trusted computer](../../SECURITY.md#trusted-computer) for backup,
+recovery, and signing.
 
 Bitcoin Core wallet encryption is strongly recommended. Bitcoin Core owns the
 passphrase and its prompts; codex32 never asks for, reads, or forwards it.
 
-Do not type recovery text on the same line as a command. Run the command first,
-then enter a master seed or shares on the separate `>` line when prompted.
+Run the command first, then type your seed or shares at the `>` prompt. Never
+put recovery text in the command itself: your shell may save that text.
 This keeps a 48-character string grouped in fours within an 80-column terminal.
 Later share prompts may show a fixed common header after `>`. Never photograph
 recovery text or put it in a website, chat, cloud clipboard, or online QR
