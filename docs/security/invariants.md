@@ -34,7 +34,8 @@ and evidence.
 6. Secrets stay out of command arguments, logs, unrelated output, and public
    transfers. Only commands intended to produce recovery material may display it.
    During wallet setup, codex32 transfers the master xprv only through child stdin.
-   Private descriptors exist only in Python memory and child stdin.
+   Timestamped rescans capture Core's private descriptor output and return it
+   through child stdin, never command arguments or operator output.
 7. Bitcoin Core chains are discovered before entropy or recovery input. The
    operator confirms an eligible descriptor wallet by exact name.
 8. Wallet state is revalidated before handing Core the master key. Core must
@@ -43,10 +44,7 @@ and evidence.
    and verified on every exit path.
 10. External text, Core output, public wallet data, and PSBTs are untrusted.
 11. Only Bitcoin Core descriptor wallets sign with codex32-derived keys.
-    Sensitive operations use only codex32 or Core on a
-    [trusted computer](../../SECURITY.md#trusted-computer).
-12. Offline hosts disable every network path, including Ethernet, internet,
-    Tor, Wi-Fi, Bluetooth, and cellular. Online Core nodes synchronize before
-    their balances or history are trusted.
+12. Computer and network use follows the requirements in
+    [SECURITY.md](../../SECURITY.md#trusted-computer).
 
 Changes require matching model, tests, and security-review evidence.

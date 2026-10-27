@@ -88,7 +88,10 @@ change `bitcoin.conf` when using the standard local data directory and RPC
 port.
 
 Use a [trusted computer](../../SECURITY.md#trusted-computer) for backup,
-recovery, and signing. Follow the wallet-encryption guidance there.
+recovery, and signing.
+
+Bitcoin Core wallet encryption is strongly recommended. Bitcoin Core owns the
+passphrase and its prompts; codex32 never asks for, reads, or forwards it.
 
 Run the command first, then type your seed or shares at the `>` prompt. Never
 put recovery text in the command itself: your shell may save that text.
