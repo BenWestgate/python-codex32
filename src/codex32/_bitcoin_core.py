@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import string
@@ -11,7 +10,6 @@ from time import sleep
 from typing import Literal
 
 from codex32._bip32 import _master_xprv_from_seed
-from codex32.bech32 import _u5_to_chars, convertbits
 from codex32.generation import _fingerprint_identifier
 from codex32.profiles.ms32 import MasterSeed
 
@@ -55,33 +53,21 @@ NO_RECORD_WARNING = (
 
 
 def identifier_note(origin: str | None) -> str:
-    # Say what `identifier_origin` found, for an operator restoring without a record.
+    # A 20-bit default-identifier match is useful evidence, not authentication.
     if origin is None:
         return (
-            "The backup identifier was not made from this seed. That can be normal for codex32 backups "
-            "made from split shares, supplied seed bytes or an explicit identifier. Bails made every "
-            "identifier from its seed, so for a Bails backup these are the wrong or mixed-up cards."
+            "The backup identifier does not match the fingerprint-derived default. "
+            "Custom identifiers and shared backups can still be correct; this is not proof of a mismatch."
         )
     return (
-        f"The backup identifier matches this seed ({origin} rule). That rules out most mixed-up cards, "
-        "but not cards replaced on purpose."
+        "The backup identifier matches the fingerprint-derived default (20 bits). "
+        "This supports an unshared default-identifier recovery, but does not authenticate the wallet."
     )
 
 
 def identifier_origin(secret: MasterSeed, fingerprint: bytes) -> str | None:
-    """Check codex32's fingerprint or Bails' three-character seed-digest identifier."""
-    identifier = secret.header.identifier
-    if identifier == _fingerprint_identifier(fingerprint):
-        return "codex32"
-    for name, digest in (("Bails", "ripemd160"), ("Bails alpha", "sha256")):
-        try:
-            hashed = hashlib.new(digest, secret.seed_bytes).digest()
-        except ValueError:
-            continue
-        derived = convertbits(hashed, 8, 5, pad=True)
-        if identifier[:3] == _u5_to_chars(tuple(derived[:3])):
-            return name
-    return None
+    """Recognize only this project's fingerprint-derived default identifier."""
+    return "codex32" if secret.header.identifier == _fingerprint_identifier(fingerprint) else None
 
 
 @dataclass(frozen=True)
@@ -98,7 +84,10 @@ class BitcoinCore:
     ) -> BitcoinCore:
         executable = shutil.which("bitcoin-cli")
         if executable is None:
-            raise BitcoinCoreError("Install a reviewed bitcoin-cli before creating a backup.")
+            raise BitcoinCoreError(
+                "bitcoin-cli was not found. Install a reviewed Bitcoin Core 32 or newer and run it with RPC "
+                "enabled. An unsynced regtest or signet node is enough for practice."
+            )
         choices: list[BitcoinCore] = []
         for chain, _label in _CHAINS:
             client = cls(executable, chain, 0)
@@ -115,7 +104,7 @@ class BitcoinCore:
                 choices.append(cls(executable, chain, version))
         if not choices:
             raise BitcoinCoreError(
-                "No local Bitcoin Core RPC server found.\nStart Bitcoin Core "
+                "No local Bitcoin Core 32 or newer RPC server found.\nStart Bitcoin Core "
                 "with local RPC enabled.\nFor signet practice: bitcoin-qt -signet -server"
             )
         if len(choices) > 1:
