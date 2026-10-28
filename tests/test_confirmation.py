@@ -23,6 +23,10 @@ def test_alignment_preserves_leading_matches_and_invalid_characters(
     assert _entered_groups(observed, expected) == (groups, changed)
 
 
+def test_input_over_twice_the_card_is_all_wrong_without_alignment() -> None:
+    assert _entered_groups("ABCDABCDA bc", "ABCD") == (["ABCD", "ABCD", "Abc"], {0, 1, 2})
+
+
 @given(st.text(alphabet="ABCD!? 1K", max_size=20))
 def test_alignment_only_returns_characters_the_operator_entered(observed: str) -> None:
     groups, changed = _entered_groups(observed, "ABCDABCD")
