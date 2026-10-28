@@ -432,7 +432,7 @@ and reparses survivors. No meet-in-the-middle search is used.
 
 Each layer is charged `alignment_count * 32**E * C(M-E,S) * 31**S`, with `M`
 the mutable body length. All fixed, character, group and target-length layers
-share one admission ledger. Complete equal-volume batches are admitted only
+of both mixed-case interpretations share one admission ledger. Complete equal-volume batches are admitted only
 while their cumulative mass is at or below `1`. Integer scaling handles
 65-bit and 75-bit checksum spaces together. Consecutive fixed erasures are
 included in this ledger, with no independent allowance. Profile validation,

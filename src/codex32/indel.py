@@ -333,24 +333,30 @@ def _layers(
 
 
 def _frontier(
-    states: Sequence[_Target], primary: frozenset[int]
+    states: Sequence[_Target], primary: frozenset[int], shared: Sequence[_Target] = ()
 ) -> dict[tuple[int, _StructuralClass, int, int], int]:
-    layers = tuple(layer for state in states for layer in _layers(state))
-    maximum = max((bits for _volume, bits, _key in layers), default=0)
+    """Admit layers by volume; ``shared`` interpretations spend the same ledger but are not returned."""
+    layers = tuple(
+        (*layer, own)
+        for own, group in ((True, states), (False, shared))
+        for state in group
+        for layer in _layers(state)
+    )
+    maximum = max((bits for _volume, bits, _key, _own in layers), default=0)
     admitted: dict[tuple[int, _StructuralClass, int, int], int] = {}
     cumulative = 0
 
     def add(
-        pool: Sequence[tuple[int, int, tuple[int, _StructuralClass, int, int]]],
+        pool: Sequence[tuple[int, int, tuple[int, _StructuralClass, int, int], bool]],
     ) -> None:
         nonlocal cumulative
         for _rank, grouped in groupby(sorted(pool, key=lambda item: item[0]), key=lambda item: item[0]):
             batch = tuple(grouped)
-            increment = sum(volume << (maximum - bits) for volume, bits, _key in batch)
+            increment = sum(volume << (maximum - bits) for volume, bits, _key, _own in batch)
             if _FALSE_BOUND_DENOMINATOR * (cumulative + increment) > 1 << maximum:
                 break
             cumulative += increment
-            admitted.update((key, volume) for volume, _bits, key in batch)
+            admitted.update((key, volume) for volume, _bits, key, own in batch if own)
 
     add(tuple(layer for layer in layers if layer[2][0] in primary))
     add(tuple(layer for layer in layers if layer[2][0] not in primary))
@@ -407,7 +413,8 @@ def _normalize(context: CorrectionContext, damaged_text: str) -> tuple[str, int]
         return None
     prefix = context.immutable_prefix or f"{context.hrp}1"
     matches = text.startswith(prefix) if context.immutable_prefix else text.lower().startswith(prefix)
-    if not matches or not target - 8 <= len(text) <= target + 8:
+    # Bech32 separates at the last "1"; a later one enters a different HRP.
+    if not matches or text.rfind("1") != len(context.hrp) or not target - 8 <= len(text) <= target + 8:
         return None
     return text, len(prefix)
 
@@ -561,34 +568,32 @@ def _search_many(
     seed_candidates: Sequence[CorrectionCandidate] = (),
     required_only: bool = False,
     optional_only: bool = False,
+    shared_texts: Sequence[str] = (),
 ) -> tuple[tuple[CorrectionCandidate, ...], bool]:
     deadline = monotonic() + 10 if deadline is None else deadline
-    states = tuple(
-        state
-        for context in contexts
-        if (
-            state := _prepare(
-                context,
-                damaged_text,
-                _CLASSES,
-                observed_text,
-            )
+
+    def prepare(text: str) -> tuple[_Target, ...]:
+        return tuple(
+            state
+            for context in contexts
+            if (state := _prepare(context, text, _CLASSES, observed_text)) is not None
         )
-        is not None
-    )
+
+    states = prepare(damaged_text)
+    # Every case interpretation and pass draws on one complete admission ledger.
+    frontier = _frontier(states, primary, tuple(state for text in shared_texts for state in prepare(text)))
     if required_only:
+
+        def required(shape: _StructuralClass) -> bool:
+            return shape == _FIXED or shape.unit == 4 or shape.distance <= 2
+
         states = tuple(
             replace(
-                state,
-                counts={
-                    shape: values
-                    for shape, values in state.counts.items()
-                    if shape == _FIXED or shape.unit == 4 or shape.distance <= 2
-                },
+                state, counts={shape: values for shape, values in state.counts.items() if required(shape)}
             )
             for state in states
         )
-    frontier = _frontier(states, primary)
+        frontier = {key: volume for key, volume in frontier.items() if required(key[1])}
     layers_accounted = [] if capture_layers is None else capture_layers
     widths = {state.target: 5 * state.degree for state in states}
     layers_accounted.extend((volume, widths[key[0]]) for key, volume in frontier.items())
