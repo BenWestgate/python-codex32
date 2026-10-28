@@ -63,8 +63,11 @@ The recommended layout is three cards where any two recover the wallet. One card
 can be lost, and one card alone reveals nothing.
 
 Copy each card to paper, hide the on-screen original, then type the paper copy
-back. Read-back starts completely empty, including `MS1`. A mismatch highlights
-only the groups you typed differently; the expected text stays hidden.
+back. Read-back starts empty, including `MS1`, and does not accept paste. Correct
+groups lock as you type, and the box turns red when its first group is wrong.
+After a mismatch, correct the highlighted boxes from your paper card; matching
+groups are locked. Arrows, Ctrl+arrows, Tab, Home and End move between editable boxes.
+The expected text stays hidden. Press Enter to confirm.
 
 After all cards are confirmed, write the displayed master fingerprint on your
 wallet record, then re-enter it in the GUI. Wallet selection stays unavailable

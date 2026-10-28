@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Literal, cast
+from typing import Literal
 
-from gi.repository import GLib, Gtk
+from gi.repository import Gdk, GLib, Gtk
 
 from codex32.profiles.ms32 import TEXT_LENGTHS
 from codex32_gui.reading import (
@@ -19,7 +19,6 @@ from codex32_gui.reading import (
     normalize,
     normalize_readback,
     read,
-    readback,
 )
 
 EntryMode = Literal["import", "correct", "readback"]
@@ -40,8 +39,6 @@ class Codex32Entry(Gtk.Entry):
         allow_header_erasures: bool = False,
     ) -> None:
         super().__init__()
-        if mode == "readback" and length is None:
-            raise ValueError("read-back entry requires the card length")
         self._accepted, self._length, self._mode = accepted, length, mode
         self._expected_header, self._allow_header_erasures, self._pending = (
             expected_header,
@@ -60,6 +57,8 @@ class Codex32Entry(Gtk.Entry):
         self.connect("changed", self._schedule)
         self.connect("notify::selection-bound", self._unpublish)
         self.connect("notify::cursor-position", self._unpublish)
+        if mode == "readback":
+            refuse_paste(self)
         GLib.idle_add(self.set_position, -1)
 
     def prefill(self, text: str) -> None:
@@ -72,8 +71,6 @@ class Codex32Entry(Gtk.Entry):
 
     def reading(self) -> Reading:
         """Return the current reading of this field."""
-        if self._mode == "readback":
-            return readback(self.get_text(), cast(int, self._length))
         state = read(normalize(self.get_text()), accepted=self._accepted, length=self._length)
         if fault := self._header_fault():
             state = replace(state, artifact=None, message=fault, level="error")
@@ -89,8 +86,6 @@ class Codex32Entry(Gtk.Entry):
         self.set_position(-1)
 
     def _header_fault(self, raw: str | None = None) -> str:
-        if self._mode == "readback":
-            return ""
         value = self.get_text() if raw is None else raw
         compact = "".join(value.split()).upper()
         text = compact if compact.startswith(PREFIX) else normalize(value)
@@ -132,7 +127,7 @@ class Codex32Entry(Gtk.Entry):
             return False
         duplicated_prefix = self._mode == "import" and compact.startswith(PREFIX + PREFIX)
         source = compact[len(PREFIX) :] if duplicated_prefix else raw
-        canonical = normalizer(source)[: self._limit]
+        canonical = normalizer(source)[: None if self._mode == "readback" else self._limit]
         shown = grouped(canonical)
         self._dropped = "" if self._mode == "readback" else lookalike_fault(raw)
         fault = self._header_fault(canonical) if self._mode == "import" else ""
@@ -162,3 +157,53 @@ class Codex32Entry(Gtk.Entry):
         self.set_text(shown)
         self._rewriting = False
         self.set_position(position)
+
+
+class GroupEntry(Codex32Entry):
+    """Only the operator's transcription of one mismatched group."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__(length=GROUP, mode="readback")
+        self.set_properties(width_chars=5, max_width_chars=5, hexpand=False, text=text)
+
+
+def refuse_paste(entry: Gtk.Entry) -> None:
+    """Require read-back from paper, including in correction boxes."""
+    text = entry.get_delegate()
+    text.connect("paste-clipboard", lambda text: text.stop_emission_by_name("paste-clipboard"))
+    middle = Gtk.GestureClick(button=2, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+    middle.connect("pressed", lambda gesture, *_: gesture.set_state(Gtk.EventSequenceState.CLAIMED))
+    entry.add_controller(middle)
+    controllers = text.observe_controllers()
+    for controller in [controllers.get_item(i) for i in range(controllers.get_n_items())]:
+        if isinstance(controller, Gtk.DropTarget):
+            text.remove_controller(controller)
+
+
+def navigate_groups(entries: list[GroupEntry]) -> None:
+    """Navigate editable groups while leaving character movement to GTK."""
+
+    def key(controller: Gtk.EventControllerKey, value: int, _code: int, state: Gdk.ModifierType) -> bool:
+        entry = controller.get_widget()
+        current, back = entries.index(entry), value in (Gdk.KEY_Left, Gdk.KEY_KP_Left, Gdk.KEY_ISO_Left_Tab)
+        if value in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
+            target = (current + (-1 if back or state & Gdk.ModifierType.SHIFT_MASK else 1)) % len(entries)
+        elif value in (Gdk.KEY_Home, Gdk.KEY_End):
+            target = 0 if value == Gdk.KEY_Home else len(entries) - 1
+        elif value in (Gdk.KEY_Left, Gdk.KEY_Right, Gdk.KEY_KP_Left, Gdk.KEY_KP_Right) and (
+            state & Gdk.ModifierType.CONTROL_MASK
+            or entry.get_position() == (0 if back else len(entry.get_text()))
+        ):
+            target = current + (-1 if back else 1)
+            if not 0 <= target < len(entries):
+                return False
+        else:
+            return False
+        entries[target].grab_focus()
+        entries[target].set_position(-1 if back or value == Gdk.KEY_End else 0)
+        return True
+
+    for entry in entries:
+        controller = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        controller.connect("key-pressed", key)
+        entry.add_controller(controller)

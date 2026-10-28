@@ -25,6 +25,7 @@ from gi.repository import Adw, Gdk, GLib, Gtk
 
 from codex32 import MasterSeed, parse_codex32
 from codex32_gui import app, pages, reading, wallet_setup
+from codex32_gui.entry import GroupEntry
 
 SHARE_A = "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM"
 SHARE_C = "MS12NAMECACDEFGHJKLMNPQRSTUVWXYZ023FTR2GDZMPY6PN"
@@ -66,7 +67,11 @@ def walk(widget: Any) -> Iterator[Any]:
 
 
 def card(page: Any) -> str:
-    return "".join(item.get_label() for item in walk(page) if "card-group" in item.get_css_classes())
+    return "".join(
+        item.get_text() if isinstance(item, GroupEntry) else item.get_label()
+        for item in walk(page)
+        if "card-group" in item.get_css_classes()
+    )
 
 
 def button(page: Any, label: str) -> Any:
@@ -699,11 +704,12 @@ class Walkthrough(app.Application):
         field.select_region(0, -1)
         settle()
         check("selecting a card does not publish it", _primary_is_empty(), _primary())
-        field.set_text(self.made[:-4] + "QQQQ")
+        check("correct groups lock as they are typed", field.get_text() == self.made[-4:], field.get_text())
+        field.set_text("QQQQ")
         settle()
         press(page, "Confirm card")
         mismatches = [
-            item.get_label()
+            item.get_text() if isinstance(item, GroupEntry) else item.get_label()
             for item in walk(page)
             if "card-group" in item.get_css_classes() and "mismatch" in item.get_css_classes()
         ]
@@ -717,9 +723,10 @@ class Walkthrough(app.Application):
             card(page) == self.made[:-4] + "QQQQ",
             card(page),
         )
-        field.set_text(self.made.lower())
+        editable = next(item for item in walk(page) if isinstance(item, GroupEntry))
+        editable.set_text(self.made[-4:].lower())
         settle()
-        field.emit("activate")
+        editable.emit("activate")
         return True
 
     def new_card_done(self) -> bool:
