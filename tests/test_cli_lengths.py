@@ -21,7 +21,7 @@ from codex32.errors import InvalidChecksum, InvalidLength
                 "This input has 95 characters. A Bitcoin master-seed backup must have "
                 "exactly 48, 54, 61, 67, 74, or 127 characters."
             ),
-            InvalidChecksum,
+            InvalidLength,
         ),
     ),
 )

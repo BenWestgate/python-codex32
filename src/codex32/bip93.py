@@ -102,9 +102,12 @@ def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ..
     checksum = _checksum_for_encoded_length(hrp, len(encoded))
     body = tuple(encoded[: -checksum.length])
     Header._from_symbols(body[:6])
-    if not bech32_verify_checksum(hrp, encoded, checksum):
-        raise InvalidChecksum("The checksum does not match.")
     profile_rules = _optional_profile_rules(hrp)
+    if not bech32_verify_checksum(hrp, encoded, checksum):
+        if profile_rules is not None:
+            # A length the application never uses is the clearer reason.
+            profile_rules.validate_text_length(len(text))
+        raise InvalidChecksum("The checksum does not match.")
     if profile_rules is not None:
         profile_rules.validate_text_length(len(text))
         profile_rules.validate_payload_length(len(body) - 6)

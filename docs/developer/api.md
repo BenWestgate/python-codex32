@@ -19,14 +19,15 @@ absolute size bound. The application parser selects the checksum type from the
 generic encoded length and validates the common header before verifying the
 outer checksum. Only afterward may the HRP select a registered application
 profile. The parser then checks its application length and payload semantics.
+When the checksum fails at a length the application never uses, the parser
+reports that length instead of the checksum; this only chooses the reason for
+a rejection.
 An unregistered HRP crosses the boundary only as an opaque base `Secret` or
 `Share`, with normalized `hrp`, `profile is None`, and no invented payload meaning.
 
-CLI input diagnostics preserve generic container, header, and length failures.
-After a checksum failure, the CLI may report an unsupported profile text length
-instead. This diagnostic does not validate the input or change parser ordering;
-alignment correction remains available. Frozen-prefix hints do not override a
-generic parse-length failure.
+CLI input diagnostics preserve generic container, header, and length failures;
+alignment correction remains available after a length failure. Frozen-prefix
+hints do not override a generic parse-length failure.
 
 ### Specification-to-code map
 
