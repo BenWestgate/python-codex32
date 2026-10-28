@@ -3,7 +3,7 @@
 import pytest
 
 from codex32 import Profile
-from codex32._cli_input import InputError, _parse, _prefixed_input_error
+from codex32._cli_input import InputError, _parse, _prefixed_input_error, _suggestions
 from codex32.errors import InvalidChecksum, InvalidLength
 
 
@@ -45,3 +45,11 @@ def test_reported_invalid_length_vector_in_neutral_entry():
 def test_unknown_profile_does_not_replace_checksum_failure_with_a_length_guess():
     with pytest.raises(InputError, match="The checksum does not match"):
         _parse("zz10fauxs" + "x" * 87, (Profile.MS,))
+
+
+def test_opaque_correction_skips_lengths_inside_the_checksum_gap():
+    # 90 characters: nearby targets 92 and 93 would expand to the forbidden 94/95.
+    source = "zz10tests" + "q" * 68 + "eqq7qmrek3dw3"
+    damaged = source[:87] + "p" + source[88:]
+
+    assert [candidate.artifact.text for candidate in _suggestions(damaged, "", None, [])] == [source]

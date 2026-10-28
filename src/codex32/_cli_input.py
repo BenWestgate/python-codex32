@@ -22,7 +22,7 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _capture_mass
+from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _capture_mass, _validate_context
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
@@ -435,7 +435,16 @@ def _correction_candidates(
     shared_texts: Sequence[str] = (),
 ) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
     count = len(value.replace(" ", ""))
-    targets = _correction_plan(profile, byte_length, count, target)
+
+    def supported(length: int) -> bool:
+        # Like the public unknown-length path, skip lengths no codex32 string can have.
+        try:
+            _validate_context(CorrectionContext(profile, length))
+        except CodexError:
+            return False
+        return True
+
+    targets = tuple(filter(supported, _correction_plan(profile, byte_length, count, target)))
     deadline = monotonic() + 10 if deadline is None else deadline
     contexts = tuple(CorrectionContext(profile, length, immutable, excluded) for length in targets)
     from codex32.indel import _search_many
