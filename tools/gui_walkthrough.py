@@ -704,7 +704,8 @@ class Walkthrough(app.Application):
         field.select_region(0, -1)
         settle()
         check("selecting a card does not publish it", _primary_is_empty(), _primary())
-        field.set_text(self.made[:-4] + "QQQQ")
+        check("correct groups lock as they are typed", field.get_text() == self.made[-4:], field.get_text())
+        field.set_text("QQQQ")
         settle()
         press(page, "Confirm card")
         mismatches = [

@@ -59,9 +59,10 @@ Read-back uses `codex32._confirmation._entered_groups`, shared with the CLI.
 After a mismatch, matching groups lock; only the entered text is shown. Arrows
 cross editable-group boundaries, Ctrl+arrows skip groups, Tab cycles, and
 Home/End reach the first/last editable group. Paste and drop are disabled.
-Invalid characters and missing groups are compared directly. The former
-eight-character tolerance is gone; comparison accepts up to 1,024 characters
-and preserves longer input with an explicit size message.
+Invalid characters and missing groups are compared directly. Input over twice
+the card's length marks every group wrong without aligning it. While typing,
+each correct group locks once the next group is typed, and the field turns red
+when its first group still mismatches a further group later.
 `tests/test_gui_read_back.py` exercises these behaviors under GTK. Review
 `entry.py` for keyboard and clipboard handling.
 

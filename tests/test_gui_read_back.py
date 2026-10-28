@@ -45,7 +45,7 @@ def _read_back(
 
     def confirm(text: str) -> ConfirmationResult:
         typed.append(text)
-        return result or pages._compare(SHARE, text)
+        return result or ConfirmationResult(text == SHARE.upper(), ())
 
     view = Adw.NavigationView()
     page = pages._read_back_page(view, parse_codex32(SHARE), 1, 3, confirm, lambda: finished.append(True))
@@ -76,6 +76,13 @@ def _groups(text: str) -> list[str]:
 
 
 CARD = _groups(SHARE.upper())
+
+
+def _press(box: Gtk.Widget, key: int, modifiers: int = 0) -> bool:
+    controllers = box.observe_controllers()
+    found = (controllers.get_item(i) for i in range(controllers.get_n_items()))
+    controller = next(item for item in found if isinstance(item, Gtk.EventControllerKey))
+    return bool(controller.emit("key-pressed", key, 0, Gdk.ModifierType(modifiers)))
 
 
 def test_readback_starts_empty_and_enter_confirms_the_whole_card() -> None:
@@ -128,26 +135,6 @@ def test_correcting_the_open_boxes_confirms_the_card() -> None:
     assert list(_widgets(page, Gtk.Grid)) == [] and field.get_visible()
 
 
-def test_tab_moves_only_between_the_wrong_groups() -> None:
-    wrong = CARD.copy()
-    wrong[2], wrong[9] = "QQQQ", "PPPP"
-    page, _field, boxes, _finished = _submit("".join(wrong))
-    window = Gtk.Window(child=page.get_parent())
-    window.present()
-    _settle()
-
-    boxes[2].grab_focus()
-    controllers = boxes[2].observe_controllers()
-    controller = next(
-        controllers.get_item(index)
-        for index in range(controllers.get_n_items())
-        if isinstance(controllers.get_item(index), Gtk.EventControllerKey)
-    )
-    assert controller.emit("key-pressed", Gdk.KEY_Tab, 0, Gdk.ModifierType(0))
-    assert window.get_focus().get_parent() is boxes[9]
-    window.destroy()
-
-
 def test_the_read_back_refuses_pasted_and_dropped_text() -> None:
     wrong = CARD.copy()
     wrong[5] = "QQQQ"
@@ -169,12 +156,13 @@ def test_the_read_back_refuses_pasted_and_dropped_text() -> None:
 def test_clearing_puts_the_single_field_back() -> None:
     wrong = CARD.copy()
     wrong[0] = "MS1Q"
-    page, field, _boxes, _finished = _submit("".join(wrong))
+    page, field, boxes, _finished = _submit("".join(wrong))
     field.clear()
+    assert all(box.get_text() == "" for box in boxes)
     assert list(_widgets(page, Gtk.Grid)) == [] and field.get_visible()
-    field.set_text(SHARE[:20])
+    field.set_text(SHARE[:7])
     _settle()
-    assert reading.normalize(field.get_text()) == SHARE[:20].upper()
+    assert reading.normalize_readback(field.get_text()) == SHARE[:7].upper()
 
 
 def test_a_retry_keeps_every_box_where_it_is() -> None:
@@ -224,13 +212,7 @@ def test_keyboard_navigation_skips_locked_groups(
     start = 9 if key in (Gdk.KEY_Left, Gdk.KEY_ISO_Left_Tab, Gdk.KEY_Home) else 2
     boxes[start].grab_focus()
     boxes[start].set_position(position)
-    controllers = boxes[start].observe_controllers()
-    controller = next(
-        controllers.get_item(index)
-        for index in range(controllers.get_n_items())
-        if isinstance(controllers.get_item(index), Gtk.EventControllerKey)
-    )
-    assert controller.emit("key-pressed", key, 0, Gdk.ModifierType(modifiers))
+    assert _press(boxes[start], key, modifiers)
     assert window.get_focus().get_parent() is boxes[target]
     assert boxes[target].get_position() == cursor
     window.destroy()
@@ -243,25 +225,27 @@ def test_more_than_eight_missing_characters_can_be_compared() -> None:
     assert any(isinstance(box, GroupEntry) and box.get_text() == "" for box in boxes)
 
 
-def test_clearing_also_empties_retained_correction_widgets() -> None:
-    wrong = CARD.copy()
-    wrong[3] = "QQQQ"
-    _page, field, boxes, _finished = _submit("".join(wrong))
-    field.clear()
-    assert all(box.get_text() == "" for box in boxes)
-    assert field._stable == ""
-    _settle()
-    assert field.get_text() == ""
+def test_input_over_twice_the_card_opens_every_group_without_aligning() -> None:
+    _page, _field, boxes, finished = _submit("Q" * (2 * len(SHARE) + 1))
+    assert not finished and all(isinstance(box, GroupEntry) for box in boxes)
 
 
-def test_readback_formatting_preserves_oversized_input() -> None:
-    page, field, typed, finished = _read_back()
-    field.set_text("Q" * 1025)
+def test_correct_groups_lock_while_typing_and_a_wrong_one_turns_red() -> None:
+    page, field, _typed, _finished = _read_back()
+    field.set_text("".join(CARD[:3]))
     _settle()
-    assert reading.normalize_readback(field.get_text()) == "Q" * 1025
+    assert [box.get_text() for box in _boxes(page)] == CARD[:2]
+    assert reading.normalize_readback(field.get_text()) == CARD[2]
+    field.set_text(CARD[2] + "QQQQ" + "".join(CARD[4:6]))
+    _settle()
+    assert len(_boxes(page)) == 3 and field.has_css_class("error")
+    field.set_text(CARD[3])
+    _settle()
+    assert not field.has_css_class("error")
+    field.set_text("".join(CARD[3:]))
+    _settle()
     field.emit("activate")
-    assert not typed and not finished
-    assert any("at most 1,024" in label.get_label() for label in _widgets(page, Gtk.Label))
+    assert _finished == [True]
 
 
 def test_selecting_a_correction_box_releases_the_primary_selection() -> None:
@@ -289,12 +273,6 @@ def test_arrows_do_not_wrap_when_no_other_group_is_editable(key: int, cursor: in
     box = boxes[3]
     box.grab_focus()
     box.set_position(cursor)
-    controllers = box.observe_controllers()
-    controller = next(
-        controllers.get_item(index)
-        for index in range(controllers.get_n_items())
-        if isinstance(controllers.get_item(index), Gtk.EventControllerKey)
-    )
-    assert not controller.emit("key-pressed", key, 0, Gdk.ModifierType(0))
+    assert not _press(box, key)
     assert box.get_position() == cursor
     window.destroy()

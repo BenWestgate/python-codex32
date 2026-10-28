@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Literal, cast
+from typing import Literal
 
 from gi.repository import Gdk, GLib, Gtk
 
@@ -19,40 +19,12 @@ from codex32_gui.reading import (
     normalize,
     normalize_readback,
     read,
-    readback,
 )
 
 EntryMode = Literal["import", "correct", "readback"]
 
 
-class PrivateEntry(Gtk.Entry):
-    """An entry that releases its primary selection after GTK publishes it."""
-
-    def __init__(self, **properties: object) -> None:
-        super().__init__(**properties)
-        self._watching = 0
-        self.connect("realize", lambda _entry: self._watch(True))
-        self.connect("unrealize", lambda _entry: self._watch(False))
-
-    def _watch(self, start: bool) -> None:
-        primary = self.get_primary_clipboard()
-        if start:
-            self._watching = primary.connect("changed", self._unpublish)
-        elif self._watching:
-            primary.disconnect(self._watching)
-            self._watching = 0
-
-    def _unpublish(self, primary: Gdk.Clipboard) -> None:
-        if primary.is_local() and primary.get_content() is not None and self.get_selection_bounds():
-            GLib.idle_add(self._drop, primary)
-
-    @staticmethod
-    def _drop(primary: Gdk.Clipboard) -> bool:
-        primary.set_content(None)
-        return False
-
-
-class Codex32Entry(PrivateEntry):
+class Codex32Entry(Gtk.Entry):
     """One grouped field with explicit import, correction, and read-back behavior."""
 
     __gtype_name__ = "Codex32Entry"
@@ -67,8 +39,6 @@ class Codex32Entry(PrivateEntry):
         allow_header_erasures: bool = False,
     ) -> None:
         super().__init__()
-        if mode == "readback" and length is None:
-            raise ValueError("read-back entry requires the card length")
         self._accepted, self._length, self._mode = accepted, length, mode
         self._expected_header, self._allow_header_erasures, self._pending = (
             expected_header,
@@ -76,7 +46,7 @@ class Codex32Entry(PrivateEntry):
             0,
         )
         self._limit = (length or TEXT_LENGTHS[-1]) + SLACK
-        self._dropped, self._rewriting = "", False
+        self._dropped, self._rewriting, self._unpublishing = "", False, 0
         self._last_header_fault = ""
         self._stable = "" if mode == "readback" else PREFIX
         self.set_hexpand(True)
@@ -85,6 +55,8 @@ class Codex32Entry(PrivateEntry):
         self.set_text(self._stable)
         self.set_position(-1)
         self.connect("changed", self._schedule)
+        self.connect("notify::selection-bound", self._unpublish)
+        self.connect("notify::cursor-position", self._unpublish)
         if mode == "readback":
             refuse_paste(self)
         GLib.idle_add(self.set_position, -1)
@@ -99,8 +71,6 @@ class Codex32Entry(PrivateEntry):
 
     def reading(self) -> Reading:
         """Return the current reading of this field."""
-        if self._mode == "readback":
-            return readback(self.get_text(), cast(int, self._length))
         state = read(normalize(self.get_text()), accepted=self._accepted, length=self._length)
         if fault := self._header_fault():
             state = replace(state, artifact=None, message=fault, level="error")
@@ -116,14 +86,27 @@ class Codex32Entry(PrivateEntry):
         self.set_position(-1)
 
     def _header_fault(self, raw: str | None = None) -> str:
-        if self._mode == "readback":
-            return ""
         value = self.get_text() if raw is None else raw
         compact = "".join(value.split()).upper()
         text = compact if compact.startswith(PREFIX) else normalize(value)
         if self._mode == "import" and not self._allow_header_erasures and "?" in text[len(PREFIX) : 9]:
             return "? cannot be used in this header. Type the character printed on the card."
         return header_fault(text, self._accepted, self._expected_header)
+
+    def _unpublish(self, *_arguments: object) -> None:
+        # Selecting text in a Gtk.Entry hands it to the primary selection, where a
+        # clipboard manager would copy the card into a history file on disk. The
+        # selection still works; only the copy that leaves the program is taken
+        # back, once GTK has finished publishing it.
+        if self.get_selection_bounds() and not self._unpublishing:
+            self._unpublishing = GLib.idle_add(self._drop_primary)
+
+    def _drop_primary(self) -> bool:
+        self._unpublishing = 0
+        display = self.get_display()
+        if display is not None:
+            display.get_primary_clipboard().set_content(None)
+        return False
 
     def _schedule(self, _entry: Gtk.Entry) -> None:
         # One edit reaches the buffer as a deletion and then an insertion. Reformat
@@ -144,9 +127,7 @@ class Codex32Entry(PrivateEntry):
             return False
         duplicated_prefix = self._mode == "import" and compact.startswith(PREFIX + PREFIX)
         source = compact[len(PREFIX) :] if duplicated_prefix else raw
-        canonical = normalizer(source)
-        if self._mode != "readback":
-            canonical = canonical[: self._limit]
+        canonical = normalizer(source)[: None if self._mode == "readback" else self._limit]
         shown = grouped(canonical)
         self._dropped = "" if self._mode == "readback" else lookalike_fault(raw)
         fault = self._header_fault(canonical) if self._mode == "import" else ""
@@ -183,10 +164,7 @@ class GroupEntry(Codex32Entry):
 
     def __init__(self, text: str) -> None:
         super().__init__(length=GROUP, mode="readback")
-        self.set_width_chars(5)
-        self.set_max_width_chars(5)
-        self.set_hexpand(False)
-        self.set_text(text)
+        self.set_properties(width_chars=5, max_width_chars=5, hexpand=False, text=text)
 
 
 def refuse_paste(entry: Gtk.Entry) -> None:
@@ -205,25 +183,24 @@ def refuse_paste(entry: Gtk.Entry) -> None:
 def navigate_groups(entries: list[GroupEntry]) -> None:
     """Navigate editable groups while leaving character movement to GTK."""
 
-    def key(_controller: Gtk.EventControllerKey, value: int, _code: int, state: Gdk.ModifierType) -> bool:
-        current = entries.index(_controller.get_widget())
-        entry = entries[current]
-        backwards = value in (Gdk.KEY_Left, Gdk.KEY_KP_Left, Gdk.KEY_ISO_Left_Tab)
-        tab = value in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab)
-        edge = entry.get_position() == (0 if backwards else len(entry.get_text()))
-        if value in (Gdk.KEY_Home, Gdk.KEY_End):
+    def key(controller: Gtk.EventControllerKey, value: int, _code: int, state: Gdk.ModifierType) -> bool:
+        entry = controller.get_widget()
+        current, back = entries.index(entry), value in (Gdk.KEY_Left, Gdk.KEY_KP_Left, Gdk.KEY_ISO_Left_Tab)
+        if value in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
+            target = (current + (-1 if back or state & Gdk.ModifierType.SHIFT_MASK else 1)) % len(entries)
+        elif value in (Gdk.KEY_Home, Gdk.KEY_End):
             target = 0 if value == Gdk.KEY_Home else len(entries) - 1
-        elif tab or value in (Gdk.KEY_Left, Gdk.KEY_Right, Gdk.KEY_KP_Left, Gdk.KEY_KP_Right):
-            if not tab and not edge and not state & Gdk.ModifierType.CONTROL_MASK:
-                return False
-            target = current + (-1 if backwards or tab and state & Gdk.ModifierType.SHIFT_MASK else 1)
-            target = target % len(entries) if tab else min(max(target, 0), len(entries) - 1)
-            if not tab and target == current:
+        elif value in (Gdk.KEY_Left, Gdk.KEY_Right, Gdk.KEY_KP_Left, Gdk.KEY_KP_Right) and (
+            state & Gdk.ModifierType.CONTROL_MASK
+            or entry.get_position() == (0 if back else len(entry.get_text()))
+        ):
+            target = current + (-1 if back else 1)
+            if not 0 <= target < len(entries):
                 return False
         else:
             return False
         entries[target].grab_focus()
-        entries[target].set_position(-1 if backwards or value == Gdk.KEY_End else 0)
+        entries[target].set_position(-1 if back or value == Gdk.KEY_End else 0)
         return True
 
     for entry in entries:

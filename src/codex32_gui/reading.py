@@ -149,16 +149,6 @@ def read(text: str, *, accepted: tuple[str, ...] = (), length: int | None = None
     return Reading(artifact.text, artifact, "Every character checks out.", "success", expected, 0, False)
 
 
-def readback(raw: str, length: int) -> Reading:
-    """Describe an independently re-entered card without interpreting or repairing it."""
-    text = normalize_readback(raw)
-    unreadable = text.count("?")
-    fault = lookalike_fault(text)
-    level = "error" if fault else ""
-    message = fault or f"{len(text)} of {length} characters"
-    return Reading(text, None, message, level, length, unreadable, False)
-
-
 def repair(text: str, length: int | None, excluded: tuple[str, ...] = ()) -> CorrectionCandidate | str:
     """Ask the library for one repair, and offer nothing at all when it is unsure.
 
