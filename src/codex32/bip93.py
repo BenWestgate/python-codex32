@@ -94,6 +94,8 @@ def _decode_codex32(text: str) -> tuple[str, tuple[int, ...], _Checksum]:
         raise InvalidLength("codex32 string must contain at least 21 characters")
     checksum = _checksum_for_encoded_length(hrp, len(encoded))
     body = tuple(encoded[: -checksum.length])
+    if len(body) < 6:
+        raise InvalidLength("codex32 header must contain six symbols")
     header = _u5_to_chars(body[:6])
     if header[0] not in "023456789":
         raise InvalidThreshold(f"The threshold must be 0 or a number from 2 through 9; found {header[0]!r}.")

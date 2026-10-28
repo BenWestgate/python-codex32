@@ -187,3 +187,9 @@ def test_official_invalid_generic_checksum_vectors(
         return
     expanded_length = len(bech32_hrp_expand(hrp)) + len(encoded)
     assert not (expanded_length <= maximum and checksum.verify(bech32_hrp_expand(hrp) + encoded))
+
+
+@pytest.mark.parametrize("value", ("abcdefgh1qqqqqqqqqqqqq", "a" * 20 + "1"))
+def test_long_hrp_without_a_full_header_is_rejected(value: str) -> None:
+    with pytest.raises(InvalidLength, match="six symbols"):
+        parse_codex32(value)
