@@ -111,6 +111,17 @@ def _low_discrimination(volume: int, bits: int) -> bool:
     return 32 * volume > 1 << bits
 
 
+def _no_correction_message(candidates: Sequence[CorrectionCandidate], complete: bool) -> str:
+    """Say why no correction is shown, never how to edit the entry."""
+    if len(candidates) > 1:
+        reason = "Several corrections are possible."
+    elif not complete:
+        reason = "The correction search ran out of time."
+    else:
+        reason = "No correction was found."
+    return f"{reason} Check your backup and re-enter it carefully."
+
+
 def _capture_mass(layers: Sequence[tuple[int, int]], rank: int) -> tuple[int, int]:
     """Normalize all admitted equal-or-better classes, including unsearched work."""
     included = tuple((volume, bits) for volume, bits in layers if volume <= rank)

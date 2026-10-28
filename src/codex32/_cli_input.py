@@ -22,7 +22,13 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _capture_mass
+from codex32.correction import (
+    CorrectionCandidate,
+    CorrectionContext,
+    _best,
+    _capture_mass,
+    _no_correction_message,
+)
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
@@ -45,9 +51,6 @@ try:
     import readline as _line_editor
 except ImportError:
     _line_editor = None
-
-
-NO_CORRECTION = "No unique correction found. Check your backup and re-enter it carefully."
 
 
 class InputError(Exception):
@@ -545,21 +548,21 @@ def _suggestions(
     *,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
-) -> tuple[CorrectionCandidate, ...]:
+) -> tuple[tuple[CorrectionCandidate, ...], bool]:
     fingerprint_match = _fingerprint_matcher(fingerprint)
     erased = value
     if interpretation := _case_interpretation(value, prefix, profiles, allowed):
         candidate, value, erased, prefix = interpretation
         if candidate is not None:
-            return (candidate,)
+            return (candidate,), True
     separator = value.lower().rfind("1")
     if separator <= 0:
-        return ()
+        return (), True
     hrp = value[:separator].lower()
     rules = _optional_profile_rules(hrp)
     profile = rules.profile if rules is not None else None
     if profiles is not None and profile not in profiles:
-        return ()
+        return (), True
     excluded = tuple(artifact.header.index for artifact in accepted)
     target = len(accepted[0].text) if accepted else None
     immutable = (
@@ -578,7 +581,7 @@ def _suggestions(
         allowed=allowed,
         deadline=monotonic() + 10,
         fingerprint_match=fingerprint_match,
-    )[0]
+    )
 
 
 def _validate_operational_artifact(
@@ -631,7 +634,7 @@ def _redirected(
                     return False
                 return True
 
-            candidates = _suggestions(
+            candidates, complete = _suggestions(
                 token,
                 "",
                 profiles,
@@ -641,7 +644,7 @@ def _redirected(
             )
             if len(candidates) != 1:
                 if isinstance(error.__cause__, CodexError):
-                    raise InputError(NO_CORRECTION) from error
+                    raise InputError(_no_correction_message(candidates, complete)) from error
                 raise
             if not _confirm_correction(candidates[0], accepted, basis, fingerprint):
                 raise CorrectionDeclined
@@ -699,8 +702,8 @@ def _interactive(
         try:
             artifact = _parse(complete_value, profiles)
         except InputError as error:
-            candidates = (
-                ()
+            candidates, complete = (
+                ((), True)
                 if one
                 else _suggestions(
                     complete_value,
@@ -724,7 +727,11 @@ def _interactive(
             if confirmation is True:
                 artifact = candidates[0].artifact
             else:
-                message = NO_CORRECTION if not one and isinstance(error.__cause__, CodexError) else str(error)
+                message = (
+                    _no_correction_message(candidates, complete)
+                    if not one and isinstance(error.__cause__, CodexError)
+                    else str(error)
+                )
                 _stderr(f"Rejected: {message}\n")
                 prefill = _retry_text(entered, prefix)
                 prefix = _prefix_for_suffix(prefix, prefill)

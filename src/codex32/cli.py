@@ -47,6 +47,7 @@ from codex32.bip93 import (
 from codex32.correction import (
     CorrectionCandidate,
     _best,
+    _no_correction_message,
     _residue_low_discrimination,
     correct_worksheet_residue,
 )
@@ -261,7 +262,7 @@ def _creation_source(
         except CodexError as error:
             if not sys.stdin.isatty():
                 raise _UsageError(str(error)) from error
-            candidates = _suggestions(
+            candidates, complete = _suggestions(
                 value,
                 "",
                 (profile,),
@@ -281,10 +282,7 @@ def _creation_source(
                     _print("", err=True)
                     prefill = value
                     continue
-            _print(
-                "Rejected: No unique correction found. Check your codex32 backup and re-enter it carefully.",
-                err=True,
-            )
+            _print(f"Rejected: {_no_correction_message(candidates, complete)}", err=True)
 
 
 def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResult] | None = None) -> None:
@@ -637,14 +635,10 @@ def _correct(
         complete = True
     else:
         candidates, complete = _scheduled_candidates(search_value, erased, hrp, byte_length, immutable)
-    if not complete and not candidates:
-        raise _CommandError("The correction search did not complete within ten seconds.")
-    if not candidates:
-        raise _CommandError("No valid correction found. Check the original backup.")
     if core is not None and len(candidates) > 1:
         candidates = _best(candidates, fingerprint_match=_fingerprint_matcher(core.fingerprint))
     if len(candidates) != 1:
-        raise _CommandError("Several corrections are possible. Check the original backup.")
+        raise _CommandError(_no_correction_message(candidates, complete))
     fixed = candidates[0]
     _require_correction_confirmation(fixed.low_checksum_discrimination)
     warning = (

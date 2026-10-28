@@ -620,7 +620,7 @@ def test_embedded_correction_schedules_both_mixed_case_interpretations_before_al
     source = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
     damaged = "ms10testsxPxxxxxPxxxxxPxxxxxPxxxxxP4nzvca9cmczlw"
 
-    candidates = input_module._suggestions(damaged, "", (Profile.MS,), [])
+    candidates, _complete = input_module._suggestions(damaged, "", (Profile.MS,), [])
 
     assert len(candidates) == 1
     assert candidates[0].artifact.text == source
@@ -660,9 +660,7 @@ def test_xprv_rejects_unreadable_entries_without_edit_hints(monkeypatch, capsys)
     assert ms_main(["xprv"]) == 0
     rejected = [line for line in capsys.readouterr().err.splitlines() if line.startswith("Rejected:")]
     # A hint about what is wrong invites a guess, and a wrong guess can make a wrong correction findable.
-    assert (
-        rejected == ["Rejected: No unique correction found. Check your backup and re-enter it carefully."] * 2
-    )
+    assert rejected == ["Rejected: No correction was found. Check your backup and re-enter it carefully."] * 2
 
 
 def test_xprv_rejects_every_uncorrectable_prefixed_ms_length(monkeypatch, capsys) -> None:
@@ -678,7 +676,7 @@ def test_xprv_rejects_every_uncorrectable_prefixed_ms_length(monkeypatch, capsys
     assert ms_main(["xprv"]) == 0
     output = capsys.readouterr().err
     assert output.count(
-        "Rejected: No unique correction found. Check your backup and re-enter it carefully."
+        "Rejected: No correction was found. Check your backup and re-enter it carefully."
     ) == len(lengths)
     assert "characters" not in output
 
@@ -692,7 +690,7 @@ def test_prefixed_ms_lengths_at_correction_boundary_still_search(monkeypatch, ca
 
     def suggestions(value, *_args, **_kwargs):
         searched.append(value)
-        return ()
+        return (), True
 
     monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
@@ -703,7 +701,7 @@ def test_prefixed_ms_lengths_at_correction_boundary_still_search(monkeypatch, ca
     output = capsys.readouterr().err
     assert [len(value) for value in searched] == list(lengths)
     assert output.count(
-        "Rejected: No unique correction found. Check your backup and re-enter it carefully."
+        "Rejected: No correction was found. Check your backup and re-enter it carefully."
     ) == len(lengths)
 
 
@@ -714,23 +712,43 @@ def test_complete_paste_with_bad_threshold_gets_no_hint(monkeypatch, capsys) -> 
     monkeypatch.setattr(input_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(input_module, "_line_editor", None)
     monkeypatch.setattr(input_module, "_editable_input", lambda _prompt, _prefill="": next(answers))
-    monkeypatch.setattr(input_module, "_suggestions", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(input_module, "_suggestions", lambda *_args, **_kwargs: ((), True))
 
     assert ms_main(["xprv"]) == 0
     output = capsys.readouterr().err
-    assert "Rejected: No unique correction found. Check your backup and re-enter it carefully." in output
+    assert "Rejected: No correction was found. Check your backup and re-enter it carefully." in output
     assert "threshold" not in output
 
 
 def test_redirected_uncorrectable_input_gets_no_hint(monkeypatch) -> None:
     input_module = importlib.import_module("codex32._cli_input")
-    monkeypatch.setattr(input_module, "_suggestions", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(input_module, "_suggestions", lambda *_args, **_kwargs: ((), True))
 
     result = _invoke(["secret"], VECTOR_1["secret_s"][:-1] + "b")
 
     assert result.exit_code != 0
-    assert "No unique correction found. Check your backup and re-enter it carefully." in result.stderr
+    assert "No correction was found. Check your backup and re-enter it carefully." in result.stderr
     assert "character" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("result", "reason"),
+    (
+        (((), True), "No correction was found."),
+        (((), False), "The correction search ran out of time."),
+        (((object(), object()), True), "Several corrections are possible."),
+    ),
+)
+def test_redirected_rejection_says_why_no_correction_is_shown(monkeypatch, result, reason) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+    monkeypatch.setattr(input_module, "_suggestions", lambda *_args, **_kwargs: result)
+
+    rejected = _invoke(["secret"], VECTOR_1["secret_s"][:-1] + "b")
+
+    assert rejected.exit_code != 0
+    # Say what happened, never how to edit the entry.
+    assert f"{reason} Check your backup and re-enter it carefully." in rejected.stderr
+    assert "character" not in rejected.stderr
 
 
 def test_existing_seed_without_unique_correction_gets_no_hint(monkeypatch, capsys) -> None:
@@ -738,11 +756,11 @@ def test_existing_seed_without_unique_correction_gets_no_hint(monkeypatch, capsy
     answers = iter((VECTOR_1["secret_s"][:-1] + "b", "00" * 16))
     monkeypatch.setattr(cli_module.sys, "stdin", _TTYInput())
     monkeypatch.setattr(cli_module, "_text", lambda *_args, **_kwargs: next(answers))
-    monkeypatch.setattr(cli_module, "_suggestions", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(cli_module, "_suggestions", lambda *_args, **_kwargs: ((), True))
 
     assert cli_module._creation_source(Profile.MS) == bytes(16)
     assert capsys.readouterr().err == (
-        "Rejected: No unique correction found. Check your codex32 backup and re-enter it carefully.\n"
+        "Rejected: No correction was found. Check your backup and re-enter it carefully.\n"
     )
 
 
@@ -768,7 +786,7 @@ def test_creation_source_reprompts_on_invalid_hex_length(monkeypatch, capsys, ba
     assert seen_prefills == ["", ""]
     output = capsys.readouterr().err
     assert "Hexadecimal seeds must contain 16, 20, 24, 28, 32, or 64 bytes" in output
-    assert "No unique correction" not in output
+    assert "correction" not in output
 
 
 @pytest.mark.parametrize(("difference", "word"), ((-9, "short of"), (9, "too long for")))
@@ -788,7 +806,7 @@ def test_subsequent_prefixed_ms_input_with_wrong_length_gets_no_hint(
     assert main(["secret", "--plain"]) == 0
     output = capsys.readouterr()
     assert output.out.strip() == VECTOR_2["secret_S"]
-    assert "Rejected: No unique correction found. Check your backup and re-enter it carefully." in output.err
+    assert "Rejected: No correction was found. Check your backup and re-enter it carefully." in output.err
     assert word not in output.err
 
 
@@ -1847,7 +1865,7 @@ def test_cli_rejects_statistically_inadmissible_structural_burst() -> None:
     result = _invoke(["correct"], damaged)
 
     assert result.exit_code == 3
-    assert "No valid correction found" in result.stderr
+    assert "No correction was found" in result.stderr
 
 
 def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> None:
@@ -1858,7 +1876,7 @@ def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> 
     assert len("".join(damaged.split())) == 48
     assert damaged.count("?") == 16
     assert result.exit_code == 3
-    assert "No valid correction found" in result.stderr
+    assert "No correction was found" in result.stderr
 
 
 def test_correct_rejects_malformed_immutable_hrp_as_usage() -> None:
@@ -1910,7 +1928,7 @@ def test_cli_never_accepts_an_incomplete_structural_search() -> None:
 
     assert result.exit_code == 3
     assert result.stdout == ""
-    assert "did not complete" in result.stderr and original not in result.stderr
+    assert "ran out of time" in result.stderr and original not in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -1997,7 +2015,7 @@ def test_correct_suggests_the_majority_case_for_mixed_case_damage() -> None:
 
     assert result.exit_code == 1
     assert source in result.stderr
-    assert "No valid correction found" not in result.stderr
+    assert "No correction was found" not in result.stderr
     assert wrong_length.exit_code == 2
     assert "--bytes does not match" in wrong_length.stderr
     assert source not in wrong_length.stderr
@@ -2069,7 +2087,7 @@ def test_correct_required_work_is_not_starved_by_erasure_alignment() -> None:
 
     assert result.exit_code == 1
     assert source in result.stderr
-    assert "did not complete within ten seconds" not in result.stderr
+    assert "ran out of time" not in result.stderr
     assert "interactive confirmation required" not in result.stderr
 
 
@@ -2118,8 +2136,8 @@ def test_correction_hides_internal_candidate_reparse_failures() -> None:
     assert result.exit_code == 3
     assert result.stdout == ""
     assert result.stderr.strip() in {
-        "codex32 correct: No valid correction found. Check the original backup.",
-        "codex32 correct: The correction search did not complete within ten seconds.",
+        "codex32 correct: No correction was found. Check your backup and re-enter it carefully.",
+        "codex32 correct: The correction search ran out of time. Check your backup and re-enter it carefully.",
     }
     assert "threshold" not in result.stderr
 
@@ -2876,7 +2894,7 @@ def test_creation_source_unusable_candidates_retry(monkeypatch, capsys, kind):
         artifact = parse_codex32(VECTOR_6["codex32_peev"])
     candidate = SimpleNamespace(artifact=artifact, search_complete=True, low_checksum_discrimination=False)
     candidates = () if kind == "none" else (candidate, candidate) if kind == "ambiguous" else (candidate,)
-    monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: candidates)
+    monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: (candidates, True))
     answers = iter(("ms1invalid", "00" * 16))
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
@@ -2903,7 +2921,7 @@ def test_creation_source_does_not_label_an_incomplete_share_candidate(monkeypatc
 
     def suggestions(*args, **kwargs):
         assert not kwargs["allowed"](candidate)
-        return (candidate,)
+        return (candidate,), True
 
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", lambda *args: next(answers))
@@ -2930,7 +2948,7 @@ def test_creation_source_empty_then_interrupt(monkeypatch, exception):
 
     monkeypatch.setattr(sys, "stdin", _TTYInput())
     monkeypatch.setattr(module, "_editable_input", answer)
-    monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: ())
+    monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: ((), True))
     with pytest.raises(exception):
         cli._creation_source(Profile.MS)
 
@@ -2981,7 +2999,8 @@ def test_corrected_creation_source_identity_and_acceptance_boundary(monkeypatch)
         cli,
         "_suggestions",
         lambda *args, **kwargs: (
-            SimpleNamespace(artifact=secret, search_complete=True, low_checksum_discrimination=False),
+            (SimpleNamespace(artifact=secret, search_complete=True, low_checksum_discrimination=False),),
+            True,
         ),
     )
     answers = iter(("ms1invalid", "n", "ms1invalid", "yes", "", secret.text))
