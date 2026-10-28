@@ -229,6 +229,15 @@ def test_immutable_confirmed_header_reduces_domains_and_cannot_be_repaired() -> 
     assert correct(context, SOURCE[:5] + "?" + SOURCE[6:]) == ()
 
 
+def test_later_separator_enters_another_namespace_and_is_not_repaired() -> None:
+    # Bech32 splits at the last "1", so this text no longer carries the ms HRP.
+    damaged = SOURCE[:15] + "1" + SOURCE[16:]
+
+    assert correct(CONTEXT, damaged) == ()
+    assert correct(CorrectionContext(Profile.MS), damaged) == ()
+    assert correct(CONTEXT, damaged.upper()) == ()
+
+
 def test_header_pruning_is_a_lossless_lower_bound() -> None:
     ordinary = [0, 1, 2, 3, 4, 5]
     ordinary[0] = 15  # threshold 0

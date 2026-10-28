@@ -407,7 +407,8 @@ def _normalize(context: CorrectionContext, damaged_text: str) -> tuple[str, int]
         return None
     prefix = context.immutable_prefix or f"{context.hrp}1"
     matches = text.startswith(prefix) if context.immutable_prefix else text.lower().startswith(prefix)
-    if not matches or not target - 8 <= len(text) <= target + 8:
+    # Bech32 separates at the last "1"; a later one enters a different HRP.
+    if not matches or text.rfind("1") != len(context.hrp) or not target - 8 <= len(text) <= target + 8:
         return None
     return text, len(prefix)
 
