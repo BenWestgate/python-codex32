@@ -134,8 +134,8 @@ def test_declining_gate_aborts_every_flow_without_metadata(monkeypatch, answer, 
         return answer
 
     monkeypatch.setattr(_cli_input, "_editable_input", respond)
-    monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
-    monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: (candidate,))
+    monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: ((candidate,), True))
+    monkeypatch.setattr(cli, "_suggestions", lambda *args, **kwargs: ((candidate,), True))
     monkeypatch.setattr(
         _cli_input, "_correction_candidates", lambda *args, **kwargs: ((candidate,), True, None)
     )
@@ -253,7 +253,7 @@ def test_redirected_recovery_uses_terminal_gate_then_whole_card_confirmation(mon
         return next(answers)
 
     monkeypatch.setattr(_cli_input, "_confirmation_input", confirm)
-    monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
+    monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: ((candidate,), True))
     stdout, stderr = io.StringIO(), _TTYOutput()
     with (
         patch.object(sys, "stdin", io.StringIO(source[:-1] + "?")),
@@ -272,7 +272,7 @@ def test_redirected_recovery_uses_terminal_gate_then_whole_card_confirmation(mon
 def test_redirected_recovery_without_terminal_reveals_nothing(monkeypatch):
     source = VECTOR_1["secret_s"]
     candidate = _candidate(source)
-    monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: (candidate,))
+    monkeypatch.setattr(_cli_input, "_suggestions", lambda *args, **kwargs: ((candidate,), True))
     stdout, stderr = io.StringIO(), io.StringIO()
     with (
         patch.object(sys, "stdin", io.StringIO(source[:-1] + "?")),
