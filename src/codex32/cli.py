@@ -20,11 +20,9 @@ from codex32._bitcoin_core import (
 from codex32._cli_input import (
     CorrectionDeclined,
     InteractiveConfirmationRequired,
-    _ascii_lower,
     _card_text,
     _case_interpretation,
     _confirm_correction,
-    _entered_groups,
     _fingerprint_matcher,
     _render_groups,
     _require_correction_confirmation,
@@ -35,6 +33,7 @@ from codex32._cli_input import InputError as _UsageError
 from codex32._cli_input import read_artifacts as _artifacts
 from codex32._cli_input import read_text as _text
 from codex32._cli_parser import parser as _parser
+from codex32._confirmation import _compact, _entered_groups
 from codex32.bip93 import (
     IDX_SORT,
     Header,
@@ -313,10 +312,10 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
             prefill=prefill,
         )
         compact = "".join(replacement.split())
-        if _ascii_lower(compact) == expected.lower():
+        if _compact(compact) == expected.lower():
             groups = [replacement]
             break
-        if len(compact) > len(expected[start * 4 : end * 4]) and _ascii_lower(compact).startswith(
+        if len(compact) > len(expected[start * 4 : end * 4]) and _compact(compact).startswith(
             (expected.split("1", 1)[0] + "1").lower()
         ):
             _print(
@@ -330,7 +329,7 @@ def _confirm_card(artifact: Artifact, confirm: Callable[[str], ConfirmationResul
         changed.difference_update(range(start, end))
         changed.update(start + i for i in remaining)
     entered = "".join(groups)
-    if _ascii_lower("".join(entered.split())) != expected.lower():
+    if _compact(entered) != expected.lower():
         raise RuntimeError("Confirmation mismatch.")
     if confirm is not None and not confirm(entered).accepted:
         raise RuntimeError("Confirmation rejected.")
