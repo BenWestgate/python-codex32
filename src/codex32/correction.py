@@ -857,8 +857,8 @@ def _correct_complete(
     if interpretation is not None:
         # Establish both interpretations' fixed/required candidates before
         # either interpretation can spend the shared deadline on optional
-        # alignment work.  These discovery passes use a private accounting
-        # ledger; the full searches below account every admitted layer once.
+        # alignment work. Both interpretations draw on one admission ledger;
+        # only the full searches below account every admitted layer once.
         for input_context, value in inputs:
             preflight_contexts: tuple[CorrectionContext, ...]
             if input_context.expected_length is not None:
@@ -884,6 +884,7 @@ def _correct_complete(
                 observed_text=damaged_text,
                 seed_candidates=candidates,
                 required_only=True,
+                shared_texts=tuple(other for _context, other in inputs if other != value),
             )
             if not current_complete:
                 return (), False
@@ -912,6 +913,7 @@ def _correct_complete(
             observed_text=damaged_text,
             seed_candidates=candidates,
             optional_only=interpretation is not None,
+            shared_texts=tuple(other for _context, other in inputs if other != value),
         )
         complete &= current_complete
         if not current_complete and not candidates:

@@ -432,6 +432,7 @@ def _correction_candidates(
     seed_candidates: Sequence[CorrectionCandidate] = (),
     required_only: bool = False,
     optional_only: bool = False,
+    shared_texts: Sequence[str] = (),
 ) -> tuple[tuple[CorrectionCandidate, ...], bool, float]:
     count = len(value.replace(" ", ""))
     targets = _correction_plan(profile, byte_length, count, target)
@@ -450,6 +451,7 @@ def _correction_candidates(
         seed_candidates=seed_candidates,
         required_only=required_only,
         optional_only=optional_only,
+        shared_texts=shared_texts,
     )
     if allowed is not None:
         candidates = tuple(candidate for candidate in candidates if allowed(candidate))
@@ -492,21 +494,28 @@ def _scheduled_candidates(
     if retry is not None:
         # Find required candidates for both case interpretations before either
         # full search can spend the shared deadline on optional alignment.
-        # These discovery passes deliberately do not charge capture_layers;
-        # the full searches below account each admitted frontier once.
-        for required_value in (first, retry):
+        # Both interpretations draw on one admission ledger. These discovery
+        # passes do not charge capture_layers; the full searches below account
+        # each admitted frontier once.
+        for required_value, other in ((first, retry), (retry, first)):
             seeded, complete, deadline = search(
-                required_value, deadline=deadline, seed_candidates=seeded, required_only=True
+                required_value,
+                deadline=deadline,
+                seed_candidates=seeded,
+                required_only=True,
+                shared_texts=(other,),
             )
             if not complete:
                 return (), False
     capture_layers: list[tuple[int, int]] = []
     full_search = partial(search, capture_layers=capture_layers, optional_only=retry is not None)
-    candidates, complete, deadline = full_search(first, deadline=deadline, seed_candidates=seeded)
+    candidates, complete, deadline = full_search(
+        first, deadline=deadline, seed_candidates=seeded, shared_texts=() if retry is None else (retry,)
+    )
     if retry is None:
         return candidates, complete
     retry_candidates, retry_complete, _deadline = full_search(
-        retry, deadline=deadline, seed_candidates=(*seeded, *candidates)
+        retry, deadline=deadline, seed_candidates=(*seeded, *candidates), shared_texts=(first,)
     )
     complete = complete and retry_complete
     annotated = []
