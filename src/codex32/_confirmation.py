@@ -10,6 +10,10 @@ def _compact(text: str) -> str:
 
 def _entered_groups(observed: str, expected: str) -> tuple[list[str], set[int]]:
     """Align entered groups without supplying any expected characters."""
+    if len(_compact(observed)) > 2 * len(_compact(expected)):
+        # Alignment time grows with the square of the input; mark it all wrong.
+        chars = "".join(observed.split())
+        return [chars[i : i + 4] for i in range(0, len(chars), 4)], set(range((len(chars) + 3) // 4))
     positions = [i for i, char in enumerate(observed) if not char.isspace()]
     compact = _compact(observed)
     expected = _compact(expected)
