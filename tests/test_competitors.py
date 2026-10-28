@@ -1,6 +1,7 @@
 """CLI competitor scheduling, proof boundaries, and differential scoring."""
 
 from dataclasses import replace
+from math import comb
 from time import monotonic
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ import pytest
 
 from codex32 import CorrectionContext, MasterSeed, Profile, Share, indel
 from codex32 import _competitors as search
+from codex32._cli_input import _case_interpretation, _scheduled_candidates
 from codex32.bech32 import CHARSET
 from codex32.correction import _correct_fixed
 from codex32.profiles.ms32 import TEXT_LENGTHS
@@ -342,3 +344,22 @@ def test_pruning_does_not_change_mass_admission():
     search._search_competitors((state,), frontier, monotonic() + 10, None)
     assert frontier == original
     assert sum(frontier.values()) <= 2**65
+
+
+def test_mixed_case_optional_pass_keeps_fixed_witnesses():
+    damaged = list(SOURCE)
+    for left, right in ((11, 12), (23, 34)):
+        damaged[left], damaged[right] = damaged[right], damaged[left]
+    lowercase = "".join(damaged)
+    mixed = lowercase[:40] + lowercase[40].upper() + lowercase[41:]
+    interpretation = _case_interpretation(mixed, "", (Profile.MS,), None)
+    assert interpretation is not None
+    _direct, normalized, erased, _prefix = interpretation
+    assert normalized == lowercase
+
+    candidates, complete = _scheduled_candidates(normalized, erased, Profile.MS, None, "ms1", target=48)
+
+    assert complete
+    assert [candidate.artifact.text for candidate in candidates] == [SOURCE]
+    # One adjacent and one distant swap among 45 body characters, ordered two ways.
+    assert candidates[0].capture_volume == 2 * 44 * comb(44, 2)
