@@ -881,6 +881,13 @@ def test_redirected_check_uses_friendly_checksum_message() -> None:
     assert result.stderr == "codex32 check: The checksum does not match.\n"
 
 
+def test_share_from_unshared_secret_says_it_was_never_split() -> None:
+    result = _invoke(["share", "a"], VECTOR_1["secret_s"])
+
+    assert result.exit_code == 1
+    assert result.stderr == "codex32 share: An unshared secret (threshold 0) was never split into shares.\n"
+
+
 def test_tty_retry_without_line_editor_uses_an_empty_prompt(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1087,7 +1094,7 @@ def test_tty_recovery_accepts_complete_uppercase_and_retries(
         "Enter share 2 of 2:\n> MS12NAME",
         "Enter share 2 of 2:\n> MS12NAME",
     ]
-    assert "Rejected: These strings are for different applications." in captured.err
+    assert "Rejected: ms and bip39_12w cannot be combined" in captured.err
     assert "Rejected: That share index was already entered." in captured.err
     assert first not in captured.err and mismatch not in captured.err
     assert editor.inserted == []
