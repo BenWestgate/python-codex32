@@ -1109,6 +1109,16 @@ def test_tty_share_collects_secret_and_exact_basis(
     assert "String 3 of 3 accepted." not in captured.err
 
 
+def test_correction_after_secret_in_derivation_basis() -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+    share_c = VECTOR_2["share_C"]
+    damaged = share_c[:-1] + ("Q" if share_c[-1] != "Q" else "P")
+
+    candidates, _ = input_module._corrections(damaged, "", "ms", [parse_codex32(VECTOR_2["secret_S"])])
+
+    assert [candidate.artifact.s for candidate in candidates] == [share_c]
+
+
 @pytest.mark.parametrize(("exception", "status"), ((EOFError(), 2), (KeyboardInterrupt(), 130)))
 def test_tty_interrupts_have_stable_statuses(
     monkeypatch: pytest.MonkeyPatch,

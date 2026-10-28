@@ -340,7 +340,8 @@ def _corrections(
     if isinstance(byte_length, int):
         target = _text_length(byte_length)
     immutable = prefix if prefix and value.lower().startswith(prefix.lower()) else value[: separator + 1]
-    excluded = tuple(artifact.share_idx for artifact in accepted)
+    # A derivation basis may hold the secret S, which is never a correction candidate's index.
+    excluded = tuple(artifact.share_idx for artifact in accepted if artifact.share_idx != "s")
     context = CorrectionContext(hrp, target, _prefix_for_suffix(immutable, value), excluded)
     try:
         candidates, complete = _correct_complete(context, value, allowed=allowed, competitors=True)
