@@ -191,7 +191,7 @@ def test_structural_alignment_leaves_bch_capacity_for_substitutions(shape_args, 
     from codex32.bech32 import CHARSET
     from codex32.indel import _CLASSES, _frontier, _prepare, _search_target, _StructuralClass
 
-    source = MasterSeed.from_seed(bytes(range(16)), identifier="test").text
+    source = MasterSeed.from_seed(bytes(range(16)), identifier="test").s
     chars = list(source)
     width = shape_args.get("unit", 1)
     for p, q in swaps:
@@ -226,9 +226,9 @@ def test_only_unique_optional_timeout_candidate_can_be_surfaced(interrupt_requir
         if _FIXED in state.counts:
             return True
         required = all(s.unit == 4 or s.distance <= 2 for s in state.counts)
-        results[first.text] = candidate
+        results[first.s] = candidate
         if tie:
-            results[second.text] = CorrectionCandidate(second, (), 1 << 60, 0, 2, None)
+            results[second.s] = CorrectionCandidate(second, (), 1 << 60, 0, 2, None)
         return required and not interrupt_required
 
     with patch("codex32.indel._search_target", side_effect=search):
@@ -273,10 +273,10 @@ def test_global_frontier_admits_exact_ceiling_but_rejects_larger_batch():
 def test_full_consecutive_erasure_capacity_at_inclusive_shared_ceiling(byte_length, erasures, known):
     from codex32 import CorrectionContext, MasterSeed, correct
 
-    source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").text
+    source = MasterSeed.from_seed(bytes(range(byte_length)), identifier="test").s
     damaged = source[:10] + "?" * erasures + source[10 + erasures :]
     result = correct(CorrectionContext("ms", len(source) if known else None), damaged)
-    assert len(result) == 1 and result[0].artifact.text == source
+    assert len(result) == 1 and result[0].artifact.s == source
     assert result[0].search_complete
     assert result[0].capture_volume == 32**erasures
 

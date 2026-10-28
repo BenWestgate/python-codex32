@@ -12,9 +12,9 @@ from hypothesis import strategies as st
 
 import codex32.generation as generation_module
 from codex32 import (
+    Codex32String,
     CreationCeremony,
     MasterSeed,
-    Share,
     generate_master_seed,
     parse_codex32,
     recover_secret,
@@ -32,7 +32,7 @@ from codex32.generation import ORDINARY_INDICES, _fingerprint_identifier
 from tools._wallet_test_vectors import FIXTURE_SEED, core_fingerprint, stub_fingerprint
 
 
-def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed, tuple[Share, ...]]:
+def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed, tuple[Codex32String, ...]]:
     shares = []
     while True:
         try:
@@ -41,12 +41,12 @@ def _complete(ceremony: CreationCeremony) -> tuple[MasterSeed, tuple[Share, ...]
             assert "all cards are confirmed" in str(error)
             break
         shares.append(share)
-        assert ceremony.confirm(share.text.upper()).accepted
+        assert ceremony.confirm(share.s.upper()).accepted
     return ceremony.finish(), tuple(shares)
 
 
-def _indices(shares: tuple[Share, ...]) -> str:
-    return "".join(share.header.index for share in shares)
+def _indices(shares: tuple[Codex32String, ...]) -> str:
+    return "".join(share.share_idx for share in shares)
 
 
 def _seed(byte_length: int) -> bytes:
@@ -56,9 +56,9 @@ def _seed(byte_length: int) -> bytes:
 def test_fresh_unshared_ms_supports_every_bip93_size() -> None:
     for byte_length in SEED_BYTE_LENGTHS:
         secret = generate_master_seed(byte_length=byte_length, fingerprint=stub_fingerprint)
-        assert len(secret.seed_bytes) == byte_length
-        assert secret.header.threshold == 0
-        assert secret.header.identifier == _fingerprint_identifier(stub_fingerprint(secret.seed_bytes))
+        assert len(secret.data) == byte_length
+        assert secret.k == "0"
+        assert secret.ident == _fingerprint_identifier(stub_fingerprint(secret.data))
         assert _has_generation_padding(secret)
 
 
@@ -86,7 +86,7 @@ def test_fresh_shared_ms_supports_every_bip93_size() -> None:
 @pytest.mark.parametrize("threshold", range(2, 10))
 def test_fresh_generation_recovers_at_every_threshold(threshold: int) -> None:
     secret, shares = _complete(CreationCeremony.master_seed(threshold=threshold, share_count=threshold))
-    assert len({share.header.index for share in shares}) == threshold
+    assert len({share.share_idx for share in shares}) == threshold
     assert recover_secret(shares) == secret
 
 
@@ -99,7 +99,7 @@ def test_generated_subsets_recover_across_sizes_and_threshold_boundaries(
     )
     secret, shares = _complete(ceremony)
 
-    assert {recover_secret(subset).text for subset in combinations(shares, threshold)} == {secret.text}
+    assert {recover_secret(subset).s for subset in combinations(shares, threshold)} == {secret.s}
 
 
 @given(
@@ -114,7 +114,7 @@ def test_supplied_seed_round_trip(byte_length: int, threshold: int) -> None:
             source, threshold=threshold, indices=ORDINARY_INDICES[:threshold], identifier="name"
         )
     )
-    assert isinstance(secret, MasterSeed) and secret.seed_bytes == _seed(byte_length)
+    assert isinstance(secret, MasterSeed) and secret.data == _seed(byte_length)
     assert recover_secret(shares) == secret
 
 
@@ -134,8 +134,8 @@ def test_raw_bytes_accept_random_or_explicit_identifiers() -> None:
         generate_master_seed(raw, byte_length=16, identifier="test")
     random_secret = generate_master_seed(raw)
     secret = generate_master_seed(raw, identifier="TEST")
-    assert len(random_secret.header.identifier) == 4
-    assert secret.header.identifier == "test"
+    assert len(random_secret.ident) == 4
+    assert secret.ident == "test"
 
 
 def test_supplied_seed_must_form_a_valid_bip32_root(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -226,29 +226,29 @@ def test_confirmation_gates_each_entropy_draw_and_reports_groups(
     assert calls == [26]
     with pytest.raises(CeremonyStateError, match="pending"):
         ceremony.next_share()
-    damaged = first.text[:4] + ("q" if first.text[4] != "q" else "p") + first.text[5:]
+    damaged = first.s[:4] + ("q" if first.s[4] != "q" else "p") + first.s[5:]
     result = ceremony.confirm(damaged)
     assert not result.accepted and result.mismatched_groups == (2,)
-    dropped = ceremony.confirm(first.text[:9] + first.text[10:])
+    dropped = ceremony.confirm(first.s[:9] + first.s[10:])
     # A dropped character marks only its own group, not every later group.
     assert not dropped.accepted and dropped.mismatched_groups == (3,)
-    assert "".join(dropped.entered_groups) == first.text[:9] + first.text[10:]
+    assert "".join(dropped.entered_groups) == first.s[:9] + first.s[10:]
     assert calls == [26]
-    assert ceremony.confirm(" \n".join(first.text.upper())).accepted
+    assert ceremony.confirm(" \n".join(first.s.upper())).accepted
     second = ceremony.next_share()
     assert len(calls) >= 2 and all(length == 26 for length in calls)
-    assert ceremony.confirm(second.text).accepted
+    assert ceremony.confirm(second.s).accepted
     calls_after_basis = len(calls)
     derived = ceremony.next_share()
     assert len(calls) == calls_after_basis
-    assert ceremony.confirm(derived.text).accepted
+    assert ceremony.confirm(derived.s).accepted
     ceremony.finish()
 
 
 def test_final_share_rejection_retains_confirmed_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
     first = ceremony.next_share()
-    assert ceremony.confirm(first.text).accepted
+    assert ceremony.confirm(first.s).accepted
     original = ceremony._candidate_is_accepted
     checks = 0
 
@@ -265,7 +265,7 @@ def test_final_share_rejection_retains_confirmed_prefix(monkeypatch: pytest.Monk
     calls = 0
     original_random = generation_module._random_share
 
-    def recorded(*args: object, **kwargs: object) -> Share:
+    def recorded(*args: object, **kwargs: object) -> Codex32String:
         nonlocal calls
         calls += 1
         return original_random(*args, **kwargs)  # type: ignore[arg-type]
@@ -273,7 +273,7 @@ def test_final_share_rejection_retains_confirmed_prefix(monkeypatch: pytest.Monk
     monkeypatch.setattr(generation_module, "_random_share", recorded)
     second = ceremony.next_share()
     assert calls >= 2
-    assert ceremony.confirm(second.text).accepted
+    assert ceremony.confirm(second.s).accepted
     secret = ceremony.finish()
     assert recover_secret((first, second)) == secret
 
@@ -281,7 +281,7 @@ def test_final_share_rejection_retains_confirmed_prefix(monkeypatch: pytest.Monk
 def test_final_ms_share_retries_a_bip32_invalid_root(monkeypatch: pytest.MonkeyPatch) -> None:
     ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
     first = ceremony.next_share()
-    assert ceremony.confirm(first.text).accepted
+    assert ceremony.confirm(first.s).accepted
     original = generation_module._valid_root
     checks = 0
 
@@ -294,7 +294,7 @@ def test_final_ms_share_retries_a_bip32_invalid_root(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(generation_module, "_valid_root", reject_once)
     second = ceremony.next_share()
-    assert checks >= 2 and ceremony.confirm(second.text).accepted
+    assert checks >= 2 and ceremony.confirm(second.s).accepted
     assert recover_secret((first, second)) == ceremony.finish()
 
 
@@ -307,7 +307,7 @@ def test_ceremony_state_is_fail_closed() -> None:
     shares = []
     for _ in range(2):
         shares.append(ceremony.next_share())
-        assert ceremony.confirm(shares[-1].text).accepted
+        assert ceremony.confirm(shares[-1].s).accepted
     secret = ceremony.finish()
     assert recover_secret(shares) == secret
     assert ceremony._basis == [] and ceremony._indices == () and ceremony._secret is None
@@ -320,7 +320,7 @@ def test_ceremony_state_is_fail_closed() -> None:
 def test_ceremony_cannot_be_copied_or_serialized() -> None:
     ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
     pending = ceremony.next_share()
-    assert ceremony.confirm(pending.text).accepted
+    assert ceremony.confirm(pending.s).accepted
 
     for operation in (
         lambda: copy.copy(ceremony),
@@ -337,12 +337,12 @@ def test_resharing_preserves_padding_and_requires_a_new_header() -> None:
     secret, shares = _complete(
         CreationCeremony.from_secret(source, threshold=2, indices="ac", identifier="name")
     )
-    assert secret.payload_symbols == source.payload_symbols
-    assert recover_secret(shares).payload_symbols == source.payload_symbols
+    assert secret.payload == source.payload
+    assert recover_secret(shares).payload == source.payload
     with pytest.raises(HeaderCollision):
         CreationCeremony.from_secret(secret, threshold=2, indices="ac", identifier="name")
     randomized = CreationCeremony.from_secret(secret, threshold=2, indices="ac")
-    assert randomized.next_share().header.identifier != secret.header.identifier
+    assert randomized.next_share().ident != secret.ident
 
 
 def test_from_secret_rejects_non_secret_artifacts() -> None:

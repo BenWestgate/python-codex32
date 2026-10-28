@@ -7,13 +7,12 @@ import difflib
 import os
 import sys
 from collections.abc import Callable, Iterator, Sequence
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from codex32.bip93 import (
     MS,
+    Codex32String,
     MasterSeed,
-    Secret,
-    Share,
     _text_length,
     _validate_ms_length,
     _validate_recovery_prefix,
@@ -31,7 +30,6 @@ from codex32.errors import (
     InvalidLength,
 )
 
-Artifact = Share | Secret
 _MAX_INPUT = 9 * 1025
 
 _line_editor: Any
@@ -176,7 +174,7 @@ def _card_text(text: str, highlight: bool = True, observed: str = "") -> str:
 
 def _confirm_correction(
     candidate: CorrectionCandidate,
-    accepted: list[Artifact],
+    accepted: list[Codex32String],
     basis: bool,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
 ) -> bool | None:
@@ -186,12 +184,12 @@ def _confirm_correction(
     preview = artifact
     try:
         if (
-            isinstance(artifact, Share)
+            artifact.share_idx != "s"
             and artifact.hrp == MS
             and not basis
-            and (len(accepted) + 1 == artifact.header.threshold)
+            and (len(accepted) + 1 == int(artifact.k))
         ):
-            preview = recover_secret(cast(list[Share], [*accepted, artifact]))
+            preview = recover_secret([*accepted, artifact])
         fingerprint_text = (
             f"Master fingerprint: {fingerprint(preview).hex().upper()}\n\n"
             if isinstance(preview, MasterSeed) and fingerprint is not None
@@ -200,7 +198,7 @@ def _confirm_correction(
     except CodexError:
         _stderr("Rejected: Could not recover a valid Bitcoin master seed using this correction.")
         return None
-    _stderr(f"Possible correction:\n\n{fingerprint_text}{_card_text(artifact.text, sys.stderr.isatty())}\n")
+    _stderr(f"Possible correction:\n\n{fingerprint_text}{_card_text(artifact.s, sys.stderr.isatty())}\n")
     return _confirmation_input(
         "Does this entire string exactly match your recovery card? [y/N]: "
     ).strip().lower() in ("y", "yes")
@@ -226,7 +224,7 @@ def _render_groups(
     ).rstrip()
 
 
-def _parse(value: str, hrp: str | None) -> Artifact:
+def _parse(value: str, hrp: str | None) -> Codex32String:
     try:
         artifact = parse_codex32(value)
     except InvalidChecksum as error:
@@ -267,10 +265,10 @@ def _prefix_for_suffix(prefix: str, suffix: str) -> str:
     return prefix
 
 
-def _accepted_prefix(accepted: list[Artifact]) -> str:
+def _accepted_prefix(accepted: list[Codex32String]) -> str:
     first = accepted[0]
-    prefix = f"{first.hrp}1{first.header.threshold}{first.header.identifier}"
-    return prefix.upper() if all(artifact.text.isupper() for artifact in accepted) else prefix
+    prefix = f"{first.hrp}1{first.k}{first.ident}"
+    return prefix.upper() if all(artifact.s.isupper() for artifact in accepted) else prefix
 
 
 def _display_prefix(prefix: str, grouped: bool) -> str:
@@ -292,10 +290,10 @@ def _fingerprint_matcher(
 
     def matches(candidate: CorrectionCandidate) -> bool | None:
         artifact = candidate.artifact
-        if not isinstance(artifact, MasterSeed) or artifact.header.threshold:
+        if not isinstance(artifact, MasterSeed) or artifact.k != "0":
             return None
         try:
-            return _fingerprint_identifier(fingerprint(artifact)) == artifact.header.identifier
+            return _fingerprint_identifier(fingerprint(artifact)) == artifact.ident
         except CodexError:
             return None
 
@@ -306,7 +304,7 @@ def _suggestions(
     value: str,
     prefix: str,
     required_hrp: str | None,
-    accepted: Sequence[Artifact],
+    accepted: Sequence[Codex32String],
     *,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
@@ -327,7 +325,7 @@ def _corrections(
     value: str,
     prefix: str,
     required_hrp: str | None,
-    accepted: Sequence[Artifact],
+    accepted: Sequence[Codex32String],
     *,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
@@ -338,11 +336,12 @@ def _corrections(
     hrp = value[: max(separator, 0)].lower()
     if separator <= 0 or required_hrp not in (None, hrp):
         return (), True
-    target = len(accepted[0].text) if accepted else None
+    target = len(accepted[0].s) if accepted else None
     if isinstance(byte_length, int):
         target = _text_length(byte_length)
     immutable = prefix if prefix and value.lower().startswith(prefix.lower()) else value[: separator + 1]
-    excluded = tuple(artifact.header.index for artifact in accepted)
+    # A derivation basis may hold the secret S, which is never a correction candidate's index.
+    excluded = tuple(artifact.share_idx for artifact in accepted if artifact.share_idx != "s")
     context = CorrectionContext(hrp, target, _prefix_for_suffix(immutable, value), excluded)
     try:
         candidates, complete = _correct_complete(context, value, allowed=allowed, competitors=True)
@@ -355,17 +354,17 @@ def _corrections(
 
 
 def _validate_operational_artifact(
-    artifact: Artifact,
-    accepted: list[Artifact],
+    artifact: Codex32String,
+    accepted: list[Codex32String],
     *,
     basis: bool,
     one: bool,
     excluded_index: str | None,
 ) -> None:
-    if basis and artifact.header.index == excluded_index:
+    if basis and artifact.share_idx == excluded_index:
         raise ExistingTargetIndex("That index was requested for the additional share.")
-    if not one and (accepted or isinstance(artifact, Share) or basis):
-        recovering = not basis and isinstance(artifact, Share)
+    if not one and (accepted or artifact.share_idx != "s" or basis):
+        recovering = not basis and artifact.share_idx != "s"
         if recovering:
             _validate_recovery_prefix([*accepted, artifact])
         else:
@@ -379,13 +378,13 @@ def _redirected(
     one: bool,
     excluded_index: str | None,
     fingerprint: Callable[[MasterSeed], bytes] | None,
-) -> list[Artifact]:
+) -> list[Codex32String]:
     tokens = _stdin().split()
     if not tokens:
         raise InputError("No input was provided.")
     if len(tokens) > 9:
         raise InputError("At most nine codex32 strings may be provided at once.")
-    accepted: list[Artifact] = []
+    accepted: list[Codex32String] = []
     for token in tokens:
         try:
             artifact = _parse(token, hrp)
@@ -438,12 +437,12 @@ def _interactive(
     hrp: str | None,
     initial_prefix: str,
     fingerprint: Callable[[MasterSeed], bytes] | None,
-) -> list[Artifact]:
-    accepted: list[Artifact] = []
+) -> list[Codex32String]:
+    accepted: list[Codex32String] = []
     prefix = initial_prefix
     prefill, required, grouped_prefix = "", 1, False
 
-    def validate(artifact: Artifact) -> None:
+    def validate(artifact: Codex32String) -> None:
         _validate_operational_artifact(
             artifact,
             accepted,
@@ -511,10 +510,10 @@ def _interactive(
         prefill = ""
         if one:
             return [artifact]
-        if isinstance(artifact, Secret) and not basis:
+        if artifact.share_idx == "s" and not basis:
             return [artifact]
         if not accepted:
-            required = artifact.header.threshold
+            required = int(artifact.k)
         accepted.append(artifact)
         prefix = _accepted_prefix(accepted)
         grouped_prefix = len(entered.split()) > 1
@@ -531,7 +530,7 @@ def read_artifacts(
     hrp: str | None = None,
     initial_prefix: str = "",
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
-) -> list[Artifact]:
+) -> list[Codex32String]:
     if not sys.stdin.isatty():
         return _redirected(
             hrp,

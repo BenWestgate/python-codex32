@@ -482,7 +482,7 @@ def test_fingerprint_uses_stateless_core_address_derivation(monkeypatch: pytest.
 
     monkeypatch.setattr(BitcoinCore, "_rpc", rpc)
 
-    assert BitcoinCore("bitcoin-cli", "main", 320000).fingerprint_seed(_SEED.seed_bytes) == _FINGERPRINT
+    assert BitcoinCore("bitcoin-cli", "main", 320000).fingerprint_seed(_SEED.data) == _FINGERPRINT
     assert calls == [
         (("getdescriptorinfo",), None),
         (("deriveaddresses",), None),

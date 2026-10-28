@@ -21,71 +21,70 @@ from data.bip93_vectors import (
 )
 
 from codex32 import (
+    Codex32String,
     MasterSeed,
-    Secret,
-    Share,
     derive_share,
     parse_codex32,
     recover_secret,
 )
-from codex32.bech32 import convertbits
+from codex32.bech32 import _chars_to_u5, convertbits
 from codex32.errors import CodexError, InvalidChecksum
 
 
 def test_vector_1_parts_and_seed() -> None:
     secret = parse_codex32(VECTOR_1["secret_s"])
     assert isinstance(secret, MasterSeed)
-    assert secret.header.threshold == 0
-    assert secret.header.identifier == VECTOR_1["identifier"]
-    assert secret.header.index == "s"
-    assert secret.seed_bytes.hex() == VECTOR_1["secret_hex"]
-    assert secret.text == VECTOR_1["secret_s"]
+    assert secret.k == "0"
+    assert secret.ident == VECTOR_1["identifier"]
+    assert secret.share_idx == "s"
+    assert secret.data.hex() == VECTOR_1["secret_hex"]
+    assert secret.s == VECTOR_1["secret_s"]
 
 
 def test_vector_2_public_api_derives_and_recovers() -> None:
     a = parse_codex32(VECTOR_2["share_A"])
     c = parse_codex32(VECTOR_2["share_C"])
-    assert isinstance(a, Share) and isinstance(c, Share)
-    assert derive_share([a, c], "D").text == VECTOR_2["derived_D"]
+    assert a.share_idx != "s" and c.share_idx != "s"
+    assert derive_share([a, c], "D").s == VECTOR_2["derived_D"]
     secret = recover_secret([a, c])
     assert isinstance(secret, MasterSeed)
-    assert secret.text == VECTOR_2["secret_S"]
-    assert secret.seed_bytes.hex() == VECTOR_2["secret_hex"]
+    assert secret.s == VECTOR_2["secret_S"]
+    assert secret.data.hex() == VECTOR_2["secret_hex"]
 
 
 def test_vector_3_factory_and_public_derivation() -> None:
     seed = bytes.fromhex(VECTOR_3["secret_hex"])
     secret = MasterSeed.from_seed(seed, identifier="cash", threshold=3)
-    assert secret.text == VECTOR_3["secret_s"]
+    assert secret.s == VECTOR_3["secret_s"]
     basis = [
         secret,
         parse_codex32(VECTOR_3["share_a"]),
         parse_codex32(VECTOR_3["share_c"]),
     ]
     for index in "def":
-        assert derive_share(basis, index).text == VECTOR_3[f"derived_{index}"]
+        assert derive_share(basis, index).s == VECTOR_3[f"derived_{index}"]
     for pad_value in range(4):
         alternate = parse_codex32(VECTOR_3[f"secret_s_alternate_{pad_value}"])
         assert isinstance(alternate, MasterSeed)
-        assert alternate.seed_bytes == seed
+        assert alternate.data == seed
 
 
 def test_vector_4_all_arbitrary_parsed_padding() -> None:
     seed = bytes.fromhex(VECTOR_4["secret_hex"])
     generated = MasterSeed.from_seed(seed, identifier="leet")
-    assert generated.text == VECTOR_4["secret_s_alternate_8"]
+    assert generated.s == VECTOR_4["secret_s_alternate_8"]
     for pad_value in range(16):
         alternate = parse_codex32(VECTOR_4[f"secret_s_alternate_{pad_value}"])
         assert isinstance(alternate, MasterSeed)
-        assert alternate.seed_bytes == seed
+        assert alternate.data == seed
 
 
 def test_vector_5_long_uppercase_and_completion() -> None:
     secret = parse_codex32(VECTOR_5["secret_s"])
     assert isinstance(secret, MasterSeed)
-    assert secret.text == VECTOR_5["secret_s"]
-    assert secret.seed_bytes.hex() == VECTOR_5["secret_hex"]
-    assert parse_codex32(secret.text).text.isupper()
+    assert secret.s == VECTOR_5["secret_s"]
+    assert secret.data.hex() == VECTOR_5["secret_hex"]
+    assert parse_codex32(secret.s).s.isupper()
 
 
 def test_vector_6_core_lightning_examples_are_generic_immutable_secrets() -> None:
@@ -93,17 +92,18 @@ def test_vector_6_core_lightning_examples_are_generic_immutable_secrets() -> Non
     cln2 = parse_codex32(VECTOR_6["codex32_cln2"])
     peev = parse_codex32(VECTOR_6["codex32_peev"])
     for value in (luea, cln2, peev):
-        assert type(value) is Secret and value.hrp == "cl"
+        assert type(value) is Codex32String and value.hrp == "cl"
 
-    def payload(secret: Secret) -> str:
-        return bytes(convertbits(secret.payload_symbols, 5, 8, pad=False, accept_any_padding=True)).hex()
+    def payload(secret: Codex32String) -> str:
+        return bytes(
+            convertbits(_chars_to_u5(secret.payload), 5, 8, pad=False, accept_any_padding=True)
+        ).hex()
 
     assert payload(luea) == "6c696768746e696e672d31330000000000000000000000000000000000000000"
     assert payload(peev) == "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1"
-    # Before Python 3.13, slotted frozen dataclasses raise TypeError here for subclasses.
-    with pytest.raises((FrozenInstanceError, AttributeError, TypeError)):
-        luea.header = cln2.header  # type: ignore[misc]
-    assert luea.header.identifier == "luea"
+    with pytest.raises(FrozenInstanceError):
+        luea.s = cln2.s  # type: ignore[misc]
+    assert luea.ident == "luea"
 
 
 @pytest.mark.parametrize("value", BAD_CHECKSUMS)
@@ -138,7 +138,7 @@ def test_official_wrong_application_example_is_a_generic_secret() -> None:
     # BIP93 lists this as invalid when an ms decoder was explicitly expected;
     # without an ms prefix it is an ordinary codex32 secret.
     artifact = parse_codex32(INVALID_MASTER_SEED[0])
-    assert type(artifact) is Secret and artifact.hrp != "ms"
+    assert type(artifact) is Codex32String and artifact.hrp != "ms"
 
 
 @pytest.mark.parametrize("value", INVALID_PREFIX_OR_SEPARATOR[-2:])

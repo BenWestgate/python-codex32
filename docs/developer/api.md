@@ -18,8 +18,8 @@ The format layer first validates ASCII, case, separator, characters, and the
 absolute size bound. The application parser selects the checksum type from the
 generic encoded length and validates the common header before verifying the
 outer checksum. Only afterward does an `ms` HRP add the BIP93 master-seed
-length rule and the `MasterSeed` type for S. Every other HRP crosses the
-boundary as a base `Secret` or `Share`, with normalized `hrp` and no invented
+length rule and the `MasterSeed` type for S. Every other string, including
+`ms` shares, crosses the boundary as a `Codex32String`, with normalized `hrp` and no invented
 payload meaning. Applications with their own HRP add their rules on top of
 these generic artifacts.
 
@@ -51,7 +51,8 @@ generic parse-length failure.
 
 ### Boundaries
 
-- An artifact stores only its validated string; its header, HRP and payload are decoded from it.
+- A `Codex32String` stores only its validated string `s`; `hrp`, `k`, `ident`,
+  `share_idx`, `payload` and `checksum` are slices of it. S has index `s`.
 - `bech32.py` keeps the recognizable BIP173 reference names and accumulator
   structure. Encoding takes an explicit checksum specification. Decoding
   without one returns the HRP and complete data part after checking only the
@@ -60,10 +61,10 @@ generic parse-length failure.
   codex32 headers, or decode application payloads.
 - The library knows only BIP93's `ms` application. Other HRPs stay generic;
   there is no profile registry.
-- Headers and artifacts are immutable; shares expose symbols, not bytes.
+- Artifacts are immutable; only `MasterSeed` exposes bytes (`data`).
 - Artifact `str()` and `repr()` render redacted placeholders. Code that
-  intentionally serializes a validated `Share` or `Secret` must use its explicit
-  `.text` attribute.
+  intentionally serializes a validated `Codex32String` must use its explicit
+  `.s` attribute.
 - Sharing interpolates payload and checksum together, explicitly constructs the
   target header, and reparses the result.
 - `generation.py` is the only entropy owner; it generates and shares only `ms`.
@@ -118,7 +119,7 @@ its own lengths or payload checks applies them to those artifacts itself.
 |---|---:|---:|
 | parse S/share, recover, derive shares | yes | yes |
 | fixed BCH and bounded structural correction | yes | yes |
-| semantic S bytes (`MasterSeed.seed_bytes`) | no | 16, 20, 24, 28, 32, or 64 |
+| semantic S bytes (`MasterSeed.data`) | no | 16, 20, 24, 28, 32, or 64 |
 | generation, ceremonies, existing-S splitting | no | six supported sizes |
 | wallet API and `ms32` | no | yes |
 
@@ -251,12 +252,12 @@ shape; registered semantics are reapplied when every output is reparsed.
 ### Public operations
 
 ```python
-recover_secret(shares: Sequence[Share]) -> Secret
+recover_secret(shares: Sequence[Codex32String]) -> Codex32String
 
 derive_share(
-    basis: Sequence[Share | Secret],
+    basis: Sequence[Codex32String],
     fresh_index: str,
-) -> Share
+) -> Codex32String
 ```
 
 Recovery accepts exactly `k` ordinary shares. Derivation accepts exactly `k`
