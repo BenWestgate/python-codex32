@@ -27,8 +27,6 @@ from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
     ExistingTargetIndex,
-    InvalidChecksum,
-    InvalidLength,
 )
 from codex32.profiles import Profile, _optional_profile_rules, _profile_rules
 from codex32.profiles.ms32 import (
@@ -300,18 +298,7 @@ def _parse(value: str, profiles: tuple[Profile, ...] | None) -> Artifact:
     try:
         artifact = parse_codex32(value)
     except CodexError as error:
-        message = str(error)
-        if isinstance(error, InvalidChecksum):
-            # Parsing has already checked the container and generic length.
-            # Explain an unsupported profile length without validating input
-            # or changing the parser's checksum-before-profile boundary.
-            try:
-                _profile_rules(value[: value.rfind("1")]).validate_text_length(len(value))
-            except InvalidLength as length_error:
-                message = str(length_error)
-            except CodexError:
-                pass
-        raise InputError(message) from error
+        raise InputError(str(error)) from error
     if profiles is not None and artifact.profile not in profiles:
         allowed = " or ".join(_profile_rules(profile).label for profile in profiles)
         raise InputError(f"This command accepts only {allowed} input.")

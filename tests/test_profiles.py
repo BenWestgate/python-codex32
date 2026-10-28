@@ -76,8 +76,7 @@ def test_pr2258_supported_size_vectors(seed_hex: str, text: str) -> None:
 
 @pytest.mark.parametrize("text", FORMERLY_VALID_UNSUPPORTED_MS)
 def test_pr2258_rejects_formerly_valid_unsupported_sizes(text: str) -> None:
-    expected = InvalidChecksum if text in FORMERLY_VALID_UNSUPPORTED_MS[-2:] else InvalidLength
-    with pytest.raises(expected):
+    with pytest.raises(InvalidLength):
         parse_codex32(text)
 
 
@@ -138,17 +137,15 @@ def test_common_header_is_validated_before_checksum() -> None:
     ("hrp", "payload_length"),
     (("ms", 26), ("cl", 52), ("bip39_12w", 27), ("bip39_24w", 53)),
 )
-def test_checksum_precedes_profile_length(hrp: str, payload_length: int) -> None:
+def test_unused_profile_length_is_reported_instead_of_checksum(hrp: str, payload_length: int) -> None:
     valid = _oracle_encode(hrp, "0tests" + "q" * payload_length)
-    with pytest.raises(InvalidChecksum):
+    with pytest.raises(InvalidLength, match=f"This input has {len(valid) - 1} characters"):
         parse_codex32(valid[:-1])
 
 
-def test_generic_length_and_checksum_precede_ms_length() -> None:
+def test_generic_length_precedes_ms_length() -> None:
     with pytest.raises(InvalidLength, match="at least 21"):
         parse_codex32("ms1")
-    with pytest.raises(InvalidChecksum):
-        parse_codex32("ms10tests" + "q" * 40)
 
 
 def test_valid_profile_length_still_reports_checksum_failure() -> None:
