@@ -40,10 +40,10 @@ def test_reported_substitutions_exhaust_competitors_without_redundant_enumeratio
     original = indel._views
     searched = []
 
-    def views(text, target, shape, immutable, base):
+    def views(text, target, shape, immutable, base, deadline):
         searched.append((target, shape.operations, shape.unit))
         assert not (shape.unit == 1 and (shape.adjacent or shape.distant))
-        yield from original(text, target, shape, immutable, base)
+        yield from original(text, target, shape, immutable, base, deadline)
 
     with patch.object(indel, "_views", side_effect=views):
         candidates, complete = _run(REPORTED)
