@@ -25,9 +25,9 @@ from codex32.errors import (
     InvalidBip39Checksum,
     InvalidPadding,
     InvalidTargetIndex,
+    MismatchedHrp,
     MismatchedIdentifier,
     MismatchedPayloadLength,
-    MismatchedProfile,
     MismatchedThreshold,
     SecretInRecoverySet,
     WrongShareCount,
@@ -112,7 +112,7 @@ def test_every_threshold_recovers_exactly_k_shares(threshold: int) -> None:
 def test_share_set_mismatches_have_distinct_errors() -> None:
     ms_secret, ms_masks = _ms_basis()
     opaque = parse_codex32(oracle_encode("xy", "2testa" + "q" * len(ms_secret.payload_symbols)))
-    with pytest.raises(MismatchedProfile):
+    with pytest.raises(MismatchedHrp):
         derive_share([ms_secret, opaque], "c")  # type: ignore[list-item]
 
     threshold_three = parse_codex32(oracle_encode("ms", "3testc" + "q" * len(ms_secret.payload_symbols)))

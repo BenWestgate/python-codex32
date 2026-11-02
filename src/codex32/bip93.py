@@ -320,10 +320,6 @@ def _validate_recovery_prefix(shares: Sequence[Share | Secret]) -> None:
         raise SecretInRecoverySet("recovery accepts ordinary shares only")
 
 
-def _validate_basis_prefix(basis: Sequence[Share | Secret]) -> None:
-    _validate_share_set(basis, require_exact=False)
-
-
 def _interpolate_tail(share_set: _ShareSet, target: str) -> Share | Secret:
     points = tuple(CHARSET.index(index) for index in share_set.indices)
     weights = _lagrange_weights(points, CHARSET.index(target))
