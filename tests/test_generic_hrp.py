@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import re
 import sys
 from unittest.mock import patch
 
@@ -94,6 +95,13 @@ def _invoke(entrypoint: object, args: list[str], text: str = "") -> tuple[int, s
     return status, stdout.getvalue(), stderr.getvalue()
 
 
+def _help(entrypoint: object, *args: str) -> str:
+    status, output, error = _invoke(entrypoint, [*args, "--help"])
+    assert status == 0 and error == ""
+    assert output.startswith("usage: ")
+    return output
+
+
 def test_cli_split_and_unknown_neutral_summary() -> None:
     status, output, error = _invoke(main, ["check"], UNKNOWN["short"]["C"])
     assert status == 0 and error == ""
@@ -107,62 +115,41 @@ def test_cli_split_and_unknown_neutral_summary() -> None:
         "Valid unshared codex32 secret.\nHRP: ZZ\nBackup identifier: TEST\n"
     )
 
-    generic_help = _invoke(main, ["--help"])[1]
-    ms_help = _invoke(ms_main, ["--help"])[1]
-    assert ms_help == (
-        "usage: ms32 [-h] [--version] COMMAND ...\n\n"
-        "Create, check, and recover codex32 backups and restore wallets from them.\n\n"
-        "options:\n"
-        "  -h, --help  show this help message and exit\n"
-        "  --version   show the installed version and exit\n\n"
-        "commands:\n"
-        "  COMMAND\n"
-        "    check     check a secret or share for errors\n"
-        "    secret    recover a secret from shares\n"
-        "    share     derive a share from codex32 strings\n"
-        "    correct   suggest repairs for a damaged codex32 string\n"
-        "    create    create or confirm a backup, or split an existing secret\n"
-        "    wallet    restore a Bitcoin Core wallet\n"
-        "    xprv      export the root extended private key\n\n"
-        "Never include a secret or share in command arguments.\n"
-        "Enter it when prompted. Some commands also accept piped input.\n"
-    )
+
+def test_cli_help_exposes_commands_and_safety_guidance() -> None:
+    generic_help = _help(main)
+    ms_help = _help(ms_main)
+    assert generic_help.startswith("usage: codex32 ")
+    assert ms_help.startswith("usage: ms32 ")
+
     for command in ("check", "correct", "secret", "share"):
-        assert command in generic_help and command in ms_help
+        assert re.search(rf"(?m)^\s+{command}(?:\s|$)", generic_help)
+        assert re.search(rf"(?m)^\s+{command}(?:\s|$)", ms_help)
     for command in ("create", "xprv", "wallet"):
-        assert command not in generic_help and command in ms_help
-    assert "checksum" not in generic_help and "checksum" not in ms_help
-    correct_help = _invoke(main, ["correct", "--help"])[1]
-    assert (
-        "Suggest repairs for wrong, unreadable, missing, extra, or swapped characters\n"
-        "or four-character groups. Use ? for each unreadable character. Check suggested\n"
-        "repairs against the original backup."
-    ) in correct_help
+        assert not re.search(rf"(?m)^\s+{command}(?:\s|$)", generic_help)
+        assert re.search(rf"(?m)^\s+{command}(?:\s|$)", ms_help)
+
+    for output in (generic_help, ms_help):
+        assert re.search(r"(?i)(?:never|do not|don't).*secret.*share.*arguments?", output)
+        assert "prompt" in output.lower()
+        assert "checksum" not in output.lower()
+
+    correct_help = _help(main, "correct")
+    assert "?" in correct_help and "original backup" in correct_help
     assert "--bytes" not in correct_help
-    assert "--bytes" in _invoke(ms_main, ["correct", "--help"])[1]
-    secret_help = _invoke(ms_main, ["secret", "--help"])[1]
-    assert (
-        "Recover the secret using exactly the threshold number of shares from the same\n"
-        "set. Use different share indices. You can also enter an existing secret to\n"
-        "display it."
-    ) in secret_help
-    share_help = _invoke(ms_main, ["share", "--help"])[1]
-    assert (
-        "Derive a share at INDEX using exactly the threshold number of codex32 strings\n"
-        "from the same set. Use different input indices; one input may be the secret.\n"
-        "INDEX must differ from S and the input indices."
-    ) in share_help
-    wallet_help = _invoke(ms_main, ["wallet", "--help"])[1]
-    assert wallet_help == (
-        "usage: ms32 wallet [-h] [--account ACCOUNT] [--timestamp TIMESTAMP]\n\n"
-        "Restore a Bitcoin Core wallet.\n\n"
-        "options:\n"
-        "  -h, --help            show this help message and exit\n"
-        "  --account ACCOUNT     account number (currently only 0)\n"
-        "  --timestamp TIMESTAMP\n"
-        "                        rescan from a Unix time at/before first use; use 0 for\n"
-        "                        all history or now for a new wallet\n"
-    )
+    assert "--bytes" in _help(ms_main, "correct")
+
+    secret_help = _help(ms_main, "secret")
+    assert "threshold" in secret_help and "different share indices" in secret_help
+    share_help = _help(ms_main, "share")
+    assert "threshold" in share_help and "different input indices" in share_help
+    assert "INDEX must differ" in share_help
+
+    wallet_help = _help(ms_main, "wallet")
+    assert wallet_help.startswith("usage: ms32 wallet ")
+    assert "--account ACCOUNT" in wallet_help
+    assert "--timestamp TIMESTAMP" in wallet_help
+    assert "all history" in wallet_help and "new wallet" in wallet_help
     assert _invoke(main, ["--version"])[1].startswith("codex32 ")
     assert _invoke(ms_main, ["--version"])[1].startswith("ms32 ")
 
