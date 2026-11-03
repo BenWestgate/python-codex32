@@ -3,6 +3,7 @@
 from dataclasses import replace
 from itertools import combinations
 from math import comb
+from time import monotonic
 from unittest.mock import patch
 
 import pytest
@@ -10,7 +11,7 @@ from data.bip93_vectors import VECTOR_1, VECTOR_5, VECTOR_6
 from test_bip39 import BIP39_12W_ZERO, BIP39_24W_ZERO
 
 from codex32 import CorrectionContext, MasterSeed, Profile, correct
-from codex32._cli_input import _correction_plan, _fingerprint_matcher
+from codex32._cli_input import _correction_candidates, _correction_plan, _fingerprint_matcher
 from codex32.correction import CorrectionCandidate, _best, _capture_volume, _erasure_state, _primary
 from codex32.generation import _fingerprint_identifier
 from codex32.indel import (
@@ -169,6 +170,23 @@ def test_automatic_secondary_search_recovers_two_group_indels(
 
     assert complete
     assert [candidate.artifact.text for candidate in candidates] == [source]
+
+
+def test_cli_probes_two_corrupted_groups_within_search_deadline() -> None:
+    source = MasterSeed.from_seed(bytes(range(16)), identifier="test").text
+    damaged = source[:12] + "pppp" + source[16:24] + "qqqq" + source[28:]
+
+    candidates, _complete, _deadline = _correction_candidates(
+        damaged,
+        Profile.MS,
+        None,
+        "ms1",
+        target=len(source),
+        deadline=monotonic() + 3,
+    )
+
+    assert [candidate.artifact.text for candidate in candidates] == [source]
+    assert candidates[0].erasures_filled == 8
 
 
 def test_group_class_set_and_first_share_counts_are_exact() -> None:
