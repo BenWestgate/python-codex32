@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
@@ -40,6 +39,7 @@ from codex32.profiles.ms32 import (
 )
 
 ORDINARY_INDICES = tuple(IDX_SORT[1:])
+Entropy = Callable[[int], bytes]
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +88,31 @@ def _indices(values: Sequence[str] | str) -> tuple[str, ...]:
     return normalized
 
 
-def _selection(threshold: int, share_count: object, indices: Sequence[str] | str | None) -> tuple[str, ...]:
+def _source(entropy: Entropy | None) -> Entropy:
+    if entropy is None:
+        raise ValueError("drawing a seed, share, or identifier requires an entropy source")
+    return entropy
+
+
+def _draw(entropy: Entropy, length: int) -> bytes:
+    data = entropy(length)
+    if not isinstance(data, bytes) or len(data) != length:
+        raise CodexError("the entropy source returned the wrong number of bytes")
+    return data
+
+
+def _random_indices(entropy: Entropy, count: int) -> tuple[str, ...]:
+    pool, picked = list(ORDINARY_INDICES), list[str]()
+    while len(picked) < count:
+        for byte in _draw(entropy, 32):
+            if len(picked) < count and byte < 256 - 256 % len(pool):
+                picked.append(pool.pop(byte % len(pool)))
+    return tuple(picked)
+
+
+def _selection(
+    threshold: int, share_count: object, indices: Sequence[str] | str | None, entropy: Entropy
+) -> tuple[str, ...]:
     if (share_count is None) == (indices is None):
         raise InvalidShareSelection("choose exactly one of share_count or indices")
     if share_count is not None:
@@ -96,7 +120,7 @@ def _selection(threshold: int, share_count: object, indices: Sequence[str] | str
             raise InvalidShareSelection("share_count must be an integer")
         if not threshold <= share_count <= 31:
             raise InvalidShareSelection(f"share_count must be from threshold {threshold} through 31")
-        return tuple(secrets.SystemRandom().sample(ORDINARY_INDICES, share_count))
+        return _random_indices(entropy, share_count)
     assert indices is not None
     selected = _indices(indices)
     if len(selected) < threshold:
@@ -104,8 +128,12 @@ def _selection(threshold: int, share_count: object, indices: Sequence[str] | str
     return selected
 
 
-def _random_identifier() -> str:
-    return _u5_to_chars(tuple(value & 31 for value in secrets.token_bytes(4)))
+def _random_symbols(entropy: Entropy, count: int) -> tuple[int, ...]:
+    return tuple(convertbits(_draw(entropy, (count * 5 + 7) // 8), 8, 5, pad=True)[:count])
+
+
+def _random_identifier(entropy: Entropy) -> str:
+    return _u5_to_chars(_random_symbols(entropy, 4))
 
 
 def _fingerprint_identifier(fingerprint: bytes) -> str:
@@ -116,9 +144,8 @@ def _fingerprint_identifier(fingerprint: bytes) -> str:
     return _u5_to_chars(tuple(convertbits(fingerprint, 8, 5, pad=True)[:4]))
 
 
-def _random_share(threshold: int, identifier: str, index: str, length: int) -> Share:
-    symbols = tuple(value & 31 for value in secrets.token_bytes(length))
-    artifact = _from_parts(Profile.MS, Header(threshold, identifier, index), symbols)
+def _random_share(entropy: Entropy, threshold: int, identifier: str, index: str, length: int) -> Share:
+    artifact = _from_parts(Profile.MS, Header(threshold, identifier, index), _random_symbols(entropy, length))
     assert isinstance(artifact, Share)
     return artifact
 
@@ -144,21 +171,23 @@ def generate_master_seed(
     byte_length: int | None = None,
     identifier: str | None = None,
     fingerprint: Callable[[bytes], bytes] | None = None,
+    entropy: Entropy | None = None,
 ) -> MasterSeed:
     """Generate or encode one unshared ``ms`` secret."""
     supplied, length = _seed_input(seed_bytes, byte_length)
     if supplied is not None:
         if not _valid_root(supplied):
             raise CodexError("master seed does not form a valid BIP32 root")
-        identifier = _random_identifier() if identifier is None else _identifier(identifier)
+        identifier = _random_identifier(_source(entropy)) if identifier is None else _identifier(identifier)
         return MasterSeed.from_seed(supplied, identifier=identifier)
+    source = _source(entropy)
     if identifier is None and fingerprint is None:
         raise ValueError(
             "fresh unshared master-seed generation requires a fingerprint provider or identifier"
         )
     selected_identifier = _identifier(identifier) if identifier is not None else None
     while True:
-        fresh = secrets.token_bytes(length)
+        fresh = _draw(source, length)
         if not _valid_root(fresh):
             continue
         if selected_identifier is not None:
@@ -176,6 +205,7 @@ class CreationCeremony:
     _indices: tuple[str, ...]
     _payload_length: int
     _pending: Share | None
+    _entropy: Entropy
     _position: int
     _secret: MasterSeed | None
     _set_identifier: str
@@ -196,11 +226,12 @@ class CreationCeremony:
         indices: Sequence[str] | str | None,
         identifier: str,
         secret: MasterSeed | None,
+        entropy: Entropy,
     ) -> CreationCeremony:
         self = object.__new__(cls)
-        self._payload_length = payload_length
+        self._payload_length, self._entropy = payload_length, entropy
         self._threshold, self._set_identifier = threshold, identifier
-        self._indices = _selection(threshold, share_count, indices)
+        self._indices = _selection(threshold, share_count, indices, entropy)
         self._position, self._pending, self._finished = 0, None, False
         if secret is None:
             self._secret, self._basis, self._direct_count = None, [], threshold
@@ -223,11 +254,12 @@ class CreationCeremony:
         share_count: int | None = None,
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
+        entropy: Entropy,
     ) -> CreationCeremony:
         """Start a ceremony for a fresh shared Bitcoin master seed."""
         threshold = _threshold(threshold, allow_zero=False)
         _supplied, byte_length = _seed_input(None, byte_length)
-        identifier = _random_identifier() if identifier is None else _identifier(identifier)
+        identifier = _random_identifier(entropy) if identifier is None else _identifier(identifier)
         return cls._start(
             _payload_length(byte_length),
             threshold,
@@ -235,6 +267,7 @@ class CreationCeremony:
             indices,
             identifier,
             None,
+            entropy,
         )
 
     @classmethod
@@ -246,20 +279,21 @@ class CreationCeremony:
         share_count: int | None = None,
         indices: Sequence[str] | str | None = None,
         identifier: str | None = None,
+        entropy: Entropy,
     ) -> CreationCeremony:
         """Start a ceremony that shares an existing validated master seed."""
         if not isinstance(secret, MasterSeed):
             raise TypeError("from_secret accepts only MasterSeed")
         threshold = _threshold(threshold, allow_zero=False)
         random_identifier = identifier is None
-        identifier = _random_identifier() if random_identifier else _identifier(identifier)
+        identifier = _random_identifier(entropy) if random_identifier else _identifier(identifier)
         while (threshold, identifier) == (
             secret.header.threshold,
             secret.header.identifier,
         ):
             if not random_identifier:
                 raise HeaderCollision("new share set must use a different set header")
-            identifier = _random_identifier()
+            identifier = _random_identifier(entropy)
         return cls._start(
             len(secret.payload_symbols),
             threshold,
@@ -267,6 +301,7 @@ class CreationCeremony:
             indices,
             identifier,
             secret,
+            entropy,
         )
 
     def _candidate_is_accepted(self, secret: MasterSeed) -> bool:
@@ -284,6 +319,7 @@ class CreationCeremony:
         if self._position < self._direct_count:
             while True:
                 pending = _random_share(
+                    self._entropy,
                     self._threshold,
                     self._set_identifier,
                     index,

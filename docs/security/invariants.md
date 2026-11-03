@@ -8,8 +8,10 @@ and evidence.
    HRPs remain opaque and never gain invented application semantics.
 2. APIs accept only immutable validated artifacts. Outputs are reparsed;
    recovery and derivation reject sets with mismatched normalized HRPs or shapes.
-3. Shared creation uses a separate OS-CSPRNG call for each random initial share,
-   gated by confirmation. Input cannot replace entropy or the original secret.
+3. Shared creation uses a separate draw from a cryptographically secure
+   entropy source for each random initial share, gated by confirmation. The CLI
+   uses the OS-CSPRNG; Python API callers must provide a trusted source. Input
+   cannot replace entropy or the original secret.
 4. Wallet setup uses the original ceremony result or a validated recovered seed.
    Restore authenticates the recovered seed before any wallet is listed,
    unlocked, or imported into: normally with the master fingerprint typed from

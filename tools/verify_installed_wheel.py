@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from secrets import token_bytes
 
 from codex32 import (
     CorrectionContext,
@@ -28,7 +29,7 @@ def main() -> None:
     assert importlib.util.find_spec("bip32") is None
     assert importlib.util.find_spec("coincurve") is None
 
-    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+    ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test", entropy=token_bytes)
     shares = []
     for _ in range(2):
         share = ceremony.next_share()
