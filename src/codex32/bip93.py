@@ -189,6 +189,16 @@ def encode(header: str, seed: bytes, pad_val: int | str = "CRC"):
 class Codex32String:
     """Class representing a codex32 string."""
 
+    __slots__ = ("s", "is_upper", "hrp", "payload", "k", "ident", "share_idx")
+
+    def __setattr__(self, name, value):
+        if hasattr(self, name):
+            raise AttributeError(f"{name} is read-only")
+        super().__setattr__(name, value)
+
+    def __delattr__(self, name):
+        raise AttributeError(f"{name} is read-only")
+
     def __init__(self, s: str) -> None:
         """Initialize Codex32String from a codex32 string."""
         self.s, self.is_upper = s, s.isupper()
