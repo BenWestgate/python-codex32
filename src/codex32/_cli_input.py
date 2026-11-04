@@ -361,6 +361,20 @@ def _display_prefix(prefix: str, grouped: bool) -> str:
     return displayed
 
 
+def _separator(value: str, prefix: str, profiles: tuple[Profile, ...] | None) -> int:
+    """Locate the separator; a later "1" is an erasure once the HRP is known."""
+    lowered = value.lower()
+    if prefix and lowered.startswith(prefix.lower()):
+        # A prefilled prefix or the first accepted string of a set fixes the HRP.
+        return prefix.rfind("1")
+    for profile in profiles or ():
+        # A profile-restricted command, such as ms32, fixes its own HRP.
+        if lowered.startswith(f"{profile.value}1"):
+            return len(profile.value)
+    # Otherwise Bech32 separates at the last "1", so it is never corrected away.
+    return lowered.rfind("1")
+
+
 def _case_interpretation(
     value: str,
     prefix: str,
@@ -368,7 +382,7 @@ def _case_interpretation(
     allowed: Callable[[CorrectionCandidate], bool] | None,
 ) -> tuple[CorrectionCandidate | None, str, str, str] | None:
     # Normalize likely casing and mark contrary-case data as erasures.
-    separator = value.find("1")
+    separator = _separator(value, prefix, profiles)
     base_length = separator + 1 if separator >= 0 else 0
     immutable_length = len(prefix) if prefix and value.lower().startswith(prefix.lower()) else base_length
     interpretation = interpret_mixed_case(value, immutable_length)
@@ -574,7 +588,7 @@ def _suggestions(
         candidate, value, erased, prefix = interpretation
         if candidate is not None:
             return (candidate,)
-    separator = value.lower().rfind("1")
+    separator = _separator(value, prefix, profiles)
     if separator <= 0:
         return ()
     hrp = value[:separator].lower()
@@ -655,7 +669,8 @@ def _redirected(
 
             candidates = _suggestions(
                 token,
-                "",
+                # Every string in a set shares the first accepted string's HRP.
+                f"{accepted[0].hrp}1" if accepted else "",
                 profiles,
                 accepted,
                 allowed=allowed,

@@ -368,6 +368,12 @@ cannot transform one application namespace into another. Every returned
 artifact crosses `parse_codex32`; suggestions remain untrusted and require
 exact whole-string confirmation before operational use.
 
+The context supplies the HRP, so a later `1` is an ordinary erasure. The CLIs
+follow the same rule wherever the HRP is already known: `ms32` input, a
+prefilled prefix, and every string after the first accepted string of a set.
+A first generic `codex32` string instead takes its HRP from the last `1`, as
+Bech32 requires, so its separator is never corrected into another namespace.
+
 `capture_volume` is the integer primary rank; `addend_hamming_weight` and
 `crc_padding_match` retain their secondary diagnostic meanings.
 `cumulative_capture_volume` and `capture_space_bits` describe the conservative

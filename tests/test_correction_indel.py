@@ -229,13 +229,18 @@ def test_immutable_confirmed_header_reduces_domains_and_cannot_be_repaired() -> 
     assert correct(context, SOURCE[:5] + "?" + SOURCE[6:]) == ()
 
 
-def test_later_separator_enters_another_namespace_and_is_not_repaired() -> None:
-    # Bech32 splits at the last "1", so this text no longer carries the ms HRP.
+def test_context_supplied_hrp_makes_a_later_one_an_erasure() -> None:
     damaged = SOURCE[:15] + "1" + SOURCE[16:]
+    cases = (
+        (CONTEXT, damaged),
+        (CorrectionContext(Profile.MS), damaged.upper()),
+        (CorrectionContext(Profile.MS, 48, SOURCE[:8]), damaged),
+    )
 
-    assert correct(CONTEXT, damaged) == ()
-    assert correct(CorrectionContext(Profile.MS), damaged) == ()
-    assert correct(CONTEXT, damaged.upper()) == ()
+    for context, text in cases:
+        candidates = correct(context, text)
+        assert [candidate.artifact.text.lower() for candidate in candidates] == [SOURCE]
+        assert [edit.kind for edit in candidates[0].edits] == ["erasure"]
 
 
 def test_header_pruning_is_a_lossless_lower_bound() -> None:
