@@ -110,7 +110,7 @@ Reference-vector authors may use the following module-level interfaces without
 depending on implementation-private names:
 
 - `codex32.bech32`: `CHARSET`, `bech32_decode`, `bech32_encode`,
-  `bech32_hrp_expand`, `chars_to_u5`, and `u5_to_chars`;
+  `bech32_hrp_expand`, `chars_to_u5` (lowercases ASCII only), and `u5_to_chars`;
 - `codex32.checksums`: `Checksum`, `CODEX32`, and `CODEX32_LONG`;
 - `codex32.bip93`: `checksum_for_body_length` and
   `checksum_for_encoded_length`.

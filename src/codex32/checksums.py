@@ -21,8 +21,6 @@ _DESCSUM_GEN = (0xF5DEE51989, 0xA9FDCA3312, 0x1BAB10E32D, 0x3706B1677A, 0x644D62
 
 @dataclass(frozen=True, slots=True)
 class Checksum:
-    """Immutable checksum specification for reference-vector construction."""
-
     kind: str
     generators: tuple[int, ...]
     length: int
