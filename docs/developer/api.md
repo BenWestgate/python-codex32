@@ -258,7 +258,10 @@ remain fixed. That padding rule is not BIP93 validity: parsed S strings may use
 any application-valid discarded bits, which re-sharing preserves exactly. CRC
 never applies to shares.
 
-Explicit output indices preserve caller order. A share count uses
+Explicit output indices preserve first-occurrence order. Repeated indices
+request identical copies, scheduled after the first occurrence of every index:
+`aacd` produces `acda`. The first `threshold` indices must be distinct,
+and every copy must be independently confirmed. A share count uses
 `SystemRandom.sample` over the 31 ordinary indices and preserves sample order.
 There is no entropy injection, sorting, caller-supplied partial-basis
 completion, or BIP39 generation. Ceremonies reject copying and serialization;
