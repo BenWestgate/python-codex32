@@ -452,13 +452,12 @@ class BitcoinCore:
                 # Core's "now" is its tip's time: the genesis block's on an offline signer that never
                 # synced, and watch-only exports carry it. A new wallet takes this computer's clock,
                 # a day early like a record's date, so a fast clock cannot skip its first payments.
-                start = max(0, int(time.time()) - 86400) if timestamp == "now" else timestamp
                 records = core_descriptors(
                     secret,
                     account=account,
                     testnet=self.chain != "main",
                     private=True,
-                    timestamp=start,
+                    timestamp=max(0, int(time.time()) - 86400) if timestamp == "now" else timestamp,
                 )
                 imported = self._rpc(
                     "importdescriptors",
