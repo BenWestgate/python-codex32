@@ -84,11 +84,11 @@ _CRC = (
     None,
     # ``_Checksum`` consumes input bits most-significant bit first.  With its
     # implicit leading term, these generator values spell x+1, x^2+x+1,
-    # x^3+x+1, and x^4+x+1 respectively.
+    # x^3+x+1, and x^4+x+1 respectively.  CRC2-CRC4 end with an all-ones XOR.
     _Checksum("CRC1", (1,), 1, 0),
-    _Checksum("CRC2", (3,), 2, 0),
-    _Checksum("CRC3", (3,), 3, 0),
-    _Checksum("CRC4", (3,), 4, 0),
+    _Checksum("CRC2", (3,), 2, 0b11),
+    _Checksum("CRC3", (3,), 3, 0b111),
+    _Checksum("CRC4", (3,), 4, 0b1111),
 )
 
 
