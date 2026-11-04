@@ -211,9 +211,26 @@ worth the extra steps.
 ## More protection: watch-only wallet and offline signer
 
 On the offline signer, create an empty encrypted descriptor wallet with private
-keys enabled and run `ms32 wallet`. Keep that computer permanently disconnected
-from every network as soon as Bitcoin Core and codex32 are installed and
-disconnect before recovery text or signing keys are present.
+keys enabled. Keep that computer permanently disconnected from every network as
+soon as Bitcoin Core and codex32 are installed and disconnect before recovery
+text or signing keys are present.
+
+If the cards have never received funds, check the computer's date and time,
+then run:
+
+```bash
+ms32 wallet --timestamp "$(date +%s)"
+```
+
+`date +%s` dates the wallet from the computer's clock, so the online
+watch-only wallet scans only newer blocks. In Bitcoin Core's
+`importdescriptors`, `now` means the newest block's time, which on this
+computer without the chain is the genesis block's, so the online node would
+rescan from 2009: slow, and impossible on a pruned node. A clock set ahead
+would hide payments received before the time it shows. For cards that have
+been used, follow
+[Recover an existing or inherited wallet](#recover-an-existing-or-inherited-wallet)
+instead.
 
 After the signer is restored, follow Bitcoin Core's maintained
 [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md).
