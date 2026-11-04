@@ -1,7 +1,5 @@
 # tests/test_bip93.py
 """Tests for BIP-93 codex32 implementation."""
-import inspect
-
 import pytest
 from data.bip93_vectors import (
     VECTOR_1,
@@ -9,7 +7,12 @@ from data.bip93_vectors import (
     VECTOR_3,
     VECTOR_4,
     VECTOR_5,
-    VECTOR_6,
+    VECTORS_6_7_8,
+    VECTOR_9,
+    VECTOR_10,
+    VECTOR_11,
+    VALID_NOT_MASTER_SEED,
+    INVALID_HRP_VECTORS,
     VALID_CODEX32,
     VALID_CODEX32_LONG,
     INVALID_CODEX32,
@@ -26,8 +29,6 @@ from data.bip93_vectors import (
 )
 from codex32.bip93 import (
     Codex32String,
-    IdNotLength4,
-    InvalidSeedLength,
     MismatchedHrp,
     MismatchedLength,
     codex32_decode,
@@ -49,6 +50,28 @@ from codex32.bech32 import (
 from codex32.checksums import CODEX32, CODEX32_LONG
 
 
+@pytest.mark.parametrize(
+    "name", ("s", "is_upper", "hrp", "payload", "k", "ident", "share_idx")
+)
+def test_codex32_string_read_only_attributes(name):
+    """Stored metadata cannot be reassigned or deleted after parsing."""
+    share = Codex32String(VECTOR_1["secret_s"])
+    original = str(share)
+    with pytest.raises(AttributeError):
+        setattr(share, name, "changed")
+    with pytest.raises(AttributeError):
+        delattr(share, name)
+    assert str(share) == original
+
+
+def test_codex32_string_slots():
+    """Instances cannot acquire arbitrary attributes or an instance dict."""
+    share = Codex32String(VECTOR_1["secret_s"])
+    with pytest.raises(AttributeError):
+        setattr(share, "unexpected", "value")
+    assert not hasattr(share, "__dict__")
+
+
 def test_parts():
     """Test Vector 1: parse a codex32 string into parts"""
     s = Codex32String(VECTOR_1["secret_s"])
@@ -59,16 +82,7 @@ def test_parts():
     assert s.ident == VECTOR_1["identifier"]
     assert s.payload == VECTOR_1["payload"]
     assert s.checksum == VECTOR_1["checksum"]
-    assert s.data.hex() == VECTOR_1["secret_hex"]
-
-
-def test_from_seed_requires_explicit_identifier():
-    """Seed encoding must not infer an identifier or import BIP32."""
-    seed = bytes.fromhex(VECTOR_3["secret_hex"])
-    prefix = inspect.signature(Codex32String.from_seed).parameters["prefix"]
-    assert prefix.default is inspect.Parameter.empty
-    with pytest.raises(IdNotLength4, match="four-character identifier"):
-        Codex32String.from_seed(seed, "ms10")
+    assert s.data().hex() == VECTOR_1["secret_hex"]
 
 
 def test_derive_and_recover():
@@ -76,11 +90,13 @@ def test_derive_and_recover():
     a = Codex32String(VECTOR_2["share_A"])
     c = Codex32String(VECTOR_2["share_C"])
     # interpolation target is 'D' (uppercase as inputs are uppercase)
+    with pytest.raises(InvalidShareIndex):  # shares have no seed bytes
+        a.data()
     d = Codex32String.interpolate_at([a, c], "D")
     assert str(d) == VECTOR_2["derived_D"]
     s = Codex32String.interpolate_at([a, c], "S")
     assert str(s) == VECTOR_2["secret_S"]
-    assert s.data.hex() == VECTOR_2["secret_hex"]
+    assert s.data().hex() == VECTOR_2["secret_hex"]
 
 
 def test_from_seed_and_interpolate_3_of_5():
@@ -108,7 +124,7 @@ def test_from_seed_and_alternates():
         # confirm all 16 encodings decode to same master data
         s = Codex32String.from_seed(seed, "ms10leet", pad_val)
         assert str(s) == VECTOR_4[f"secret_s_alternate_{pad_val}"]
-        assert s.data.hex() == VECTOR_4["secret_hex"]
+        assert s.data().hex() == VECTOR_4["secret_hex"]
 
 
 def test_long_string():
@@ -123,22 +139,41 @@ def test_long_string():
     )
     assert s.checksum == VECTOR_5["checksum"]
     assert str(s) == VECTOR_5["secret_s"]
-    assert s.data.hex() == VECTOR_5["secret_hex"]
+    assert s.data().hex() == VECTOR_5["secret_hex"]
     long_str = VECTOR_5["secret_s"]
     long_seed = Codex32String(long_str)
-    assert long_seed.data.hex() == VECTOR_5["secret_hex"]
+    assert long_seed.data().hex() == VECTOR_5["secret_hex"]
+
+
+def test_master_seed_sizes():
+    """Test Vectors 6, 7 and 8: 160-, 192- and 224-bit master seeds."""
+    for seed_hex, secret in VECTORS_6_7_8:
+        assert Codex32String(secret).data().hex() == seed_hex
 
 
 def test_alternate_hrp():
-    """Test Vector 6: codex32 strings with "cl" HRP."""
-    c0 = Codex32String(VECTOR_6["codex32_luea"])
-    assert str(c0) == VECTOR_6["codex32_luea"]
-    c0.ident = VECTOR_6["ident_cln2"]
-    assert str(c0) == VECTOR_6["codex32_cln2"]
-    c1 = Codex32String(VECTOR_6["codex32_cln2"])
-    assert str(c1) == VECTOR_6["codex32_cln2"]
-    c2 = Codex32String.from_string("cl", VECTOR_6["codex32_peev"])
-    assert str(c2) == VECTOR_6["codex32_peev"]
+    """Test Vector 9: codex32 strings with "cl" HRP."""
+    c0 = Codex32String(VECTOR_9["codex32_luea"])
+    assert str(c0) == VECTOR_9["codex32_luea"]
+    c1 = Codex32String(VECTOR_9["codex32_cln2"])
+    assert str(c1) == VECTOR_9["codex32_cln2"]
+    c2 = Codex32String.from_string("cl", VECTOR_9["codex32_peev"])
+    assert str(c2) == VECTOR_9["codex32_peev"]
+    assert Codex32String(VECTOR_9["ms_peev"]).payload == c2.payload
+    for s in VALID_NOT_MASTER_SEED:
+        assert str(Codex32String(s)) == s
+
+
+def test_long_hrp():
+    """Test Vectors 10 and 11: long HRPs select the checksum by expanded length."""
+    a, c = Codex32String(VECTOR_10["share_a"]), Codex32String(VECTOR_10["share_c"])
+    assert len(a.checksum) == 15
+    assert str(Codex32String.interpolate_at([a, c], "d")) == VECTOR_10["derived_d"]
+    assert str(Codex32String.interpolate_at([a, c], "s")) == VECTOR_10["secret_s"]
+    assert len(Codex32String(VECTOR_11).hrp) == 83
+    for s in INVALID_HRP_VECTORS:
+        with pytest.raises((InvalidLength, InvalidChecksum)):
+            Codex32String(s)
 
 
 def test_valid_codex32():
@@ -174,7 +209,6 @@ def test_invalid_master_seed():
                 MismatchedHrp,
                 MismatchedLength,
                 InvalidChecksum,
-                InvalidSeedLength,
                 InvalidLength,
                 InvalidChar,
                 InvalidThreshold,
@@ -182,26 +216,26 @@ def test_invalid_master_seed():
                 IncompleteGroup,
             )
         ):
-            decode("ms", test)
+            decode(test)
 
 
 def test_invalid_master_seed_enc():
     """Test whether master seed encoding fails on invalid input."""
-    for hrp, header, data in INVALID_MASTER_SEED_ENC:
+    for header, data in INVALID_MASTER_SEED_ENC:
         with pytest.raises(
             (
                 MissingHrp,
                 MismatchedLength,
-                InvalidSeedLength,
                 InvalidChar,
                 InvalidCase,
                 InvalidDataValue,
                 InvalidThreshold,
                 InvalidShareIndex,
+                InvalidLength,
                 AssertionError,
             )
         ):
-            encode(hrp, header, data)
+            encode(header, data)
 
 
 def test_bad_checksums():
@@ -215,7 +249,7 @@ def test_wrong_checksums_or_length():
     """Test strings with wrong checksums or lengths."""
     for chk in WRONG_CHECKSUMS:
         with pytest.raises(
-            (InvalidLength, InvalidSeedLength, IncompleteGroup, InvalidChecksum)
+            (InvalidLength, IncompleteGroup, InvalidChecksum)
         ):
             Codex32String(chk)
 
@@ -223,7 +257,7 @@ def test_wrong_checksums_or_length():
 def test_invalid_length():
     """Test strings with invalid lengths."""
     for chk in INVALID_LENGTHS:
-        with pytest.raises((InvalidLength, InvalidSeedLength, IncompleteGroup)):
+        with pytest.raises((InvalidLength, IncompleteGroup)):
             Codex32String(chk)
 
 

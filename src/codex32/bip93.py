@@ -29,6 +29,7 @@
 
 from codex32.bech32 import (
     CHARSET,
+    InvalidLength,
     chars_to_u5,
     convertbits,
     u5_to_chars,
@@ -39,11 +40,6 @@ from codex32.bech32 import (
 from codex32.checksums import CODEX32, CODEX32_LONG
 from codex32.errors import CodexError
 
-HRP_CODES = {
-    "ms": 0,  # BIP-0032 master seed
-    "cl": 1,  # CLN HSM secret
-}  # Registry: https://github.com/satoshilabs/slips/blob/master/slip-0173.md#uses-of-codex32
-IDX_ORDER = "sacdefghjklmnpqrstuvwxyz023456789"  # Canonical BIP93 share indices alphabetical order
 BECH32_INV = [
     0,
     1,
@@ -83,9 +79,6 @@ BECH32_INV = [
 # pylint: disable=missing-class-docstring
 
 
-class IdNotLength4(CodexError): ...
-
-
 class InvalidThreshold(CodexError): ...
 
 
@@ -108,9 +101,6 @@ class RepeatedIndex(CodexError): ...
 
 
 class ThresholdNotPassed(CodexError): ...
-
-
-class InvalidSeedLength(CodexError): ...
 
 
 def bech32_mul(a, b):
@@ -137,8 +127,24 @@ def bech32_lagrange(pts, x):
 
 
 def codex32_decode(codex):
-    """Validate a codex32 string, and determine HRP and data."""
-    return u5_decode(codex, [CODEX32_LONG, CODEX32])
+    """Validate a codex32 string's checksum and header, and determine HRP and data."""
+    hrp, data, spec = u5_decode(codex, [CODEX32_LONG, CODEX32])
+    if len(header := u5_to_chars(data[:6])) < 6:
+        raise MismatchedLength(f"'{header}' header too short: {len(data)} < 6")
+    if not (k := header[0]).isdigit():
+        raise InvalidThreshold(f"threshold parameter '{k}' must be a digit")
+    if k == "0" and (idx := header[5]) != "s":
+        raise InvalidShareIndex(f"share index '{idx}' must be 's' when k='0'")
+    return hrp, data, spec
+
+
+def ms32_verify(s: str):
+    """Validate a codex32-encoded master seed or share, and determine HRP and data."""
+    if (hrp := u5_parse(s)[0]) != "ms":
+        raise MismatchedHrp(f"{hrp} != ms")
+    if len(s) not in (48, 54, 61, 67, 74, 127):  # 16-32 (by 4) or 64 byte seeds
+        raise InvalidLength("'ms' strings must be 48, 54, 61, 67, 74 or 127 chars")
+    return codex32_decode(s)
 
 
 def codex32_interpolate(strings, x):
@@ -155,33 +161,27 @@ def codex32_interpolate(strings, x):
 
 def codex32_encode(hrp: str, data):
     """Compute a codex32 string given HRP and data values."""
-    spec = CODEX32_LONG if len(hrp) + len(data) > 80 else CODEX32
+    spec = CODEX32_LONG if 2 * len(hrp) + 1 + len(data) + 13 > 93 else CODEX32
     return u5_encode(hrp, data, spec)
 
 
-def decode(hrp: str, s: str, pad_val: int | str = "any"):
-    """Decode a codex32 string, and determine header, seed, and padding."""
-    hrpgot, data, _ = codex32_decode(s)
-    if hrpgot != hrp:
-        raise MismatchedHrp(f"{hrpgot} != {hrp}")
-    if len(header := u5_to_chars(data[:6])) < 6:
-        raise MismatchedLength(f"'{header}' header too short: {len(data)} < 6")
-    if not (k := header[0]).isdigit():
-        raise InvalidThreshold(f"threshold parameter '{k}' must be a digit")
-    if k == "0" and (idx := header[5]) != "s":
-        raise InvalidShareIndex(f"share index '{idx}' must be 's' when k='0'")
+def decode(s: str, pad_val: int | str = "any"):
+    """Decode a codex32-encoded master seed, and determine header, seed, and padding."""
+    data = ms32_verify(s)[1]
+    if (header := u5_to_chars(data[:6]))[5] != "s":
+        raise InvalidShareIndex(f"only master seeds ('s') have bytes, got '{header}'")
     decoded = convertbits(data[6:], 5, 8, False, pad_val)
-    if hrp == "ms" and (not 16 <= (msl := len(decoded)) <= 64 or msl % 4):
-        raise InvalidSeedLength(f"Master seeds must be in 16..20..64 bytes, got {msl}")
     pad = data[-1] % (1 << ((len(data[6:]) * 5) % 8))
     return header, bytes(decoded), pad if pad_val == "any" else pad_val
 
 
-def encode(hrp: str, header: str, seed: bytes, pad_val: int | str = "CRC"):
-    """Encode a codex32 string given HRP, header, seed, and padding."""
+def encode(header: str, seed: bytes, pad_val: int | str = "CRC"):
+    """Encode a codex32-encoded master seed given header, seed, and padding."""
+    if header[5:] != "s":
+        raise InvalidShareIndex(f"only secrets ('s') encode bytes, got '{header}'")
     u5_payload = convertbits(seed, 8, 5, True, pad_val)
-    ret = codex32_encode(hrp, chars_to_u5(header) + u5_payload)
-    if len(header) != 6 or (header, seed, pad_val) != decode(hrp, ret, pad_val):
+    ret = codex32_encode("ms", chars_to_u5(header) + u5_payload)
+    if len(header) != 6 or (header, seed, pad_val) != decode(ret, pad_val):
         raise MismatchedLength(f"'{header}' header must be 6 chars, got {len(header)}")
     return ret
 
@@ -189,24 +189,27 @@ def encode(hrp: str, header: str, seed: bytes, pad_val: int | str = "CRC"):
 class Codex32String:
     """Class representing a codex32 string."""
 
+    __slots__ = ("s", "is_upper", "hrp", "payload", "k", "ident", "share_idx")
+
+    def __setattr__(self, name, value):
+        if hasattr(self, name):
+            raise AttributeError(f"{name} is read-only")
+        super().__setattr__(name, value)
+
+    def __delattr__(self, name):
+        raise AttributeError(f"{name} is read-only")
+
     def __init__(self, s: str) -> None:
         """Initialize Codex32String from a codex32 string."""
-        self.is_upper = s.isupper()
-        self.hrp = codex32_decode(s)[0]
-        header, self.data, self.pad_val = decode(self.hrp, s)
+        self.s, self.is_upper = s, s.isupper()
+        verify = ms32_verify if u5_parse(s)[0] == "ms" else codex32_decode
+        self.hrp, data, _ = verify(s)
+        header, self.payload = u5_to_chars(data[:6]), u5_to_chars(data[6:])
         self.k, self.ident, self.share_idx = header[0], header[1:5], header[5]
 
-    @property
-    def payload(self) -> str:
-        """Return the payload part of the codex32 string."""
-        return u5_to_chars(convertbits(self.data, 8, 5, True, self.pad_val))
-
-    @property
-    def s(self) -> str:
-        """Return the full codex32 string."""
-        header = self.k + self.ident + self.share_idx
-        ret = encode(self.hrp, header, self.data, self.pad_val)
-        return ret.upper() if ret and self.is_upper else ret
+    def data(self) -> bytes:
+        """Return the master seed bytes of a codex32-encoded master seed."""
+        return decode(self.s)[1]
 
     def __str__(self) -> str:
         return self.s
@@ -263,12 +266,9 @@ class Codex32String:
     def from_seed(
         cls, data: bytes, prefix: str, pad_val: int | str = "CRC"
     ) -> "Codex32String":
-        """Create Codex32String from seed bytes and a prefix with an identifier."""
+        """Create a master seed secret given prefix (ms1, k, ident) and seed bytes."""
         hrp, data_part = u5_parse(prefix)
-        header = u5_to_chars(data_part)
-        k = "0" if not header else header[:1]
-        ident = header[1 : max(5, len(header) - 1)]
-        if len(ident) != 4:
-            raise IdNotLength4(f"prefix must contain a four-character identifier, got {len(ident)}")
-        share_idx = "s" if not header[5:] else header[5:6]
-        return cls(encode(hrp, k + ident + share_idx, data, pad_val))
+        if hrp != "ms":
+            raise MismatchedHrp(f"{hrp} != ms")
+        header = u5_to_chars(data_part) + ("s" if len(data_part) == 5 else "")
+        return cls(encode(header, data, pad_val))
