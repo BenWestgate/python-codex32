@@ -12,6 +12,7 @@ import pytest
 from codex32._bitcoin_core import (
     BitcoinCore,
     BitcoinCoreError,
+    ChainChoice,
     FingerprintMismatch,
     identifier_note,
     identifier_origin,
@@ -154,6 +155,27 @@ def test_preflight_requires_selection_when_multiple_chains_run(
         "Enter one of the displayed numbers.",
         "Using Bitcoin Core on signet.",
     ]
+
+
+def test_preflight_takes_a_chosen_chain_or_lists_them_without_prompting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run(command: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
+        chain = command[1].removeprefix("-chain=")
+        if chain not in ("main", "signet"):
+            return subprocess.CompletedProcess(command, 1, "", "")
+        response = {"version": 320000} if command[-1] == "getnetworkinfo" else {"chain": chain}
+        return subprocess.CompletedProcess(command, 0, json.dumps(response), "")
+
+    monkeypatch.setattr("codex32._bitcoin_core.shutil.which", lambda _name: "/reviewed/bitcoin-cli")
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert BitcoinCore.connect(chain="signet").chain == "signet"
+    with pytest.raises(ChainChoice) as offered:
+        BitcoinCore.connect()
+    assert offered.value.chains == ("main", "signet")
+    with pytest.raises(BitcoinCoreError, match="no longer running on that network"):
+        BitcoinCore.connect(chain="regtest")
 
 
 def test_preflight_rejection_is_helpful_without_echoing_core_output(
@@ -741,6 +763,31 @@ def test_unencrypted_wallet_imports_without_a_lock_call(monkeypatch: pytest.Monk
     )
     assert messages == []
     assert not any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
+
+
+def test_a_named_wallet_is_used_without_prompting(monkeypatch: pytest.MonkeyPatch) -> None:
+    rpc = _ImportRPC(encrypted=False, locked=False)
+    monkeypatch.setattr(
+        BitcoinCore,
+        "_rpc",
+        lambda client, *args, wallet=None, stdin=None, timeout=120: rpc(
+            client, *args, wallet=wallet, stdin=stdin, timeout=timeout
+        ),
+    )
+
+    def never(_prompt: str) -> str:
+        raise AssertionError("a named wallet needs no prompt")
+
+    client = BitcoinCore("bitcoin-cli", "main", 300000)
+    name = client.initialize(
+        _SEED, never, lambda _message: None, expected_fingerprint=_FINGERPRINT, wallet="signer"
+    )
+    assert name == "signer"
+    monkeypatch.setattr(BitcoinCore, "_target", lambda _client, _name: None)
+    with pytest.raises(BitcoinCoreError, match="no longer an empty one"):
+        client.initialize(
+            _SEED, never, lambda _message: None, expected_fingerprint=_FINGERPRINT, wallet="gone"
+        )
 
 
 def test_immediate_revalidation_stops_before_private_import_and_relocks(
