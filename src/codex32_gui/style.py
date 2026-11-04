@@ -19,9 +19,6 @@ CSS = """
   border-radius: 6px;
   background-color: alpha(currentColor, 0.09);
 }
-.card-group.guessed {
-  background-color: alpha(@warning_color, 0.35);
-}
 .card-group.mismatch {
   background-color: alpha(@error_color, 0.35);
 }

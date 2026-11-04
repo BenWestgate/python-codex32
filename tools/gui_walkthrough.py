@@ -234,17 +234,16 @@ class Walkthrough(app.Application):
         field.set_text("MS12NAMECB")
         settle()
         check(
-            "a character no card can carry is named, not silently dropped",
-            any("never contains B" in text for text in labels(page)),
-            [text for text in labels(page) if "contains" in text],
+            "a character no card can carry is dropped without a hint",
+            "B" not in field.get_text(),
+            field.get_text(),
         )
-        check("and it is gone from the field", "B" not in field.get_text(), field.get_text())
         field.set_text("MS10NAMEA")
         settle()
         check("an impossible header stops the rest", field.get_text() == "MS10 NAME A", field.get_text())
         check(
             "and says why",
-            any("never split is card S" in text for text in labels(page)),
+            any("must use S" in text for text in labels(page)),
             [text for text in labels(page) if "S" in text],
         )
         field.set_text(SHARE_C)
@@ -301,7 +300,7 @@ class Walkthrough(app.Application):
         check("Enter invokes repair for short input", "".join(item.get_label() for item in groups) == SHARE_C)
         check(
             "ordinary repair does not claim where the error was",
-            not any("guessed" in item.get_css_classes() for item in groups),
+            not any("mismatch" in item.get_css_classes() for item in groups),
         )
         check(
             "card display uses four aligned groups per row",
@@ -371,8 +370,8 @@ class Walkthrough(app.Application):
             "".join(item.get_label() for item in groups) == SHARE_C,
             "".join(item.get_label() for item in groups),
         )
-        guessed = [item.get_label() for item in groups if "guessed" in item.get_css_classes()]
-        check("explicit correction may highlight changed windows", guessed == ["Y6PN"], guessed)
+        marked = [item.get_label() for item in groups if "mismatch" in item.get_css_classes()]
+        check("explicit correction marks no group, so the whole card is compared", marked == [], marked)
         press(page, "It does not match my card")
         return True
 

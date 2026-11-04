@@ -51,8 +51,8 @@ Bitcoin Core wallet.
 
 ## Entering cards
 
-A card never contains **B**, **I**, **O**, or **1**. If one is entered, the GUI
-reports the likely look-alike instead of silently deleting it.
+A character no card can contain is not entered. The GUI does not say what it
+should have been: read the card again.
 
 When recovering from several cards, use `?` for a header or card-index character
 you genuinely cannot read. **Check a card** requires the printed character.
@@ -82,9 +82,8 @@ sees what is actually on the card. **Suggest a repair** appears whenever the
 input is within the supported correction bounds, including missing or extra
 characters.
 
-A repair candidate may highlight groups that changed. Those are changes, not
-proven error locations. Hold your card next to the screen and compare the entire
-string, character by character.
+A repair candidate marks no group as changed. Hold your card next to the screen
+and compare the entire string, character by character.
 
 When too little checksum remains, the GUI requires literal `YES` before showing a
 candidate. Completing new hand-written data can lock earlier transcription
