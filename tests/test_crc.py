@@ -6,10 +6,16 @@ import pytest
 from data.bip93_vectors import VECTOR_2, VECTOR_4
 
 import codex32
-from codex32 import MasterSeed, Share, parse_codex32
+from codex32 import CorrectionCandidate, MasterSeed, Share, parse_codex32
 from codex32.checksums import _CRC, _crc_pad
+from codex32.correction import _best
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding, _payload_padding
+from codex32.profiles.ms32 import (
+    SEED_BYTE_LENGTHS,
+    _has_generation_padding,
+    _has_legacy_generation_padding,
+    _payload_padding,
+)
 
 
 @pytest.mark.parametrize(
@@ -17,9 +23,9 @@ from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding, _p
     (
         (bytes(range(20)), 0, 0),
         (bytes(range(18)), 1, 0),
-        (bytes(range(16)), 2, 2),
-        (bytes(range(19)), 3, 7),
-        (bytes(range(17)), 4, 11),
+        (bytes(range(16)), 2, 1),
+        (bytes(range(19)), 3, 0),
+        (bytes(range(17)), 4, 4),
     ),
 )
 def test_frozen_crc_padding_values(data: bytes, padding_bits: int, expected: int) -> None:
@@ -31,12 +37,14 @@ def test_frozen_crc_padding_values(data: bytes, padding_bits: int, expected: int
 def test_compact_crc_definitions_are_unchanged() -> None:
     assert _CRC[0] is None
     assert tuple(
-        (checksum.kind, checksum.generators, checksum.length) for checksum in _CRC[1:] if checksum is not None
+        (checksum.kind, checksum.generators, checksum.length, checksum.constant)
+        for checksum in _CRC[1:]
+        if checksum is not None
     ) == (
-        ("CRC1", (1,), 1),
-        ("CRC2", (3,), 2),
-        ("CRC3", (3,), 3),
-        ("CRC4", (3,), 4),
+        ("CRC1", (1,), 1, 0),
+        ("CRC2", (3,), 2, 0b11),
+        ("CRC3", (3,), 3, 0b111),
+        ("CRC4", (3,), 4, 0b1111),
     )
 
 
@@ -55,6 +63,21 @@ def test_parsed_master_seed_validity_is_independent_of_crc() -> None:
     assert len({secret.payload_symbols for secret in parsed}) == 16
     assert sum(_has_generation_padding(secret) for secret in parsed) == 1
     assert generated.payload_symbols in {secret.payload_symbols for secret in parsed}
+
+
+def test_tie_break_prefers_current_then_legacy_crc_padding() -> None:
+    parsed = [parse_codex32(VECTOR_4[f"secret_s_alternate_{padding}"]) for padding in range(16)]
+    assert all(isinstance(secret, MasterSeed) for secret in parsed)
+    current = next(secret for secret in parsed if _has_generation_padding(secret))
+    legacy = next(secret for secret in parsed if _has_legacy_generation_padding(secret))
+    other = next(secret for secret in parsed if secret not in (current, legacy))
+
+    def best(*secrets: MasterSeed) -> tuple[MasterSeed, ...]:
+        candidates = [CorrectionCandidate(s, (), 1, 0, 0, _has_generation_padding(s)) for s in secrets]
+        return tuple(candidate.artifact for candidate in _best(candidates))
+
+    assert best(other, legacy, current) == (current,)
+    assert best(other, legacy) == (legacy,)
 
 
 def test_padding_acceptance_is_balanced_for_every_nonzero_lagrange_weight() -> None:
