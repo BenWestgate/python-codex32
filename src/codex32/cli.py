@@ -28,6 +28,7 @@ from codex32._cli_input import (
     _render_groups,
     _require_correction_confirmation,
     _scheduled_candidates,
+    _separator,
     _suggestions,
 )
 from codex32._cli_input import InputError as _UsageError
@@ -601,7 +602,7 @@ def _correct(
     if erasures:
         raise _UsageError("--erasure can be used only with --residue.")
     normalized = "".join(value.split())
-    separator = normalized.lower().rfind("1")
+    separator = _separator(normalized, "", context.profiles)
     if separator <= 0:
         raise _UsageError("Enter a complete application prefix followed by the separator 1.")
     if len(raw_hrp := normalized[:separator]) > 83 or not all("!" <= c <= "~" for c in raw_hrp):
