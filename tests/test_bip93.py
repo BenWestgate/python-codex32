@@ -50,6 +50,28 @@ from codex32.bech32 import (
 from codex32.checksums import CODEX32, CODEX32_LONG
 
 
+@pytest.mark.parametrize(
+    "name", ("s", "is_upper", "hrp", "payload", "k", "ident", "share_idx")
+)
+def test_codex32_string_read_only_attributes(name):
+    """Stored metadata cannot be reassigned or deleted after parsing."""
+    share = Codex32String(VECTOR_1["secret_s"])
+    original = str(share)
+    with pytest.raises(AttributeError):
+        setattr(share, name, "changed")
+    with pytest.raises(AttributeError):
+        delattr(share, name)
+    assert str(share) == original
+
+
+def test_codex32_string_slots():
+    """Instances cannot acquire arbitrary attributes or an instance dict."""
+    share = Codex32String(VECTOR_1["secret_s"])
+    with pytest.raises(AttributeError):
+        setattr(share, "unexpected", "value")
+    assert not hasattr(share, "__dict__")
+
+
 def test_parts():
     """Test Vector 1: parse a codex32 string into parts"""
     s = Codex32String(VECTOR_1["secret_s"])
