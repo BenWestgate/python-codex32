@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>codex32 recovery card: 74 characters</title>
+  <style>
+    @page { size: letter landscape; margin: 0.35in; }
+    * { box-sizing: border-box; }
+    body { color: #111; font: 11pt/1.25 sans-serif; margin: 0 auto; max-width: 10.3in; }
+    h1 { font-size: 19pt; margin: 0 0 0.08in; }
+    h2 { font-size: 12pt; margin: 0.13in 0 0.05in; }
+    p, ol { margin: 0.05in 0; }
+    .warning { border: 2px solid #111; font-weight: bold; padding: 0.08in; }
+    .fields { display: grid; gap: 0.08in 0.18in; grid-template-columns: 1fr 1fr; }
+    .field { border-bottom: 1px solid #111; min-height: 0.28in; }
+    .groups { counter-reset: box; display: flex; flex-wrap: wrap; gap: 0.1in 0.3in; }
+    .block { display: flex; gap: 0.08in; }
+    .group { border: 1px solid #555; height: 0.4in; position: relative; width: 0.72in; }
+    .group::before { color: #999; content: counter(box); counter-increment: box; font-size: 6pt;
+      left: 0.03in; position: absolute; top: 0.01in; }
+    .half { width: 0.36in; }
+    .small { font-size: 8.5pt; }
+    .footer { border-top: 1px solid #777; margin-top: 0.12in; padding-top: 0.05in; }
+    @media print { body { max-width: none; } }
+  </style>
+</head>
+<body>
+  <h1>codex32 recovery card: 74 characters (256-bit)</h1>
+  <p class="warning">
+    PROTECTED RECOVERY MATERIAL — keep offline. Do not photograph, upload, or enter this
+    text into a website, chat, or network-connected device.
+  </p>
+
+  <h2>Backup details</h2>
+  <div class="fields">
+    <div class="field">Threshold (shares needed):</div>
+    <div class="field">Four-character identifier:</div>
+    <div class="field">This share index:</div>
+    <div class="field">Wallet policy: single-key / multisig / other:</div>
+    <div class="field">Separate wallet record location(s):</div>
+  </div>
+
+  <h2>Protected codex32 text — copy exactly, four characters per box</h2>
+  <div class="groups" aria-label="19 blank groups: 18 of four characters, then one of two">
+    <span class="block"><span class="group"></span><span class="group"></span><span class="group"></span><span class="group"></span></span>
+    <span class="block"><span class="group"></span><span class="group"></span><span class="group"></span><span class="group"></span></span>
+    <span class="block"><span class="group"></span><span class="group"></span><span class="group"></span><span class="group"></span></span>
+    <span class="block"><span class="group"></span><span class="group"></span><span class="group"></span><span class="group"></span></span>
+    <span class="block"><span class="group"></span><span class="group"></span><span class="group half"></span></span>
+  </div>
+  <p class="small">The last box holds two characters. For 128-bit seeds and shares (48 characters),
+    use the <a href="recovery-card.html">standard card</a>.</p>
+
+  <h2>Offline recovery</h2>
+  <ol>
+    <li>Collect the stated threshold of cards with the same identifier and text length.</li>
+    <li>On a reviewed offline computer, install the owner’s archived codex32 release.</li>
+    <li>Run <code>codex32 check</code>. It validates but does not suggest corrections.</li>
+    <li>Restore the wallet using its documented Bitcoin Core recovery workflow.</li>
+    <li>Use the separate wallet record to verify the restored wallet before signing.</li>
+  </ol>
+
+  <h2>Manual fallback</h2>
+  <p class="small">
+    Keep a versioned offline copy of the <em>Codex32 Book Recovery Wheel and Translation
+    Worksheet</em>, file <code>2023-03-07--bw.pdf</code>, with the owner’s recovery kit.
+    Expected SHA-256: <code>0370ea863d2eae692408aeefa9b13c14283e520f45a00f7373ad933ccf418f2e</code>.
+    Follow that archived document if compatible software is unavailable.
+  </p>
+  <p class="footer small">Card revision 2 — BIP93/codex32 — one card per share or secret.</p>
+</body>
+</html>
