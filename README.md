@@ -44,7 +44,7 @@ from codex32 import Codex32String
 # Create from seed bytes
 s = Codex32String.from_seed(
     bytes.fromhex('ffeeddccbbaa99887766554433221100'),
-    "ms13cashs",        # prefix string with explicit identifier (HRP + '1' + header)
+    "ms13cashs",        # prefix string, (HRP + '1' + header)
     0                   # padding value (default "CRC", otherwise integer)
 )
 print(s.s)              # codex32 string
