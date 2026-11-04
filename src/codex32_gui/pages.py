@@ -6,7 +6,6 @@ sharing, entropy, and every Bitcoin Core operation belong to the library.
 
 from __future__ import annotations
 
-import difflib
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -178,12 +177,7 @@ def _actions(*buttons: Gtk.Widget) -> Gtk.Widget:
     return box
 
 
-def _card(
-    text: str,
-    highlighted: frozenset[int] = frozenset(),
-    *,
-    highlight_class: str = "guessed",
-) -> Gtk.FlowBox:
+def _card(text: str, mismatched: frozenset[int] = frozenset()) -> Gtk.FlowBox:
     """Show one card the way wallets.md asks: uppercase, in four-character windows."""
     text = text.upper()
     flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, column_spacing=8, row_spacing=8)
@@ -194,8 +188,8 @@ def _card(
     for start in range(0, len(text), reading.GROUP):
         label = Gtk.Label(label=text[start : start + reading.GROUP], halign=Gtk.Align.CENTER)
         label.add_css_class("card-group")
-        if start // reading.GROUP in highlighted:
-            label.add_css_class(highlight_class)
+        if start // reading.GROUP in mismatched:
+            label.add_css_class("mismatch")
         flow.append(label)
     return flow
 
@@ -316,19 +310,6 @@ def _compare(expected: str, entered: str) -> ConfirmationResult:
         != wanted[group * reading.GROUP : (group + 1) * reading.GROUP]
     )
     return ConfirmationResult(not mismatched, mismatched)
-
-
-def _guessed(observed: str, corrected: str) -> frozenset[int]:
-    """Mark the four-character windows a correction changed, so they can be compared."""
-    changed: set[int] = set()
-    matcher = difflib.SequenceMatcher(None, observed.lower(), corrected.lower(), autojunk=False)
-    for tag, _left, _right, start, end in matcher.get_opcodes():
-        if tag == "equal":
-            continue
-        changed.update(range(start // reading.GROUP, (end + reading.GROUP - 1) // reading.GROUP))
-        if start == end:
-            changed.add(min(start // reading.GROUP, (len(corrected) - 1) // reading.GROUP))
-    return frozenset(changed)
 
 
 def _radio_group(group: Adw.PreferencesGroup, rows: Sequence[tuple[str, str]]) -> list[Gtk.CheckButton]:
@@ -509,7 +490,7 @@ def _read_back_page(
         if not result.accepted:
             groups = frozenset(group - 1 for group in result.mismatched_groups)
             clear_comparison()
-            comparison.append(_card(state.text, groups, highlight_class="mismatch"))
+            comparison.append(_card(state.text, groups))
             plural = "s" if len(groups) != 1 else ""
             message = f"Highlighted group{plural} {'do' if plural else 'does'} not match. Re-read the card."
             _say(status, message, "error")
@@ -1017,28 +998,6 @@ def _outstanding(gathered: tuple[Artifact, ...], basis: bool, wanted: int | None
     return max(first.header.threshold - len(gathered), 0)
 
 
-def _incompatible(artifact: Artifact | None, accepted: tuple[Artifact, ...], basis: bool) -> str:
-    if artifact is None:
-        return ""
-    if basis and artifact.header.threshold == 0:
-        return "This backup was never split into cards, so there is no card to replace."
-    if not accepted:
-        return ""
-    first = accepted[0]
-    if artifact.header.identifier != first.header.identifier:
-        return (
-            f"This card belongs to backup {artifact.header.identifier.upper()}, "
-            f"not {first.header.identifier.upper()}."
-        )
-    if artifact.header.threshold != first.header.threshold:
-        return "This card comes from a different split of that backup."
-    if len(artifact.text) != len(first.text):
-        return "This card is a different length from the first one."
-    if not basis and isinstance(artifact, Secret):
-        return "This is the whole backup rather than one of its cards."
-    return ""
-
-
 def _collect(
     view: Adw.NavigationView,
     *,
@@ -1076,11 +1035,18 @@ def _collect(
     go = _button("Continue", lambda: proceed(), style="suggested-action")
 
     def refuse(artifact: Artifact | None) -> str:
-        """Say why this card cannot join the ones already entered, if it cannot."""
-        if artifact is not None and artifact.header.index in blocked:
-            letter = artifact.header.index.upper()
-            return f"That would be card {letter}, which cannot be used here."
-        return _incompatible(artifact, accepted, basis)
+        """Say why this card cannot join the ones already entered, by the field's own header rule."""
+        if artifact is None:
+            return ""
+        if basis and artifact.header.threshold == 0:
+            return "This backup was never split into cards, so there is no card to replace."
+        if fault := reading.header_fault(artifact.text.upper(), blocked, expected_header):
+            return fault
+        if first is not None and len(artifact.text) != len(first.text):
+            return "This card is a different length from the first one."
+        if first is not None and not basis and isinstance(artifact, Secret):
+            return "This is the whole backup rather than one of its cards."
+        return ""
 
     def update(*_arguments: object) -> None:
         state = field.reading()
@@ -1136,7 +1102,7 @@ def _collect(
                 return
 
             def following() -> Adw.NavigationPage:
-                return _repair_page(view, result, observed, lambda card: accept(card, True), page, correcting)
+                return _repair_page(view, result, lambda card: accept(card, True), page)
 
             gated = result.low_checksum_discrimination
             view.push(_guess_gate_page(view, following) if gated else following())
@@ -1204,21 +1170,17 @@ def _guess_gate_page(
 def _repair_page(
     view: Adw.NavigationView,
     candidate: CorrectionCandidate,
-    observed: str,
     accept: Accept,
     back: Adw.NavigationPage,
-    highlight_changes: bool,
 ) -> Adw.NavigationPage:
-    corrected = candidate.artifact.text
-    changed = _guessed(observed, corrected) if highlight_changes else frozenset()
-    shown = _card(corrected, changed)
-    comparison = "Highlighted groups show changes, not proven error locations. " if highlight_changes else ""
+    # Nothing marks what changed: the whole card is compared, not the parts a guess touched.
+    shown = _card(candidate.artifact.text)
     content = _column(
         _title("One possible repair", "It might not be the only one."),
         shown,
         _note(
-            f"Hold your card next to the screen and compare the entire string, character by character. "
-            f"{comparison}Accept it only if the entire string exactly matches your card."
+            "Hold your card next to the screen and compare the entire string, character by character. "
+            "Accept it only if the entire string exactly matches your card."
         ),
     )
     page = _page(

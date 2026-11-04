@@ -56,8 +56,8 @@ The entry widget has three internal modes:
 
 Enter activates the enabled primary action. Card displays use four
 four-character groups per row, matching `docs/user/recovery-card.html`.
-Ordinary repair suggestions are unmarked; explicit correction may mark changed
-groups, which are described as changes rather than known error locations.
+Repair suggestions mark no changed group, so the whole card is compared.
+Entry gives no hint about what a wrong character should be.
 
 Low-discrimination correction keeps the CLI's literal-`YES` gate. Its single
 warning covers both hazards: checksum completion can lock errors into new data,

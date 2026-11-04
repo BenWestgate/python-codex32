@@ -16,7 +16,7 @@ from codex32 import (
 )
 from codex32.bech32 import CHARSET
 from codex32.correction import _best
-from codex32.errors import CodexError, InvalidShareIndex
+from codex32.errors import CodexError
 from codex32.profiles.ms32 import TEXT_LENGTHS
 
 PREFIX = "MS1"
@@ -25,7 +25,6 @@ HEADER_LENGTH = 6
 GROUP = 4
 SLACK = 8
 CORRECTION_LENGTH_DELTAS = frozenset((0, 1, 2, 3, 4, 8))
-LOOKALIKE = {"B": "8", "I": "J or L", "O": "0, a zero", "1": "L"}
 _ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 
@@ -58,26 +57,6 @@ def normalize_readback(raw: str) -> str:
     return "".join(raw.split()).translate(_ASCII_UPPER)
 
 
-def lookalike_fault(raw: str) -> str:
-    """Name a character no card can contain, rather than deleting it in silence.
-
-    Every other character outside the alphabet is punctuation or a stray key, and
-    dropping it quietly is right. These four are not: bech32 leaves out B, I, O
-    and 1 precisely because handwriting confuses them with 8, J, L and 0, so they
-    are exactly what someone misreads from their own card. Swallowing them would
-    turn the read-back, whose whole purpose is to catch a transcription error,
-    into the step that hides one.
-    """
-    typed = "".join(raw.split()).upper()
-    keep = max(size for size in range(len(PREFIX) + 1) if typed[:size] == PREFIX[:size])
-    found = sorted({character for character in typed[keep:] if character in LOOKALIKE})
-    if not found:
-        return ""
-    named = found[0] if len(found) == 1 else ", ".join(found[:-1]) + " or " + found[-1]
-    hints = ", ".join(f"{character} is probably {LOOKALIKE[character]}" for character in found)
-    return f"A card never contains {named}. Look at the card again: {hints}."
-
-
 def grouped(text: str) -> str:
     """Return the text in four-character windows."""
     return " ".join(text[start : start + GROUP] for start in range(0, len(text), GROUP))
@@ -93,7 +72,7 @@ def header_fault(
     if not body or body[0] == "?":
         return ""
     if body[0] not in "023456789":
-        return "The character after MS1 is how many cards recovery needs: 0, or 2 through 9."
+        return "No card begins like this. Read your card again."
     if expected_header is not None:
         if int(body[0]) != expected_header[0]:
             return "This card comes from a different split of that backup."
@@ -104,11 +83,6 @@ def header_fault(
         return ""
     try:
         Header(int(body[0]), body[1:5], body[5])
-    except InvalidShareIndex:
-        return (
-            "A backup that was never split is card S. Change the last letter to S, or change the "
-            "first character to how many cards recovery should need."
-        )
     except CodexError as error:
         return str(error)
     if body[5].lower() in accepted:
@@ -152,11 +126,8 @@ def read(text: str, *, accepted: tuple[str, ...] = (), length: int | None = None
 def readback(raw: str, length: int) -> Reading:
     """Describe an independently re-entered card without interpreting or repairing it."""
     text = normalize_readback(raw)
-    unreadable = text.count("?")
-    fault = lookalike_fault(text)
-    level = "error" if fault else ""
-    message = fault or f"{len(text)} of {length} characters"
-    return Reading(text, None, message, level, length, unreadable, False)
+    message = f"{len(text)} of {length} characters"
+    return Reading(text, None, message, "", length, text.count("?"), False)
 
 
 def repair(text: str, length: int | None, excluded: tuple[str, ...] = ()) -> CorrectionCandidate | str:

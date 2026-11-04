@@ -8,7 +8,6 @@ from codex32_gui.reading import (
     expected_length,
     grouped,
     header_fault,
-    lookalike_fault,
     normalize,
     normalize_readback,
     read,
@@ -53,9 +52,9 @@ def test_readback_supplies_and_drops_nothing() -> None:
 
 
 def test_a_header_that_cannot_belong_to_any_card_is_reported() -> None:
-    assert "0, or 2 through 9" in header_fault("MS1X")
-    assert "0, or 2 through 9" in header_fault("MS1XNAMEA")
-    assert "never split is card S" in header_fault("MS10NAMEA")
+    assert "Read your card again" in header_fault("MS1X")
+    assert "Read your card again" in header_fault("MS11NAMEA")
+    assert "must use S" in header_fault("MS10NAMEA")
     assert header_fault("MS12NAMEA") == ""
     assert header_fault("MS10NAMES") == ""
 
@@ -154,29 +153,3 @@ def test_a_card_with_too_little_checksum_left_demands_the_warning(card: str, che
     found = repair(card[:-checksum_length] + "?" * checksum_length, None)
     assert isinstance(found, CorrectionCandidate)
     assert found.low_checksum_discrimination
-
-
-@pytest.mark.parametrize(
-    ("typed", "expected"),
-    [("B", "8"), ("I", "J or L"), ("O", "0, a zero"), ("1", "L")],
-)
-def test_a_character_no_card_can_carry_is_named_with_what_it_is_probably(typed: str, expected: str) -> None:
-    fault = lookalike_fault(f"MS12NAMEC{typed}")
-    assert typed in fault
-    assert expected in fault
-
-
-def test_the_prefix_keeps_its_own_one() -> None:
-    assert lookalike_fault("MS1") == ""
-    assert lookalike_fault("ms12namec") == ""
-
-
-def test_an_ordinary_stray_key_is_still_dropped_in_silence() -> None:
-    assert lookalike_fault("MS12NAMEC!,. ") == ""
-
-
-def test_several_confusable_characters_are_all_named() -> None:
-    fault = lookalike_fault("MS12NAMEBO")
-    assert "B or O" in fault
-    assert "B is probably 8" in fault
-    assert "O is probably 0" in fault

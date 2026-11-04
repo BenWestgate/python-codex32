@@ -15,7 +15,6 @@ from codex32_gui.reading import (
     Reading,
     grouped,
     header_fault,
-    lookalike_fault,
     normalize,
     normalize_readback,
     read,
@@ -49,7 +48,7 @@ class Codex32Entry(Gtk.Entry):
             0,
         )
         self._limit = (length or TEXT_LENGTHS[-1]) + SLACK
-        self._dropped, self._rewriting, self._unpublishing = "", False, 0
+        self._rewriting, self._unpublishing = False, 0
         self._last_header_fault = ""
         self._stable = "" if mode == "readback" else PREFIX
         self.set_hexpand(True)
@@ -77,13 +76,11 @@ class Codex32Entry(Gtk.Entry):
         state = read(normalize(self.get_text()), accepted=self._accepted, length=self._length)
         if fault := self._header_fault():
             state = replace(state, artifact=None, message=fault, level="error")
-        if self._dropped and state.artifact is None and state.level != "error":
-            return replace(state, message=self._dropped, level="error")
         return state
 
     def clear(self) -> None:
         """Drop the entered recovery text."""
-        self._dropped, self._last_header_fault = "", ""
+        self._last_header_fault = ""
         self._stable = "" if self._mode == "readback" else PREFIX
         self.set_text(self._stable)
         self.set_position(-1)
@@ -134,7 +131,6 @@ class Codex32Entry(Gtk.Entry):
         source = compact[len(PREFIX) :] if duplicated_prefix else raw
         canonical = normalizer(source)[: self._limit]
         shown = grouped(canonical)
-        self._dropped = "" if self._mode == "readback" else lookalike_fault(raw)
         fault = self._header_fault(canonical) if self._mode == "import" else ""
         if fault and self._last_header_fault and len(canonical) > len(normalize(self._stable)):
             self.error_bell()
