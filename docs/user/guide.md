@@ -269,7 +269,11 @@ follow Bitcoin Core v32's maintained
 - `ms32 check` validates a card's format and checksum. A valid result does
   not prove that it belongs to this wallet.
 - `ms32 correct` suggests a repair. Compare any suggestion character by
-  character with the physical backup before confirming it.
+  character with the physical backup before confirming it. If you know the
+  start of the string is right, such as the `ms12name` header shared by a set,
+  pass `--prefix ms12name` so correction keeps it. `codex32 correct --length N`
+  limits the search to the original's known length, which helps when
+  characters were inserted or dropped (`ms32 correct` uses `--bytes`).
 - `ms32 share d` derives a replacement at unused index `d`. Confirm and
   store the new card before retiring an old one. Interactive use displays the
   share, then asks you to write and re-enter it. Matching groups stay confirmed
