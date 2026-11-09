@@ -14,8 +14,7 @@ _UNFINISHED = (
     "That operation stopped in a way this program did not expect. If it was writing to Bitcoin "
     "Core, check there what state the wallet is in before trying again."
 )
-_BUSY = "Another operation is still finishing. Try again in a moment."
-_running = False
+_gate = threading.Lock()
 
 
 def showing(view: Adw.NavigationView, page: Adw.NavigationPage) -> bool:
@@ -29,6 +28,11 @@ def showing(view: Adw.NavigationView, page: Adw.NavigationPage) -> bool:
     return any(stack.get_item(position) is page for position in range(stack.get_n_items()))
 
 
+def busy() -> bool:
+    """Report whether an operation holds the gate, so a background poll can skip a turn."""
+    return _gate.locked()
+
+
 def run[Result](
     view: Adw.NavigationView,
     page: Adw.NavigationPage,
@@ -38,8 +42,8 @@ def run[Result](
     """Run one blocking library call off the main loop and deliver its result back.
 
     `correct` runs for up to ten seconds and every Bitcoin Core call waits on a
-    subprocess, so neither may run on the main loop. The page that starts an
-    operation shows a spinner and cannot be left, so only one is ever in flight,
+    subprocess, so neither may run on the main loop. Operations take one gate in
+    turn, so an import queues behind a wallet-list poll instead of overlapping it,
     and a result for a page that is gone anyway is dropped. The result is
     delivered from `finally`, so a failure no screen anticipated still releases
     the program instead of leaving it spinning.
@@ -49,36 +53,20 @@ def run[Result](
     blocks in daemon threads while the interpreter is shutting down, so closing
     the window during an import would otherwise leave that wallet open.
     """
-    global _running
-    if _running:
-        GLib.idle_add(_busy, view, page, done)
-        return
-    _running = True
 
     def worker() -> None:
         outcome: Result | Exception = RuntimeError(_UNFINISHED)
         try:
-            outcome = work()
+            with _gate:
+                outcome = work()
         except (CodexError, BitcoinCoreError, OSError, TypeError, ValueError) as error:
             outcome = error
         finally:
             GLib.idle_add(deliver, outcome)
 
     def deliver(outcome: Result | Exception) -> bool:
-        global _running
-        _running = False
         if showing(view, page):
             done(outcome)
         return False
 
     threading.Thread(target=worker).start()
-
-
-def _busy[Result](
-    view: Adw.NavigationView,
-    page: Adw.NavigationPage,
-    done: Callable[[Result | Exception], None],
-) -> bool:
-    if showing(view, page):
-        done(RuntimeError(_BUSY))
-    return False

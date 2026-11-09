@@ -45,6 +45,7 @@ def test_a_layout_choice_leads_to_the_checklist_not_to_a_card(monkeypatch: pytes
     view = Adw.NavigationView()
     core: Any = object()
     view.push(pages._layout_page(view, core))
+    _widgets(view.get_visible_page(), Gtk.CheckButton).__next__().set_active(True)
 
     _button(view.get_visible_page(), "Continue").emit("clicked")
     ready = view.get_visible_page()
@@ -115,3 +116,52 @@ def test_a_launcher_can_point_the_buttons_at_a_readable_copy(monkeypatch: pytest
 
     _button(page, "Open the recovery card form").emit("clicked")
     assert opened == ["/home/amnesia/Tor Browser/codex32 forms/recovery-card.html"]
+
+
+def _wallet(name: str) -> Any:
+    return pages.wallet_setup.Wallet(name=name, encrypted=True, locked=False)
+
+
+@pytest.fixture(autouse=True)
+def _core_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pages.wallet_setup, "version_text", lambda _core: "32.1.0")
+    monkeypatch.setattr(pages.wallet_setup, "network", lambda _core: "signet")
+
+
+def test_continue_waits_for_a_choice_and_a_lone_row_stays_a_radio() -> None:
+    view = Adw.NavigationView()
+    page = pages._layout_page(view, object())  # type: ignore[arg-type]
+    choices = list(_widgets(page, Gtk.CheckButton))
+    assert not any(choice.get_active() for choice in choices)
+    assert not _button(page, "Continue").get_sensitive()
+
+    page = pages._wallet_page(view, object(), object(), (), "now", None, False)  # type: ignore[arg-type]
+    (choice,) = _widgets(page, Gtk.CheckButton)
+    assert not _button(page, "Continue").get_sensitive()
+    choice.activate()
+    choice.activate()
+    assert choice.get_active() and _button(page, "Continue").get_sensitive()
+    assert all(button.get_label() != "Check again" for button in _widgets(page, Gtk.Button))
+
+
+def test_the_wallet_list_refreshes_like_the_cli_and_keeps_the_choice(monkeypatch: pytest.MonkeyPatch) -> None:
+    polls: list[Any] = []
+    listed = [(_wallet("b"),), (_wallet("a"), _wallet("b"))]
+    monkeypatch.setattr(pages.GLib, "timeout_add_seconds", lambda _seconds, poll: polls.append(poll))
+    monkeypatch.setattr(pages.wallet_setup, "eligible", lambda _core: listed.pop(0))
+    monkeypatch.setattr(pages.work, "run", lambda _view, _page, job, done: done(job()))
+    view = Adw.NavigationView()
+    view.push(pages.home(view))
+    view.push(pages._wallet_page(view, object(), object(), (), "now", None, False))  # type: ignore[arg-type]
+
+    assert polls[0]() is True
+    page = view.get_visible_page()
+    assert "b" in _texts(page)
+    next(_widgets(page, Gtk.CheckButton)).set_active(True)
+    assert polls[0]() is True
+    choices = list(_widgets(page, Gtk.CheckButton))
+    assert "a" in _texts(page) and [choice.get_active() for choice in choices] == [False, True, False]
+    assert _button(page, "Continue").get_sensitive()
+
+    view.pop()
+    assert polls[0]() is False
