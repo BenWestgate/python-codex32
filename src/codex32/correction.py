@@ -49,7 +49,7 @@ from codex32.errors import CodexError, InvalidCorrectionInput
 from codex32.gf32 import _inverse as _gf32_inverse
 from codex32.gf32 import _multiply as _gf32_multiply
 from codex32.profiles import Profile, _optional_profile_rules
-from codex32.profiles.ms32 import MasterSeed, _has_generation_padding, _has_legacy_generation_padding
+from codex32.profiles.ms32 import MasterSeed, _has_generation_padding
 
 
 @dataclass(frozen=True, slots=True)
@@ -747,16 +747,10 @@ def _allowed(context: CorrectionContext, candidate: CorrectionCandidate) -> bool
     )
 
 
-def _legacy_padding_match(candidate: CorrectionCandidate) -> bool | None:
-    artifact = candidate.artifact
-    return _has_legacy_generation_padding(artifact) if isinstance(artifact, MasterSeed) else None
-
-
 def _candidate_order(candidate: CorrectionCandidate) -> tuple[object, ...]:
     return (
         candidate.addend_hamming_weight,
         candidate.crc_padding_match is not True,
-        _legacy_padding_match(candidate) is not True,
         candidate.artifact.text.lower(),
         tuple((edit.reverse_index, edit.kind, edit.observed, edit.replacement) for edit in candidate.edits),
     )
@@ -808,10 +802,7 @@ def _best(
         tied = [item for item in tied if len(item.artifact.text) in (48, 74)]
     hamming = min(item.addend_hamming_weight for item in tied)
     tied = [item for item in tied if item.addend_hamming_weight == hamming]
-    hints: tuple[Callable[[CorrectionCandidate], bool | None], ...] = (
-        (lambda item: item.crc_padding_match),
-        _legacy_padding_match,
-    )
+    hints: tuple[Callable[[CorrectionCandidate], bool | None], ...] = (lambda item: item.crc_padding_match,)
     if fingerprint_match is not None:
         hints += (fingerprint_match,)
     for hint in hints:
