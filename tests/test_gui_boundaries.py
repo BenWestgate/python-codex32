@@ -151,7 +151,7 @@ def test_restore_verifies_identity_before_creating_a_destination_wallet() -> Non
     assert isinstance(verify, ast.Expr) and isinstance(verify.value, ast.Call)
     assert isinstance(verify.value.func, ast.Attribute) and verify.value.func.attr == "verify"
     create = job.body[1]
-    assert isinstance(create, ast.Expr) and isinstance(create.value, ast.Call)
+    assert isinstance(create, ast.Assign) and isinstance(create.value, ast.Call)
     assert isinstance(create.value.func, ast.Attribute) and create.value.func.attr == "create"
 
 
