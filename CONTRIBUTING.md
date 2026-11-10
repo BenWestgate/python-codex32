@@ -100,6 +100,18 @@ any users mentioned in the description will be annoyingly notified each time a
 fork copies the merge. Instead, make any username mentions in a subsequent
 comment to the PR.
 
+### Links to Upstream Documentation
+
+Link to maintained upstream tutorials and user guides on their `master` branch
+rather than pinning them to a release tag. For example, link Bitcoin Core's
+offline-signing and multisig tutorials on `master` so readers see updated
+instructions. Check that the guidance still applies to supported software.
+
+Use a tag or commit link when documenting version-specific behavior or
+preserving historical/auditable evidence. Keep executable downloads, checksums,
+dependencies, and test fixtures pinned and independently verified; live
+links to documentation must not weaken those reproducibility requirements.
+
 ### Work in Progress Changes and Requests for Comments
 
 If a pull request is not to be considered for merging (yet), please
