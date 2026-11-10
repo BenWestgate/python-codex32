@@ -50,8 +50,8 @@ __all__ = [
     "parse_creation_date",
     "parse_fingerprint",
     "relock",
-    "require_unlocked",
     "unlock",
+    "unlocked",
     "verify",
     "version_text",
 ]
@@ -282,11 +282,9 @@ def unlock(core: BitcoinCore, name: str, passphrase: str) -> None:
         )
 
 
-def require_unlocked(core: BitcoinCore, name: str) -> None:
-    """Confirm the operator unlocked the wallet in Bitcoin Core themselves."""
-    state = [item for item in eligible(core) if item.name == name]
-    if not state or state[0].locked:
-        raise BitcoinCoreError("That wallet is still locked in Bitcoin Core.")
+def unlocked(core: BitcoinCore, name: str) -> bool:
+    """Report whether the operator has unlocked this still empty wallet in Bitcoin Core."""
+    return core._target(name) == (True, False)  # Encrypted, and no longer locked.
 
 
 def initialize(
