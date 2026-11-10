@@ -107,6 +107,7 @@ def _page(
     content: Gtk.Widget,
     *,
     actions: Gtk.Widget | None = None,
+    enter: Sequence[Gtk.Widget] = (),
     can_pop: bool = True,
 ) -> Adw.NavigationPage:
     scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
@@ -117,6 +118,7 @@ def _page(
     bars.set_content(scroller)
     if actions is not None:
         bars.add_bottom_bar(actions)
+        _on_enter(content, enter or (actions.get_last_child(),))
     page = Adw.NavigationPage(title=title, child=bars)
     page.set_can_pop(can_pop)
     return page
@@ -129,6 +131,39 @@ def _grow(scroller: Gtk.ScrolledWindow, shown: Gtk.Adjustment) -> None:
         width, height = window.get_default_size()
         screen = window.get_display().get_monitor_at_surface(surface).get_geometry().height
         window.set_default_size(width, min(height + int(short) + 1, screen))
+
+
+def _texts(widget: Gtk.Widget) -> list[Gtk.Widget]:
+    found, child = [widget] if isinstance(widget, Gtk.Text) else [], widget.get_first_child()
+    while child is not None:
+        found, child = found + _texts(child), child.get_next_sibling()
+    return found
+
+
+def _usable(widget: Gtk.Widget) -> bool:
+    """Shown on screen, switched on, and, for a text field, one the operator could type into."""
+    typed = not isinstance(widget, Gtk.Text) or (widget.get_editable() and widget.get_focusable())
+    return widget.get_mapped() and widget.is_sensitive() and typed
+
+
+def _on_enter(content: Gtk.Widget, buttons: Sequence[Gtk.Widget]) -> None:
+    """Enter moves on as at a CLI prompt: to the next field, and from the last to the first button that can act."""
+    texts = _texts(content)
+
+    def press(text: Gtk.Widget) -> None:
+        page = text.get_ancestor(Adw.NavigationPage)
+        view = page.get_ancestor(Adw.NavigationView) if page is not None else None
+        if view is None or view.get_visible_page() is not page or not _usable(text):
+            return  # Only the page in front of the operator may move on.
+        later = [item for item in texts[texts.index(text) + 1 :] if _usable(item)]
+        ready = [button for button in buttons if _usable(button)]
+        if later:
+            later[0].grab_focus()
+        elif ready:
+            ready[0].emit("clicked")
+
+    for text in texts:
+        text.connect("activate", press)
 
 
 def _column(*children: Gtk.Widget) -> Gtk.Box:
@@ -1322,7 +1357,7 @@ def _collect(
             )
         )
     content = _column(_title(heading, body), *progress, field, status)
-    page = _page(title, content, actions=_actions(fix, go))
+    page = _page(title, content, actions=_actions(fix, go), enter=(go, fix))
     _forget_when_gone(view, page, field.clear)
     update()
     return page
