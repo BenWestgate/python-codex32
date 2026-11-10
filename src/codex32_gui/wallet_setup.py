@@ -147,13 +147,13 @@ def network(core: BitcoinCore) -> str:
 
 def fingerprint(core: BitcoinCore, secret: MasterSeed) -> str:
     """Return the BIP32 master fingerprint, derived by Bitcoin Core out of process."""
-    return core.fingerprint(secret).hex()
+    return core.fingerprint(secret).hex().upper()
 
 
 def identity(core: BitcoinCore, secret: MasterSeed) -> tuple[str, str]:
     """Return the recovered fingerprint and what the backup identifier says about the seed."""
     fingerprint = core.fingerprint(secret)
-    return fingerprint.hex(), identifier_note(identifier_origin(secret, fingerprint))
+    return fingerprint.hex().upper(), identifier_note(identifier_origin(secret, fingerprint))
 
 
 def verify(core: BitcoinCore, secret: MasterSeed, expected: bytes | None, start: Timestamp) -> None:

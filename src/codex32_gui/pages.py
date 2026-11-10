@@ -217,7 +217,9 @@ def _blank(flow: Gtk.FlowBox) -> None:
 def _rows(title: str, values: Sequence[tuple[str, str]]) -> Adw.PreferencesGroup:
     group = Adw.PreferencesGroup(title=title)
     for label, value in values:
-        group.add(Adw.ActionRow(title=label, subtitle=value, subtitle_selectable=True, use_markup=False))
+        row = Adw.ActionRow(title=label, subtitle=value, subtitle_selectable=True, use_markup=False)
+        row.add_css_class("property")  # libadwaita's style for a value: subtitle at full strength.
+        group.add(row)
     return group
 
 
