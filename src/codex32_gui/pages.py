@@ -12,7 +12,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
 from codex32 import (
     ConfirmationResult,
@@ -111,6 +111,7 @@ def _page(
 ) -> Adw.NavigationPage:
     scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
     scroller.set_child(Adw.Clamp(maximum_size=700, child=content, margin_start=18, margin_end=18))
+    scroller.get_vadjustment().connect("changed", lambda shown: _grow(scroller, shown))
     bars = Adw.ToolbarView()
     bars.add_top_bar(Adw.HeaderBar())
     bars.set_content(scroller)
@@ -119,6 +120,15 @@ def _page(
     page = Adw.NavigationPage(title=title, child=bars)
     page.set_can_pop(can_pop)
     return page
+
+
+def _grow(scroller: Gtk.ScrolledWindow, shown: Gtk.Adjustment) -> None:
+    """Make the window taller, never past the screen, until the page needs no scrolling."""
+    window, short = scroller.get_root(), shown.get_upper() - shown.get_page_size()
+    if short > 0 and isinstance(window, Gtk.Window) and (surface := window.get_surface()) is not None:
+        width, height = window.get_default_size()
+        screen = window.get_display().get_monitor_at_surface(surface).get_geometry().height
+        window.set_default_size(width, min(height + int(short) + 1, screen))
 
 
 def _column(*children: Gtk.Widget) -> Gtk.Box:
@@ -215,9 +225,11 @@ def _blank(flow: Gtk.FlowBox) -> None:
 
 
 def _rows(title: str, values: Sequence[tuple[str, str]]) -> Adw.PreferencesGroup:
-    group = Adw.PreferencesGroup(title=title)
+    group = Adw.PreferencesGroup(title=title, css_classes=["compact"])
     for label, value in values:
-        group.add(Adw.ActionRow(title=label, subtitle=value, subtitle_selectable=True, use_markup=False))
+        row = Adw.ActionRow(title=label, use_markup=False)
+        row.add_suffix(Gtk.Label(label=value, selectable=True, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR))
+        group.add(row)
     return group
 
 
