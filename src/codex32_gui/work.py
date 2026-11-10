@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from collections.abc import Callable
 
@@ -72,6 +73,37 @@ def run[Result](
         return False
 
     threading.Thread(target=worker).start()
+
+
+def watch(
+    view: Adw.NavigationView, page: Adw.NavigationPage, ready: Callable[[], bool], then: Callable[[], None]
+) -> None:
+    """Ask `ready` off the main loop every two seconds while `page` is in front; once it says yes, `then`."""
+    # This is how the command line waits for something done in Bitcoin Core's own
+    # window, so the operator never has to come back and say it is done. It goes on
+    # once only: should that fail, the page must not try it again unasked.
+
+    def check() -> None:
+        found = False
+        with contextlib.suppress(BitcoinCoreError, OSError, ValueError, TypeError):
+            found = ready()
+        GLib.idle_add(arrive, found)
+
+    def arrive(found: bool) -> bool:
+        if found and view.get_visible_page() is page and not _running:
+            then()
+        elif showing(view, page):
+            GLib.timeout_add_seconds(2, ask)
+        return False
+
+    def ask() -> bool:
+        # One question at a time: the next is only scheduled once this one is answered.
+        if view.get_visible_page() is page and not _running:
+            threading.Thread(target=check, daemon=True).start()
+            return False
+        return showing(view, page)
+
+    GLib.timeout_add_seconds(2, ask)
 
 
 def _busy[Result](

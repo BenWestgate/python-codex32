@@ -277,6 +277,7 @@ def _working(view: Adw.NavigationView, title: str, message: str) -> Adw.Navigati
     spinner = Gtk.Spinner(halign=Gtk.Align.CENTER, width_request=32, height_request=32)
     spinner.start()
     page = _page(title, _column(spinner, _title(message)), can_pop=False)
+    page.working = True  # What _then never goes back to.
     view.push(page)
     return page
 
@@ -290,7 +291,17 @@ def _then[Result](
     """Turn a worker result into the next page, the failure page, or a step of its own."""
 
     def deliver(outcome: Result | Exception) -> None:
+        # Once cards exist, a failure returns to the page that asked, which still holds
+        # the seed, so a mistyped passphrase or a busy Bitcoin Core never costs the cards.
+        # Home holds no seed, and a page that is itself working cannot be done again.
         if isinstance(outcome, Exception):
+            back = view.get_previous_page(page)
+            if advice and back and view.get_previous_page(back) and not getattr(back, "working", False):
+                view.pop_to_page(back)
+                dialog = Adw.AlertDialog(heading="That did not work", body=str(outcome))
+                dialog.add_response("again", "Try again")
+                dialog.present(view)
+                return
             _failure(view, outcome, advice)
             return
         following = follow(outcome)
@@ -933,64 +944,36 @@ def _unlock_page(
     expected: bytes | None,
     restoring: bool = False,
 ) -> Adw.NavigationPage:
-    """Unlock one already encrypted wallet, or step aside and let Bitcoin Core do it."""
+    """Take the passphrase here, or carry on by itself once the wallet is unlocked in Bitcoin Core."""
     field = Adw.PasswordEntryRow(title="Wallet passphrase")
     group = Adw.PreferencesGroup()
     group.add(field)
-    manual = Adw.ExpanderRow(
-        title="I would rather unlock it in Bitcoin Core myself",
-        subtitle="Then codex32 never sees the passphrase, exactly as the command line works.",
+    hint = _note(
+        f"Or unlock it in Bitcoin Core: in Window \u25b8 Console, select {wallet.name} and type "
+        f'walletpassphrase "YOUR PASSPHRASE" {wallet_setup.UNLOCK_SECONDS}. codex32 carries on by itself.'
     )
-    manual.add_row(
-        Adw.ActionRow(
-            title="In Bitcoin Core, open Window ▸ Console",
-            subtitle=(
-                f"Select the wallet {wallet.name}, then type: "
-                f'walletpassphrase "YOUR PASSPHRASE" {wallet_setup.UNLOCK_SECONDS}'
-            ),
-            subtitle_selectable=True,
-            use_markup=False,
-        )
-    )
-    group.add(manual)
+    hint.set_selectable(True)
 
-    def check() -> None:
-        page = _working(view, "Bitcoin Core", "Checking whether the wallet is unlocked…")
+    def go(passphrase: str) -> None:
+        _import(view, core, secret, wallet.name, passphrase, timestamp, expected, restoring)
 
-        def job() -> Record:
-            wallet_setup.require_unlocked(core, wallet.name)
-            return _record(core, secret, wallet.name, timestamp, expected)
-
-        work.run(
-            view,
-            page,
-            job,
-            _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE),
-        )
-
-    def go() -> None:
-        _import(view, core, secret, wallet.name, field.get_text(), timestamp, expected, restoring)
-
+    field.connect("entry-activated", lambda _row: go(field.get_text()))
     content = _column(
         _title(
-            f"The wallet \u201c{wallet.name}\u201d is locked",
+            f"Unlock \u201c{wallet.name}\u201d",
             "Bitcoin Core needs its passphrase before your keys can be written into it.",
         ),
         group,
-        _note(
-            "Your passphrase goes straight to Bitcoin Core on standard input and nowhere else. It is "
-            "never saved, never written to a file, and never shown in the list of running programs. "
-            "codex32 locks the wallet again as soon as it has finished."
-        ),
+        hint,
     )
     page = _page(
         "Unlock",
         content,
-        actions=_actions(
-            _button("I unlocked it myself", check),
-            _button("Unlock and finish", go, style="suggested-action"),
-        ),
+        actions=_actions(_button("Unlock", lambda: go(field.get_text()), style="suggested-action")),
     )
+    # A refused passphrase brings the operator back here to type it again.
+    page.connect("showing", lambda _page: _empty(field))
+    work.watch(view, page, lambda: wallet_setup.unlocked(core, wallet.name), lambda: go(""))
     _forget_when_gone(view, page, lambda: _empty(field))
     return page
 

@@ -361,3 +361,10 @@ def test_the_chain_the_operator_chose_is_the_one_that_is_used(
 
 def test_the_version_is_reported_the_way_bitcoin_core_reports_it() -> None:
     assert wallet_setup.version_text(BitcoinCore("bitcoin-cli", "main", 320100)) == "32.1.0"
+
+
+def test_an_unlock_done_in_bitcoin_core_is_noticed(monkeypatch: pytest.MonkeyPatch) -> None:
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
+    assert not wallet_setup.unlocked(core, "fresh")
+    fake.wallets["fresh"].locked = False
+    assert wallet_setup.unlocked(core, "fresh")
