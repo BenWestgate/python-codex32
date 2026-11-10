@@ -451,6 +451,40 @@ def test_failed_import_is_generic_and_relocks_encrypted_wallet(
     assert any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls)
 
 
+@pytest.mark.parametrize("unloaded", [{"warnings": []}, {"warnings": ["load on startup not updated"]}, None])
+@pytest.mark.parametrize(("cause", "hint"), [(" caused by pruning", "a later date"), ("", "the same date")])
+def test_rescan_on_missing_blocks_closes_the_wallet(
+    monkeypatch: pytest.MonkeyPatch, unloaded: dict[str, list[str]] | None, cause: str, hint: str
+) -> None:
+    rpc = _ImportRPC(locked=False)
+    original = rpc.__call__
+    failed = {"success": False, "error": {"code": -1, "message": f"Rescan failed ...{cause}"}}
+
+    def fail(
+        client: BitcoinCore, *arguments: str, wallet: str | None = None, stdin: str | None = None
+    ) -> object:
+        rpc.calls.append((arguments, wallet, stdin))
+        if arguments == ("importdescriptors",):
+            return [failed] * 4
+        if arguments[0] == "unloadwallet":
+            if unloaded is None:
+                raise BitcoinCoreError("Bitcoin Core rejected the requested wallet operation.")
+            return unloaded
+        return original(client, *arguments, wallet=wallet, stdin=stdin)
+
+    monkeypatch.setattr(BitcoinCore, "_rpc", fail)
+    client = BitcoinCore("bitcoin-cli", "main", 300000)
+    with pytest.raises(BitcoinCoreError, match="all of signer's history. Do not use that wallet") as caught:
+        client.initialize(
+            _SEED, lambda _prompt: "yes", lambda _message: None, expected_fingerprint=_FINGERPRINT
+        )
+    assert "close it in Bitcoin Core whenever it is open" in str(caught.value)
+    assert f"new wallet with {hint}" in str(caught.value)
+    assert (("unloadwallet", "signer", "false"), None, None) in rpc.calls
+    # A wallet that stayed loaded is locked again; an unloaded one has nothing left to lock.
+    assert any(arguments == ("walletlock",) for arguments, _wallet, _stdin in rpc.calls) is (unloaded is None)
+
+
 def test_fingerprint_uses_stateless_core_address_derivation(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[tuple[str, ...], str | None]] = []
 

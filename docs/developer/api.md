@@ -663,11 +663,19 @@ history, and Core shows when its wallets are still catching up. The GUI runs
 the same check before `createwallet` for a restore, and `ms32 create
 --existing` asks when the seed was first used instead of rescanning from 0.
 
+Core picks its first block by the highest block time so far, which no RPC
+reports, so an out-of-order block time can still pass that check. Core then
+reports "Rescan failed" for the descriptors. `initialize` then asks
+`unloadwallet` to close the wallet and drop it from startup, and says not to
+use it and to close it whenever it is open, because that unload can fail or be
+undone at the next start. Only an error that blames pruning asks for a later
+date; any other failed scan asks for the same date again.
+
 The Core calls are fixed: `getnetworkinfo`, `getblockchaininfo`,
 `getblockstats`, `getchainstates`, `listwallets`,
 `getwalletinfo`, `listdescriptors`, `getdescriptorinfo`, `deriveaddresses`,
-`validateaddress`, `importdescriptors`, `gethdkeys`, `derivehdkey`, and
-`walletlock`. Bitcoin Core alone creates wallets, selects encryption, handles
+`validateaddress`, `importdescriptors`, `gethdkeys`, `derivehdkey`,
+`unloadwallet`, and `walletlock`. Bitcoin Core alone creates wallets, selects encryption, handles
 passphrases, stores keys, and provides normal wallet behavior.
 
 The wallet CLI is one leaf command:

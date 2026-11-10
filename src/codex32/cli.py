@@ -364,6 +364,8 @@ def _creation_start() -> int:
     while True:
         try:
             return parse_creation_date(_text(_FIRST_USED, optional=True))
+        except KeyboardInterrupt as error:  # Nothing was made yet: the existing cards stay valid.
+            raise _CoreSelectionInterrupted from error
         except ValueError as error:
             _print(str(error), err=True)
 
