@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from collections.abc import Callable
 
@@ -72,6 +73,46 @@ def run[Result](
         return False
 
     threading.Thread(target=worker).start()
+
+
+def watch(
+    view: Adw.NavigationView, page: Adw.NavigationPage, ready: Callable[[], bool], then: Callable[[], None]
+) -> Callable[[], None]:
+    """Ask `ready` off the main loop every two seconds while `page` is in front; once it says yes, `then`."""
+    # Returns the function that stops it for good.
+    # This is how the command line waits for something done in Bitcoin Core's own
+    # window, so the operator never has to come back and say it is done. It goes on
+    # once at most, and the latch is set before `then` runs, so whatever `then`
+    # leads to, success or failure, never starts it again unasked.
+    stopped = threading.Event()
+
+    def check() -> None:
+        found = False
+        with contextlib.suppress(BitcoinCoreError, OSError, ValueError, TypeError):
+            found = ready()
+        GLib.idle_add(arrive, found)
+
+    def arrive(found: bool) -> bool:
+        if stopped.is_set() or not showing(view, page):
+            return False
+        if found and view.get_visible_page() is page and not _running:
+            stopped.set()
+            then()
+        else:
+            GLib.timeout_add_seconds(2, ask)
+        return False
+
+    def ask() -> bool:
+        if stopped.is_set():
+            return False
+        if view.get_visible_page() is page and not _running:
+            # One question at a time: the next is only scheduled once this one is answered.
+            threading.Thread(target=check, daemon=True).start()
+            return False
+        return showing(view, page)
+
+    GLib.timeout_add_seconds(2, ask)
+    return stopped.set
 
 
 def _busy[Result](

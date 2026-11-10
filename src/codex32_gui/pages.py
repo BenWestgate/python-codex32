@@ -81,6 +81,9 @@ _RESTORED = (
         "date was too late. Let Core finish syncing, then check your balance and past payments."
     ),
 )
+FRESH_LIST = (
+    "Your cards are unharmed. This list is fresh from Bitcoin Core: a wallet that now holds keys is gone."
+)
 CARDS_SAFE = (
     "Your cards are unharmed and still recover this wallet. Nothing was written onto them and "
     "nothing about them changed. When Bitcoin Core is ready, choose \u201cRestore my wallet\u201d "
@@ -289,6 +292,10 @@ def _working(view: Adw.NavigationView, title: str, message: str) -> Adw.Navigati
     spinner = Gtk.Spinner(halign=Gtk.Align.CENTER, width_request=32, height_request=32)
     spinner.start()
     page = _page(title, _column(spinner, _title(message)), can_pop=False)
+    # The page that asked: a worker started by another worker inherits its asker,
+    # so a failure never goes back to a spinner.
+    shown = view.get_visible_page()
+    page.asker = getattr(shown, "asker", shown)
     view.push(page)
     return page
 
@@ -298,18 +305,31 @@ def _then[Result](
     page: Adw.NavigationPage,
     follow: Callable[[Result], Adw.NavigationPage | None],
     advice: str = "",
+    again: Callable[[Exception], None] | None = None,
 ) -> Callable[[Result | Exception], None]:
-    """Turn a worker result into the next page, the failure page, or a step of its own."""
+    """Turn a worker result into the next page, a step of its own, or `again`, else the failure page."""
 
     def deliver(outcome: Result | Exception) -> None:
         if isinstance(outcome, Exception):
-            _failure(view, outcome, advice)
+            (again or (lambda error: _failure(view, error, advice)))(outcome)
             return
         following = follow(outcome)
         if following is not None:
             _replace(view, following)
 
     return deliver
+
+
+def _alert(view: Adw.NavigationView, text: str) -> None:
+    dialog = Adw.AlertDialog(heading="That did not work", body=text)
+    dialog.add_response("close", "Close")
+    dialog.present(view)
+
+
+def _back(view: Adw.NavigationView, page: Adw.NavigationPage, error: Exception) -> None:
+    """Go back to the page that asked, which still holds the seed, after a step that changed nothing."""
+    view.pop_to_page(page.asker)
+    _alert(view, str(error))
 
 
 def _describe(artifact: Artifact) -> str:
@@ -785,18 +805,20 @@ def _wallets(
     expected: bytes | None,
     *,
     restoring: bool = False,
+    problem: str = "",
 ) -> None:
     page = _working(view, "Bitcoin Core", "Asking Bitcoin Core which wallets are empty…")
+
+    def follow(found: tuple[wallet_setup.Wallet, ...]) -> Adw.NavigationPage:
+        if problem:
+            _alert(view, f"{problem}\n\n{FRESH_LIST}")
+        return _wallet_page(view, core, secret, found, timestamp, expected, restoring)
+
     work.run(
         view,
         page,
         lambda: wallet_setup.eligible(core),
-        _then(
-            view,
-            page,
-            lambda found: _wallet_page(view, core, secret, found, timestamp, expected, restoring),
-            CARDS_SAFE,
-        ),
+        _then(view, page, follow, CARDS_SAFE, lambda error: _back(view, page, error)),
     )
 
 
@@ -825,7 +847,7 @@ def _wallet_page(
         if chosen.locked:
             view.push(_unlock_page(view, core, secret, chosen, timestamp, expected, restoring))
             return
-        _import(view, core, secret, chosen.name, "", timestamp, expected, restoring)
+        _import(view, core, secret, chosen, "", timestamp, expected, restoring)
 
     content = _column(
         _title(
@@ -894,7 +916,13 @@ def _new_wallet_page(
             page,
             job,
             _then(
-                view, page, lambda result: _finished_page(view, result[0], restoring, result[1]), CARDS_SAFE
+                view,
+                page,
+                lambda result: _finished_page(view, result[0], restoring, result[1]),
+                CARDS_SAFE,
+                lambda error: _wallets(
+                    view, core, secret, timestamp, expected, restoring=restoring, problem=str(error)
+                ),
             ),
         )
 
@@ -945,64 +973,43 @@ def _unlock_page(
     expected: bytes | None,
     restoring: bool = False,
 ) -> Adw.NavigationPage:
-    """Unlock one already encrypted wallet, or step aside and let Bitcoin Core do it."""
+    """Take the passphrase here, or carry on by itself once the wallet is unlocked in Bitcoin Core."""
     field = Adw.PasswordEntryRow(title="Wallet passphrase")
     group = Adw.PreferencesGroup()
     group.add(field)
-    manual = Adw.ExpanderRow(
-        title="I would rather unlock it in Bitcoin Core myself",
-        subtitle="Then codex32 never sees the passphrase, exactly as the command line works.",
+    hint = _note(
+        f"Or unlock it in Bitcoin Core: in Window \u25b8 Console, select {wallet.name} and type "
+        f'walletpassphrase "YOUR PASSPHRASE" {wallet_setup.UNLOCK_SECONDS}. codex32 carries on by itself.'
     )
-    manual.add_row(
-        Adw.ActionRow(
-            title="In Bitcoin Core, open Window ▸ Console",
-            subtitle=(
-                f"Select the wallet {wallet.name}, then type: "
-                f'walletpassphrase "YOUR PASSPHRASE" {wallet_setup.UNLOCK_SECONDS}'
-            ),
-            subtitle_selectable=True,
-            use_markup=False,
-        )
-    )
-    group.add(manual)
+    hint.set_selectable(True)
 
-    def check() -> None:
-        page = _working(view, "Bitcoin Core", "Checking whether the wallet is unlocked…")
+    stop = [lambda: None]
 
-        def job() -> Record:
-            wallet_setup.require_unlocked(core, wallet.name)
-            return _record(core, secret, wallet.name, timestamp, expected)
+    def go(passphrase: str) -> None:
+        stop[0]()  # Any attempt, typed or noticed, ends the watch; only a refusal starts another.
+        _import(view, core, secret, wallet, passphrase, timestamp, expected, restoring)
 
-        work.run(
-            view,
-            page,
-            job,
-            _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE),
-        )
+    def shown(_page: Adw.NavigationPage) -> None:
+        _empty(field)
+        stop[0]()
+        stop[0] = work.watch(view, page, lambda: wallet_setup.unlocked(core, wallet.name), lambda: go(""))
 
-    def go() -> None:
-        _import(view, core, secret, wallet.name, field.get_text(), timestamp, expected, restoring)
-
+    field.connect("entry-activated", lambda _row: go(field.get_text()))
     content = _column(
         _title(
-            f"The wallet \u201c{wallet.name}\u201d is locked",
+            f"Unlock \u201c{wallet.name}\u201d",
             "Bitcoin Core needs its passphrase before your keys can be written into it.",
         ),
         group,
-        _note(
-            "Your passphrase goes straight to Bitcoin Core on standard input and nowhere else. It is "
-            "never saved, never written to a file, and never shown in the list of running programs. "
-            "codex32 locks the wallet again as soon as it has finished."
-        ),
+        hint,
     )
     page = _page(
         "Unlock",
         content,
-        actions=_actions(
-            _button("I unlocked it myself", check),
-            _button("Unlock and finish", go, style="suggested-action"),
-        ),
+        actions=_actions(_button("Unlock", lambda: go(field.get_text()), style="suggested-action")),
     )
+    # A refused passphrase brings the operator back here to type it again.
+    page.connect("showing", shown)
     _forget_when_gone(view, page, lambda: _empty(field))
     return page
 
@@ -1014,8 +1021,11 @@ def _record(
     timestamp: Timestamp,
     expected: bytes | None,
     passphrase: str = "",
+    encrypted: bool = False,
 ) -> Record:
-    final = wallet_setup.fill(core, secret, name, passphrase, expected=expected, timestamp=timestamp)
+    final = wallet_setup.fill(
+        core, secret, name, passphrase, expected=expected, timestamp=timestamp, encrypted=encrypted
+    )
     return Record(
         secret.header.identifier.upper(),
         final,
@@ -1108,7 +1118,9 @@ def _fingerprint_page(
             _wallets(view, core, secret, start, expected, restoring=restoring)
             return None
 
-        work.run(view, page, job, _then(view, page, follow, CARDS_SAFE))
+        work.run(
+            view, page, job, _then(view, page, follow, CARDS_SAFE, lambda error: _back(view, page, error))
+        )
 
     buttons = [_button("Stop", lambda: view.replace([home(view)]))]
     if restoring:
@@ -1138,18 +1150,27 @@ def _import(
     view: Adw.NavigationView,
     core: BitcoinCore,
     secret: MasterSeed,
-    name: str,
+    wallet: wallet_setup.Wallet,
     passphrase: str,
     timestamp: Timestamp,
     expected: bytes | None,
     restoring: bool = False,
 ) -> None:
-    page = _working(view, "Bitcoin Core", f"Writing your keys into {name}…")
+    page = _working(view, "Bitcoin Core", f"Writing your keys into {wallet.name}…")
+
+    def again(error: Exception) -> None:
+        # Only a refused passphrase is known to have changed nothing. Anything else may
+        # have written to Bitcoin Core, so ask it afresh which wallets are still empty.
+        if isinstance(error, wallet_setup.Refused):
+            _back(view, page, error)
+            return
+        _wallets(view, core, secret, timestamp, expected, restoring=restoring, problem=str(error))
+
     work.run(
         view,
         page,
-        lambda: _record(core, secret, name, timestamp, expected, passphrase),
-        _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE),
+        lambda: _record(core, secret, wallet.name, timestamp, expected, passphrase, wallet.encrypted),
+        _then(view, page, lambda record: _finished_page(view, record, restoring), CARDS_SAFE, again),
     )
 
 
