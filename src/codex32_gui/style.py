@@ -27,6 +27,11 @@ CSS = """
   border-radius: 12px;
   padding: 14px;
 }
+.compact row > box.header {
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 .reading {
   font-size: 0.9rem;
 }
