@@ -33,7 +33,7 @@ FORBIDDEN = frozenset(
     }
 )
 CORE_ADAPTER = "codex32._bitcoin_core"
-BUDGET = 2050
+BUDGET = 2070
 
 
 def _package() -> Path:

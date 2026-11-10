@@ -20,7 +20,7 @@ import gi
 gi.require_version("Adw", "1")
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Adw, Gdk, GLib, Gtk
 
 from codex32_gui import app, pages, reading, wallet_setup
 
@@ -80,6 +80,12 @@ def press(page: Any, label: str) -> None:
     next(item for item in walk(page) if isinstance(item, Gtk.Button) and item.get_label() == label).emit(
         "clicked"
     )
+
+
+def enter(field: Any) -> None:
+    """Press Enter in a text field, as its key binding does."""
+    field.get_delegate().emit("activate")
+    settle()
 
 
 def labels(page: Any) -> list[str]:
@@ -147,6 +153,7 @@ class Walkthrough(app.Application):
             self.new_card_done,
             self.seed_entry,
             self.seed_shown,
+            self.form,
         ]
         GLib.timeout_add(300, self.pump)
 
@@ -177,6 +184,8 @@ class Walkthrough(app.Application):
             item for item in walk(page) if isinstance(item, Gtk.Button) and item.get_label() == "Continue"
         )
         check("nothing may be submitted yet", not go.get_sensitive())
+        enter(field)
+        check("so Enter stays on the page", self.page() is page)
         field.set_text("ms12nameacd")
         settle()
         check("text is uppercased and grouped", field.get_text() == "MS12 NAME ACD", field.get_text())
@@ -199,7 +208,7 @@ class Walkthrough(app.Application):
         field.set_text(SHARE_C)
         settle()
         check("a valid card may be submitted", go.get_sensitive())
-        go.emit("clicked")
+        enter(field)
         return True
 
     def intact(self) -> bool:
@@ -229,7 +238,8 @@ class Walkthrough(app.Application):
             if isinstance(item, Gtk.Button) and item.get_label() == "Suggest a repair"
         )
         check("a repair is offered for an unreadable character", fix.get_sensitive())
-        fix.emit("clicked")
+        enter(field)
+        check("and Enter asks for it", self.page() is not page)
         return True
 
     def candidate(self) -> bool:
@@ -375,7 +385,7 @@ class Walkthrough(app.Application):
         check("selecting a card does not publish it", _primary_is_empty(), _primary())
         field.set_text(self.made[:-4] + "QQQQ")
         settle()
-        press(page, "Confirm card")
+        enter(field)
         check(
             "a mistyped group is named and refused",
             any("Group 12 does not match" in text for text in labels(page)),
@@ -383,7 +393,7 @@ class Walkthrough(app.Application):
         )
         field.set_text(self.made.lower())
         settle()
-        press(page, "Confirm card")
+        enter(field)
         return True
 
     def new_card_done(self) -> bool:
@@ -406,19 +416,35 @@ class Walkthrough(app.Application):
             page = self.page()
             field_of(page).set_text(text)
             settle()
-            press(page, "Continue")
+            enter(field_of(page))
         return True
 
     def seed_shown(self) -> bool:
         page = self.page()
         if page.get_title() != "Master seed":
             return False
-        check("two cards recover the published secret", card(page) == SECRET_S, card(page))
+        check("two cards recover the published secret by Enter alone", card(page) == SECRET_S, card(page))
         check(
             "and the screen warns before anything else",
             any("take every coin" in text for text in labels(page)),
             [text for text in labels(page) if "coin" in text],
         )
+        return True
+
+    def form(self) -> bool:
+        pressed: list[bool] = []
+        first, second, hidden = Adw.EntryRow(), Adw.PasswordEntryRow(), Adw.EntryRow(visible=False)
+        action = pages._button("Create", lambda: pressed.append(True))
+        content = pages._column(first, hidden, second)
+        self.view.push(pages._page("Form", content, actions=pages._actions(action)))
+        settle()
+        enter(first)
+        check("Enter moves on to the next shown field", second.get_delegate().has_focus() and not pressed)
+        enter(second)
+        check("and in the last field presses the page's action", pressed == [True])
+        action.set_sensitive(False)
+        enter(second)
+        check("but never an action that is switched off", pressed == [True])
         return True
 
 
