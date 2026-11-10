@@ -10,12 +10,7 @@ from codex32 import CorrectionCandidate, MasterSeed, Share, parse_codex32
 from codex32.checksums import _CRC, _crc_pad
 from codex32.correction import _best
 from codex32.gf32 import _multiply as _gf32_multiply
-from codex32.profiles.ms32 import (
-    SEED_BYTE_LENGTHS,
-    _has_generation_padding,
-    _has_legacy_generation_padding,
-    _payload_padding,
-)
+from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding, _payload_padding
 
 
 @pytest.mark.parametrize(
@@ -65,19 +60,24 @@ def test_parsed_master_seed_validity_is_independent_of_crc() -> None:
     assert generated.payload_symbols in {secret.payload_symbols for secret in parsed}
 
 
-def test_tie_break_prefers_current_then_legacy_crc_padding() -> None:
+def test_tie_break_prefers_only_current_crc_padding() -> None:
     parsed = [parse_codex32(VECTOR_4[f"secret_s_alternate_{padding}"]) for padding in range(16)]
     assert all(isinstance(secret, MasterSeed) for secret in parsed)
     current = next(secret for secret in parsed if _has_generation_padding(secret))
-    legacy = next(secret for secret in parsed if _has_legacy_generation_padding(secret))
-    other = next(secret for secret in parsed if secret not in (current, legacy))
+    previous = parsed[8]  # Pad suffix produced before the final XOR was added.
+    other = parsed[0]
+    assert current not in (previous, other)
 
-    def best(*secrets: MasterSeed) -> tuple[MasterSeed, ...]:
-        candidates = [CorrectionCandidate(s, (), 1, 0, 0, _has_generation_padding(s)) for s in secrets]
-        return tuple(candidate.artifact for candidate in _best(candidates))
+    def candidates(*secrets: MasterSeed) -> list[CorrectionCandidate]:
+        return [CorrectionCandidate(s, (), 1, 0, 0, _has_generation_padding(s)) for s in secrets]
 
-    assert best(other, legacy, current) == (current,)
-    assert best(other, legacy) == (legacy,)
+    assert tuple(item.artifact for item in _best(candidates(other, previous, current))) == (current,)
+    # Without a current CRC match, neither historical nor arbitrary padding wins.
+    tied = tuple(item.artifact for item in _best(candidates(other, previous)))
+    assert tied == tuple(sorted((other, previous), key=lambda secret: secret.text.lower()))
+    # The wallet hint can decide the tie without being overridden by historical padding.
+    hinted = _best(candidates(other, previous), fingerprint_match=lambda item: item.artifact == other)
+    assert tuple(item.artifact for item in hinted) == (other,)
 
 
 def test_padding_acceptance_is_balanced_for_every_nonzero_lagrange_weight() -> None:
