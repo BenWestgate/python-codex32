@@ -34,13 +34,6 @@ def _has_generation_padding(secret: MasterSeed) -> bool:
     return _payload_padding(secret) == _crc_pad(secret.seed_bytes)
 
 
-def _has_legacy_generation_padding(secret: MasterSeed) -> bool:
-    """Match the padding generated before CRC2-CRC4 gained their all-ones XOR."""
-    padding_bits = (len(secret.payload_symbols) * 5) % 8
-    final_xor = (1 << padding_bits) - 1 if padding_bits > 1 else 0
-    return _payload_padding(secret) == _crc_pad(secret.seed_bytes) ^ final_xor
-
-
 class MasterSeed(Secret):
     """A validated BIP93 ``ms`` secret."""
 
