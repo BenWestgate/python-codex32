@@ -28,11 +28,6 @@ def showing(view: Adw.NavigationView, page: Adw.NavigationPage) -> bool:
     return any(stack.get_item(position) is page for position in range(stack.get_n_items()))
 
 
-def busy() -> bool:
-    """Report whether an operation holds the gate, so a background poll can skip a turn."""
-    return _gate.locked()
-
-
 def run[Result](
     view: Adw.NavigationView,
     page: Adw.NavigationPage,

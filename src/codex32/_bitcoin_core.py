@@ -9,7 +9,7 @@ import shutil
 import string
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from time import sleep
 from typing import Literal
@@ -360,11 +360,16 @@ class BitcoinCore:
         unlocked = info.get("unlocked_until")
         return (unlocked is not None, unlocked == 0) if eligible else None
 
+    # One observation, never a wait: (name, encrypted, locked) for each eligible wallet among `names`,
+    # sorted. The CLI's menu and wait below and the GUI's wallet list all decide eligibility here.
+    def _eligible_wallets(self, names: Iterable[str]) -> tuple[tuple[str, bool, bool], ...]:
+        return tuple((name, *state) for name in sorted(names) if (state := self._target(name)) is not None)
+
     def _select(self, ask: Callable[[str], str], tell: Callable[[str], None]) -> str:
         def agree(name: str) -> bool:
             return ask(f"Use blank wallet {json.dumps(name)}? [y/N]").lower() in ("y", "yes")
 
-        choices = tuple(name for name in sorted(self._names()) if self._target(name) is not None)
+        choices = tuple(row[0] for row in self._eligible_wallets(self._names()))
         if len(choices) == 1 and agree(choices[0]):
             return choices[0]
         while True:
@@ -375,8 +380,7 @@ class BitcoinCore:
                 tell(f"  {len(choices) + 1}. Create another wallet in Bitcoin Core")
                 answer = ask("Choose a wallet number")
                 if answer.isdecimal() and 1 <= int(answer) <= len(choices):
-                    name = choices[int(answer) - 1]
-                    if agree(name):
+                    if agree(name := choices[int(answer) - 1]):
                         return name
                     continue
                 if answer != str(len(choices) + 1):
@@ -388,13 +392,12 @@ class BitcoinCore:
                 "private keys enabled."
             )
             tell("Waiting; press Ctrl-C to stop.")
-            while True:
+            appeared: tuple[str, ...] = ()
+            while not appeared:
                 sleep(1)
                 names = set(self._names())
-                appeared = tuple(name for name in sorted(names - before) if self._target(name) is not None)
-                if appeared:
-                    break
-            choices = tuple(name for name in sorted(names) if self._target(name) is not None)
+                appeared = tuple(row[0] for row in self._eligible_wallets(names - before))
+            choices = tuple(row[0] for row in self._eligible_wallets(names))
             if len(appeared) == 1 and agree(appeared[0]):
                 return appeared[0]
 

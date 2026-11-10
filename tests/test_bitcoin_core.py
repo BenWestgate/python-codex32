@@ -317,6 +317,21 @@ def test_no_wallet_immediately_requests_a_new_one(monkeypatch: pytest.MonkeyPatc
     assert messages[1] == "Waiting; press Ctrl-C to stop."
 
 
+def test_eligible_wallets_observe_once_and_see_a_wallet_become_eligible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BitcoinCore("bitcoin-cli", "main", 300000)
+    states = iter((None, (True, True)))
+    names: list[int] = []
+    monkeypatch.setattr(BitcoinCore, "_names", lambda _client: names.append(1) or ("later",))
+    monkeypatch.setattr(BitcoinCore, "_target", lambda _client, _name: next(states))
+
+    assert client._eligible_wallets(("later",)) == ()
+    assert client._eligible_wallets(("later",)) == (("later", True, True),)
+    assert client._eligible_wallets(()) == ()
+    assert names == []
+
+
 @dataclass
 class _ImportRPC:
     private: bool = True

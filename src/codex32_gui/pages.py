@@ -819,13 +819,20 @@ def _wallet_page(
             holder.remove(old)
         holder.append(group)
 
+    polling = False
+
     def refreshed(listed: tuple[wallet_setup.Wallet, ...] | Exception) -> None:
+        nonlocal polling
+        polling = False
         # A failed poll keeps the list shown; Continue reports Bitcoin Core's error if it persists.
         if isinstance(listed, tuple) and listed != found:
             show(listed)
 
     def poll() -> bool:
-        if view.get_visible_page() is page and not work.busy():
+        nonlocal polling
+        # One poll at a time: a slow Bitcoin Core must not pile up queued polls behind the gate.
+        if view.get_visible_page() is page and not polling:
+            polling = True
             work.run(view, page, lambda: wallet_setup.eligible(core), refreshed)
         return work.showing(view, page)
 

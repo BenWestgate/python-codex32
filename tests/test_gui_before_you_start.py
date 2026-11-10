@@ -165,3 +165,56 @@ def test_the_wallet_list_refreshes_like_the_cli_and_keeps_the_choice(monkeypatch
 
     view.pop()
     assert polls[0]() is False
+
+
+def _polled_page(monkeypatch: pytest.MonkeyPatch, found: tuple[Any, ...], *listed: tuple[Any, ...]) -> Any:
+    polls: list[Any] = []
+    answers = list(listed)
+    monkeypatch.setattr(pages.GLib, "timeout_add_seconds", lambda _seconds, poll: polls.append(poll))
+    monkeypatch.setattr(pages.wallet_setup, "eligible", lambda _core: answers.pop(0))
+    monkeypatch.setattr(pages.work, "run", lambda _view, _page, job, done: done(job()))
+    view = Adw.NavigationView()
+    view.push(pages.home(view))
+    view.push(pages._wallet_page(view, object(), object(), found, "now", None, False))  # type: ignore[arg-type]
+    return view, polls[0]
+
+
+def test_a_wallet_that_disappears_takes_the_choice_with_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    view, poll = _polled_page(monkeypatch, (_wallet("a"), _wallet("b")), (_wallet("b"),))
+    page = view.get_visible_page()
+    next(_widgets(page, Gtk.CheckButton)).set_active(True)
+    poll()
+    assert not any(choice.get_active() for choice in _widgets(page, Gtk.CheckButton))
+    assert not _button(page, "Continue").get_sensitive()
+
+
+def test_a_wallet_named_like_the_create_row_stays_its_own_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    named = _wallet("Create a new wallet")
+    imported: list[str] = []
+    monkeypatch.setattr(pages, "_import", lambda _view, _core, _secret, name, *_rest: imported.append(name))
+    view, poll = _polled_page(monkeypatch, (named,), (named, _wallet("z")))
+    page = view.get_visible_page()
+    list(_widgets(page, Gtk.CheckButton))[-1].set_active(True)
+    poll()
+    choices = list(_widgets(page, Gtk.CheckButton))
+    assert [choice.get_active() for choice in choices] == [False, False, True]
+    choices[0].set_active(True)
+    _button(page, "Continue").emit("clicked")
+    assert imported == ["Create a new wallet"]
+
+
+def test_a_slow_core_never_queues_a_second_poll(monkeypatch: pytest.MonkeyPatch) -> None:
+    polls: list[Any] = []
+    started: list[Any] = []
+    monkeypatch.setattr(pages.GLib, "timeout_add_seconds", lambda _seconds, poll: polls.append(poll))
+    monkeypatch.setattr(pages.work, "run", lambda _view, _page, job, done: started.append(done))
+    view = Adw.NavigationView()
+    view.push(pages.home(view))
+    view.push(pages._wallet_page(view, object(), object(), (), "now", None, False))  # type: ignore[arg-type]
+
+    polls[0]()
+    polls[0]()
+    assert len(started) == 1
+    started[0](())
+    polls[0]()
+    assert len(started) == 2
