@@ -206,7 +206,7 @@ On the offline signer, create an empty encrypted descriptor wallet with private
 keys enabled and run `ms32 wallet`. Keep that computer disconnected from every
 network while recovery text or signing keys are present.
 
-After the signer is restored, follow Bitcoin Core v32's maintained
+After the signer is restored, follow Bitcoin Core's maintained
 [offline-signing tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md).
 That workflow owns the watch-only export/import and PSBT transport steps. In
 Bitcoin Core v32, `exportwatchonlywallet` creates the watch-only wallet file and
@@ -263,8 +263,8 @@ results disagree, or the wallet is multisig or nonstandard.
 ### Multisig cosigner recovery
 
 Restore the cosigner's private Bitcoin Core wallet with `ms32 wallet`, then
-follow Bitcoin Core v32's maintained
-[multisig tutorial](https://github.com/bitcoin/bitcoin/blob/v32.0rc1/doc/multisig-tutorial.md).
+follow Bitcoin Core's maintained
+[multisig tutorial](https://github.com/bitcoin/bitcoin/blob/master/doc/multisig-tutorial.md).
 
 ### Card maintenance and damaged writing
 
