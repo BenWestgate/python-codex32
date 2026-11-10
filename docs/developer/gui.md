@@ -60,7 +60,8 @@ about 250 lines, and the rest of the difference is user-facing wording in
    page a rewrite has just added keeps what it holds, and a page a rewrite drops
    is cleared.
 6. **One worker, and no callback touches a page that is gone.** `work.run`
-   refuses to start a second operation, delivers its result through
+   queues a second operation behind one gate, so an import waits for the
+   once-a-second wallet-list poll instead of overlapping it, delivers its result through
    `GLib.idle_add`, and drops it unless `work.showing` finds the page still on
    the stack — being rooted in the window is not the test, because a page keeps
    its root for the length of the navigation animation. It delivers from
@@ -164,7 +165,6 @@ library's.
 
 - A 74- or 127-character card scrolls sideways in the entry field, because it is
   one `Gtk.Entry`. A 48-character card fits.
-- The list of empty Bitcoin Core wallets refreshes when asked, not on its own.
 - Widget construction is not covered by pytest, because it needs a display.
   `tools/gui_walkthrough.py` covers it instead, under `xvfb-run`.
 - Selecting text inside the entry field hands it to the primary selection for
