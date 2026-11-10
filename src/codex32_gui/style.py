@@ -11,7 +11,7 @@ CSS = """
   font-size: 1.1rem;
   letter-spacing: 0.06em;
 }
-.card-group {
+.card-group, .property .subtitle {
   font-family: monospace;
   font-size: 1.35rem;
   font-weight: bold;
