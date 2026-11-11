@@ -566,8 +566,7 @@ Without it, a 24-byte seed extended with zero bits to 64 bytes would keep valid
 padding, since both sizes use CRC3. With it, the extended padding never
 matches, because the 320 added bits are not a multiple of CRC3's period of 7.
 CRC1 stays without an XOR because an XOR there would give every all-zero
-28-byte seed valid padding. Correction tie-breaks consider only the current
-generation CRC padding. Historical padding formats receive no special preference.
+28-byte seed valid padding.
 
 The polynomials appear in the [Koopman CRC catalogue](https://users.ece.cmu.edu/~koopman/crc/index.html),
 including its [CRC-3](https://users.ece.cmu.edu/~koopman/crc/crc3.html) and
