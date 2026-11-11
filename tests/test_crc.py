@@ -17,9 +17,9 @@ from codex32.profiles.ms32 import SEED_BYTE_LENGTHS, _has_generation_padding, _p
     (
         (bytes(range(20)), 0, 0),
         (bytes(range(18)), 1, 0),
-        (bytes(range(16)), 2, 2),
-        (bytes(range(19)), 3, 7),
-        (bytes(range(17)), 4, 11),
+        (bytes(range(16)), 2, 1),
+        (bytes(range(19)), 3, 0),
+        (bytes(range(17)), 4, 4),
     ),
 )
 def test_frozen_crc_padding_values(data: bytes, padding_bits: int, expected: int) -> None:
@@ -31,12 +31,14 @@ def test_frozen_crc_padding_values(data: bytes, padding_bits: int, expected: int
 def test_compact_crc_definitions_are_unchanged() -> None:
     assert _CRC[0] is None
     assert tuple(
-        (checksum.kind, checksum.generators, checksum.length) for checksum in _CRC[1:] if checksum is not None
+        (checksum.kind, checksum.generators, checksum.length, checksum.constant)
+        for checksum in _CRC[1:]
+        if checksum is not None
     ) == (
-        ("CRC1", (1,), 1),
-        ("CRC2", (3,), 2),
-        ("CRC3", (3,), 3),
-        ("CRC4", (3,), 4),
+        ("CRC1", (1,), 1, 0),
+        ("CRC2", (3,), 2, 0b11),
+        ("CRC3", (3,), 3, 0b111),
+        ("CRC4", (3,), 4, 0b1111),
     )
 
 

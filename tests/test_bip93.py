@@ -60,10 +60,10 @@ def test_vector_2_public_api_derives_and_recovers() -> None:
 
 def test_vector_3_factory_and_public_derivation() -> None:
     seed = bytes.fromhex(VECTOR_3["secret_hex"])
-    secret = MasterSeed.from_seed(seed, identifier="cash", threshold=3)
-    assert secret.text == VECTOR_3["secret_s"]
+    generated = MasterSeed.from_seed(seed, identifier="cash", threshold=3)
+    assert generated.text == VECTOR_3["secret_s_alternate_3"]
     basis = [
-        secret,
+        parse_codex32(VECTOR_3["secret_s"]),
         parse_codex32(VECTOR_3["share_a"]),
         parse_codex32(VECTOR_3["share_c"]),
     ]
@@ -78,7 +78,7 @@ def test_vector_3_factory_and_public_derivation() -> None:
 def test_vector_4_all_arbitrary_parsed_padding() -> None:
     seed = bytes.fromhex(VECTOR_4["secret_hex"])
     generated = MasterSeed.from_seed(seed, identifier="leet")
-    assert generated.text == VECTOR_4["secret_s_alternate_8"]
+    assert generated.text == VECTOR_4["secret_s_alternate_7"]
     for pad_value in range(16):
         alternate = parse_codex32(VECTOR_4[f"secret_s_alternate_{pad_value}"])
         assert isinstance(alternate, MasterSeed)

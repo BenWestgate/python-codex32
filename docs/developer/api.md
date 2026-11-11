@@ -554,12 +554,19 @@ The reproducible bit convention matters as much as the polynomial name:
 - the generator integers encode the lower polynomial coefficients (`1` for
   CRC1 and `0b11` for CRC2–CRC4); the leading `x^p` coefficient is implicit;
 - `p` zero bits are appended before reading the result;
-- the final XOR/residue constant is zero;
+- the final XOR is all ones for CRC2–CRC4 and zero for CRC1;
 - the `p` result bits are emitted register-most-significant bit first and become
   the otherwise discarded payload bits.
 
 Representative all-zero seed outputs for lengths 16 through 20 bytes are
-`2, 6, 1, 2, 0`, corresponding to `2, 4, 1, 3, 0` padding bits.
+`1, 9, 1, 5, 0`, corresponding to `2, 4, 1, 3, 0` padding bits.
+
+The all-ones XOR matches the spare-bit CRC of the codex32 key-expressions draft.
+Without it, a 24-byte seed extended with zero bits to 64 bytes would keep valid
+padding, since both sizes use CRC3. With it, the extended padding never
+matches, because the 320 added bits are not a multiple of CRC3's period of 7.
+CRC1 stays without an XOR because an XOR there would give every all-zero
+28-byte seed valid padding.
 
 The polynomials appear in the [Koopman CRC catalogue](https://users.ece.cmu.edu/~koopman/crc/index.html),
 including its [CRC-3](https://users.ece.cmu.edu/~koopman/crc/crc3.html) and
