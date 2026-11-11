@@ -22,6 +22,14 @@ class FingerprintMismatch(BitcoinCoreError):
     """The recovered seed is not the wallet the operator's record describes."""
 
 
+class ChainChoice(BitcoinCoreError):
+    """Several networks answer and nothing can prompt; pass one of `chains` to `connect`."""
+
+    def __init__(self, chains: tuple[str, ...]) -> None:
+        super().__init__("More than one local Bitcoin Core network is running.")
+        self.chains = chains
+
+
 _CHAINS = (
     ("main", "mainnet"),
     ("test", "testnet3"),
@@ -81,6 +89,8 @@ class BitcoinCore:
         cls,
         ask: Callable[[str], str] | None = None,
         tell: Callable[[str], None] | None = None,
+        *,
+        chain: str | None = None,
     ) -> BitcoinCore:
         executable = shutil.which("bitcoin-cli")
         if executable is None:
@@ -89,8 +99,8 @@ class BitcoinCore:
                 "enabled. An unsynced regtest or signet node is enough for practice."
             )
         choices: list[BitcoinCore] = []
-        for chain, _label in _CHAINS:
-            client = cls(executable, chain, 0)
+        for candidate, _label in _CHAINS:
+            client = cls(executable, candidate, 0)
             try:
                 network = client._rpc("getnetworkinfo", timeout=5)
                 blockchain = client._rpc("getblockchaininfo", timeout=5)
@@ -98,18 +108,20 @@ class BitcoinCore:
                 continue
             version = network.get("version") if isinstance(network, dict) else None
             reported = blockchain.get("chain") if isinstance(blockchain, dict) else None
-            if isinstance(version, bool) or not isinstance(version, int) or reported != chain:
+            if isinstance(version, bool) or not isinstance(version, int) or reported != candidate:
                 continue
             if version >= 320000:
-                choices.append(cls(executable, chain, version))
+                choices.append(cls(executable, candidate, version))
         if not choices:
             raise BitcoinCoreError(
                 "No local Bitcoin Core 32 or newer RPC server found.\nStart Bitcoin Core "
                 "with local RPC enabled.\nFor signet practice: bitcoin-qt -signet -server"
             )
+        if chain is not None and not (choices := [choice for choice in choices if choice.chain == chain]):
+            raise BitcoinCoreError("Bitcoin Core is no longer running on that network.")
         if len(choices) > 1:
             if ask is None or tell is None:
-                raise BitcoinCoreError("More than one local Bitcoin Core network is running.")
+                raise ChainChoice(tuple(choice.chain for choice in choices))
             tell("Local Bitcoin Core networks:")
             for number, choice in enumerate(choices, 1):
                 tell(f"  {number}. {dict(_CHAINS)[choice.chain]}")
@@ -354,8 +366,12 @@ class BitcoinCore:
         expected_fingerprint: bytes | None,
         account: int = 0,
         timestamp: int | Literal["now"] = "now",
+        wallet: str | None = None,
     ) -> str:
-        """Validate input and identity before selecting or changing a wallet."""
+        """Validate input and identity before selecting or changing a wallet.
+
+        A named `wallet` is used without prompting, and must still be an empty one.
+        """
         if not isinstance(secret, MasterSeed):
             raise TypeError("wallet operations accept only MasterSeed")
         if type(account) is not int or account != 0:
@@ -364,8 +380,10 @@ class BitcoinCore:
             raise ValueError("timestamp must be a nonnegative integer or 'now'")
         self.verify_identity(secret, expected_fingerprint)
         while True:
-            name = self._select(ask, tell)
+            name = self._select(ask, tell) if wallet is None else wallet
             state = self._target(name)
+            if state is None and wallet is not None:
+                raise BitcoinCoreError("That wallet is no longer an empty one codex32 can fill.")
             if state is None:
                 tell("That wallet is no longer eligible. Choose again.")
                 continue
