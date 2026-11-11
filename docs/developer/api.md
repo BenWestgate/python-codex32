@@ -152,8 +152,9 @@ accepts only `ms` artifacts.
 
 ## Secret generation
 
-`generation.py` is the only module that draws entropy. It generates and
-splits BIP93 master seeds only.
+`generation.py` is the only module that draws entropy. It draws every random
+byte from its caller's `entropy(length)` source, which must return exactly the
+requested number of bytes, and generates and splits BIP93 master seeds only.
 
 Fresh unshared seeds default to 16 bytes and use the first 20 bits of their
 BIP32 fingerprint as public identifier metadata. Fresh shared sets use four
@@ -169,17 +170,18 @@ boundary; there is no legacy decoder.
 The one-shot function creates only unshared secrets:
 
 ```python
-generate_master_seed(seed_bytes=None, *, byte_length=None, identifier=None, fingerprint=None)
+generate_master_seed(seed_bytes=None, *, byte_length=None, identifier=None, fingerprint=None, entropy=None)
 ```
 
 A fresh seed with no `identifier` needs `fingerprint`: a callable that takes
 the seed bytes and returns their four-byte BIP32 master fingerprint. This
 package has no secp256k1 arithmetic, so the CLI asks Bitcoin Core. Without
-either argument, fresh generation raises `ValueError`.
+either argument, fresh generation raises `ValueError`, as does any draw without
+an entropy source.
 
 Shared creation uses `CreationCeremony.master_seed(...)` or
-`CreationCeremony.from_secret(...)`. Exactly one of `share_count` and `indices`
-is required. `next_share()` returns one pending share, `confirm(text)` must
+`CreationCeremony.from_secret(...)`; both require `entropy`. Exactly one of
+`share_count` and `indices` is required. `next_share()` returns one pending share, `confirm(text)` must
 accept its independently re-entered string, and `finish()` returns the secret
 only after every requested share is confirmed. There is no public one-shot
 sharing or `split_secret` function. Fresh and existing Bitcoin CLI creation
@@ -206,12 +208,11 @@ The ceremony follows the two BIP93 constructions:
 - a fresh set draws `k` independent complete u5 masks;
 - an existing S uses S plus `k-1` independent complete u5 masks.
 
-Each direct share uses a separate `secrets.token_bytes` request and cannot be
-followed by another draw until its string is confirmed. The pause gives the OS an
-opportunity to mix fresh noise; Python cannot guarantee that new physical
-entropy arrives between calls. User input is never treated as entropy. Each
-byte is mapped with `value & 31`, which maps exactly eight byte values to each
-u5 value.
+Each direct share uses a separate `entropy` request and cannot be followed by
+another draw until its string is confirmed. The pause gives the source an
+opportunity to mix fresh noise; nothing guarantees new physical entropy between
+calls. User input is never used as share bytes. Symbols are the drawn bytes
+regrouped five bits at a time, so `n` symbols take `ceil(5n/8)` bytes.
 
 Creation confirmation preserves whitespace-separated entered groups as units,
 even when moving characters between groups would reduce edits or red groups.
@@ -258,9 +259,9 @@ remain fixed. That padding rule is not BIP93 validity: parsed S strings may use
 any application-valid discarded bits, which re-sharing preserves exactly. CRC
 never applies to shares.
 
-Explicit output indices preserve caller order. A share count uses
-`SystemRandom.sample` over the 31 ordinary indices and preserves sample order.
-There is no entropy injection, sorting, caller-supplied partial-basis
+Explicit output indices preserve caller order. A share count picks from the 31
+ordinary indices by rejection sampling `entropy` bytes, in draw order. There is
+no sorting, caller-supplied partial-basis
 completion, or BIP39 generation. Ceremonies reject copying and serialization;
 the CLI does not resume an interrupted ceremony.
 

@@ -27,9 +27,11 @@ from codex32.errors import InvalidIdentifier, InvalidShareIndex, InvalidThreshol
 
 def test_backup_workflows_need_only_the_standard_library() -> None:
     source = """
+from secrets import token_bytes
+
 from codex32 import CreationCeremony, CorrectionContext, Profile, correct, derive_share, parse_codex32, recover_secret
 
-ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test")
+ceremony = CreationCeremony.master_seed(threshold=2, indices="ac", identifier="test", entropy=token_bytes)
 shares = []
 for _ in range(2):
     share = ceremony.next_share()

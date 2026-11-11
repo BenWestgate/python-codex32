@@ -26,7 +26,7 @@ fingerprints, and wallet history cannot spend funds but remain privacy-sensitive
 | Package API | Recovery, derivation, sharing, and wallet operations accept validated artifacts, not unchecked text. |
 | Python process | Secret objects remain in process memory; normal output must not reveal them unintentionally. |
 | Operator and paper | The operator controls transcription, physical recovery cards, wallet records, and acceptance of correction suggestions. |
-| Entropy and root keys | The operating-system cryptographically secure random-number generator (OS-CSPRNG) and Python stdlib HMAC/SHA-512 primitives are trusted. codex32 performs only BIP32 root validation and root xprv/tprv serialization in process. |
+| Entropy and root keys | CLI generation trusts the OS cryptographically secure random-number generator (OS-CSPRNG). Python API generation trusts the caller's `entropy(length)` source to supply unpredictable cryptographic bytes; type and length checks cannot establish entropy quality. Python stdlib HMAC/SHA-512 primitives are trusted. codex32 performs only BIP32 root validation and root xprv/tprv serialization in process. |
 | Bitcoin Core | The selected `bitcoin-cli`, its configuration, the selected local Core instance, and the destination computer are trusted for fingerprints, hardened/public-key derivation, and wallet initialization. |
 
 ## Operator assumptions
@@ -64,8 +64,9 @@ The operator must:
   implementation. Elliptic-curve public-key derivation used for fingerprints,
   xpubs, and public descriptors is delegated to the separately running Bitcoin
   Core process.
-- Separate OS-CSPRNG calls provide opportunities to mix fresh noise but cannot
-  guarantee new physical entropy between calls.
+- Separate entropy-source calls offer fresh draws but cannot guarantee new
+  physical entropy or independence between calls. API callers must use a
+  cryptographically secure source; the CLI uses the OS-CSPRNG.
 - A checksum, generation-padding hint, fingerprint, or correction candidate
   does not authenticate a backup or prove the operator's intent.
 - Creation feedback identifies correct groups but does not prove the recovery card was corrected.
@@ -116,7 +117,8 @@ complete explicit `ms1` string.
 ## Creation, sharing, and recovery controls
 
 Fresh shared creation generates *k* random initial shares. Each uses a separate
-full-payload OS-CSPRNG request. The current share string must be re-entered
+full-payload request to the supplied entropy source (the OS-CSPRNG in the
+CLI). The current share string must be re-entered
 exactly, ignoring case and whitespace, before the next request. Confirmation
 text is never reparsed as the source secret and contributes no entropy. Existing
 complete Bitcoin master seeds are confirmed unchanged and initialize the wallet
@@ -132,9 +134,9 @@ Progressive group-level correctness feedback is explicitly accepted and does not
 
 Confirmation shows that the operator can produce the correct recovery string during setup. It cannot prove that the physical backup was corrected rather than reconstructed using confirmation feedback.
 
-The API accepts neither caller-provided entropy nor padding values, partial
-bases, or resumable ceremony state. Fresh creation rejects final-share
-candidates whose generation padding is invalid. Master-seed creation also
+The API requires caller-provided cryptographic entropy for random draws and
+accepts no caller-supplied padding values, partial bases, or resumable ceremony
+state. Fresh creation rejects final-share candidates whose generation padding is invalid. Master-seed creation also
 rejects candidates that cannot form a valid BIP32 root. This check uses only
 stdlib HMAC-SHA512 plus the secp256k1 scalar-order bound; it performs no point
 multiplication. The original ceremony result, not re-entered text, remains the
