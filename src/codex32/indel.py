@@ -159,7 +159,13 @@ def _alignment_counts(
     return counts
 
 
-def _views(text: str, target: int, shape: _StructuralClass, immutable: int, base: int) -> Iterator[_View]:
+def _views(
+    text: str, target: int, shape: _StructuralClass, immutable: int, base: int, deadline: float | None = None
+) -> Iterator[_View]:
+    # Skipped repeated-symbol scripts can run for minutes between yields; poll here.
+    def expired() -> bool:
+        return deadline is not None and monotonic() >= deadline
+
     source = tuple(CHARSET.find(char.lower()) for char in text[base:])
     initial = _View(source, ((0, len(source)),), len(source))
     boundary = (immutable if shape.unit == 1 else _group_boundary(immutable)) - base
@@ -167,7 +173,9 @@ def _views(text: str, target: int, shape: _StructuralClass, immutable: int, base
     if not (shape.adjacent or shape.distant or shape.corrupted):
         observed_units = (len(source) - boundary) // width
         target_units = (target - base - boundary) // width
-        for deleted in combinations(range(observed_units), shape.inserted):
+        for number, deleted in enumerate(combinations(range(observed_units), shape.inserted)):
+            if number % 1024 == 0 and expired():
+                return
             # Canonical deletion within a run of equal units; no retained-body allocation.
             if any(
                 i
@@ -197,6 +205,8 @@ def _views(text: str, target: int, shape: _StructuralClass, immutable: int, base
             rest = operations[:index] + operations[index + 1 :]
             if operation in ("I", "O", "GS"):
                 for unit in range(units + (operation == "O")):
+                    if expired():
+                        return
                     position = boundary + width * unit
                     yield from walk(
                         view.mask(position, width)
@@ -212,6 +222,8 @@ def _views(text: str, target: int, shape: _StructuralClass, immutable: int, base
                         range(left + 1, min(left + 2, units)) if operation == "AT" else range(left + 2, units)
                     )
                     for right in rights:
+                        if expired():
+                            return
                         p, q = boundary + width * left, boundary + width * right
                         if all(view[p + i] == view[q + i] for i in range(width)):
                             continue
@@ -489,7 +501,9 @@ def _search_target(
         if incremental is None:
             incremental = _IncrementalSyndromes(solver.alignment, source)
         alignments = (
-            _views(text, state.target, shape, state.immutable, state.base) if views is None else views
+            _views(text, state.target, shape, state.immutable, state.base, deadline)
+            if views is None
+            else views
         )
         for number, view in enumerate(alignments):
             if number % 32 == 0 and deadline is not None and monotonic() >= deadline:
@@ -544,7 +558,7 @@ def _search_target(
                 candidate = replace(candidate, edits=candidate.edits + tuple(moved))
             if candidate.capture_volume == frontier[key]:
                 _keep(results, candidate)
-    return True
+    return deadline is None or monotonic() < deadline
 
 
 def _search_many(
