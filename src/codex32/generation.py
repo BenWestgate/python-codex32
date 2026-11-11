@@ -83,9 +83,13 @@ def _indices(values: Sequence[str] | str) -> tuple[str, ...]:
         raise InvalidShareSelection("at most 31 shares may be requested")
     copied: tuple[object, ...] = tuple(values[position] for position in range(len(values)))
     normalized = tuple(_index(value) for value in copied)
-    if len(set(normalized)) != len(normalized):
-        raise InvalidShareSelection("output indices must be distinct")
-    return normalized
+    counts = {value: normalized.count(value) for value in normalized}
+    return tuple(
+        value
+        for round_number in range(max(counts.values(), default=0))
+        for value in dict.fromkeys(normalized)
+        if counts[value] > round_number
+    )
 
 
 def _selection(threshold: int, share_count: object, indices: Sequence[str] | str | None) -> tuple[str, ...]:
@@ -99,8 +103,8 @@ def _selection(threshold: int, share_count: object, indices: Sequence[str] | str
         return tuple(secrets.SystemRandom().sample(ORDINARY_INDICES, share_count))
     assert indices is not None
     selected = _indices(indices)
-    if len(selected) < threshold:
-        raise InvalidShareSelection(f"at least {threshold} indices are required")
+    if len(set(selected)) < threshold:
+        raise InvalidShareSelection(f"at least {threshold} distinct indices are required")
     return selected
 
 
@@ -171,6 +175,7 @@ class CreationCeremony:
     """Generate and confirm one shared-backup card at a time."""
 
     _basis: list[Secret | Share]
+    _confirmed: dict[str, Share]
     _direct_count: int
     _finished: bool
     _indices: tuple[str, ...]
@@ -201,6 +206,7 @@ class CreationCeremony:
         self._payload_length = payload_length
         self._threshold, self._set_identifier = threshold, identifier
         self._indices = _selection(threshold, share_count, indices)
+        self._confirmed = {}
         self._position, self._pending, self._finished = 0, None, False
         if secret is None:
             self._secret, self._basis, self._direct_count = None, [], threshold
@@ -273,7 +279,7 @@ class CreationCeremony:
         return _valid_root(secret.seed_bytes) and _ms_padding(secret)
 
     def next_share(self) -> Share:
-        """Generate or derive the next card after the previous card is confirmed."""
+        """Generate or copy the next card after the previous card is confirmed."""
         if self._finished:
             raise CeremonyStateError("this creation ceremony is finished")
         if self._pending is not None:
@@ -281,7 +287,9 @@ class CreationCeremony:
         if self._position == len(self._indices):
             raise CeremonyStateError("all cards are confirmed; finish the ceremony")
         index = self._indices[self._position]
-        if self._position < self._direct_count:
+        if index in self._confirmed:
+            pending = self._confirmed[index]
+        elif self._position < self._direct_count:
             while True:
                 pending = _random_share(
                     self._threshold,
@@ -320,6 +328,7 @@ class CreationCeremony:
             return ConfirmationResult(False, mismatched)
         if self._position < self._direct_count:
             self._basis.append(self._pending)
+        self._confirmed[self._pending.header.index] = self._pending
         self._position += 1
         self._pending = None
         return ConfirmationResult(True)
@@ -334,6 +343,7 @@ class CreationCeremony:
         assert isinstance(secret, MasterSeed)
         self._finished = True
         self._basis.clear()
+        self._confirmed.clear()
         self._indices = ()
         self._secret = None
         return secret
