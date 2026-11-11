@@ -106,6 +106,7 @@ codex32 strings.
 Printable forms:
 
 - [codex32 recovery card](docs/user/recovery-card.html)
+- [codex32 recovery card, 256-bit](docs/user/recovery-card-256.html)
 - [wallet-verification record](docs/user/wallet-verification-record.html)
 
 ## For developers and reviewers
