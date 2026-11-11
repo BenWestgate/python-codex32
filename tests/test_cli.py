@@ -1811,6 +1811,66 @@ def test_cli_rejects_sixteen_consecutive_erasures_as_outside_regular_bound() -> 
     assert "No valid correction found" in result.stderr
 
 
+def _later_one(text: str) -> str:
+    return text[:15] + "1" + text[16:]
+
+
+def test_ms32_first_string_corrects_a_later_one_as_an_erasure() -> None:
+    from codex32._cli_input import _suggestions
+
+    original = VECTOR_1["secret_s"]
+    damaged = _later_one(original)
+
+    result = _invoke(["correct", "--bytes", "16"], damaged)
+
+    assert result.exit_code == 1
+    assert original in result.stderr
+    for prefix in ("", "MS1"):
+        candidates = _suggestions(damaged, prefix, (Profile.MS,), [])
+        assert [candidate.artifact.text for candidate in candidates] == [original]
+
+
+def test_codex32_first_string_takes_its_hrp_from_the_last_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    from codex32._cli_input import _suggestions
+
+    damaged = _later_one(VECTOR_1["secret_s"])
+    searched: list[tuple[object, ...]] = []
+
+    def search(*args: object, **_kwargs: object) -> tuple[tuple[CorrectionCandidate, ...], bool]:
+        searched.append(args)
+        return (), True
+
+    monkeypatch.setattr("codex32.cli._scheduled_candidates", search)
+    monkeypatch.setattr("codex32._cli_input._scheduled_candidates", search)
+
+    assert _invoke(["correct"], damaged).exit_code == 3
+    assert _suggestions(damaged, "", None, []) == ()
+    # Bech32's separator is the last "1": the ms namespace is never searched.
+    assert [(args[2], args[4]) for args in searched] == [(damaged[:15], damaged[:16])] * 2
+
+
+@pytest.mark.parametrize("profiles", (None, (Profile.MS,)))
+def test_later_set_strings_correct_a_one_after_the_first_hrp(profiles: tuple[Profile, ...] | None) -> None:
+    input_module = importlib.import_module("codex32._cli_input")
+    first, original = VECTOR_2["share_A"], VECTOR_2["share_C"]
+    accepted: list[Share | Secret] = [parse_codex32(first)]
+    damaged = _later_one(original)
+
+    interactive = input_module._suggestions(
+        damaged, input_module._accepted_prefix(accepted), profiles, accepted
+    )
+    with (
+        patch.object(input_module, "_stdin", lambda: f"{first} {damaged}"),
+        patch.object(input_module, "_confirm_correction", lambda *_args: True),
+    ):
+        redirected = input_module._redirected(
+            profiles, basis=False, one=False, excluded_index=None, fingerprint=None
+        )
+
+    assert [candidate.artifact.text for candidate in interactive] == [original]
+    assert [artifact.text for artifact in redirected] == [first, original]
+
+
 def test_correct_rejects_malformed_immutable_hrp_as_usage() -> None:
     damaged = "é" + VECTOR_1["secret_s"][1:]
 

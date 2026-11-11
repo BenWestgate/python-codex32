@@ -229,6 +229,20 @@ def test_immutable_confirmed_header_reduces_domains_and_cannot_be_repaired() -> 
     assert correct(context, SOURCE[:5] + "?" + SOURCE[6:]) == ()
 
 
+def test_context_supplied_hrp_makes_a_later_one_an_erasure() -> None:
+    damaged = SOURCE[:15] + "1" + SOURCE[16:]
+    cases = (
+        (CONTEXT, damaged),
+        (CorrectionContext(Profile.MS), damaged.upper()),
+        (CorrectionContext(Profile.MS, 48, SOURCE[:8]), damaged),
+    )
+
+    for context, text in cases:
+        candidates = correct(context, text)
+        assert [candidate.artifact.text.lower() for candidate in candidates] == [SOURCE]
+        assert [edit.kind for edit in candidates[0].edits] == ["erasure"]
+
+
 def test_header_pruning_is_a_lossless_lower_bound() -> None:
     ordinary = [0, 1, 2, 3, 4, 5]
     ordinary[0] = 15  # threshold 0

@@ -182,7 +182,9 @@ def _search_competitors(
     completed: set[_Layer] = set()
     try:
         for state in states:
-            if not optional_only and _FIXED in state.counts:
+            # Coverage proofs read a missing witness as a failed decode, so the
+            # optional pass recomputes each fixed witness instead of omitting it.
+            if _FIXED in state.counts:
                 _check_deadline(deadline)
                 fixed[state.target] = _search_fixed(state, frontier, results, allowed)
         targets = {state.target: state for state in states}

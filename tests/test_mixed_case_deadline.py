@@ -5,8 +5,9 @@ from time import monotonic
 
 import pytest
 
-from codex32 import Profile
+from codex32 import CorrectionContext, MasterSeed, Profile
 from codex32._cli_input import _case_interpretation, _correction_candidates, _scheduled_candidates
+from codex32.correction import _correct_complete
 
 SOURCE = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw"
 
@@ -81,3 +82,26 @@ def test_scheduled_truncation_survives_a_complete_later_pass(monkeypatch: pytest
     assert [(candidate.artifact.text, candidate.search_complete) for candidate in candidates] == [
         (SOURCE, False)
     ]
+
+
+@pytest.mark.parametrize("entry", ("public", "cli"))
+def test_case_interpretations_share_one_admission_ledger(entry: str) -> None:
+    # Thirteen minority-case symbols: alone, the erased reading admits a
+    # whole-checksum completion; the normalized reading must share that mass.
+    source = MasterSeed.from_seed(bytes(16), identifier="test").text
+    damaged = source[:10] + "P" * 13 + source[23:]
+    deadline = monotonic() + 1
+    if entry == "public":
+        candidates, _complete = _correct_complete(
+            CorrectionContext(Profile.MS, 48), damaged, deadline=deadline
+        )
+    else:
+        interpretation = _case_interpretation(damaged, "", (Profile.MS,), None)
+        assert interpretation is not None
+        _direct, normalized, erased, _prefix = interpretation
+        candidates, _complete = _scheduled_candidates(
+            normalized, erased, Profile.MS, None, "ms1", target=48, deadline=deadline
+        )
+
+    for candidate in candidates:
+        assert candidate.cumulative_capture_volume <= 1 << candidate.capture_space_bits
