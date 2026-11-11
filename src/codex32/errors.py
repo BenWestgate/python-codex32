@@ -28,8 +28,6 @@ InvalidBip39Checksum = _error("InvalidBip39Checksum", CodexError, "The BIP39 che
 InvalidShareSet = _error("InvalidShareSet", CodexError, "Artifacts cannot form an interpolation set.")
 WrongShareCount = _error("WrongShareCount", InvalidShareSet, "The share count differs from its threshold.")
 MismatchedHrp = _error("MismatchedHrp", InvalidShareSet, "Application prefixes differ.")
-# Compatibility name retained across the 1.0 boundary.
-MismatchedProfile = MismatchedHrp
 MismatchedThreshold = _error("MismatchedThreshold", InvalidShareSet, "Thresholds differ.")
 MismatchedIdentifier = _error("MismatchedIdentifier", InvalidShareSet, "Identifiers differ.")
 MismatchedPayloadLength = _error("MismatchedPayloadLength", InvalidShareSet, "Payload lengths differ.")
