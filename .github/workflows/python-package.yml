@@ -37,7 +37,12 @@ jobs:
       - run: python -m ruff format --check .
       - run: python tools/differential_correction.py --verify
       - run: python -m build --no-isolation
-      - run: python tools/verify_wheel_environment.py
+      - name: Test the built wheel
+        shell: bash
+        run: |
+          python -m pip install --force-reinstall --no-deps dist/codex32-*.whl
+          python -c "import codex32, pathlib; assert 'site-packages' in pathlib.Path(codex32.__file__).parts"
+          python -m pytest -q
 
   compatibility:
     runs-on: ubuntu-latest
