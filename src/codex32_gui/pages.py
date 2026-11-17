@@ -45,7 +45,10 @@ PRESETS = (
     (3, 5, "Five cards, any three recover"),
     (0, 1, "One card"),
 )
-CREATE_WALLET = "Create a new wallet"
+CREATE_ROW = (
+    "Create a new wallet",
+    "codex32 asks Bitcoin Core for a blank wallet, with a passphrase you choose",
+)
 HANDWRITING = (
     "Mark the look-alikes as you write: slash every 0, cross 7 and Z, write S like $, close the loops of 6 "
     "and 9, and give G an open, obvious bar. Then 5 and S, 6 and G, and 2 and Z stay apart."
@@ -350,17 +353,17 @@ def _guessed(observed: str, corrected: str) -> frozenset[int]:
     return frozenset(changed)
 
 
-def _radio_group(group: Adw.PreferencesGroup, rows: Sequence[tuple[str, str]]) -> list[Gtk.CheckButton]:
-    """Build one radio row per choice. Rows carry Bitcoin Core's text, so none of it is markup."""
-    first: Gtk.CheckButton | None = None
+def _radio_group(
+    group: Adw.PreferencesGroup, rows: Sequence[tuple[str, str]], action: Gtk.Button
+) -> list[Gtk.CheckButton]:
+    """Build one radio row per choice, none chosen; `action` waits for one. Core's text is never markup."""
+    # A hidden leader groups even one row, so it is a radio that cannot be unticked. Handlers keep it alive.
+    leader = Gtk.CheckButton()
+    action.set_sensitive(False)
     buttons: list[Gtk.CheckButton] = []
     for label, detail in rows:
-        choice = Gtk.CheckButton()
-        if first is None:
-            first = choice
-            choice.set_active(True)
-        else:
-            choice.set_group(first)
+        choice = Gtk.CheckButton(group=leader)
+        choice.connect("toggled", lambda _choice, _leader=leader: action.set_sensitive(True))
         row = Adw.ActionRow(title=label, subtitle=detail, activatable_widget=choice, use_markup=False)
         row.add_prefix(choice)
         group.add(row)
@@ -434,15 +437,15 @@ def _network_page(
     then: Callable[[BitcoinCore], Adw.NavigationPage],
 ) -> Adw.NavigationPage:
     group = Adw.PreferencesGroup(title="Bitcoin Core is running on more than one network")
-    buttons = _radio_group(group, [(label, "") for label in options])
-    content = _column(
-        _title("Which network?", "Practise on signet. Use mainnet only for coins you cannot replace."),
-        group,
-    )
     action = _button(
         "Continue",
         lambda: _connect(view, options[_selected(buttons)], then),
         style="suggested-action",
+    )
+    buttons = _radio_group(group, [(label, "") for label in options], action)
+    content = _column(
+        _title("Which network?", "Practise on signet. Use mainnet only for coins you cannot replace."),
+        group,
     )
     return _page("Network", content, actions=_actions(action))
 
@@ -590,7 +593,8 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
         "Something else": "Choose the numbers yourself, and the size of the seed.",
     }
     group = Adw.PreferencesGroup()
-    buttons = _radio_group(group, [(label, details[label]) for label in details])
+    action = _button("Continue", lambda: begin(), style="suggested-action")
+    buttons = _radio_group(group, [(label, details[label]) for label in details], action)
     custom = Adw.PreferencesGroup(title="Your own combination", visible=False)
     needed = Adw.SpinRow(
         title="Cards needed to recover",
@@ -638,9 +642,7 @@ def _layout_page(view: Adw.NavigationView, core: BitcoinCore) -> Adw.NavigationP
         group,
         custom,
     )
-    return _page(
-        "New wallet", content, actions=_actions(_button("Continue", begin, style="suggested-action"))
-    )
+    return _page("New wallet", content, actions=_actions(action))
 
 
 def _ready_page(
@@ -810,10 +812,43 @@ def _wallet_page(
     restoring: bool,
 ) -> Adw.NavigationPage:
     """Name the wallet that will hold the keys. The library confirms that name again."""
-    group = Adw.PreferencesGroup(title="Empty wallets Bitcoin Core has ready")
-    rows = [(item.name, "Empty, encrypted" if item.encrypted else "Empty, not encrypted") for item in found]
-    rows.append((CREATE_WALLET, "codex32 asks Bitcoin Core for a blank wallet, with a passphrase you choose"))
-    buttons = _radio_group(group, rows)
+    # Like the CLI, ask Bitcoin Core again every second, so a wallet made there appears here.
+    holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    action = _button("Continue", lambda: go(), style="suggested-action")
+    buttons: list[Gtk.CheckButton] = []
+
+    def show(listed: tuple[wallet_setup.Wallet, ...]) -> None:
+        nonlocal found, buttons
+        # A refresh keeps the operator's choice by name; None stands for the create row.
+        kept = next((n for n, b in zip([w.name for w in found] + [None], buttons) if b.get_active()), False)
+        found = listed
+        group = Adw.PreferencesGroup(title="Empty wallets Bitcoin Core has ready")
+        rows = [(w.name, "Empty, encrypted" if w.encrypted else "Empty, not encrypted") for w in found]
+        buttons = _radio_group(group, [*rows, CREATE_ROW], action)
+        for choice, name in zip(buttons, [item.name for item in found] + [None], strict=True):
+            choice.set_active(name == kept)
+        if (old := holder.get_first_child()) is not None:
+            holder.remove(old)
+        holder.append(group)
+
+    polling = False
+
+    def refreshed(listed: tuple[wallet_setup.Wallet, ...] | Exception) -> None:
+        nonlocal polling
+        polling = False
+        # A failed poll keeps the list shown; Continue reports Bitcoin Core's error if it persists.
+        if isinstance(listed, tuple) and listed != found:
+            show(listed)
+
+    def poll() -> bool:
+        nonlocal polling
+        # One poll at a time: a slow Bitcoin Core must not pile up queued polls behind the gate.
+        if view.get_visible_page() is page and not polling:
+            polling = True
+            work.run(view, page, lambda: wallet_setup.eligible(core), refreshed)
+        return work.showing(view, page)
+
+    show(found)
 
     def go() -> None:
         # By position, so that a wallet named like the create row is still reachable.
@@ -832,10 +867,10 @@ def _wallet_page(
             "Which wallet should hold your keys?",
             f"Bitcoin Core {wallet_setup.version_text(core)} is running on {wallet_setup.network(core)}.",
         ),
-        group,
+        holder,
         _note(
-            "Only empty wallets are listed, so no wallet you already use can be overwritten. You may also "
-            "create one in Bitcoin Core yourself and check again."
+            "Only empty wallets are listed, so no wallet you already use can be overwritten. A wallet you "
+            "create in Bitcoin Core yourself appears here."
         ),
         *(
             (
@@ -849,16 +884,9 @@ def _wallet_page(
             else ()
         ),
     )
-    return _page(
-        "Wallet",
-        content,
-        actions=_actions(
-            _button(
-                "Check again", lambda: _wallets(view, core, secret, timestamp, expected, restoring=restoring)
-            ),
-            _button("Continue", go, style="suggested-action"),
-        ),
-    )
+    page = _page("Wallet", content, actions=_actions(action))
+    GLib.timeout_add_seconds(1, poll)
+    return page
 
 
 def _new_wallet_page(
