@@ -429,7 +429,7 @@ def test_cli_tie_breaks_follow_hamming_crc_then_fingerprint() -> None:
     assert _best((high_hamming, crc, fingerprint_match), fingerprint_match=matcher) == (fingerprint_match,)
 
 
-def test_a_wallet_record_match_outranks_capture_volume_and_every_tie_breaker() -> None:
+def test_a_wallet_record_match_outranks_every_other_ranking_in_best() -> None:
     def fingerprint(secret: MasterSeed) -> bytes:
         return fingerprint_seed(secret.seed_bytes)
 

@@ -845,7 +845,7 @@ def _best(
 ) -> tuple[CorrectionCandidate, ...]:
     """Apply CLI-only Hamming and CRC tie breakers plus optional wallet hints.
 
-    A wallet-record match outranks everything: a wrong seed matches it 1 time in 2**32.
+    A wallet-record match (wrong seeds match 1 in 2**32) outranks them among the lowest-volume repairs.
     """
     if recorded is not None and (matching := [item for item in candidates if recorded(item) is True]):
         candidates = matching
