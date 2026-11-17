@@ -361,3 +361,58 @@ def test_the_chain_the_operator_chose_is_the_one_that_is_used(
 
 def test_the_version_is_reported_the_way_bitcoin_core_reports_it() -> None:
     assert wallet_setup.version_text(BitcoinCore("bitcoin-cli", "main", 320100)) == "32.1.0"
+
+
+def test_an_unlock_done_in_bitcoin_core_is_noticed(monkeypatch: pytest.MonkeyPatch) -> None:
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
+    assert not wallet_setup.unlocked(core, "fresh")
+    fake.wallets["fresh"].locked = False
+    assert wallet_setup.unlocked(core, "fresh")
+
+
+def test_an_unlock_done_in_bitcoin_core_is_locked_again_after_an_early_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The library arms its own relock only after checking the seed, so `fill` must cover what comes first."""
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, False)})
+
+    def mismatch(*_arguments: object, **_keywords: object) -> str:
+        raise FingerprintMismatch("wrong wallet")
+
+    monkeypatch.setattr(wallet_setup, "initialize", mismatch)
+    with pytest.raises(FingerprintMismatch, match="wrong wallet"):
+        wallet_setup.fill(core, _SEED, "fresh", "", expected=b"expected", encrypted=True)
+    assert not fake.called("walletpassphrase")
+    assert fake.wallets["fresh"].locked
+
+
+def test_an_unlock_done_in_bitcoin_core_survives_the_wallet_being_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, False)})
+
+    def unload(*_arguments: object, **_keywords: object) -> str:
+        del fake.wallets["fresh"]
+        raise BitcoinCoreError("fresh was closed.")
+
+    monkeypatch.setattr(wallet_setup, "initialize", unload)
+    with pytest.raises(BitcoinCoreError, match="was closed"):
+        wallet_setup.fill(core, _SEED, "fresh", "", expected=None, encrypted=True)
+
+
+def test_a_refused_passphrase_is_told_apart_and_writes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    core, fake = _client(monkeypatch, {"fresh": _Wallet(True, True)})
+    original = _Core._reply
+
+    def refuse(self: _Core, method: str, arguments: list[str], name: str | None) -> str:
+        if method == "walletpassphrase":
+            raise BitcoinCoreError("incorrect passphrase")
+        return original(self, method, arguments, name)
+
+    monkeypatch.setattr(_Core, "_reply", refuse)
+    monkeypatch.setattr(
+        wallet_setup, "initialize", lambda *_a, **_k: pytest.fail("nothing may be written after a refusal")
+    )
+    with pytest.raises(wallet_setup.Refused):
+        wallet_setup.fill(core, _SEED, "fresh", PASSPHRASE, expected=None)
+    assert fake.wallets["fresh"].locked

@@ -37,6 +37,7 @@ __all__ = [
     "BitcoinCoreError",
     "FingerprintMismatch",
     "Offer",
+    "Refused",
     "Wallet",
     "connect",
     "create",
@@ -50,8 +51,8 @@ __all__ = [
     "parse_creation_date",
     "parse_fingerprint",
     "relock",
-    "require_unlocked",
     "unlock",
+    "unlocked",
     "verify",
     "version_text",
 ]
@@ -114,6 +115,10 @@ class _Answer:
             self._numbered = True
             return str(self._listed.index(self._chosen) + 1)
         raise Offer(tuple(dict.fromkeys(self._listed)))
+
+
+class Refused(BitcoinCoreError):
+    """Bitcoin Core turned the passphrase down, so nothing was written and it may be typed again."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,7 +272,7 @@ def unlock(core: BitcoinCore, name: str, passphrase: str) -> None:
     except UnicodeEncodeError:
         raise BitcoinCoreError(_UNSENDABLE) from None
     except BitcoinCoreError as error:
-        raise BitcoinCoreError(_REFUSED) from error
+        raise Refused(_REFUSED) from error
     open_now = False
     try:
         state = core._target(name)
@@ -282,11 +287,9 @@ def unlock(core: BitcoinCore, name: str, passphrase: str) -> None:
         )
 
 
-def require_unlocked(core: BitcoinCore, name: str) -> None:
-    """Confirm the operator unlocked the wallet in Bitcoin Core themselves."""
-    state = [item for item in eligible(core) if item.name == name]
-    if not state or state[0].locked:
-        raise BitcoinCoreError("That wallet is still locked in Bitcoin Core.")
+def unlocked(core: BitcoinCore, name: str) -> bool:
+    """Report whether the operator has unlocked this still empty wallet in Bitcoin Core."""
+    return core._target(name) == (True, False)  # Encrypted, and no longer locked.
 
 
 def initialize(
@@ -314,19 +317,21 @@ def fill(
     expected: bytes | None,
     account: int = 0,
     timestamp: int | Literal["now"] = "now",
+    encrypted: bool = False,
 ) -> str:
-    """Unlock, import, and lock again, whatever happens in between.
-
-    `BitcoinCore.initialize` relocks from its own `finally`, but it arms that
-    obligation only after it has chosen the wallet, so a refusal raised before
-    then would leave a wallet this program unlocked open. The obligation here
-    covers the whole sequence; locking an already locked wallet is harmless.
-    """
-    if not passphrase:
-        return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)
-    verify(core, secret, expected, timestamp)
-    unlock(core, name, passphrase)
+    """Unlock, import, and lock an encrypted wallet again, whatever happens in between."""
+    # `BitcoinCore.initialize` relocks from its own `finally`, but it arms that
+    # obligation only after it has checked the seed and chosen the wallet, so a
+    # refusal raised before then would leave an unlocked wallet open: one this
+    # program unlocked, or one the operator unlocked in Bitcoin Core's window.
+    # The obligation here covers the whole sequence for both; locking an already
+    # locked wallet is harmless.
+    if passphrase:
+        verify(core, secret, expected, timestamp)
     try:
+        if passphrase:
+            unlock(core, name, passphrase)
         return initialize(core, secret, name, expected=expected, account=account, timestamp=timestamp)
     finally:
-        relock(core, name)
+        if passphrase or encrypted:
+            relock(core, name)
