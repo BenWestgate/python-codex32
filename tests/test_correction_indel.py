@@ -6,13 +6,20 @@ from math import comb
 from unittest.mock import patch
 
 import pytest
-from data.bip93_vectors import VECTOR_1, VECTOR_5
+from data.bip93_vectors import VECTOR_1, VECTOR_2, VECTOR_5
 from data.sharing_vectors import SHARING_VECTORS
 from test_bip39 import BIP39_12W_ZERO, BIP39_24W_ZERO
 
-from codex32 import CorrectionContext, MasterSeed, Profile, correct
+from codex32 import CorrectionContext, MasterSeed, Profile, correct, parse_codex32
 from codex32._cli_input import _correction_plan, _fingerprint_matcher
-from codex32.correction import CorrectionCandidate, _best, _capture_volume, _erasure_state, _primary
+from codex32.correction import (
+    CorrectionCandidate,
+    _best,
+    _capture_volume,
+    _erasure_state,
+    _primary,
+    _record_match,
+)
 from codex32.generation import _fingerprint_identifier
 from codex32.indel import (
     _CHARACTER_CLASSES,
@@ -420,6 +427,38 @@ def test_cli_tie_breaks_follow_hamming_crc_then_fingerprint() -> None:
     assert len(_primary((high_hamming, crc, fingerprint_match))) == 3
     matcher = _fingerprint_matcher(lambda secret: fingerprint_seed(secret.seed_bytes))
     assert _best((high_hamming, crc, fingerprint_match), fingerprint_match=matcher) == (fingerprint_match,)
+
+
+def test_a_wallet_record_match_outranks_every_other_ranking_in_best() -> None:
+    def fingerprint(secret: MasterSeed) -> bytes:
+        return fingerprint_seed(secret.seed_bytes)
+
+    right = MasterSeed.from_seed(bytes(range(16)), identifier="test")
+    near = CorrectionCandidate(
+        MasterSeed.from_seed(bytes(range(1, 17)), identifier="test"), (), 9, 0, 1, True
+    )
+    far = CorrectionCandidate(right, (), 12, 0, 5, False)
+
+    assert _best(
+        (near, far), recorded=_record_match(lambda seed: fingerprint(seed) == fingerprint(right))
+    ) == (far,)
+    # A record nothing matches leaves the ordinary ranking alone.
+    assert _best((near, far), recorded=_record_match(lambda seed: fingerprint(seed) == bytes(4))) == (near,)
+
+
+def test_a_wallet_record_match_judges_a_share_only_when_it_completes_the_seed() -> None:
+    first, last = (parse_codex32(VECTOR_2[name]) for name in ("share_A", "share_C"))
+    secret = parse_codex32(VECTOR_2["secret_S"])
+    assert isinstance(secret, MasterSeed)
+    expected = fingerprint_seed(secret.seed_bytes)
+    candidate = CorrectionCandidate(last, (), 10, 0, 2, None)
+
+    def recorded(seed: MasterSeed) -> bool:
+        return fingerprint_seed(seed.seed_bytes) == expected
+
+    assert _record_match(recorded, (first,))(candidate) is True
+    assert _record_match(lambda _seed: False, (first,))(candidate) is False
+    assert _record_match(recorded)(candidate) is None
 
 
 def test_lower_primary_volume_always_wins_cli_ties() -> None:

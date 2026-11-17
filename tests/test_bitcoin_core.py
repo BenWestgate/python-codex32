@@ -784,7 +784,7 @@ def test_identity_mismatch_stops_before_any_wallet_call(monkeypatch: pytest.Monk
         lambda client, *args, wallet=None, stdin=None: rpc(client, *args, wallet=wallet, stdin=stdin),
     )
 
-    with pytest.raises(FingerprintMismatch, match="Bitcoin Core was not changed"):
+    with pytest.raises(FingerprintMismatch, match="No wallet was created or restored"):
         BitcoinCore("bitcoin-cli", "main", 300000).initialize(
             _SEED,
             lambda _prompt: "yes",

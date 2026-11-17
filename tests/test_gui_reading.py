@@ -119,6 +119,21 @@ def test_one_repair_is_offered_for_one_damaged_character() -> None:
     assert not found.low_checksum_discrimination
 
 
+def test_the_last_card_is_repaired_against_the_wallet_record_typed_first() -> None:
+    from codex32 import CorrectionCandidate, MasterSeed, parse_codex32
+
+    first, secret = parse_codex32(SHARE_A), parse_codex32(VECTOR_2["secret_S"])
+    asked: list[MasterSeed] = []
+
+    def record(seed: MasterSeed) -> bool:
+        asked.append(seed)
+        return seed == secret
+
+    found = repair(SHARE_C[:-1] + "M", 48, ("a",), (first,), record)
+    assert isinstance(found, CorrectionCandidate) and found.artifact.text == SHARE_C
+    assert [seed.text for seed in asked] == [secret.text]
+
+
 def test_a_card_that_fits_no_repair_says_so_instead_of_guessing() -> None:
     assert isinstance(repair(PREFIX + "Q" * 45, None), str)
 

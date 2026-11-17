@@ -132,13 +132,17 @@ def _offline_core(monkeypatch):
 
 
 _RECORDED_FINGERPRINT = importlib.import_module("codex32.cli")._recorded_fingerprint
+_RECORD = importlib.import_module("codex32.cli")._record
 _SHOW_FINGERPRINT = importlib.import_module("codex32.cli")._show_fingerprint
 
 
 @pytest.fixture(autouse=True)
 def _matching_record(monkeypatch):
     """Keep unrelated CLI tests independent of wallet-record interaction."""
-    monkeypatch.setattr("codex32.cli._recorded_fingerprint", lambda core, secret: core.fingerprint(secret))
+    monkeypatch.setattr("codex32.cli._record", lambda: None)
+    monkeypatch.setattr(
+        "codex32.cli._recorded_fingerprint", lambda core, secret, _record: core.fingerprint(secret)
+    )
     monkeypatch.setattr("codex32.cli._show_fingerprint", lambda _core, _secret, _action: None)
 
 
@@ -1967,7 +1971,7 @@ def test_wallet_private_warning_precedes_recovery_input(
 ) -> None:
     cli_module = importlib.import_module("codex32.cli")
 
-    def stop_before_input(_fingerprint=None) -> MasterSeed:
+    def stop_before_input(_fingerprint=None, _record=None) -> MasterSeed:
         assert "Warning: This imports private descriptors that can spend funds." in capsys.readouterr().err
         raise cli_module._UsageError("stopped")
 
@@ -1976,6 +1980,44 @@ def test_wallet_private_warning_precedes_recovery_input(
     monkeypatch.setattr(cli_module.sys, "stdin", _TTYInput())
 
     assert ms_main(["wallet"]) == 2
+
+
+def test_wallet_asks_for_the_record_before_any_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli_module = importlib.import_module("codex32.cli")
+    order: list[object] = []
+    monkeypatch.setattr(cli_module, "_record", lambda: order.append("record") or b"\x01\x02\x03\x04")
+
+    def cards(_fingerprint=None, record=None) -> MasterSeed:
+        order.append(("cards", record))
+        raise cli_module._UsageError("stopped")
+
+    monkeypatch.setattr(cli_module, "_master_seed", cards)
+    monkeypatch.setattr(cli_module.BitcoinCore, "connect", lambda *_args: _FakeBitcoinCore())
+    monkeypatch.setattr(cli_module.sys, "stdin", _TTYInput())
+
+    assert ms_main(["wallet"]) == 2
+    assert order == ["record", ("cards", b"\x01\x02\x03\x04")]
+
+
+def test_card_suggestions_rank_by_the_record_typed_first() -> None:
+    from codex32._cli_input import _suggestions
+
+    core, secret = _FakeBitcoinCore(), parse_codex32(VECTOR_1["secret_s"])
+    assert isinstance(secret, MasterSeed)
+    damaged = secret.text[:-1] + ("q" if secret.text[-1] != "q" else "p")
+    recorded: list[bool | None] = []
+    spy = importlib.import_module("codex32._cli_input")._record_match
+
+    def matcher(*args: object) -> object:
+        match = spy(*args)
+        return lambda candidate: recorded.append(match(candidate)) or recorded[-1]
+
+    with patch("codex32._cli_input._record_match", matcher):
+        found = _suggestions(
+            damaged, "", None, [], fingerprint=core.fingerprint, record=core.fingerprint(secret)
+        )
+    assert [candidate.artifact.text for candidate in found] == [secret.text]
+    assert True in recorded
 
 
 def test_wallet_cli_rejects_non_ms_profiles() -> None:
@@ -2042,7 +2084,7 @@ def test_production_size_budgets_are_enforced() -> None:
         for path in package.rglob("*.py")
     }
 
-    assert sum(counts.values()) < 5025, counts
+    assert sum(counts.values()) < 5068, counts
 
 
 @pytest.mark.parametrize(
@@ -2831,12 +2873,13 @@ def test_restore_record_prompt_retries_until_the_library_accepts(
     assert isinstance(secret, MasterSeed)
     right = core.fingerprint(secret)
     wrong = bytes([right[0] ^ 1]) + right[1:]
-    prompts = _record_answers(monkeypatch, "not hex", wrong.hex(), right.hex().upper())
+    monkeypatch.setattr("codex32.cli._record", _RECORD)
+    prompts = _record_answers(monkeypatch, "not hex", right.hex().upper())
 
-    assert _RECORDED_FINGERPRINT(core, secret) == right
-    assert prompts == ["Type the master fingerprint from your wallet record (Enter if none)"] * 3
+    assert _RECORDED_FINGERPRINT(core, secret, wrong) == right
+    assert prompts == ["Type the master fingerprint from your wallet record (Enter if none)"] * 2
     errors = capsys.readouterr().err
-    assert "8 characters" in errors and "does not match" in errors
+    assert "8 characters" in errors and "do not make" in errors and "Check what you typed" in errors
     assert right.hex() not in errors.lower()
 
 
@@ -2847,16 +2890,17 @@ def test_restore_without_a_record_shows_what_the_cards_say_and_asks(
     assert isinstance(secret, MasterSeed)
     fingerprint = core.fingerprint(secret)
 
-    prompts = _record_answers(monkeypatch, "", "n", "", "y")
-    assert _RECORDED_FINGERPRINT(core, secret) is None
-    assert prompts[1] == prompts[3] == "Restore without a wallet record? [y/N]"
+    monkeypatch.setattr("codex32.cli._record", _RECORD)
+    prompts = _record_answers(monkeypatch, "n", "", "y")
+    assert _RECORDED_FINGERPRINT(core, secret, None) is None
+    assert prompts[0] == prompts[2] == "Restore without a wallet record? [y/N]"
     shown = capsys.readouterr().err
     assert shown.count(f"Master fingerprint: {fingerprint.hex().upper()}") == 2
     assert "was not made from this seed" in shown and "nothing can prove" in shown
 
     derived = MasterSeed.from_seed(secret.seed_bytes, identifier=_fingerprint_identifier(fingerprint))
-    _record_answers(monkeypatch, "", "yes")
-    assert _RECORDED_FINGERPRINT(core, derived) is None
+    _record_answers(monkeypatch, "yes")
+    assert _RECORDED_FINGERPRINT(core, derived, None) is None
     assert "matches this seed (codex32 rule)" in capsys.readouterr().err
 
 

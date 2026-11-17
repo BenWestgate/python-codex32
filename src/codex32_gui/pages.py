@@ -1072,13 +1072,13 @@ def _identity(
 def _fingerprint_page(
     view: Adw.NavigationView,
     core: BitcoinCore,
-    secret: MasterSeed,
+    secret: MasterSeed | None,
     timestamp: Timestamp,
     *,
     restoring: bool = False,
     problem: str = "",
 ) -> Adw.NavigationPage:
-    """Take the master fingerprint from the wallet record. The library refuses a mismatch."""
+    """Take the master fingerprint from the wallet record: before the cards when restoring."""
     entered = Adw.EntryRow(title="Master fingerprint from your wallet record")
     dated = Adw.EntryRow(title="Approximate creation date from the record, as YYYY-MM-DD")
     group = Adw.PreferencesGroup()
@@ -1093,31 +1093,23 @@ def _fingerprint_page(
         except ValueError as error:
             _say(status, str(error), "error")
             return
-        page = _working(view, "Wallet record", "Checking the wallet record…")
+        if secret is None:
+            view.push(_restore_cards(view, core, expected, start))
+        else:
+            _check_record(view, core, secret, expected, start, restoring=restoring)
 
-        def job() -> str:
-            try:
-                wallet_setup.verify(core, secret, expected, start)
-            except wallet_setup.BitcoinCoreError as error:
-                return str(error)
-            return ""
+    def without() -> None:
+        if secret is None:
+            view.push(_restore_cards(view, core, None, 0))
+        else:
+            _identity(view, core, secret, restoring=True)
 
-        def follow(mismatch: str) -> Adw.NavigationPage | None:
-            if mismatch:
-                return _fingerprint_page(view, core, secret, timestamp, restoring=restoring, problem=mismatch)
-            _wallets(view, core, secret, start, expected, restoring=restoring)
-            return None
-
-        work.run(view, page, job, _then(view, page, follow, CARDS_SAFE))
-
-    buttons = [_button("Stop", lambda: view.replace([home(view)]))]
+    buttons = [_button("Start again", lambda: view.replace([home(view)]))] if problem or not restoring else []
     if restoring:
-        buttons.append(
-            _button("I have no wallet record", lambda: _identity(view, core, secret, restoring=True))
-        )
-    elif problem:
+        buttons.append(_button("I have no wallet record", without))
+    elif problem and secret is not None:
         buttons.append(_button("Show it again", lambda: _identity(view, core, secret)))
-    buttons.append(_button("Check and continue", go, style="suggested-action"))
+    buttons.append(_button("Continue", go, style="suggested-action"))
     content = _column(
         _title(
             "Type the master fingerprint", "Copy it from the wallet record you keep apart from the cards."
@@ -1125,13 +1117,44 @@ def _fingerprint_page(
         group,
         status,
         _note(
-            "If it does not match, stop: these cards are not that wallet. Bitcoin Core has not been changed."
-            if restoring
-            else "This checks that your wallet record is right while it can still be fixed.",
-            "warning" if restoring else "",
+            "This checks that your wallet record is right while it can still be fixed."
+            if not restoring
+            else "Check what you typed against the record. If it matches, these cards are from another "
+            "wallet, or a card was misread: start again and re-enter the cards."
+            if problem
+            else "codex32 checks this before it restores your wallet in Bitcoin Core.",
+            "warning" if problem else "",
         ),
     )
-    return _page("Wallet record", content, actions=_actions(*buttons), can_pop=False)
+    return _page("Wallet record", content, actions=_actions(*buttons), can_pop=secret is None)
+
+
+def _check_record(
+    view: Adw.NavigationView,
+    core: BitcoinCore,
+    secret: MasterSeed,
+    expected: bytes,
+    start: Timestamp,
+    *,
+    restoring: bool,
+) -> None:
+    """Refuse a mismatch in the library, then let the operator choose the wallet."""
+    page = _working(view, "Wallet record", "Checking the wallet record…")
+
+    def job() -> str:
+        try:
+            wallet_setup.verify(core, secret, expected, start)
+        except wallet_setup.BitcoinCoreError as error:
+            return str(error)
+        return ""
+
+    def follow(mismatch: str) -> Adw.NavigationPage | None:
+        if mismatch:
+            return _fingerprint_page(view, core, secret, start, restoring=restoring, problem=mismatch)
+        _wallets(view, core, secret, start, expected, restoring=restoring)
+        return None
+
+    work.run(view, page, job, _then(view, page, follow, CARDS_SAFE))
 
 
 def _import(
@@ -1229,6 +1252,7 @@ def _collect(
     wanted: int | None = None,
     reserved: tuple[str, ...] = (),
     repaired: bool = False,
+    record: Callable[[MasterSeed], bool] | None = None,
     then: Callable[[tuple[Artifact, ...], bool], None],
 ) -> Adw.NavigationPage:
     """Take one card, and keep taking them until the backup has enough."""
@@ -1281,6 +1305,7 @@ def _collect(
                     wanted=wanted,
                     reserved=reserved,
                     repaired=repaired or guessed,
+                    record=record,
                     then=then,
                 ),
             )
@@ -1308,7 +1333,7 @@ def _collect(
             gated = result.low_checksum_discrimination
             view.push(_guess_gate_page(view, following) if gated else following())
 
-        work.run(view, spinner, lambda: reading.repair(observed, length, excluded), deliver)
+        work.run(view, spinner, lambda: reading.repair(observed, length, excluded, accepted, record), deliver)
 
     field.connect("changed", update)
     progress = []
@@ -1605,22 +1630,28 @@ def _share_done_page(view: Adw.NavigationView, share: Share) -> Adw.NavigationPa
     )
 
 
-def _restore(view: Adw.NavigationView, core: BitcoinCore, secret: Secret) -> None:
-    if not isinstance(secret, MasterSeed):
-        _failure(view, "Only a Bitcoin master-seed backup can restore a wallet.")
-        return
-    _replace(view, _fingerprint_page(view, core, secret, 0, restoring=True))
+def _restore_cards(
+    view: Adw.NavigationView, core: BitcoinCore, expected: bytes | None, start: Timestamp
+) -> Adw.NavigationPage:
+    """Take the cards; a recorded fingerprint settles competing repairs, then is checked again."""
+
+    def restore(secret: Secret) -> None:
+        if not isinstance(secret, MasterSeed):
+            _failure(view, "Only a Bitcoin master-seed backup can restore a wallet.")
+        elif expected is None:
+            _identity(view, core, secret, restoring=True)
+        else:
+            _check_record(view, core, secret, expected, start, restoring=True)
+
+    return _collect(
+        view,
+        title="Restore my wallet",
+        heading="Enter your cards",
+        body="Type what each card says. Nothing is saved and nothing leaves this computer.",
+        record=(lambda seed: core.fingerprint(seed) == expected) if expected else None,
+        then=lambda found, _guessed: _recover(view, found, restore),
+    )
 
 
 def _start_restore(view: Adw.NavigationView) -> None:
-    _connect(
-        view,
-        None,
-        lambda core: _collect(
-            view,
-            title="Restore my wallet",
-            heading="Enter your cards",
-            body="Type what each card says. Nothing is saved and nothing leaves this computer.",
-            then=lambda found, _guessed: _recover(view, found, lambda secret: _restore(view, core, secret)),
-        ),
-    )
+    _connect(view, None, lambda core: _fingerprint_page(view, core, None, 0, restoring=True))

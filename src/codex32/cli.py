@@ -103,9 +103,13 @@ def _secret(artifacts: list[Artifact]) -> Secret:
         raise _UsageError(str(error)) from error
 
 
-def _master_seed(fingerprint: Callable[[MasterSeed], bytes] | None = None) -> MasterSeed:
+def _master_seed(
+    fingerprint: Callable[[MasterSeed], bytes] | None = None, record: bytes | None = None
+) -> MasterSeed:
     if isinstance(
-        value := _secret(_artifacts(profiles=(Profile.MS,), initial_prefix="MS1", fingerprint=fingerprint)),
+        value := _secret(
+            _artifacts(profiles=(Profile.MS,), initial_prefix="MS1", fingerprint=fingerprint, record=record)
+        ),
         MasterSeed,
     ):
         return value
@@ -370,26 +374,29 @@ def _creation_start() -> int:
             _print(str(error), err=True)
 
 
-def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed) -> bytes | None:
-    """Take the master fingerprint from a recovery record until the library accepts it."""
-    prompt = "Type the master fingerprint from your wallet record (Enter if none)"
+def _record() -> bytes | None:
+    """Take the master fingerprint from the wallet record, or None when there is no record."""
     while True:
-        text = _text(prompt, optional=True)
-        if not text:
-            if _without_record(core, secret):
-                return None
-            continue
+        text = _text("Type the master fingerprint from your wallet record (Enter if none)", optional=True)
         try:
-            expected = parse_fingerprint(text)
+            return parse_fingerprint(text) if text else None
         except ValueError as error:
             _print(str(error), err=True)
-            continue
-        try:
-            core.verify_identity(secret, expected)
-        except FingerprintMismatch as error:
-            _print(str(error), err=True)
-            continue
-        return expected
+
+
+def _recorded_fingerprint(core: BitcoinCore, secret: MasterSeed, expected: bytes | None) -> bytes | None:
+    """Check the record typed before the cards, and ask again until the library accepts it."""
+    while True:
+        if expected is None:
+            if _without_record(core, secret):
+                return None
+        else:
+            try:
+                core.verify_identity(secret, expected)
+                return expected
+            except FingerprintMismatch as error:
+                _print(f"{error} Check what you typed against the record.", err=True)
+        expected = _record()
 
 
 def _initialize_wallet(
@@ -401,13 +408,14 @@ def _initialize_wallet(
     fresh: bool = True,
     restore: bool = False,
     confirmed: bool = True,
+    record: bytes | None = None,
 ) -> int:
     assert isinstance(secret, MasterSeed)
     try:
         if confirmed:
             _print("Master-seed backup confirmed.\n", err=True)
         if restore:
-            expected = _recorded_fingerprint(core, secret)
+            expected = _recorded_fingerprint(core, secret, record)
         else:
             _show_fingerprint(core, secret, "Write it on the wallet record")
             expected = None
@@ -650,7 +658,8 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
         raise _UsageError("Bitcoin Core wallet initialization requires an interactive terminal.")
     _print("Warning: This imports private descriptors that can spend funds.", err=True, danger=True)
     core = _connected_core()
-    secret = _master_seed(core.fingerprint)
+    record = _record()  # Asked first, so a known fingerprint can settle competing card corrections.
+    secret = _master_seed(core.fingerprint, record)
     return _initialize_wallet(
         core,
         secret,
@@ -659,6 +668,7 @@ def _bitcoin_core(account: int, timestamp: int | Literal["now"]) -> int:
         fresh=False,
         restore=True,
         confirmed=False,
+        record=record,
     )
 
 

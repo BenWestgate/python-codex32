@@ -33,7 +33,7 @@ FORBIDDEN = frozenset(
     }
 )
 CORE_ADAPTER = "codex32._bitcoin_core"
-BUDGET = 2063
+BUDGET = 2100
 
 
 def _package() -> Path:
@@ -132,9 +132,15 @@ def test_the_gui_keeps_its_own_size_budget() -> None:
 def test_every_restore_way_to_a_wallet_passes_the_identity_choice() -> None:
     tree = ast.parse((_package() / "pages.py").read_text())
 
-    assert _callers(tree, "_wallets") == {"_fingerprint_page", "_identity", "_wallet_page"}
-    assert _callers(tree, "_fingerprint_page") == {"_identity", "_restore", "_fingerprint_page"}
-    assert _callers(tree, "_identity") == {"_unshared_page", "_card_confirmed", "_fingerprint_page"}
+    assert _callers(tree, "_wallets") == {"_check_record", "_identity", "_wallet_page"}
+    assert _callers(tree, "_check_record") == {"_fingerprint_page", "_restore_cards"}
+    assert _callers(tree, "_fingerprint_page") == {"_identity", "_start_restore", "_check_record"}
+    assert _callers(tree, "_identity") == {
+        "_unshared_page",
+        "_card_confirmed",
+        "_fingerprint_page",
+        "_restore_cards",
+    }
 
 
 def test_restore_verifies_identity_before_creating_a_destination_wallet() -> None:
