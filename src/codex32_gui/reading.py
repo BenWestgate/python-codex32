@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from codex32 import (
     CorrectionCandidate,
     CorrectionContext,
     Header,
+    MasterSeed,
     Profile,
     Secret,
     Share,
@@ -15,7 +17,7 @@ from codex32 import (
     parse_codex32,
 )
 from codex32.bech32 import CHARSET
-from codex32.correction import _best
+from codex32.correction import _best, _record_match
 from codex32.errors import CodexError, InvalidShareIndex
 from codex32.profiles.ms32 import TEXT_LENGTHS
 
@@ -138,15 +140,24 @@ def read(text: str, *, accepted: tuple[str, ...] = (), length: int | None = None
     return Reading(artifact.text, artifact, "Every character checks out.", "success", expected, 0)
 
 
-def repair(text: str, length: int | None, excluded: tuple[str, ...] = ()) -> CorrectionCandidate | str:
+def repair(
+    text: str,
+    length: int | None,
+    excluded: tuple[str, ...] = (),
+    accepted: tuple[Share | Secret, ...] = (),
+    record: Callable[[MasterSeed], bool] | None = None,
+) -> CorrectionCandidate | str:
     """Ask the library for one repair, and offer nothing at all when it is unsure.
 
-    `_best` is the command line's own tie-breaker, minus its Bitcoin Core
-    fingerprint hint, which would make repairing a card need a running node.
+    `_best` is the command line's own tie-breaker, minus its backup-identifier
+    hint; `record` says whether a seed is the wallet record's, typed before a restore.
     Anything still tied afterwards is reported as ambiguous rather than shown.
     """
+    recorded = _record_match(record, accepted) if record else None
     try:
-        found = _best(correct(CorrectionContext(Profile.MS, length, PREFIX, excluded), text))
+        found = _best(
+            correct(CorrectionContext(Profile.MS, length, PREFIX, excluded), text), recorded=recorded
+        )
     except CodexError as error:
         return str(error)
     if not found:

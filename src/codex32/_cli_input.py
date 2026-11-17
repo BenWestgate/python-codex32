@@ -19,7 +19,7 @@ from codex32.bip93 import (
     parse_codex32,
     recover_secret,
 )
-from codex32.correction import CorrectionCandidate, CorrectionContext, _best
+from codex32.correction import CorrectionCandidate, CorrectionContext, _best, _record_match
 from codex32.errors import (
     CodexError,
     DuplicateShareIndex,
@@ -460,6 +460,7 @@ def _correction_candidates(
     deadline: float | None = None,
     capture_layers: list[tuple[int, int]] | None = None,
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
+    recorded: Callable[[CorrectionCandidate], bool | None] | None = None,
 ) -> tuple[tuple[CorrectionCandidate, ...], bool, float | None, bool]:
     count = len(value.replace(" ", ""))
     targets, primary, reduced, _timed = _correction_plan(profile, byte_length, count, target)
@@ -480,7 +481,12 @@ def _correction_candidates(
     if allowed is not None:
         candidates = tuple(candidate for candidate in candidates if allowed(candidate))
     results = (
-        _best(candidates, prefer_common=byte_length == "?", fingerprint_match=fingerprint_match)
+        _best(
+            candidates,
+            prefer_common=byte_length == "?",
+            fingerprint_match=fingerprint_match,
+            recorded=recorded,
+        )
         if complete
         else candidates
         if len(candidates) == 1 and not candidates[0].search_complete
@@ -516,8 +522,12 @@ def _suggestions(
     *,
     allowed: Callable[[CorrectionCandidate], bool] | None = None,
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    record: bytes | None = None,
 ) -> tuple[CorrectionCandidate, ...]:
     fingerprint_match = _fingerprint_matcher(fingerprint)
+    recorded = (
+        _record_match(lambda seed: fingerprint(seed) == record, accepted) if fingerprint and record else None
+    )
     erased = value
     if interpretation := _case_interpretation(value, prefix, profiles, allowed):
         candidate, value, erased, prefix = interpretation
@@ -551,6 +561,7 @@ def _suggestions(
         deadline=deadline,
         capture_layers=capture_layers,
         fingerprint_match=fingerprint_match,
+        recorded=recorded,
     )[0]
     if candidates or erased == value:
         return candidates
@@ -565,6 +576,7 @@ def _suggestions(
         deadline=deadline,
         capture_layers=capture_layers,
         fingerprint_match=fingerprint_match,
+        recorded=recorded,
     )[0]
 
 
@@ -696,6 +708,7 @@ def _interactive(
     profiles: tuple[Profile, ...] | None,
     initial_prefix: str,
     fingerprint: Callable[[MasterSeed], bytes] | None,
+    record: bytes | None = None,
 ) -> list[Artifact]:
     accepted: list[Artifact] = []
     prefix = initial_prefix
@@ -740,6 +753,7 @@ def _interactive(
                     accepted,
                     allowed=allowed,
                     fingerprint=fingerprint,
+                    record=record,
                 )
             )
             confirmation = (
@@ -794,6 +808,7 @@ def read_artifacts(
     profiles: tuple[Profile, ...] | None = None,
     initial_prefix: str = "",
     fingerprint: Callable[[MasterSeed], bytes] | None = None,
+    record: bytes | None = None,
 ) -> list[Artifact]:
     if not sys.stdin.isatty():
         return _redirected(
@@ -810,6 +825,7 @@ def read_artifacts(
         profiles=profiles,
         initial_prefix=initial_prefix,
         fingerprint=fingerprint,
+        record=record,
     )
     _stderr("")
     return result

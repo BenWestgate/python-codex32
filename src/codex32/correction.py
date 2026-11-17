@@ -42,6 +42,7 @@ from codex32.bip93 import (
     Share,
     _checksum_for_encoded_length,
     parse_codex32,
+    recover_secret,
 )
 from codex32.checksums import _CODEX32, _CODEX32_LONG, _Checksum
 from codex32.errors import CodexError, InvalidCorrectionInput
@@ -840,8 +841,14 @@ def _best(
     *,
     prefer_common: bool = False,
     fingerprint_match: Callable[[CorrectionCandidate], bool | None] | None = None,
+    recorded: Callable[[CorrectionCandidate], bool | None] | None = None,
 ) -> tuple[CorrectionCandidate, ...]:
-    """Apply CLI-only Hamming and CRC tie breakers plus an optional wallet hint."""
+    """Apply CLI-only Hamming and CRC tie breakers plus optional wallet hints.
+
+    A wallet-record match outranks everything: a wrong seed matches it 1 time in 2**32.
+    """
+    if recorded is not None and (matching := [item for item in candidates if recorded(item) is True]):
+        candidates = matching
     tied = list(_primary(candidates))
     if not tied:
         return ()
@@ -856,6 +863,23 @@ def _best(
         if any(hint(item) is True for item in tied):
             tied = [item for item in tied if hint(item) is True]
     return tuple(sorted(tied, key=_candidate_order))
+
+
+def _record_match(
+    recorded: Callable[[MasterSeed], bool], accepted: Sequence[Share | Secret] = ()
+) -> Callable[[CorrectionCandidate], bool | None]:
+    """Ask whether a candidate is the recorded wallet, once it completes a master seed."""
+
+    def matches(candidate: CorrectionCandidate) -> bool | None:
+        artifact, shares = candidate.artifact, [*accepted, candidate.artifact]
+        try:
+            if isinstance(artifact, Share) and len(shares) == artifact.header.threshold:
+                artifact = recover_secret([share for share in shares if isinstance(share, Share)])
+            return recorded(artifact) if isinstance(artifact, MasterSeed) else None
+        except CodexError:
+            return None
+
+    return matches
 
 
 def _correct_complete(

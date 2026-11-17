@@ -236,10 +236,12 @@ its public wallet data with the separate wallet record.
    ms32 wallet --timestamp 0
    ```
 
-5. Type the master fingerprint from the wallet record. A mismatch stops before
-   Bitcoin Core is changed. Press Enter with nothing typed only if there is no
-   record; codex32 then shows the recovered fingerprint and what the backup
-   identifier says, and asks before restoring.
+5. Type the master fingerprint from the wallet record, then enter the cards.
+   If more than one correction fits a damaged card, the one that makes that
+   fingerprint is offered; still compare it with the whole card. A mismatch
+   after the cards restores nothing. Press Enter with nothing typed only if
+   there is no record; after the cards, codex32 shows the recovered fingerprint
+   and what the backup identifier says, and asks before restoring.
 6. Select and confirm that wallet. If it is locked, follow the displayed
    Bitcoin-Qt Console instructions; codex32 waits and continues automatically.
    It imports the private descriptors, verifies the public set, and relocks an

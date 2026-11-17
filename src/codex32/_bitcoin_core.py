@@ -234,8 +234,8 @@ class BitcoinCore:
             return
         if self.fingerprint(secret) != expected_fingerprint:
             raise FingerprintMismatch(
-                "The recovered master fingerprint does not match the one from the wallet record. "
-                "Bitcoin Core was not changed."
+                "These cards do not make the master fingerprint from the wallet record. "
+                "No wallet was created or restored."
             )
 
     def check_history(self, timestamp: int | Literal["now"]) -> None:

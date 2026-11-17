@@ -160,13 +160,16 @@ wallet**, which would make a different backup. If the wallet was part-filled
 before it failed, it is no longer empty, so it will not be offered again: create
 another one, or ask Bitcoin Core for a fresh blank wallet.
 
-When you restore, the window first asks you to type the master fingerprint from
-your wallet record. If it does not match, nothing is written to Bitcoin Core:
-check what you typed, and if it still does not match, these cards are not that
-wallet. If you have no record, **I have no wallet record** shows the master
-fingerprint and whether the backup identifier was made from the recovered seed,
-explains what that can and cannot prove, and restores only if you still choose
-to. Check the balance and history before you send money to that wallet.
+When you restore, the window asks you to type the master fingerprint from your
+wallet record before any card. If a card needs a repair and more than one fits,
+the one that makes that fingerprint is offered; compare it with the whole card
+as always. After the cards, the fingerprint is checked again. If it does not
+match, nothing is restored: check what you typed, and if it still does not
+match, these cards are from another wallet or a card was misread. If you have
+no record, **I have no wallet record** goes straight to the cards; afterwards
+the window shows the master fingerprint and whether the backup identifier was
+made from the recovered seed, explains what that can and cannot prove, and
+restores only if you still choose to. Check the balance and history before you send money to that wallet.
 
 The same page asks for the approximate creation date from your wallet record.
 Bitcoin Core searches for the wallet's transactions from a day before that date,
