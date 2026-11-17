@@ -19,13 +19,7 @@ def bech32_hrp_expand(hrp: str) -> list[int]:
     return [ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp]
 
 
-def _ascii_lower(value: str) -> str:
-    return "".join(character.lower() if character.isascii() else character for character in value)
-
-
 def u5_to_chars(values: list[int] | tuple[int, ...]) -> str:
-    """Convert 5-bit values to Bech32 characters."""
-
     for index, value in enumerate(values):
         if not 0 <= value < 32:
             raise InvalidCharacter(f"u5 value {value} at index {index} is outside 0..31")
@@ -33,10 +27,8 @@ def u5_to_chars(values: list[int] | tuple[int, ...]) -> str:
 
 
 def chars_to_u5(value: str, first_position: int = 1) -> list[int]:
-    """Convert Bech32 characters to 5-bit values."""
-
     result: list[int] = []
-    for index, character in enumerate(_ascii_lower(value)):
+    for index, character in enumerate(c.lower() if c.isascii() else c for c in value):
         position = CHARSET.find(character)
         if position < 0:
             label = "Apostrophe (')" if character == "'" else f"The character {character!r}"

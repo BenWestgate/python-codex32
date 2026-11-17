@@ -12,7 +12,7 @@ from functools import partial
 from time import monotonic
 from typing import Any, Literal, cast
 
-from codex32.bech32 import _ascii_lower, interpret_mixed_case
+from codex32.bech32 import interpret_mixed_case
 from codex32.bip93 import (
     Secret,
     Share,
@@ -30,9 +30,9 @@ from codex32.errors import (
     InvalidChecksum,
     InvalidLength,
     InvalidThreshold,
+    MismatchedHrp,
     MismatchedIdentifier,
     MismatchedPayloadLength,
-    MismatchedProfile,
     MismatchedThreshold,
     SecretInRecoverySet,
 )
@@ -682,7 +682,7 @@ def _redirected(
 
 _FRIENDLY_SET_ERRORS: dict[type[Exception], str] = {
     InvalidChecksum: "The checksum does not match.",
-    MismatchedProfile: "These strings are for different applications.",
+    MismatchedHrp: "These strings are for different applications.",
     MismatchedThreshold: "These strings require different numbers of shares.",
     MismatchedIdentifier: "These strings have different identifiers.",
     MismatchedPayloadLength: "These strings have different lengths.",

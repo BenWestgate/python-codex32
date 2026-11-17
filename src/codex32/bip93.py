@@ -90,7 +90,6 @@ class Header:
 
 def checksum_for_encoded_length(hrp: str, encoded_length: int) -> Checksum:
     """Return the codex32 checksum required by an encoded HRP/data length."""
-
     expanded_length = 2 * len(hrp) + 1 + encoded_length
     if 94 <= expanded_length <= 95:
         raise InvalidLength("expanded codex32 lengths 94 and 95 are invalid")
@@ -101,10 +100,8 @@ def checksum_for_encoded_length(hrp: str, encoded_length: int) -> Checksum:
 
 def checksum_for_body_length(hrp: str, body_length: int) -> Checksum:
     """Return the checksum required when constructing a codex32 body."""
-
-    checksum = CODEX32 if 2 * len(hrp) + 1 + body_length <= 80 else CODEX32_LONG
-    checksum_for_encoded_length(hrp, body_length + checksum.length)
-    return checksum
+    short = 2 * len(hrp) + 1 + body_length <= 80
+    return checksum_for_encoded_length(hrp, body_length + (CODEX32 if short else CODEX32_LONG).length)
 
 
 def _decode_codex32(text: str) -> tuple[str, _ProfileRules | None, tuple[int, ...], Checksum]:
