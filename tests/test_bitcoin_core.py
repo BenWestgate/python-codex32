@@ -391,6 +391,7 @@ def test_encrypted_import_retries_without_a_passphrase_verifies_and_relocks(
         "_rpc",
         lambda client, *args, wallet=None, stdin=None: rpc(client, *args, wallet=wallet, stdin=stdin),
     )
+    monkeypatch.setattr("codex32._bitcoin_core.time.time", lambda: 1_700_000_000.5)
     client = BitcoinCore("bitcoin-cli", "main", 300000)
     messages: list[str] = []
     delays: list[int] = []
@@ -411,7 +412,8 @@ def test_encrypted_import_retries_without_a_passphrase_verifies_and_relocks(
     assert arguments == ("importdescriptors",) and wallet == "signer"
     assert private_stdin is not None and private_stdin.endswith("\n")
     records = json.loads(private_stdin)
-    assert len(records) == 4 and all(record["timestamp"] == "now" for record in records)
+    # A new wallet's "now" is this computer's clock less a day, not Core's tip (genesis offline).
+    assert len(records) == 4 and all(record["timestamp"] == 1_700_000_000 - 86400 for record in records)
     assert all("xprv" in record["desc"] for record in records)
     assert all("xprv" not in " ".join((*args, selected or "")) for args, selected, _data in rpc.calls)
     assert sum(args[:2] == ("-named", "derivehdkey") for args, _wallet, _stdin in rpc.calls) == 4
