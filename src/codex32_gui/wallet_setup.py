@@ -174,12 +174,7 @@ def version_text(core: BitcoinCore) -> str:
 
 def eligible(core: BitcoinCore) -> tuple[Wallet, ...]:
     """List the empty descriptor wallets Bitcoin Core would accept an import into."""
-    found = []
-    for name in sorted(core._names()):
-        state = core._target(name)
-        if state is not None:
-            found.append(Wallet(name, state[0], state[1]))
-    return tuple(found)
+    return tuple(Wallet(*row) for row in core._eligible_wallets(core._names()))
 
 
 def _transferable(text: str, subject: str) -> None:
