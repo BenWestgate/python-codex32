@@ -11,7 +11,7 @@ CSS = """
   font-size: 1.1rem;
   letter-spacing: 0.06em;
 }
-.card-group, .property .subtitle {
+.card-group, .compact .suffixes > label {
   font-family: monospace;
   font-size: 1.35rem;
   font-weight: bold;
@@ -26,6 +26,11 @@ CSS = """
   border: 2px solid @error_color;
   border-radius: 12px;
   padding: 14px;
+}
+.compact row > box.header {
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .reading {
   font-size: 0.9rem;
