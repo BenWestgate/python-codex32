@@ -6,18 +6,15 @@ Reference implementation of BIP-0093 (codex32): checksummed, SSSS-aware BIP32 se
 
 This repository implements the codex32 string format described by BIP-0093.
 It provides encoding/decoding, regular/long codex32 checksums, CRC padding for base conversions,
-Shamir secret sharing scheme (SSSS) interpolation helpers and helpers to build codex32 strings from seed bytes.
+Shamir secret sharing scheme (SSSS) interpolation helpers and helpers to build codex32 secrets from seed bytes.
+Shares are never encoded from bytes: generate them from random characters or by interpolation.
 
 ## Features
 - Encode/decode codex32 data via `from_string` and `from_unchecksummed_string`.
-- Regular checksum (13 chars) and long checksum (15 chars) support.
-- Construct codex32 strings from raw seed bytes via `from_seed`.
-- CRC-based default padding scheme for `from_seed`.
-- `from_seed` requires an explicit four-character identifier in its prefix.
-- Interpolate/recover shares via `interpolate_at`.
+- Regular and long codex32 checksum support.
+- Construct codex32 secrets (share index `s`) from raw seed bytes via `from_seed`, with CRC padding by default.
+- Interpolate shares recover secrets via `interpolate_at`.
 - Parse codex32 strings and access parts via properties.
-- Mutate codex32 strings by reassigning `is_upper`, `hrp`, `k`, `ident`, `share_idx`, `data`, and `pad_val`.
-- Contains module and tests for Bech32/Bech32m and segwit addresses.
 
 ## Security
 Caution: This is reference code. Verify carefully before using with real funds.
@@ -47,7 +44,7 @@ from codex32 import Codex32String
 # Create from seed bytes
 s = Codex32String.from_seed(
     bytes.fromhex('ffeeddccbbaa99887766554433221100'),
-    "ms13cashs",        # prefix string with explicit identifier (HRP + '1' + header)
+    "ms13cashs",        # prefix string, (HRP + '1' + header)
     0                   # padding value (default "CRC", otherwise integer)
 )
 print(s.s)              # codex32 string
@@ -62,8 +59,7 @@ print(a.payload)        # payload part
 print(a.checksum)       # checksum part
 print(len(a))           # length of the codex32 string
 print(a.is_upper)       # case is upper True/False
-print(s.data.hex())     # raw seed bytes as hex
-print(a.pad_val)        # padding value integer, (MSB first)
+print(s.data().hex())   # master seed bytes as hex ("ms" secrets only)
 
 
 
@@ -79,15 +75,6 @@ print(derived_share_d.s)
 # Create Codex32String object from existing codex32 string and validate any HRP
 e = Codex32String.from_string("cl", "cl10lueasd35kw6r5de5kueedxyesqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqanvrktzhlhusz")
 print(e.ident)
-print(e.s)
-
-# Relabel a Codex32String object
-e.ident = "cln2"
-print(e.ident)
-print(e.s)
-
-# Uppercase a Codex32String object (for encoding in QR codes or handwriting)
-e.is_upper = True
 print(e.s)
 ```
 
