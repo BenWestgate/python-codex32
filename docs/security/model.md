@@ -43,6 +43,12 @@ The operator must:
   cellular;
 - synchronize Bitcoin Core on the networked computer before trusting its
   balances or history;
+- keep the clock of the computer that creates a wallet no more than a day
+  fast. A new wallet is dated by that clock less a day, since an offline
+  Core's own "now" is its genesis block. Copies such as a watch-only wallet
+  carry that date, and Core skips blocks from before it, so a clock further
+  ahead hides the first payments until `rescanblockchain` runs from an earlier
+  height;
 - protect recovery cards and store shared cards in different trusted places;
 - confirm every newly recorded secret or share;
 - keep wallet records separate from shares, type the master fingerprint from
