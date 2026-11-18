@@ -12,6 +12,8 @@ no wallet is opened, created, or changed.
 
 from __future__ import annotations
 
+import subprocess
+import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -19,9 +21,11 @@ import gi
 
 gi.require_version("Adw", "1")
 gi.require_version("Gtk", "4.0")
+gi.require_version("GdkX11", "4.0")
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Adw, Gdk, GdkX11, GLib, Gtk
 
+from codex32 import MasterSeed, parse_codex32
 from codex32_gui import app, pages, reading, wallet_setup
 
 SHARE_A = "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM"
@@ -80,6 +84,28 @@ def press(page: Any, label: str) -> None:
     next(item for item in walk(page) if isinstance(item, Gtk.Button) and item.get_label() == label).emit(
         "clicked"
     )
+
+
+def enter(field: Any) -> None:
+    """Press the real Enter key in a text field, through the X server as a keyboard would."""
+    text = field if isinstance(field, Gtk.Text) else field.get_delegate()
+    text.grab_focus()
+    settle()
+    surface = text.get_root().get_surface()
+    assert isinstance(surface, GdkX11.X11Surface), "run under an X server with GDK_BACKEND=x11"
+    subprocess.run(["xdotool", "windowfocus", str(surface.get_xid()), "key", "Return"], check=True)
+    for _attempt in range(30):
+        time.sleep(0.01)
+        settle()
+
+
+def focused(field: Any) -> bool:
+    focus = field.get_root().get_focus()
+    return focus is not None and focus.is_ancestor(field)
+
+
+def of_type(page: Any, kind: type) -> list[Any]:
+    return [item for item in walk(page) if isinstance(item, kind)]
 
 
 def labels(page: Any) -> list[str]:
@@ -147,6 +173,12 @@ class Walkthrough(app.Application):
             self.new_card_done,
             self.seed_entry,
             self.seed_shown,
+            self.form,
+            self.layout,
+            self.gate,
+            self.new_wallet,
+            self.wallet_record,
+            self.unlock,
         ]
         GLib.timeout_add(300, self.pump)
 
@@ -177,6 +209,8 @@ class Walkthrough(app.Application):
             item for item in walk(page) if isinstance(item, Gtk.Button) and item.get_label() == "Continue"
         )
         check("nothing may be submitted yet", not go.get_sensitive())
+        enter(field)
+        check("so Enter stays on the page", self.page() is page)
         field.set_text("ms12nameacd")
         settle()
         check("text is uppercased and grouped", field.get_text() == "MS12 NAME ACD", field.get_text())
@@ -199,7 +233,7 @@ class Walkthrough(app.Application):
         field.set_text(SHARE_C)
         settle()
         check("a valid card may be submitted", go.get_sensitive())
-        go.emit("clicked")
+        enter(field)
         return True
 
     def intact(self) -> bool:
@@ -229,7 +263,8 @@ class Walkthrough(app.Application):
             if isinstance(item, Gtk.Button) and item.get_label() == "Suggest a repair"
         )
         check("a repair is offered for an unreadable character", fix.get_sensitive())
-        fix.emit("clicked")
+        enter(field)
+        check("and Enter asks for it", self.page() is not page)
         return True
 
     def candidate(self) -> bool:
@@ -375,7 +410,7 @@ class Walkthrough(app.Application):
         check("selecting a card does not publish it", _primary_is_empty(), _primary())
         field.set_text(self.made[:-4] + "QQQQ")
         settle()
-        press(page, "Confirm card")
+        enter(field)
         check(
             "a mistyped group is named and refused",
             any("Group 12 does not match" in text for text in labels(page)),
@@ -383,7 +418,7 @@ class Walkthrough(app.Application):
         )
         field.set_text(self.made.lower())
         settle()
-        press(page, "Confirm card")
+        enter(field)
         return True
 
     def new_card_done(self) -> bool:
@@ -406,19 +441,153 @@ class Walkthrough(app.Application):
             page = self.page()
             field_of(page).set_text(text)
             settle()
-            press(page, "Continue")
+            enter(field_of(page))
         return True
 
     def seed_shown(self) -> bool:
         page = self.page()
         if page.get_title() != "Master seed":
             return False
-        check("two cards recover the published secret", card(page) == SECRET_S, card(page))
+        check("two cards recover the published secret by Enter alone", card(page) == SECRET_S, card(page))
         check(
             "and the screen warns before anything else",
             any("take every coin" in text for text in labels(page)),
             [text for text in labels(page) if "coin" in text],
         )
+        return True
+
+    def form(self) -> bool:
+        pressed: list[bool] = []
+        first, third = Adw.EntryRow(), Adw.PasswordEntryRow()
+        hidden, off = Adw.EntryRow(visible=False), Adw.EntryRow(sensitive=False)
+        action = pages._button("Create", lambda: pressed.append(True))
+        page = pages._page("Form", pages._column(first, hidden, off, third), actions=pages._actions(action))
+        self.view.push(page)
+        settle()
+        enter(first)
+        check("Enter skips hidden and switched-off fields", focused(third) and not pressed)
+        enter(third)
+        check("and in the last field presses the page's action", pressed == [True])
+        action.set_sensitive(False)
+        enter(third)
+        check("but never an action that is switched off", pressed == [True])
+        action.set_sensitive(True)
+        action.set_visible(False)
+        enter(third)
+        check("nor one that is hidden", pressed == [True])
+        action.set_visible(True)
+        self.view.push(pages._page("Above", pages._column(Gtk.Label(label="Above"))))
+        settle()
+        third.get_delegate().emit("activate")
+        settle()
+        check("nor from a page that is no longer in front", pressed == [True])
+        self.view.pop()
+        settle()
+        return True
+
+    def layout(self) -> bool:
+        chosen: list[tuple[int, int]] = []
+        original = pages._ready_page
+
+        def ready(view: Any, core: Any, threshold: int, count: int, size: int) -> Any:
+            chosen.append((threshold, count))
+            return pages._page("Ready", pages._column(Gtk.Label(label="Ready")))
+
+        pages._ready_page = ready  # type: ignore[assignment]
+        page = pages._layout_page(self.view, _Stub())  # type: ignore[arg-type]
+        self.view.push(page)
+        settle()
+        of_type(page, Gtk.CheckButton)[-1].set_active(True)
+        settle()
+        needed, total = of_type(page, Adw.SpinRow)
+        needed.set_text("5")
+        enter(needed)
+        check("Enter keeps a typed number before moving on", needed.get_value() == 5 and focused(total))
+        total.set_text("7")
+        enter(total)
+        check("and Continue uses both typed numbers", chosen == [(5, 7)], chosen)
+        pages._ready_page = original  # type: ignore[assignment]
+        return True
+
+    def gate(self) -> bool:
+        shown: list[bool] = []
+
+        def following() -> Any:
+            shown.append(True)
+            return pages._page("Guess", pages._column(Gtk.Label(label="Guess")))
+
+        page = pages._guess_gate_page(self.view, following)
+        self.view.push(page)
+        settle()
+        field = of_type(page, Gtk.Entry)[0]
+        enter(field)
+        field.set_text("yes")
+        enter(field)
+        check("Enter never shows a guess without literal YES", not shown)
+        field.set_text("YES")
+        enter(field)
+        check("and shows it once YES is typed", shown == [True])
+        return True
+
+    def new_wallet(self) -> bool:
+        secret = parse_codex32(SECRET_S)
+        assert isinstance(secret, MasterSeed)
+        page = pages._new_wallet_page(self.view, _Stub(), secret, 0, None)  # type: ignore[arg-type]
+        self.view.push(page)
+        settle()
+        name = of_type(page, Adw.EntryRow)[0]
+        first, again = of_type(page, Adw.PasswordEntryRow)
+        enter(name)
+        check("Enter in the wallet name moves to the passphrase", focused(first))
+        first.set_text("one")
+        enter(first)
+        check("and on to its repeat", focused(again))
+        again.set_text("two")
+        enter(again)
+        check(
+            "mismatched passphrases are refused, not created",
+            self.page() is page and any("not the same" in text for text in labels(page)),
+        )
+        first.set_text("")
+        again.set_text("")
+        enter(again)
+        window = self.get_active_window()
+        dialog = window.get_visible_dialog()
+        check("no passphrase still asks before creating", dialog is not None and self.page() is page)
+        if dialog is not None:
+            dialog.force_close()
+        settle()
+        return True
+
+    def wallet_record(self) -> bool:
+        secret = parse_codex32(SECRET_S)
+        assert isinstance(secret, MasterSeed)
+        page = pages._fingerprint_page(self.view, _Stub(), secret, 0, restoring=True)  # type: ignore[arg-type]
+        self.view.push(page)
+        settle()
+        fingerprint, date = of_type(page, Adw.EntryRow)
+        enter(fingerprint)
+        check("Enter in the fingerprint moves to the date", focused(date))
+        fingerprint.set_text("not hex")
+        enter(date)
+        check("and a bad fingerprint is refused on the page", self.page() is page, labels(page)[-2:])
+        return True
+
+    def unlock(self) -> bool:
+        sent: list[str] = []
+        original = pages._import
+        pages._import = lambda view, core, secret, name, passphrase, *rest: sent.append(passphrase)  # type: ignore[assignment]
+        secret = parse_codex32(SECRET_S)
+        assert isinstance(secret, MasterSeed)
+        wallet = wallet_setup.Wallet(name="locked", encrypted=True, locked=True)
+        page = pages._unlock_page(self.view, _Stub(), secret, wallet, 0, None)  # type: ignore[arg-type]
+        self.view.push(page)
+        settle()
+        field = of_type(page, Adw.PasswordEntryRow)[0]
+        field.set_text("passphrase")
+        enter(field)
+        check("Enter in the unlock passphrase unlocks", sent == ["passphrase"], len(sent))
+        pages._import = original  # type: ignore[assignment]
         return True
 
 
